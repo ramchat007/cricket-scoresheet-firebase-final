@@ -1,0 +1,157 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+/* ===== Base Theme Variables ===== */
+:root {
+  --bg: #fff;
+  --card: #ffffff;
+  --muted: #dee2e6;
+  --accent: #0d6efd;
+  --text: #212529;
+  --bg-primary-subtle: #cfe2ff;
+}
+
+/* ===== Light Theme ===== */
+body.light-theme {
+  --bg: #fff;
+  --card: #ffffff;
+  --muted: #dee2e6;
+  --accent: #0d6efd;
+  --text: #212529;
+  --bg-primary-subtle: #cfe2ff;
+}
+
+/* ===== Dark Theme ===== */
+body.dark-theme {
+  --bg: #0b132b;
+  --card: #1c2541;
+  --muted: #3a506b;
+  --accent: #5bc0be;
+  --text: #e0fbfc; /* light text */
+  --bg-primary-subtle: #5bc0be;
+}
+body.dark-theme table span{
+  color: #212529;
+}
+
+/* ===== Custom Pastel Theme ===== */
+body.pastel-theme {
+  --bg: #fdf6f0;
+  --card: #ffffff;
+  --muted: #f8d7da;
+  --accent: #ff7b9c;
+  --text: #4a4a4a;
+  --bs-body-bg: #fdf6f0;
+  --bg-primary-subtle: #ff7b9c;
+}
+
+
+body {
+  background: var(--bg) !important;
+  color: var(--text) !important;
+}
+.app-page {
+  background: var(--bg);
+  min-height: 100vh;
+  color: var(--text);
+}
+.h1, .h2, .h3, .h4, .h5, .h6, h1, h2, h3, h4, h5, h6{
+  color: var(--text);
+}
+span{
+  color: var(--text);
+}
+
+/* Override Bootstrap card */
+.card {
+  background: var(--card) !important;
+  border: 1px solid var(--muted);
+  border-radius: 12px;
+  color: var(--text);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  padding: 15px;
+}
+
+.card,
+.modal-content,
+.dropdown-menu {
+  background: var(--card) !important;
+  border: 1px solid var(--muted) !important;
+  color: var(--text) !important;
+}
+
+
+.navbar,
+.list-group-item,
+.table {
+  background: var(--bg-primary-subtle) !important;
+  color: var(--text) !important;
+}
+/* Buttons */
+.btn {
+  border-radius: 8px;
+  font-weight: 500;
+  color: #fff; /* always white text */
+}
+
+a,
+.btn-link {
+  color: var(--accent);
+}
+.btn-outline-primary{color: #0d6efd;}
+.btn-primary,
+.btn.match {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+}
+.btn-outline-danger{color: var(--text);}
+.btn.secondary {
+  background: var(--muted);
+  color: var(--text) !important;
+}
+.btn.btn-outline-secondary, .btn.btn-outline-success {
+  background: var(--muted);
+  color: var(--text) !important;
+}
+.btn.secondary.small {
+  padding: 7px;
+}
+.btn.match.active {
+  outline: 2px solid var(--accent);
+}
+
+/* Utility */
+.btn-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.score-out {
+  text-decoration: line-through;
+  color: #9ca3af;
+}
+.score-current {
+  background: var(--accent-light);
+  color: var(--accent);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+.nav-pills .nav-link.active, .nav-pills .show>.nav-link{
+  color: var(--bs-nav-pills-link-active-color) !important;
+}
+
+.list-group.matchList{flex-direction: row; gap: 10px;}
+.list-group.matchList .list-group-item {border: var(--bs-list-group-border-width) solid var(--bs-list-group-border-color);
+    border-radius: inherit;}
+
+.list-group.matchList .list-group-item.active{background-color: var(--bs-list-group-active-bg) !important; color: #fff !important;}
+.list-group.matchList .list-group-item.active h6,
+.list-group.matchList .list-group-item.active small{color: #fff !important;}
+.inner-card{padding: 0;}
+.nav-link{color:  var(--accent-light);}
+.navbar-brand{color: var(--accent-light);}
+
+span {
+    color: #f8f9fa;
+}
