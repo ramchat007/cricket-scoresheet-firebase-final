@@ -266,18 +266,149 @@ export default function TournamentDetails() {
     }
   };
 
-  // Permissions
+  // Permissions Logic
   const canEdit = useMemo(() => {
     if (isAdmin) return true;
     if (!user || !tournamentData) return false;
-    return (
-      tournamentData.ownerId === user.uid ||
-      tournamentData.scorers?.includes(user.uid)
-    );
+
+    // Check Ownership or Scorer Access
+    const isOwner = tournamentData.ownerId === user.uid;
+    const isScorer = tournamentData.scorers?.includes(user.uid);
+
+    // Uncomment to Debug:
+    // console.log("User:", user.uid, "Owner:", tournamentData.ownerId, "IsScorer:", isScorer);
+
+    return isOwner || isScorer;
   }, [user, tournamentData, isAdmin]);
 
   const isOwner =
     isAdmin || (user && tournamentData && user.uid === tournamentData.ownerId);
+
+  // --- MATCHES CATEGORIZATION ---
+  const { liveMatches, upcomingMatches, finishedMatches } = useMemo(() => {
+    const live = [];
+    const upcoming = [];
+    const finished = [];
+
+    matches.forEach((m) => {
+      // Robust status check
+      const status = m.status || m.meta?.status || "upcoming";
+      const normStatus = status.toLowerCase();
+
+      if (normStatus === "finished" || normStatus === "completed") {
+        finished.push(m);
+      } else if (
+        normStatus === "in-progress" ||
+        normStatus === "ongoing" ||
+        normStatus === "live"
+      ) {
+        live.push(m);
+      } else {
+        upcoming.push(m);
+      }
+    });
+
+    return {
+      liveMatches: live,
+      upcomingMatches: upcoming.sort(
+        (a, b) => new Date(a.date) - new Date(b.date)
+      ),
+      finishedMatches: finished.sort(
+        (a, b) => new Date(b.date) - new Date(a.date)
+      ),
+    };
+  }, [matches]);
+
+  // --- HELPER: RENDER MATCH CARD (UPDATED WITH BUTTONS) ---
+  const renderMatchCard = (m) => {
+    const status = m.status || m.meta?.status || "upcoming";
+    const normStatus = status.toLowerCase();
+
+    const isLive =
+      normStatus === "in-progress" ||
+      normStatus === "ongoing" ||
+      normStatus === "live";
+    const isFinished = normStatus === "finished" || normStatus === "completed";
+
+    return (
+      <div
+        key={m.id}
+        onClick={() => navigate(`/tournaments/${id}/scorecard/${m.id}`)}
+        className={`group relative bg-gray-900 border rounded-xl overflow-hidden cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${
+          isLive
+            ? "border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.2)]"
+            : "border-gray-800 hover:border-cyan-500/50"
+        }`}>
+        <div
+          className={`h-1 w-full ${
+            isLive
+              ? "bg-red-500 animate-pulse"
+              : isFinished
+              ? "bg-green-500"
+              : "bg-blue-500"
+          }`}></div>
+        <div className="p-5">
+          <div className="flex justify-between items-start mb-4">
+            <div className="flex flex-col gap-1">
+              <span className="text-sm font-mono text-gray-500">{m.date}</span>
+              <span className="text-[10px] font-bold text-gray-400 bg-gray-800 border border-gray-700 px-2 py-0.5 rounded w-fit">
+                {m.meta?.overs ? `${m.meta.overs} Overs` : "Limited Overs"}
+              </span>
+            </div>
+            {isLive && (
+              <span className="text-[10px] font-bold text-red-400 bg-red-900/20 px-2 py-1 rounded border border-red-900/30 animate-pulse">
+                LIVE
+              </span>
+            )}
+            {isFinished && (
+              <span className="text-[10px] font-bold text-green-400 bg-green-900/20 px-2 py-1 rounded border border-green-900/30">
+                FINISHED
+              </span>
+            )}
+          </div>
+          <div className="flex flex-col gap-2 mb-4">
+            <div className="text-lg font-bold text-white group-hover:text-cyan-400 transition-colors">
+              {m.meta?.teamA}{" "}
+              <span className="text-gray-600 text-sm mx-1">vs</span>{" "}
+              {m.meta?.teamB}
+            </div>
+            {isFinished && (
+              <div className="text-sm text-green-400 flex items-center gap-1">
+                🏆 Won by{" "}
+                {m.winner || m.result?.winner || m.meta?.result || "Unknown"}
+              </div>
+            )}
+          </div>
+
+          {/* ACTION BUTTON (Only Shows if canEdit is true) */}
+          {canEdit && (
+            <div className="mt-4 pt-3 border-t border-gray-800 flex justify-end">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate(`/live/${id}/${m.id}`);
+                }}
+                className={`text-sm font-bold px-4 py-2 rounded transition-all uppercase tracking-wider flex items-center gap-2 shadow-lg ${
+                  isLive
+                    ? "bg-red-600 hover:bg-red-500 text-white shadow-red-900/30 animate-pulse" // Live Style
+                    : isFinished
+                    ? "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white border border-gray-700" // Finished Style
+                    : "bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-cyan-900/20" // Upcoming Style
+                }`}>
+                {isLive ? (
+                  <>🔴 Resume Scoring</>
+                ) : isFinished ? (
+                  <>📝 Edit Record</>
+                ) : (
+                  <>⚡ Start Scoring</>
+                )}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   // --- 4. STATS CALCULATIONS ---
 
@@ -525,92 +656,58 @@ export default function TournamentDetails() {
         <div className="h-px w-full bg-gradient-to-r from-gray-800 via-gray-700 to-gray-800 mt-6"></div>
       </div>
 
-      {/* --- MATCHES TAB --- */}
+      {/* --- MATCHES TAB (UPDATED LAYOUT) --- */}
       {activeTab === "matches" && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-in fade-in">
-          {matches.length === 0 && (
-            <div className="text-gray-500 col-span-3 text-center py-10">
-              No matches scheduled yet.
+        <div className="animate-in fade-in space-y-10">
+          {/* 🔴 LIVE Matches Section */}
+          {liveMatches.length > 0 && (
+            <div>
+              <h3 className="text-white font-bold text-xl mb-4 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                Live Matches
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {liveMatches.map(renderMatchCard)}
+              </div>
             </div>
           )}
-          {matches.map((m) => {
-            const status = m.status || m.meta?.status || "upcoming";
-            const isLive = status === "in-progress" || status === "ongoing";
-            const isFinished = status === "finished";
 
-            return (
-              <div
-                key={m.id}
-                onClick={() => navigate(`/tournaments/${id}/scorecard/${m.id}`)}
-                className={`group relative bg-gray-900 border rounded-xl overflow-hidden cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${
-                  isLive
-                    ? "border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.2)]"
-                    : "border-gray-800 hover:border-cyan-500/50"
-                }`}>
-                <div
-                  className={`h-1 w-full ${
-                    isLive
-                      ? "bg-red-500 animate-pulse"
-                      : isFinished
-                      ? "bg-green-500"
-                      : "bg-blue-500"
-                  }`}></div>
-                <div className="p-5">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex flex-col gap-1">
-                      <span className="text-sm font-mono text-gray-500">
-                        {m.date}
-                      </span>
-                      {/* ✅ ADDED: OVER LIMIT BADGE */}
-                      <span className="text-[10px] font-bold text-gray-400 bg-gray-800 border border-gray-700 px-2 py-0.5 rounded w-fit">
-                        {m.meta?.overs
-                          ? `${m.meta.overs} Overs`
-                          : "Limited Overs"}
-                      </span>
-                    </div>
-                    {isLive && (
-                      <span className="text-[10px] font-bold text-red-400 bg-red-900/20 px-2 py-1 rounded border border-red-900/30 animate-pulse">
-                        LIVE
-                      </span>
-                    )}
-                    {isFinished && (
-                      <span className="text-[10px] font-bold text-green-400 bg-green-900/20 px-2 py-1 rounded border border-green-900/30">
-                        FINISHED
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-2 mb-4">
-                    <div className="text-lg font-bold text-white group-hover:text-cyan-400 transition-colors">
-                      {m.meta?.teamA}{" "}
-                      <span className="text-gray-600 text-sm mx-1">vs</span>{" "}
-                      {m.meta?.teamB}
-                    </div>
-                    {isFinished && (
-                      <div className="text-sm text-green-400 flex items-center gap-1">
-                        🏆 Won by{" "}
-                        {m.winner ||
-                          m.result?.winner ||
-                          m.meta?.result ||
-                          "Unknown"}
-                      </div>
-                    )}
-                  </div>
-                  {canEdit && (
-                    <div className="mt-4 pt-3 border-t border-gray-800 flex justify-end">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/live/${id}/${m.id}`);
-                        }}
-                        className="text-sm font-bold text-cyan-400 hover:text-white bg-cyan-900/20 hover:bg-cyan-600 px-3 py-1 rounded transition-colors uppercase tracking-wider">
-                        Edit Scoring
-                      </button>
-                    </div>
-                  )}
-                </div>
+          {/* 📅 UPCOMING Matches Section */}
+          <div>
+            <h3 className="text-white font-bold text-xl mb-4 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+              Upcoming Matches
+            </h3>
+            {upcomingMatches.length === 0 ? (
+              <div className="text-gray-600 italic text-sm">
+                No upcoming matches scheduled.
               </div>
-            );
-          })}
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {upcomingMatches.map(renderMatchCard)}
+              </div>
+            )}
+          </div>
+
+          {/* ✅ FINISHED Matches Section */}
+          {finishedMatches.length > 0 && (
+            <div>
+              <h3 className="text-white font-bold text-xl mb-4 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                Finished Matches
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {finishedMatches.map(renderMatchCard)}
+              </div>
+            </div>
+          )}
+
+          {/* Empty State Fallback */}
+          {matches.length === 0 && (
+            <div className="text-gray-500 text-center py-20 bg-gray-900/50 rounded-xl border border-dashed border-gray-800">
+              No matches found for this tournament.
+            </div>
+          )}
         </div>
       )}
 
@@ -913,7 +1010,6 @@ export default function TournamentDetails() {
                             </div>
                           </div>
                           <div className="text-sm font-mono text-right">
-                            {/* ✅ FIX: ISOLATED VIEWS TO PREVENT OVERLAP */}
                             {statsTab === "bat" && (
                               <>
                                 <span
@@ -964,7 +1060,6 @@ export default function TournamentDetails() {
                                       🏏 {log.bat.runs}({log.bat.balls})
                                     </span>
                                   )}
-                                  {/* ✅ FIX: Only show bowling if played */}
                                   {log.bowl && (
                                     <span>
                                       🥎 {log.bowl.wickets}/
