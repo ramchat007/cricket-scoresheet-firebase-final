@@ -1,6 +1,6 @@
-// src/firebase.js - paste your Firebase config here
-import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+// src/firebase.js
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
@@ -13,6 +13,13 @@ const firebaseConfig = {
   appId: "1:300141386643:web:9eb5592949cbcba61d2666",
 };
 
-const app = initializeApp(firebaseConfig);
+// ✅ Prevent re-initialization
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+
 export const db = getFirestore(app);
 export const auth = getAuth(app);
+
+// ✅ Enable offline cache (HUGE speed boost)
+enableIndexedDbPersistence(db).catch(() => {
+  // Ignore if multiple tabs open
+});

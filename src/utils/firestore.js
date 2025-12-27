@@ -141,6 +141,8 @@ export async function listMyEditableTournaments(userId) {
     return [];
   }
 }
+
+// FULL MATCH SUBSCRIPTION (Kept for Scoring Page)
 export function subscribeMatch(tournamentId, matchId, cb) {
   if (!tournamentId || !matchId) {
     throw new Error("subscribeMatch requires tournamentId and matchId");
@@ -154,11 +156,49 @@ export function subscribeMatch(tournamentId, matchId, cb) {
     try {
       const data = snap.data();
       const safe = JSON.parse(JSON.stringify(data));
-      cb(safe);
+      cb({ id: snap.id, ...safe }); // Ensure ID is passed back
     } catch (e) {
       console.warn("subscribeMatch: failed to JSON-clone snapshot", e);
-      cb(snap.data());
+      cb({ id: snap.id, ...snap.data() });
     }
+  });
+}
+
+// 🚀 NEW: OPTIMIZED Lightweight Subscription (For Headers/Live Tickers)
+export function subscribeMatchLite(tournamentId, matchId, cb) {
+  if (!tournamentId || !matchId) return () => {};
+  
+  const ref = doc(db, "tournaments", tournamentId, "matches", matchId);
+  let lastHash = null;
+
+  return onSnapshot(ref, (snap) => {
+    if (!snap.exists()) {
+      cb(null);
+      return;
+    }
+
+    const data = snap.data();
+    const i = data.currentInnings || 0;
+    const innings = data.innings?.[i] || {};
+
+    // Only send essential data for header
+    const livePayload = {
+      battingTeam: innings.battingTeam,
+      score: innings.score || 0,
+      wickets: innings.wickets || 0,
+      over: innings.over || 0,
+      overBallCount: innings.overBallCount || 0,
+      striker: innings.striker,
+      nonStriker: innings.nonStriker,
+      currentBowler: innings.currentBowler,
+      status: data.status,
+    };
+
+    const hash = JSON.stringify(livePayload);
+    if (hash === lastHash) return; // Skip update if nothing changed visually
+
+    lastHash = hash;
+    cb(livePayload);
   });
 }
 
@@ -355,7 +395,8 @@ export async function ballTransaction(tournamentId, matchId, handler) {
           throw new Error("Sanitizer produced invalid document");
         }
 
-        cleanedNext.history = [...hist, prevSnapshot].slice(-200);
+        // Limit history to 50 instead of 200 to save space
+        cleanedNext.history = [...hist, prevSnapshot].slice(-50);
 
         tx.set(dRef, cleanedNext);
       });
