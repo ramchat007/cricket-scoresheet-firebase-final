@@ -22,10 +22,7 @@ export default function MatchSelector({
       try {
         // Use the same function as TournamentDetails
         const matchesData = await listMatchesForTournament(tournamentId);
-
         setMatches(matchesData);
-        
-        console.log(matches);
       } catch (err) {
         console.error("Error fetching matches for selector:", err);
       } finally {

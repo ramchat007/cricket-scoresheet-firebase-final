@@ -95,13 +95,14 @@ export default function Navigation() {
                       src={user.photoURL}
                       alt="Profile"
                       className="w-8 h-8 rounded-full border border-gray-600 shadow-sm object-cover group-hover:border-cyan-400 transition-all"
-                      onError={(e) => (e.target.style.display = "none")}
+                      onError={(e) => (e.target.style.display = "none")} 
                     />
                   ) : (
                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-sm font-bold text-white shadow-lg border border-white/20 group-hover:from-cyan-400 group-hover:to-blue-500">
                       {user.email?.charAt(0).toUpperCase()}
                     </div>
-                  )}
+                  )} 
+                  My Profile
                 </Link>
                 <button
                   onClick={handleLogout}
