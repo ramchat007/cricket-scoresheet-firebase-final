@@ -268,18 +268,16 @@ export default function TournamentDetails() {
 
   // Permissions Logic
   const canEdit = useMemo(() => {
+    // 1. Must be logged in
+    if (!user) return false;
     if (isAdmin) return true;
-    if (!user || !tournamentData) return false;
-
-    // Check Ownership or Scorer Access
+    if (id === "generic") return true;
+    if (!tournamentData) return false;    
     const isOwner = tournamentData.ownerId === user.uid;
     const isScorer = tournamentData.scorers?.includes(user.uid);
 
-    // Uncomment to Debug:
-    // console.log("User:", user.uid, "Owner:", tournamentData.ownerId, "IsScorer:", isScorer);
-
     return isOwner || isScorer;
-  }, [user, tournamentData, isAdmin]);
+  }, [user, tournamentData, isAdmin, id]); // Added 'id' to dependencies
 
   const isOwner =
     isAdmin || (user && tournamentData && user.uid === tournamentData.ownerId);

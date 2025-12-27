@@ -52,6 +52,13 @@ export default function MatchScorecard() {
 
   // --- HELPERS ---
 
+  // Helper: Safely get player name whether it's a string or object
+  const getPlayerName = (p) => {
+    if (!p) return "";
+    if (typeof p === "object") return p.name || "Unknown";
+    return p;
+  };
+
   // Helper: Format Dismissal Text
   const formatDismissal = (stats) => {
     if (!stats || !stats.out)
@@ -116,13 +123,16 @@ export default function MatchScorecard() {
             inning.nonStriker,
           ].filter(Boolean);
 
-    // De-duplicate
-    const uniquePlayers = Array.from(new Set(playerList));
+    // De-duplicate names (using getPlayerName to handle objects)
+    const uniquePlayers = Array.from(new Set(playerList.map(p => getPlayerName(p))));
 
     uniquePlayers.forEach((name) => {
+      // Find original player object if available in fullSquad
+      const originalPlayerObj = fullSquad.find(p => getPlayerName(p) === name);
+      
       const stats = inning.batsmenStats?.[name];
-      const isStriker = name === inning.striker;
-      const isNonStriker = name === inning.nonStriker;
+      const isStriker = name === getPlayerName(inning.striker);
+      const isNonStriker = name === getPlayerName(inning.nonStriker);
 
       // A player is "Played" if:
       // 1. They have stats (runs/balls)

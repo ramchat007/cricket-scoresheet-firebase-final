@@ -14,6 +14,7 @@ import {
   arrayUnion,
   arrayRemove,
   addDoc,
+  orderBy,
   or, // ✅ Required for RBAC queries
 } from "firebase/firestore";
 import { db } from "./firebase";
@@ -421,25 +422,47 @@ export async function listTeams(tournamentId) {
 
 /* ---------------------- Teams (global collection) ---------------------- */
 
-export const addTeam = async (teamId, players = []) => {
-  const teamRef = doc(db, "teams", teamId);
-  await setDoc(teamRef, {
-    id: teamId,
-    name: teamId,
-    players,
-    createdAt: new Date().toISOString(),
-  });
-};
+export async function addTeam(tournamentId, teamName, playersArray, extraData = {}) {
+  try {
+    const teamsRef = collection(db, "tournaments", tournamentId, "teams");
+    // We use a generated ID, but store the name inside
+    await addDoc(teamsRef, {
+      name: teamName,
+      players: playersArray, // Array of Strings (Legacy/Simple)
+      ...extraData,          // Contains { roster: [{id, name...}] } (New)
+      createdAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("Error adding team:", error);
+    throw error;
+  }
+}
 
-export const updateTeam = async (teamId, players) => {
-  const teamRef = doc(db, "teams", teamId);
-  await updateDoc(teamRef, { players });
-};
+// 2. UPDATE TEAM
+export async function updateTeam(tournamentId, teamId, playersArray, extraData = {}) {
+  try {
+    const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
+    await updateDoc(teamRef, {
+      players: playersArray,
+      ...extraData,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("Error updating team:", error);
+    throw error;
+  }
+}
 
-export const deleteTeam = async (teamId) => {
-  const teamRef = doc(db, "teams", teamId);
-  await deleteDoc(teamRef);
-};
+// 3. DELETE TEAM
+export async function deleteTeam(tournamentId, teamId) {
+  try {
+    const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
+    await deleteDoc(teamRef);
+  } catch (error) {
+    console.error("Error deleting team:", error);
+    throw error;
+  }
+}
 
 export const listAllTeams = async () => {
   const teams = [];
@@ -754,3 +777,53 @@ export const listTournamentTeams = async (tournamentId) => {
     return [];
   }
 };
+
+// 1. Create a new Global Player
+export async function createGlobalPlayer(playerData) {
+  try {
+    const playersRef = collection(db, "players");
+    const docRef = await addDoc(playersRef, {
+      ...playerData,
+      createdAt: new Date().toISOString(),
+      stats: { // Initialize empty stats
+        matches: 0,
+        runs: 0,
+        wickets: 0,
+        catches: 0,
+        stumpings: 0,
+        highestScore: 0,
+        bestBowling: "0/0"
+      }
+    });
+    return docRef.id;
+  } catch (e) {
+    console.error("Error creating player:", e);
+    throw e;
+  }
+}
+
+// 2. List all Global Players
+export async function listGlobalPlayers() {
+  try {
+    const playersRef = collection(db, "players");
+    const q = query(playersRef, orderBy("name")); // Sort by name alphabetically
+    const snap = await getDocs(q);
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (e) {
+    console.error("Error listing players:", e);
+    return [];
+  }
+}
+
+export async function updateGlobalPlayer(playerId, updateData) {
+  try {
+    const playerRef = doc(db, "players", playerId);
+    await updateDoc(playerRef, {
+      ...updateData,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (e) {
+    console.error("Error updating player:", e);
+    throw e;
+  }
+}
