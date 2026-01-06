@@ -1,16 +1,16 @@
-// src/firebase.js - paste your Firebase config here
+// src/firebase.js
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAlcVByG7jmq_LpkXGooPmoJz_Tc6uYk0c",
-  authDomain: "cricket-scoresheet.firebaseapp.com",
-  databaseURL: "https://cricket-scoresheet-default-rtdb.firebaseio.com",
-  projectId: "cricket-scoresheet",
-  storageBucket: "cricket-scoresheet.firebasestorage.app",
-  messagingSenderId: "300141386643",
-  appId: "1:300141386643:web:9eb5592949cbcba61d2666",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
 const app = initializeApp(firebaseConfig);
