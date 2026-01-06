@@ -1,14 +1,44 @@
 // src/components/Navigation.jsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import { auth } from "../utils/firebase";
+import { auth, db } from "../utils/firebase"; // Added db import
+import { doc, getDoc } from "firebase/firestore"; // Added Firestore functions
 
 export default function Navigation() {
-  const [isOpen, setIsOpen] = useState(false); // Mobile Menu State
+  const [isOpen, setIsOpen] = useState(false);
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // --- NEW STATE: Local Profile Data ---
+  const [profileData, setProfileData] = useState(null);
+
+  // --- NEW EFFECT: Fetch Real-time Profile Data ---
+  useEffect(() => {
+    async function fetchProfileData() {
+      if (user?.uid) {
+        try {
+          const ref = doc(db, "users", user.uid);
+          const snap = await getDoc(ref);
+          if (snap.exists()) {
+            setProfileData(snap.data());
+          }
+        } catch (e) {
+          console.error("Error fetching nav profile:", e);
+        }
+      } else {
+        setProfileData(null);
+      }
+    }
+    fetchProfileData();
+  }, [user]); // Re-run when user auth state changes
+
+  // Determine which image to show: Firestore > Auth > Default
+  const displayImage =
+    profileData?.photoURL ||
+    user?.photoURL ||
+    null;
 
   // --- LOGIC: Get Tournament ID from URL ---
   const pathSegments = location.pathname.split("/");
@@ -27,7 +57,7 @@ export default function Navigation() {
     { name: "📈 Players Stats", path: "/players" }
   );
 
-  // 2. Tournament Context Links (Only if inside a tournament)
+  // 2. Tournament Context Links
   if (tournamentId) {
     links.push({
       name: "🏏 Matches",
@@ -43,12 +73,11 @@ export default function Navigation() {
     });
   }
 
-  // 3. Admin Dashboard (Only if logged in)
+  // 3. Admin Dashboard
   if (user) {
     links.push({ name: "🏆 Dashboard", path: "/dashboard" });
   }
 
-  // Helper to check active link
   const isActive = (path) => location.pathname === path;
 
   const handleLogout = async () => {
@@ -65,12 +94,13 @@ export default function Navigation() {
           <Link
             to="/"
             className="text-2xl font-black text-white tracking-tighter flex items-center gap-2 z-50"
-            onClick={() => setIsOpen(false)}>
+            onClick={() => setIsOpen(false)}
+          >
             <span className="text-cyan-500">⚡</span> CRIC
             <span className="text-cyan-500">SCORE</span>
           </Link>
 
-          {/* --- 2. DESKTOP MENU (Hidden on Mobile) --- */}
+          {/* --- 2. DESKTOP MENU --- */}
           <div className="hidden md:flex items-center gap-6">
             {/* Render Links */}
             {links.map((link) => (
@@ -81,7 +111,8 @@ export default function Navigation() {
                   isActive(link.path)
                     ? "text-cyan-400 border-b-2 border-cyan-400 pb-1"
                     : "text-gray-300 hover:text-white"
-                }`}>
+                }`}
+              >
                 {link.name}
               </Link>
             ))}
@@ -89,10 +120,10 @@ export default function Navigation() {
             {/* Render Auth Buttons */}
             {user ? (
               <div className="flex items-center gap-4 ml-4 pl-4 border-l border-gray-700">
-                <Link to="/profile" className="group">
-                  {user.photoURL ? (
+                <Link to="/profile" className="group flex items-center gap-2 text-sm font-bold text-gray-300 hover:text-white">
+                  {displayImage ? (
                     <img
-                      src={user.photoURL}
+                      src={displayImage}
                       alt="Profile"
                       className="w-8 h-8 rounded-full border border-gray-600 shadow-sm object-cover group-hover:border-cyan-400 transition-all"
                       onError={(e) => (e.target.style.display = "none")}
@@ -102,10 +133,12 @@ export default function Navigation() {
                       {user.email?.charAt(0).toUpperCase()}
                     </div>
                   )}
+                  <span>My Profile</span>
                 </Link>
                 <button
                   onClick={handleLogout}
-                  className="text-sm font-bold text-red-400 hover:text-red-300 transition-colors">
+                  className="text-sm font-bold text-red-400 hover:text-red-300 transition-colors"
+                >
                   Logout
                 </button>
               </div>
@@ -113,29 +146,33 @@ export default function Navigation() {
               <div className="flex items-center gap-4 border-l border-gray-700 pl-4 ml-2">
                 <Link
                   to="/login"
-                  className="text-sm font-bold text-cyan-400 hover:text-cyan-300">
+                  className="text-sm font-bold text-cyan-400 hover:text-cyan-300"
+                >
                   Login
                 </Link>
                 <Link
                   to="/register"
-                  className="bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition-all shadow-lg shadow-cyan-900/20">
+                  className="bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition-all shadow-lg shadow-cyan-900/20"
+                >
                   Sign Up
                 </Link>
               </div>
             )}
           </div>
 
-          {/* --- 3. MOBILE HAMBURGER BUTTON (Visible only on Mobile) --- */}
+          {/* --- 3. MOBILE HAMBURGER BUTTON --- */}
           <div className="md:hidden flex items-center">
             <button
               onClick={() => setIsOpen(!isOpen)}
-              className="text-gray-300 hover:text-white focus:outline-none p-2 rounded-md hover:bg-gray-800 transition-colors">
+              className="text-gray-300 hover:text-white focus:outline-none p-2 rounded-md hover:bg-gray-800 transition-colors"
+            >
               {isOpen ? (
                 <svg
                   className="w-6 h-6"
                   fill="none"
                   stroke="currentColor"
-                  viewBox="0 0 24 24">
+                  viewBox="0 0 24 24"
+                >
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -148,7 +185,8 @@ export default function Navigation() {
                   className="w-6 h-6"
                   fill="none"
                   stroke="currentColor"
-                  viewBox="0 0 24 24">
+                  viewBox="0 0 24 24"
+                >
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -176,7 +214,8 @@ export default function Navigation() {
                   isActive(link.path)
                     ? "bg-cyan-900/30 text-cyan-400 border-l-4 border-cyan-500"
                     : "text-gray-300 hover:bg-gray-800 hover:text-white"
-                }`}>
+                }`}
+              >
                 {link.name}
               </Link>
             ))}
@@ -188,12 +227,23 @@ export default function Navigation() {
                   <Link
                     to="/profile"
                     onClick={() => setIsOpen(false)}
-                    className="block px-3 py-3 rounded-lg text-base font-bold text-gray-300 hover:bg-gray-800 hover:text-white mb-2">
-                    👤 My Profile
+                    className="flex items-center gap-3 px-3 py-3 rounded-lg text-base font-bold text-gray-300 hover:bg-gray-800 hover:text-white mb-2"
+                  >
+                    {displayImage ? (
+                      <img
+                        src={displayImage}
+                        alt="Profile"
+                        className="w-8 h-8 rounded-full border border-gray-600 object-cover"
+                      />
+                    ) : (
+                      <span className="text-xl">👤</span>
+                    )}
+                    My Profile
                   </Link>
                   <button
                     onClick={handleLogout}
-                    className="w-full text-left px-3 py-3 rounded-lg text-base font-bold text-red-400 hover:bg-red-900/20">
+                    className="w-full text-left px-3 py-3 rounded-lg text-base font-bold text-red-400 hover:bg-red-900/20"
+                  >
                     Logout
                   </button>
                 </>
@@ -202,13 +252,15 @@ export default function Navigation() {
                   <Link
                     to="/login"
                     onClick={() => setIsOpen(false)}
-                    className="block text-center px-3 py-3 rounded-lg font-bold text-gray-300 bg-gray-800 hover:bg-gray-700">
+                    className="block text-center px-3 py-3 rounded-lg font-bold text-gray-300 bg-gray-800 hover:bg-gray-700"
+                  >
                     Login
                   </Link>
                   <Link
                     to="/register"
                     onClick={() => setIsOpen(false)}
-                    className="block text-center px-3 py-3 rounded-lg font-bold text-white bg-cyan-600 hover:bg-cyan-500">
+                    className="block text-center px-3 py-3 rounded-lg font-bold text-white bg-cyan-600 hover:bg-cyan-500"
+                  >
                     Sign Up
                   </Link>
                 </div>

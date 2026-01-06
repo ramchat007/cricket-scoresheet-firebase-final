@@ -28,6 +28,7 @@ import {
   deleteMatch,
 } from "./utils/firestore.js";
 import { useAuth } from "./hooks/useAuth.jsx";
+import MigrationTool from "./components/MigrationTool.jsx";
 
 export default function MainApp() {
   const navigate = useNavigate();
@@ -242,7 +243,7 @@ export default function MainApp() {
           <Route path="/profile" element={<Profile />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-
+          <Route path="/migrate" element={<MigrationTool />} />
           <Route path="/tournaments/:id" element={<TournamentDetails />} />
           <Route
             path="/tournaments/:tournamentId/scorecard/:matchId"

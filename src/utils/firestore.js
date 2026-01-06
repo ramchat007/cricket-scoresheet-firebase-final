@@ -14,6 +14,7 @@ import {
   arrayUnion,
   arrayRemove,
   addDoc,
+  orderBy,
   or, // ✅ Required for RBAC queries
 } from "firebase/firestore";
 import { db } from "./firebase";
@@ -140,6 +141,8 @@ export async function listMyEditableTournaments(userId) {
     return [];
   }
 }
+
+// FULL MATCH SUBSCRIPTION (Kept for Scoring Page)
 export function subscribeMatch(tournamentId, matchId, cb) {
   if (!tournamentId || !matchId) {
     throw new Error("subscribeMatch requires tournamentId and matchId");
@@ -153,11 +156,49 @@ export function subscribeMatch(tournamentId, matchId, cb) {
     try {
       const data = snap.data();
       const safe = JSON.parse(JSON.stringify(data));
-      cb(safe);
+      cb({ id: snap.id, ...safe }); // Ensure ID is passed back
     } catch (e) {
       console.warn("subscribeMatch: failed to JSON-clone snapshot", e);
-      cb(snap.data());
+      cb({ id: snap.id, ...snap.data() });
     }
+  });
+}
+
+// 🚀 NEW: OPTIMIZED Lightweight Subscription (For Headers/Live Tickers)
+export function subscribeMatchLite(tournamentId, matchId, cb) {
+  if (!tournamentId || !matchId) return () => {};
+  
+  const ref = doc(db, "tournaments", tournamentId, "matches", matchId);
+  let lastHash = null;
+
+  return onSnapshot(ref, (snap) => {
+    if (!snap.exists()) {
+      cb(null);
+      return;
+    }
+
+    const data = snap.data();
+    const i = data.currentInnings || 0;
+    const innings = data.innings?.[i] || {};
+
+    // Only send essential data for header
+    const livePayload = {
+      battingTeam: innings.battingTeam,
+      score: innings.score || 0,
+      wickets: innings.wickets || 0,
+      over: innings.over || 0,
+      overBallCount: innings.overBallCount || 0,
+      striker: innings.striker,
+      nonStriker: innings.nonStriker,
+      currentBowler: innings.currentBowler,
+      status: data.status,
+    };
+
+    const hash = JSON.stringify(livePayload);
+    if (hash === lastHash) return; // Skip update if nothing changed visually
+
+    lastHash = hash;
+    cb(livePayload);
   });
 }
 
@@ -354,7 +395,8 @@ export async function ballTransaction(tournamentId, matchId, handler) {
           throw new Error("Sanitizer produced invalid document");
         }
 
-        cleanedNext.history = [...hist, prevSnapshot].slice(-200);
+        // Limit history to 50 instead of 200 to save space
+        cleanedNext.history = [...hist, prevSnapshot].slice(-50);
 
         tx.set(dRef, cleanedNext);
       });
@@ -421,25 +463,47 @@ export async function listTeams(tournamentId) {
 
 /* ---------------------- Teams (global collection) ---------------------- */
 
-export const addTeam = async (teamId, players = []) => {
-  const teamRef = doc(db, "teams", teamId);
-  await setDoc(teamRef, {
-    id: teamId,
-    name: teamId,
-    players,
-    createdAt: new Date().toISOString(),
-  });
-};
+export async function addTeam(tournamentId, teamName, playersArray, extraData = {}) {
+  try {
+    const teamsRef = collection(db, "tournaments", tournamentId, "teams");
+    // We use a generated ID, but store the name inside
+    await addDoc(teamsRef, {
+      name: teamName,
+      players: playersArray, // Array of Strings (Legacy/Simple)
+      ...extraData,          // Contains { roster: [{id, name...}] } (New)
+      createdAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("Error adding team:", error);
+    throw error;
+  }
+}
 
-export const updateTeam = async (teamId, players) => {
-  const teamRef = doc(db, "teams", teamId);
-  await updateDoc(teamRef, { players });
-};
+// 2. UPDATE TEAM
+export async function updateTeam(tournamentId, teamId, playersArray, extraData = {}) {
+  try {
+    const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
+    await updateDoc(teamRef, {
+      players: playersArray,
+      ...extraData,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("Error updating team:", error);
+    throw error;
+  }
+}
 
-export const deleteTeam = async (teamId) => {
-  const teamRef = doc(db, "teams", teamId);
-  await deleteDoc(teamRef);
-};
+// 3. DELETE TEAM
+export async function deleteTeam(tournamentId, teamId) {
+  try {
+    const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
+    await deleteDoc(teamRef);
+  } catch (error) {
+    console.error("Error deleting team:", error);
+    throw error;
+  }
+}
 
 export const listAllTeams = async () => {
   const teams = [];
@@ -754,3 +818,53 @@ export const listTournamentTeams = async (tournamentId) => {
     return [];
   }
 };
+
+// 1. Create a new Global Player
+export async function createGlobalPlayer(playerData) {
+  try {
+    const playersRef = collection(db, "players");
+    const docRef = await addDoc(playersRef, {
+      ...playerData,
+      createdAt: new Date().toISOString(),
+      stats: { // Initialize empty stats
+        matches: 0,
+        runs: 0,
+        wickets: 0,
+        catches: 0,
+        stumpings: 0,
+        highestScore: 0,
+        bestBowling: "0/0"
+      }
+    });
+    return docRef.id;
+  } catch (e) {
+    console.error("Error creating player:", e);
+    throw e;
+  }
+}
+
+// 2. List all Global Players
+export async function listGlobalPlayers() {
+  try {
+    const playersRef = collection(db, "players");
+    const q = query(playersRef, orderBy("name")); // Sort by name alphabetically
+    const snap = await getDocs(q);
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (e) {
+    console.error("Error listing players:", e);
+    return [];
+  }
+}
+
+export async function updateGlobalPlayer(playerId, updateData) {
+  try {
+    const playerRef = doc(db, "players", playerId);
+    await updateDoc(playerRef, {
+      ...updateData,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (e) {
+    console.error("Error updating player:", e);
+    throw e;
+  }
+}
