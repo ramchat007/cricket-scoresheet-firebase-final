@@ -29,6 +29,7 @@ import {
 } from "./utils/firestore.js";
 import { useAuth } from "./hooks/useAuth.jsx";
 import MigrationTool from "./components/MigrationTool.jsx";
+import AuctionDashboard from "./pages/AuctionDashboard.jsx";
 
 export default function MainApp() {
   const navigate = useNavigate();
@@ -227,6 +228,7 @@ export default function MainApp() {
           <Route path="/scoreboard" element={<Scoreboard />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/create-tournament" element={<CreateTournament />} />
+          <Route path="/tournaments/:id/auction" element={<AuctionDashboard />} />
 
           <Route
             path="/matches"

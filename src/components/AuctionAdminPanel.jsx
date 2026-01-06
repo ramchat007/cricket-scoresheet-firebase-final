@@ -1,19 +1,26 @@
 import React, { useState, useEffect } from "react";
 import {
   collection,
-  getDocs,
   updateDoc,
   doc,
   writeBatch,
   deleteDoc,
   query,
   orderBy,
+  onSnapshot,
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { listGlobalPlayers } from "../utils/firestore";
+import { resetAuction } from "../utils/auction";
+import AuctionOwnersAdmin from "./AuctionOwnersAdmin";
 
 // --- GLOBAL PLAYER SEARCH MODAL ---
-const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
+const GlobalPlayerPicker = ({
+  isOpen,
+  onClose,
+  onImport,
+  existingIds, // IDs already in the auction pool (to prevent duplicates)
+}) => {
   const [players, setPlayers] = useState([]);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState([]);
@@ -23,7 +30,7 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
     if (isOpen) {
       setLoading(true);
       listGlobalPlayers().then((data) => {
-        // Filter out players already in the auction
+        // FILTER: Only show players NOT already in the auction pool
         const available = data.filter((p) => !existingIds.includes(p.id));
         setPlayers(available);
         setLoading(false);
@@ -96,6 +103,14 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
               );
             })
           )}
+          {!loading && filtered.length === 0 && (
+            <div className="text-center py-8 text-gray-500 text-sm">
+              No available players found. <br />
+              <span className="text-xs text-gray-600">
+                (All global players are already in this tournament)
+              </span>
+            </div>
+          )}
         </div>
         <div className="p-4 border-t border-gray-800 flex justify-end gap-2">
           <button onClick={onClose} className="px-4 py-2 text-gray-400 text-sm">
@@ -115,26 +130,45 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
 
 // --- MAIN SETUP PANEL ---
 export default function AuctionAdminPanel({ tournamentId, onClose }) {
-  const [tab, setTab] = useState("pool"); // 'pool' or 'teams'
+  const [tab, setTab] = useState("pool");
+  const [poolFilter, setPoolFilter] = useState("PENDING"); // 'PENDING' | 'SOLD' | 'UNSOLD'
+
   const [auctionPlayers, setAuctionPlayers] = useState([]);
   const [teams, setTeams] = useState([]);
+  const [teamsMap, setTeamsMap] = useState({}); // Lookup { id: "Team Name" }
   const [showPicker, setShowPicker] = useState(false);
 
-  // Fetch Data
-  const fetchData = async () => {
-    // 1. Fetch Auction Players
-    const pRef = collection(db, "tournaments", tournamentId, "auctionPlayers");
-    const pSnap = await getDocs(query(pRef, orderBy("name")));
-    setAuctionPlayers(pSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
-
-    // 2. Fetch Teams
-    const tRef = collection(db, "tournaments", tournamentId, "teams");
-    const tSnap = await getDocs(tRef);
-    setTeams(tSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
-  };
-
+  // --- REAL-TIME DATA FETCHING ---
   useEffect(() => {
-    fetchData();
+    // 1. Subscribe to Auction Pool (The Master List)
+    const pRef = collection(db, "tournaments", tournamentId, "auctionPlayers");
+    const qPool = query(pRef, orderBy("name"));
+
+    const unsubPool = onSnapshot(qPool, (snap) => {
+      const players = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setAuctionPlayers(players);
+    });
+
+    // 2. Subscribe to Teams (For Wallet management & Name lookup)
+    const tRef = collection(db, "tournaments", tournamentId, "teams");
+    const unsubTeams = onSnapshot(tRef, (snap) => {
+      const teamsData = [];
+      const mapping = {};
+
+      snap.docs.forEach((doc) => {
+        const d = doc.data();
+        teamsData.push({ id: doc.id, ...d });
+        mapping[doc.id] = d.name;
+      });
+
+      setTeams(teamsData);
+      setTeamsMap(mapping);
+    });
+
+    return () => {
+      unsubPool();
+      unsubTeams();
+    };
   }, [tournamentId]);
 
   // --- ACTIONS ---
@@ -149,17 +183,18 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
     );
 
     selectedGlobalPlayers.forEach((p) => {
-      // Create a NEW document in the auction pool
       const newRef = doc(colRef);
+      // We do NOT set IDs here, we let Firestore generate a new ID for the auction entry
+      // But we keep 'originalPlayerId' to link back to stats if needed
       batch.set(newRef, {
-        originalPlayerId: p.id, // Link back to Global DB
+        originalPlayerId: p.id,
         name: p.name,
         role: p.role || "All-Rounder",
-        basePrice: 100, // Default Base Price
-        status: "UNSOLD",
+        basePrice: 500, // Default base price
+        status: "PENDING",
         soldPrice: 0,
         teamId: null,
-        // Optional: Snapshot current stats for the auction display
+        isOwner: false, // Default
         statsSnapshot: {
           runs: p.stats?.runs || 0,
           wickets: p.stats?.wickets || 0,
@@ -170,7 +205,6 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
 
     await batch.commit();
     setShowPicker(false);
-    fetchData(); // Refresh the list
   };
 
   const updateBasePrice = async (playerId, newPrice) => {
@@ -182,28 +216,62 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
       playerId
     );
     await updateDoc(ref, { basePrice: parseInt(newPrice) || 0 });
-    // Optimistic Update
-    setAuctionPlayers((prev) =>
-      prev.map((p) => (p.id === playerId ? { ...p, basePrice: newPrice } : p))
-    );
   };
 
   const deletePlayer = async (playerId) => {
-    if (!window.confirm("Remove player from auction?")) return;
+    if (
+      !window.confirm("Remove player from Auction Pool? This cannot be undone.")
+    )
+      return;
     await deleteDoc(
       doc(db, "tournaments", tournamentId, "auctionPlayers", playerId)
     );
-    fetchData();
+  };
+
+  const reAddPlayer = async (playerId) => {
+    const ref = doc(
+      db,
+      "tournaments",
+      tournamentId,
+      "auctionPlayers",
+      playerId
+    );
+    // Resetting to PENDING removes them from the team effectively in the data view
+    await updateDoc(ref, { status: "PENDING", soldPrice: 0, teamId: null });
   };
 
   const updateTeamPurse = async (teamId, newPurse) => {
     const ref = doc(db, "tournaments", tournamentId, "teams", teamId);
     await updateDoc(ref, { purse: parseInt(newPurse) || 0 });
-    // Optimistic Update
-    setTeams((prev) =>
-      prev.map((t) => (t.id === teamId ? { ...t, purse: newPurse } : t))
-    );
   };
+
+  const handleReset = async () => {
+    if (
+      !window.confirm(
+        "⚠ DANGER: This will delete the Auction Room and remove all players from the Auction Pool.\n\nAre you sure?"
+      )
+    )
+      return;
+
+    try {
+      await resetAuction(tournamentId);
+      alert("Auction deleted successfully.");
+      onClose();
+      window.location.reload();
+    } catch (e) {
+      console.error(e);
+      alert("Error resetting auction: " + e.message);
+    }
+  };
+
+  // --- FILTER DISPLAY LIST ---
+  // Simply filter the master list based on the selected tab
+  const displayList = auctionPlayers.filter((p) => {
+    if (poolFilter === "SOLD") return p.status === "SOLD";
+    if (poolFilter === "UNSOLD")
+      return p.status === "UNSOLD" || p.status === "UNSOLD_PASSED";
+    return p.status === "PENDING"; // Default
+  });
 
   return (
     <div className="fixed inset-0 z-50 bg-black/95 flex flex-col overflow-hidden animate-in slide-in-from-bottom-10">
@@ -214,7 +282,6 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
         existingIds={auctionPlayers.map((p) => p.originalPlayerId)}
       />
 
-      {/* HEADER */}
       <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-900">
         <h2 className="text-xl font-bold text-white flex items-center gap-2">
           <span>⚙️</span> Auction Setup
@@ -226,7 +293,6 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
         </button>
       </div>
 
-      {/* TABS */}
       <div className="flex border-b border-gray-800 bg-gray-900">
         <button
           onClick={() => setTab("pool")}
@@ -246,18 +312,42 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
           }`}>
           Team Wallets ({teams.length})
         </button>
+        <button
+          onClick={() => setTab("owners")}
+          className={`flex-1 py-4 text-sm font-bold uppercase tracking-wider ${
+            tab === "owners"
+              ? "text-purple-400 border-b-2 border-purple-400"
+              : "text-gray-500 hover:text-white"
+          }`}>
+          Owners
+        </button>
       </div>
 
-      {/* CONTENT */}
       <div className="flex-1 overflow-y-auto p-4 md:p-8 max-w-5xl mx-auto w-full">
         {/* --- TAB: PLAYER POOL --- */}
         {tab === "pool" && (
-          <div className="space-y-4">
-            <button
-              onClick={() => setShowPicker(true)}
-              className="w-full py-4 bg-cyan-900/30 border border-cyan-500/30 text-cyan-400 rounded-xl font-bold hover:bg-cyan-900/50 transition-all flex items-center justify-center gap-2">
-              <span>+</span> Add Players from Global DB
-            </button>
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <div className="flex bg-gray-800 rounded-lg p-1">
+                {["PENDING", "SOLD", "UNSOLD"].map((filter) => (
+                  <button
+                    key={filter}
+                    onClick={() => setPoolFilter(filter)}
+                    className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${
+                      poolFilter === filter
+                        ? "bg-gray-700 text-white shadow"
+                        : "text-gray-400 hover:text-gray-200"
+                    }`}>
+                    {filter}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setShowPicker(true)}
+                className="bg-cyan-900/30 border border-cyan-500/30 text-cyan-400 px-4 py-2 rounded-lg font-bold text-sm hover:bg-cyan-900/50 transition-all">
+                + Add Players
+              </button>
+            </div>
 
             <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
               <table className="w-full text-left text-sm text-gray-400">
@@ -265,26 +355,56 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   <tr>
                     <th className="p-4">Name</th>
                     <th className="p-4">Role</th>
-                    <th className="p-4">Base Price</th>
+                    <th className="p-4">
+                      {poolFilter === "SOLD" ? "Sold For" : "Base Price"}
+                    </th>
+                    {poolFilter === "SOLD" && <th className="p-4">Team</th>}
                     <th className="p-4 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-800">
-                  {auctionPlayers.map((p) => (
+                  {displayList.map((p) => (
                     <tr key={p.id} className="hover:bg-gray-800/50">
-                      <td className="p-4 font-bold text-white">{p.name}</td>
+                      <td className="p-4 font-bold text-white">
+                        {p.name}
+                        {p.isOwner && (
+                          <span className="ml-2 text-[9px] bg-purple-900 text-purple-300 px-1.5 py-0.5 rounded">
+                            OWNER
+                          </span>
+                        )}
+                      </td>
                       <td className="p-4">{p.role}</td>
                       <td className="p-4">
-                        <input
-                          type="number"
-                          className="bg-black border border-gray-700 rounded px-2 py-1 w-24 text-white focus:border-cyan-500 outline-none"
-                          value={p.basePrice}
-                          onChange={(e) =>
-                            updateBasePrice(p.id, e.target.value)
-                          }
-                        />
+                        {poolFilter === "SOLD" ? (
+                          <span className="text-green-400 font-mono">
+                            ₹ {p.soldPrice}
+                          </span>
+                        ) : (
+                          <input
+                            type="number"
+                            className="bg-black border border-gray-700 rounded px-2 py-1 w-24 text-white focus:border-cyan-500 outline-none"
+                            value={p.basePrice}
+                            onChange={(e) =>
+                              updateBasePrice(p.id, e.target.value)
+                            }
+                          />
+                        )}
                       </td>
-                      <td className="p-4 text-right">
+                      {poolFilter === "SOLD" && (
+                        <td className="p-4 text-white">
+                          {/* Look up team name from ID */}
+                          {teamsMap[p.teamId] || "Unknown Team"}
+                        </td>
+                      )}
+                      <td className="p-4 text-right flex justify-end gap-3 items-center">
+                        {(poolFilter === "UNSOLD" || poolFilter === "SOLD") && (
+                          <button
+                            onClick={() => reAddPlayer(p.id)}
+                            title="Reset to Pending"
+                            className="bg-cyan-900/50 text-cyan-400 hover:bg-cyan-600 hover:text-white px-2 py-1 rounded transition-colors">
+                            ↺ Re-Add
+                          </button>
+                        )}
                         <button
                           onClick={() => deletePlayer(p.id)}
                           className="text-red-500 hover:text-red-400">
@@ -293,10 +413,10 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                       </td>
                     </tr>
                   ))}
-                  {auctionPlayers.length === 0 && (
+                  {displayList.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="p-8 text-center italic">
-                        No players in pool yet.
+                      <td colSpan={5} className="p-8 text-center italic">
+                        No players found in {poolFilter} list.
                       </td>
                     </tr>
                   )}
@@ -316,7 +436,9 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 <div>
                   <div className="font-bold text-white text-lg">{t.name}</div>
                   <div className="text-xs text-gray-500 mt-1">
-                    Players: {t.players?.length || 0}
+                    {/* We can calculate current players based on auctionPlayers data if we wanted, 
+                        but relying on roster.length for display is fine if your backend/auction logic syncs it */}
+                    Squad Size: {t.roster?.length || 0}
                   </div>
                 </div>
                 <div className="text-right">
@@ -339,6 +461,31 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
             )}
           </div>
         )}
+
+        {/* --- TAB: OWNERS --- */}
+        {tab === "owners" && (
+          <div className="animate-in fade-in">
+            <AuctionOwnersAdmin tournamentId={tournamentId} />
+          </div>
+        )}
+
+        {/* --- 3. DANGER ZONE --- */}
+        <div className="mt-12 border-t border-red-900/50 pt-8 mb-8">
+          <div className="bg-red-950/20 border border-red-900/50 rounded-xl p-6 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+              <h4 className="text-red-500 font-bold text-lg">Danger Zone</h4>
+              <p className="text-red-400/60 text-sm">
+                Deleting the auction will remove the "Live State" and clear the
+                player pool.
+              </p>
+            </div>
+            <button
+              onClick={handleReset}
+              className="bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-6 rounded-lg shadow-lg whitespace-nowrap transition-all hover:scale-105">
+              ⚠ Delete Auction Data
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

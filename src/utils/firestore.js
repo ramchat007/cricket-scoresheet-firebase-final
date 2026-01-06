@@ -167,7 +167,7 @@ export function subscribeMatch(tournamentId, matchId, cb) {
 // 🚀 NEW: OPTIMIZED Lightweight Subscription (For Headers/Live Tickers)
 export function subscribeMatchLite(tournamentId, matchId, cb) {
   if (!tournamentId || !matchId) return () => {};
-  
+
   const ref = doc(db, "tournaments", tournamentId, "matches", matchId);
   let lastHash = null;
 
@@ -463,15 +463,20 @@ export async function listTeams(tournamentId) {
 
 /* ---------------------- Teams (global collection) ---------------------- */
 
-export async function addTeam(tournamentId, teamName, playersArray, extraData = {}) {
+export async function addTeam(
+  tournamentId,
+  teamName,
+  playersArray,
+  extraData = {}
+) {
   try {
     const teamsRef = collection(db, "tournaments", tournamentId, "teams");
     // We use a generated ID, but store the name inside
     await addDoc(teamsRef, {
       name: teamName,
       players: playersArray, // Array of Strings (Legacy/Simple)
-      ...extraData,          // Contains { roster: [{id, name...}] } (New)
-      createdAt: new Date().toISOString()
+      ...extraData, // Contains { roster: [{id, name...}] } (New)
+      createdAt: new Date().toISOString(),
     });
   } catch (error) {
     console.error("Error adding team:", error);
@@ -480,13 +485,18 @@ export async function addTeam(tournamentId, teamName, playersArray, extraData = 
 }
 
 // 2. UPDATE TEAM
-export async function updateTeam(tournamentId, teamId, playersArray, extraData = {}) {
+export async function updateTeam(
+  tournamentId,
+  teamId,
+  playersArray,
+  extraData = {}
+) {
   try {
     const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
     await updateDoc(teamRef, {
       players: playersArray,
       ...extraData,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     });
   } catch (error) {
     console.error("Error updating team:", error);
@@ -826,15 +836,16 @@ export async function createGlobalPlayer(playerData) {
     const docRef = await addDoc(playersRef, {
       ...playerData,
       createdAt: new Date().toISOString(),
-      stats: { // Initialize empty stats
+      stats: {
+        // Initialize empty stats
         matches: 0,
         runs: 0,
         wickets: 0,
         catches: 0,
         stumpings: 0,
         highestScore: 0,
-        bestBowling: "0/0"
-      }
+        bestBowling: "0/0",
+      },
     });
     return docRef.id;
   } catch (e) {
@@ -849,7 +860,7 @@ export async function listGlobalPlayers() {
     const playersRef = collection(db, "players");
     const q = query(playersRef, orderBy("name")); // Sort by name alphabetically
     const snap = await getDocs(q);
-    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
   } catch (e) {
     console.error("Error listing players:", e);
     return [];
@@ -861,10 +872,20 @@ export async function updateGlobalPlayer(playerId, updateData) {
     const playerRef = doc(db, "players", playerId);
     await updateDoc(playerRef, {
       ...updateData,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     });
   } catch (e) {
     console.error("Error updating player:", e);
+    throw e;
+  }
+}
+
+export async function deleteGlobalPlayer(playerId) {
+  try {
+    const ref = doc(db, "players", playerId);
+    await deleteDoc(ref);
+  } catch (e) {
+    console.error("Error deleting player:", e);
     throw e;
   }
 }

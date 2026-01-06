@@ -6,9 +6,12 @@ import {
   collection,
   query,
   where,
-  getDocs,
+  setDoc,
   orderBy,
   onSnapshot,
+  deleteDoc, 
+  writeBatch,
+  getDocs
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -39,6 +42,58 @@ export function subscribeUnsoldPlayers(tournamentId, callback) {
   return onSnapshot(q, (snap) => {
     callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
   });
+}
+
+export function subscribePassedPlayers(tournamentId, callback) {
+  const q = query(
+    collection(db, "tournaments", tournamentId, "auctionPlayers"),
+    where("status", "==", "UNSOLD_PASSED"),
+    orderBy("name")
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  });
+}
+
+// 2. Action: Move player back to "UNSOLD" (The Queue)
+export async function requeuePlayer(tournamentId, playerId) {
+  const ref = doc(db, "tournaments", tournamentId, "auctionPlayers", playerId);
+  await updateDoc(ref, { status: "UNSOLD" });
+}
+
+// --- INITIALIZATION ---
+export async function initializeAuction(tournamentId) {
+  const ref = doc(db, "tournaments", tournamentId, "auction", "state");
+  await setDoc(ref, {
+    status: "PENDING",
+    currentBid: 0,
+    currentPlayer: null,
+    highestBidderId: null,
+    history: [],
+    updatedAt: serverTimestamp()
+  });
+}
+
+// --- NEW: RESET / DELETE AUCTION ---
+export async function resetAuction(tournamentId) {
+  const batch = writeBatch(db);
+
+  // 1. Delete the "State" document (This makes the dashboard go back to 'Not Ready')
+  const stateRef = doc(db, "tournaments", tournamentId, "auction", "state");
+  batch.delete(stateRef);
+
+  // 2. Delete all players in the 'auctionPlayers' pool
+  const playersRef = collection(db, "tournaments", tournamentId, "auctionPlayers");
+  const playerSnap = await getDocs(playersRef);
+  playerSnap.docs.forEach((doc) => {
+    batch.delete(doc.ref);
+  });
+
+  // 3. (Optional) Reset Team Purses?
+  // We usually keep team structure, but you could reset spent/purse here if needed.
+  // For now, we just delete the auction data.
+
+  await batch.commit();
 }
 
 // --- ACTIONS ---
