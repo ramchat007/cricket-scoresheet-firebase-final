@@ -169,14 +169,14 @@ export default function Login() {
           Sign in with Google
         </button>
 
-        <div className="mt-6 text-center text-sm text-gray-500">
+        {/* <div className="mt-6 text-center text-sm text-gray-500">
           Don't have an account?{" "}
           <Link
             to="/register"
             className="text-cyan-400 font-bold hover:underline">
             Sign up
           </Link>
-        </div>
+        </div> */}
       </div>
     </div>
   );
