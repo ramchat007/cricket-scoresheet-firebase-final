@@ -7,8 +7,10 @@ import {
   subscribeTeams,
   subscribeAllTeams,
   listGlobalPlayers,
-  createGlobalPlayer, // ✅ IMPORTED THIS
+  createGlobalPlayer,
 } from "../utils/firestore.js";
+import { addDoc, collection } from "firebase/firestore";
+import { db } from "../utils/firebase"; // Import db
 import { useAuth } from "../hooks/useAuth.jsx";
 
 // --- SUB-COMPONENT: GLOBAL PLAYER SELECTOR MODAL ---
@@ -148,8 +150,13 @@ export default function TeamManager({ tournamentId }) {
   // Form State
   const [teamId, setTeamId] = useState("");
   const [teamName, setTeamName] = useState("");
+  const [ownerName, setOwnerName] = useState(""); // NEW: Owner Name
   const [squad, setSquad] = useState([]);
-  const [isSaving, setIsSaving] = useState(false); // NEW: Loading state for save
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Owner Player Logic
+  const [isOwnerPlaying, setIsOwnerPlaying] = useState(false); // NEW
+  const [ownerRole, setOwnerRole] = useState("All-Rounder"); // NEW
 
   // UI State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -178,6 +185,7 @@ export default function TeamManager({ tournamentId }) {
     if (team) {
       setTeamId(team.id);
       setTeamName(team.name || team.id);
+      setOwnerName(team.ownerName || ""); // Load Owner
 
       // Parse Squad Data
       if (team.roster && Array.isArray(team.roster) && team.roster.length > 0) {
@@ -199,8 +207,11 @@ export default function TeamManager({ tournamentId }) {
   const resetForm = () => {
     setTeamId("");
     setTeamName("");
+    setOwnerName("");
     setSquad([]);
     setGuestName("");
+    setIsOwnerPlaying(false);
+    setOwnerRole("All-Rounder");
   };
 
   // 3. Squad Management
@@ -210,7 +221,7 @@ export default function TeamManager({ tournamentId }) {
     const newPlayer = {
       id: `guest_${Date.now()}`,
       name: guestName.trim(),
-      role: "All-Rounder", // Default role
+      role: "All-Rounder",
       isGuest: true,
     };
     setSquad((prev) => [...prev, newPlayer]);
@@ -231,87 +242,131 @@ export default function TeamManager({ tournamentId }) {
     setSquad((prev) => prev.filter((p) => p.id !== playerId));
   };
 
-  // 4. Save Logic (UPDATED: AUTO-CONVERT GUESTS TO GLOBAL)
+  // 4. Save Logic (Handles Guests + Owner)
   const handleSaveTeam = async () => {
     if (!teamName.trim()) return alert("Team name required.");
-    if (squad.length === 0) return alert("Add at least one player.");
     if (!tournamentId) return alert("Tournament ID missing.");
 
-    setIsSaving(true); // Start loading
+    // --- OWNER VALIDATION ---
+    if (isOwnerPlaying && !ownerName.trim()) {
+      return alert("Owner Name is required if they are playing.");
+    }
+
+    // --- CHECK FOR SQUAD ---
+    // If owner is playing, squad can be empty initially (owner will be added)
+    if (squad.length === 0 && !isOwnerPlaying) {
+      return alert("Add at least one player.");
+    }
+
+    setIsSaving(true);
 
     try {
-      // --- STEP 1: PROCESS GUESTS ---
-      // We map over the squad. If it's a guest, create Global Player and replace ID.
+      // --- STEP 1: ADD OWNER TO SQUAD (IF PLAYING) ---
+      let finalSquad = [...squad];
+      if (isOwnerPlaying) {
+        // Check if owner is already in squad to avoid duplicates
+        const exists = finalSquad.find(
+          (p) => p.name.toLowerCase() === ownerName.trim().toLowerCase()
+        );
+        if (!exists) {
+          finalSquad.push({
+            id: `owner_${Date.now()}`, // Temporary ID, will be globalized below
+            name: ownerName.trim(),
+            role: ownerRole,
+            isGuest: true, // Will convert to Global Player logic
+            isOwner: true, // Mark as Owner
+          });
+        }
+      }
+
+      // --- STEP 2: PROCESS GUESTS (CREATE GLOBAL PLAYERS) ---
       const processedSquad = await Promise.all(
-        squad.map(async (p) => {
+        finalSquad.map(async (p) => {
           if (p.isGuest) {
             try {
               // Create in Global DB
               const newGlobalId = await createGlobalPlayer({
                 name: p.name,
                 role: p.role || "All-Rounder",
-                battingStyle: "Right Hand Bat", // Defaults
+                battingStyle: "Right Hand Bat",
                 bowlingStyle: "Right Arm Medium",
               });
-              // Return updated player object (No longer a guest)
               return {
                 id: newGlobalId,
                 name: p.name,
                 role: p.role,
                 isGuest: false,
+                isOwner: !!p.isOwner,
               };
             } catch (err) {
               console.error(`Failed to promote guest ${p.name}`, err);
-              return p; // Keep as guest if fails (fallback)
+              return p;
             }
           }
-          return p; // Already global, return as is
+          return p;
         })
       );
 
-      // --- STEP 2: PREPARE DATA ---
-      const playersArray = processedSquad.map((p) => p.name); // Legacy array
+      // --- STEP 3: PREPARE DATA ---
+      const playersArray = processedSquad.map((p) => p.name);
       const rosterArray = processedSquad.map((p) => ({
         id: p.id,
         name: p.name,
         role: p.role || "Player",
         isGuest: !!p.isGuest,
+        isOwner: !!p.isOwner, // Persist owner flag
       }));
 
-      // --- STEP 3: SAVE TEAM ---
+      // --- STEP 4: SAVE TEAM DOC ---
+      let savedTeamId = teamId;
+      const teamPayload = {
+        name: teamName,
+        ownerName: ownerName, // Save Owner Name
+        roster: rosterArray,
+      };
+
       if (teamId) {
         // UPDATE
-        try {
-          await updateTeam(tournamentId, teamId, playersArray, {
-            roster: rosterArray,
-            name: teamName,
-          });
-          alert("Team updated successfully!");
-        } catch (updateError) {
-          if (updateError.message.includes("No document to update")) {
-            console.warn("Doc missing, creating new...");
-            await addTeam(tournamentId, teamName, playersArray, {
-              roster: rosterArray,
-            });
-            alert("Team re-created.");
-          } else {
-            throw updateError;
-          }
-        }
+        await updateTeam(tournamentId, teamId, playersArray, teamPayload);
       } else {
         // CREATE NEW
-        await addTeam(tournamentId, teamName, playersArray, {
-          roster: rosterArray,
-        });
-        alert("New Team created!");
+        const newDocRef = await addTeam(
+          tournamentId,
+          teamName,
+          playersArray,
+          teamPayload
+        );
+        savedTeamId = newDocRef.id;
       }
 
+      // --- STEP 5: REGISTER OWNER IN AUCTION STATS (IF PLAYING) ---
+      if (isOwnerPlaying) {
+        const ownerPlayer = processedSquad.find((p) => p.isOwner);
+        if (ownerPlayer) {
+          // Add to Global Auction Players as SOLD so stats work
+          await addDoc(
+            collection(db, "tournaments", tournamentId, "auctionPlayers"),
+            {
+              name: ownerPlayer.name,
+              role: ownerPlayer.role,
+              status: "SOLD",
+              teamId: savedTeamId, // Link to this team
+              soldPrice: 0,
+              isOwner: true,
+              playerId: ownerPlayer.id, // Link to Global ID
+              createdAt: new Date().toISOString(),
+            }
+          );
+        }
+      }
+
+      alert(teamId ? "Team updated!" : "Team created!");
       resetForm();
     } catch (err) {
       console.error(err);
       alert("Error saving team: " + err.message);
     } finally {
-      setIsSaving(false); // Stop loading
+      setIsSaving(false);
     }
   };
 
@@ -372,16 +427,66 @@ export default function TeamManager({ tournamentId }) {
           </div>
         </div>
 
-        {/* TEAM NAME */}
-        <div>
-          <label className={labelClass}>Team Name</label>
-          <input
-            type="text"
-            className={inputClass}
-            value={teamName}
-            onChange={(e) => setTeamName(e.target.value)}
-            placeholder="e.g. Royal Challengers"
-          />
+        {/* TEAM NAME & OWNER NAME */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className={labelClass}>Team Name</label>
+            <input
+              type="text"
+              className={inputClass}
+              value={teamName}
+              onChange={(e) => setTeamName(e.target.value)}
+              placeholder="e.g. Royal Challengers"
+            />
+          </div>
+          <div>
+            <label className={labelClass}>Owner Name</label>
+            <input
+              type="text"
+              className={inputClass}
+              value={ownerName}
+              onChange={(e) => setOwnerName(e.target.value)}
+              placeholder="e.g. Virat Kohli"
+            />
+          </div>
+        </div>
+
+        {/* OWNER PLAYING CONFIG */}
+        <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="ownerPlay"
+              checked={isOwnerPlaying}
+              onChange={(e) => setIsOwnerPlaying(e.target.checked)}
+              className="w-5 h-5 accent-cyan-500 cursor-pointer"
+            />
+            <div>
+              <label
+                htmlFor="ownerPlay"
+                className="text-white text-sm font-bold cursor-pointer">
+                Is Owner playing in the team?
+              </label>
+              <p className="text-[10px] text-gray-500">
+                They will be added to squad & stats automatically.
+              </p>
+            </div>
+          </div>
+
+          {isOwnerPlaying && (
+            <div className="mt-4 animate-in slide-in-from-top-2">
+              <label className={labelClass}>Owner's Playing Role</label>
+              <select
+                value={ownerRole}
+                onChange={(e) => setOwnerRole(e.target.value)}
+                className={inputClass}>
+                <option>Batsman</option>
+                <option>Bowler</option>
+                <option>All-Rounder</option>
+                <option>Wicket Keeper</option>
+              </select>
+            </div>
+          )}
         </div>
 
         {/* ROSTER BUILDER */}
@@ -403,13 +508,20 @@ export default function TeamManager({ tournamentId }) {
                     <div className="flex items-center gap-3">
                       <div
                         className={`w-2 h-2 rounded-full ${
-                          player.isGuest
-                            ? "bg-yellow-500 animate-pulse"
+                          player.isOwner
+                            ? "bg-purple-500 animate-pulse"
+                            : player.isGuest
+                            ? "bg-yellow-500"
                             : "bg-cyan-500"
                         }`}></div>
                       <div>
                         <div className="text-sm font-bold text-white leading-tight">
                           {player.name}
+                          {player.isOwner && (
+                            <span className="ml-2 text-[9px] bg-purple-900 text-purple-200 px-1 rounded border border-purple-500/50">
+                              OWNER
+                            </span>
+                          )}
                         </div>
                         <div className="text-[10px] text-gray-500 uppercase">
                           {player.isGuest
@@ -465,7 +577,7 @@ export default function TeamManager({ tournamentId }) {
               <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
             )}
             {isSaving
-              ? "Saving Players..."
+              ? "Saving Team..."
               : teamId
               ? "Update Team Roster"
               : "Create New Team"}

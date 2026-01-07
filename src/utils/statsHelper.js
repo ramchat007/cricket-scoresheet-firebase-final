@@ -1,16 +1,11 @@
-// src/utils/statsHelper.js
-
 /**
  * Calculates the Points Table based on an array of matches.
  */
 export const calculatePointsTable = (matches = []) => {
   const table = {};
-
-  // Safety check: Ensure matches is an array
   const safeMatches = Array.isArray(matches) ? matches : [];
 
   safeMatches.forEach((match) => {
-    // Skip if match is invalid
     if (
       !match ||
       (match.status !== "finished" && match.meta?.status !== "finished")
@@ -22,7 +17,6 @@ export const calculatePointsTable = (matches = []) => {
     const winner =
       match.winner || match.meta?.result?.winner || match.result?.winner;
 
-    // Initialize Team A
     if (teamA && !table[teamA]) {
       table[teamA] = {
         name: teamA,
@@ -38,7 +32,6 @@ export const calculatePointsTable = (matches = []) => {
       };
     }
 
-    // Initialize Team B
     if (teamB && !table[teamB]) {
       table[teamB] = {
         name: teamB,
@@ -71,7 +64,6 @@ export const calculatePointsTable = (matches = []) => {
         table[teamB].points += 1;
       }
 
-      // NRR Calculation
       const innings = Array.isArray(match.innings) ? match.innings : [];
       innings.forEach((inn) => {
         if (!inn) return;
@@ -96,10 +88,8 @@ export const calculatePointsTable = (matches = []) => {
     .map((t) => {
       const ballsFaced = t.oversFaced || 1;
       const ballsBowled = t.oversBowled || 1;
-
       const runRateFor = (t.runsScored / ballsFaced) * 6;
       const runRateAgainst = (t.runsConceded / ballsBowled) * 6;
-
       return { ...t, nrr: (runRateFor - runRateAgainst).toFixed(3) };
     })
     .sort((a, b) => b.points - a.points || b.nrr - a.nrr);
@@ -110,26 +100,34 @@ export const calculatePointsTable = (matches = []) => {
  */
 export const calculatePlayerStats = (input) => {
   const players = {};
-  // Handle single match vs array of matches
   const matches = Array.isArray(input) ? input : input ? [input] : [];
 
   matches.forEach((match) => {
     if (!match) return;
-
-    // SAFETY CHECK: If innings is missing/corrupt, skip this match
     const innings = Array.isArray(match.innings) ? match.innings : [];
 
     innings.forEach((inn) => {
       if (!inn) return;
-      const team = inn.battingTeam;
 
-      // Batting
+      const battingTeam = inn.battingTeam;
+      // Determine bowling team (Assuming Team A vs Team B structure)
+      let bowlingTeam = "Unknown";
+      if (match.meta?.teamA && match.meta?.teamB) {
+        bowlingTeam =
+          battingTeam === match.meta.teamA
+            ? match.meta.teamB
+            : match.meta.teamA;
+      } else {
+        bowlingTeam = inn.bowlingTeam || "Unknown";
+      }
+
+      // Batting Stats
       if (inn.batsmenStats) {
         Object.entries(inn.batsmenStats).forEach(([name, s]) => {
           if (!players[name])
             players[name] = {
               name,
-              team,
+              team: battingTeam, // ✅ Correct Team Assignment
               runs: 0,
               balls: 0,
               fours: 0,
@@ -145,13 +143,13 @@ export const calculatePlayerStats = (input) => {
         });
       }
 
-      // Bowling
+      // Bowling Stats
       if (inn.bowlerStats) {
         Object.entries(inn.bowlerStats).forEach(([name, s]) => {
           if (!players[name])
             players[name] = {
               name,
-              team: "Unknown",
+              team: bowlingTeam, // ✅ Correct Team Assignment
               runs: 0,
               balls: 0,
               fours: 0,
@@ -160,6 +158,10 @@ export const calculatePlayerStats = (input) => {
               runsConceded: 0,
               ballsBowled: 0,
             };
+          else if (players[name].team === "Unknown") {
+            players[name].team = bowlingTeam; // Fix existing unknown
+          }
+
           players[name].wickets += s.wickets || 0;
           players[name].runsConceded += s.runs || 0;
           players[name].ballsBowled += s.balls || 0;
@@ -169,7 +171,6 @@ export const calculatePlayerStats = (input) => {
   });
 
   return Object.values(players).map((p) => {
-    const overs = Math.floor(p.ballsBowled / 6) + "." + (p.ballsBowled % 6);
     const economy =
       p.ballsBowled > 0
         ? (p.runsConceded / (p.ballsBowled / 6)).toFixed(2)
@@ -178,7 +179,7 @@ export const calculatePlayerStats = (input) => {
       p.balls > 0 ? ((p.runs / p.balls) * 100).toFixed(2) : "0.00";
     const mvpScore = p.runs * 1 + p.wickets * 20 + p.fours * 1 + p.sixes * 2;
 
-    return { ...p, overs, economy, strikeRate, mvpScore };
+    return { ...p, economy, strikeRate, mvpScore };
   });
 };
 
@@ -188,4 +189,42 @@ export const getManOfTheMatch = (match) => {
   if (stats.length === 0) return null;
   const sorted = stats.sort((a, b) => b.mvpScore - a.mvpScore);
   return sorted[0];
+};
+
+/**
+ * Aggregates a Global Player's history array into total stats.
+ */
+export const aggregateCareerStats = (player) => {
+  const baseStats = player.stats || {};
+  const history = baseStats.history || [];
+
+  if (!Array.isArray(history) || history.length === 0) {
+    return {
+      matches: Number(baseStats.matches) || 0,
+      runs: Number(baseStats.runs) || 0,
+      wickets: Number(baseStats.wickets) || 0,
+      highestScore: Number(baseStats.highestScore) || 0,
+      history: [],
+    };
+  }
+
+  let totalRuns = 0;
+  let totalWickets = 0;
+  let maxScore = Number(baseStats.highestScore) || 0;
+
+  history.forEach((log) => {
+    const r = Number(log.runs) || 0;
+    const w = Number(log.wickets) || 0;
+    totalRuns += r;
+    totalWickets += w;
+    if (r > maxScore) maxScore = r;
+  });
+
+  return {
+    matches: history.length,
+    runs: totalRuns,
+    wickets: totalWickets,
+    highestScore: maxScore,
+    history: history,
+  };
 };

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+// src/components/AuctionAdminPanel.jsx
+import React, { useState, useEffect, useMemo } from "react";
 import {
   collection,
   updateDoc,
@@ -8,19 +9,16 @@ import {
   query,
   orderBy,
   onSnapshot,
+  getDocs,
+  runTransaction,
+  addDoc,
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { listGlobalPlayers } from "../utils/firestore";
-import { resetAuction } from "../utils/auction";
 import AuctionOwnersAdmin from "./AuctionOwnersAdmin";
 
-// --- GLOBAL PLAYER SEARCH MODAL ---
-const GlobalPlayerPicker = ({
-  isOpen,
-  onClose,
-  onImport,
-  existingIds, // IDs already in the auction pool (to prevent duplicates)
-}) => {
+// --- 1. GLOBAL PLAYER SEARCH MODAL (Unchanged) ---
+const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
   const [players, setPlayers] = useState([]);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState([]);
@@ -30,7 +28,6 @@ const GlobalPlayerPicker = ({
     if (isOpen) {
       setLoading(true);
       listGlobalPlayers().then((data) => {
-        // FILTER: Only show players NOT already in the auction pool
         const available = data.filter((p) => !existingIds.includes(p.id));
         setPlayers(available);
         setLoading(false);
@@ -128,41 +125,356 @@ const GlobalPlayerPicker = ({
   );
 };
 
-// --- MAIN SETUP PANEL ---
+// --- 2. MATCH SCHEDULER (UPDATED: Single + Auto) ---
+const AuctionMatchScheduler = ({ tournamentId, teams }) => {
+  const [mode, setMode] = useState("single"); // 'single' | 'auto'
+
+  // Single Match State
+  const [teamAId, setTeamAId] = useState("");
+  const [teamBId, setTeamBId] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [overs, setOvers] = useState(10);
+  const [creating, setCreating] = useState(false);
+
+  // Auto Schedule State
+  const [startDate, setStartDate] = useState(
+    new Date().toISOString().slice(0, 10)
+  );
+  const [matchesPerDay, setMatchesPerDay] = useState(2);
+  const [autoOvers, setAutoOvers] = useState(10);
+
+  const sanitizeSquad = (roster) => {
+    if (!roster) return [];
+    return roster.map(player => {
+      // Destructure to separate photoURL from the rest of the data
+      const { photoURL, statsSnapshot, ...lightweightPlayer } = player;
+      return lightweightPlayer; // Return only name, id, role, etc.
+    });
+  };
+
+  // --- CREATE SINGLE MATCH ---
+  const handleCreateMatch = async () => {
+    if (!teamAId || !teamBId) return alert("Select both teams");
+    if (teamAId === teamBId) return alert("Cannot play against same team");
+
+    setCreating(true);
+    try {
+      const teamA = teams.find((t) => t.id === teamAId);
+      const teamB = teams.find((t) => t.id === teamBId);
+
+      const matchPayload = {
+        meta: {
+          tournament: tournamentId,
+          teamA: teamA.name,
+          teamB: teamB.name,
+          teamAId: teamA.id,
+          teamBId: teamB.id,
+          overs: Number(overs),
+          date: date,
+          status: "upcoming",
+          createdAt: new Date().toISOString(),
+          format: "T20",
+        },
+        teamASquad: sanitizeSquad(teamA.roster), 
+        teamBSquad: sanitizeSquad(teamB.roster),
+        innings: [],
+        status: "upcoming",
+        date: date,
+      };
+
+      await addDoc(
+        collection(db, "tournaments", tournamentId, "matches"),
+        matchPayload
+      );
+      alert("Match scheduled successfully!");
+      setTeamAId("");
+      setTeamBId("");
+    } catch (e) {
+      console.error(e);
+      alert("Error: " + e.message);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // --- 🔥 AUTO SCHEDULE LOGIC (Round Robin) ---
+  const handleAutoSchedule = async () => {
+    if (teams.length < 2)
+      return alert("Need at least 2 teams to generate a schedule.");
+    if (
+      !window.confirm(
+        `Generate Round Robin schedule for ${teams.length} teams?`
+      )
+    )
+      return;
+
+    setCreating(true);
+    try {
+      const batch = writeBatch(db);
+      const matchesCol = collection(db, "tournaments", tournamentId, "matches");
+
+      let matchCount = 0;
+      let dayOffset = 0;
+      let matchesToday = 0;
+
+      // Round Robin Algorithm
+      for (let i = 0; i < teams.length; i++) {
+        for (let j = i + 1; j < teams.length; j++) {
+          const teamA = teams[i];
+          const teamB = teams[j];
+
+          // Calculate Date
+          const matchDate = new Date(startDate);
+          matchDate.setDate(matchDate.getDate() + dayOffset);
+          const dateString = matchDate.toISOString().slice(0, 10);
+
+          const newMatchRef = doc(matchesCol); // Generate ID
+
+          batch.set(newMatchRef, {
+            meta: {
+              tournament: tournamentId,
+              teamA: teamA.name,
+              teamB: teamB.name,
+              teamAId: teamA.id,
+              teamBId: teamB.id,
+              overs: Number(autoOvers),
+              date: dateString,
+              status: "upcoming",
+              createdAt: new Date().toISOString(),
+              format: "League",
+            },
+            teamASquad: sanitizeSquad(teamA.roster), 
+            teamBSquad: sanitizeSquad(teamB.roster),
+            innings: [],
+            status: "upcoming",
+            date: dateString,
+          });
+
+          matchCount++;
+          matchesToday++;
+
+          // Move to next day if limit reached
+          if (matchesToday >= matchesPerDay) {
+            dayOffset++;
+            matchesToday = 0;
+          }
+        }
+      }
+
+      await batch.commit();
+      alert(`Successfully generated ${matchCount} league matches!`);
+      setMode("single"); // Go back
+    } catch (e) {
+      console.error(e);
+      alert("Error generating schedule: " + e.message);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in">
+      {/* TOGGLE TABS */}
+      <div className="flex bg-gray-900 border border-gray-800 rounded-lg p-1">
+        <button
+          onClick={() => setMode("single")}
+          className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${
+            mode === "single"
+              ? "bg-gray-700 text-white"
+              : "text-gray-500 hover:text-gray-300"
+          }`}>
+          Single Match
+        </button>
+        <button
+          onClick={() => setMode("auto")}
+          className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${
+            mode === "auto"
+              ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white"
+              : "text-gray-500 hover:text-gray-300"
+          }`}>
+          ⚡ Auto Scheduler
+        </button>
+      </div>
+
+      <div className="bg-gray-900 border border-gray-800 p-6 rounded-xl">
+        {mode === "single" ? (
+          <>
+            <h3 className="text-white font-bold text-lg mb-4 flex items-center gap-2">
+              <span>📅</span> Schedule Match
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="text-xs font-bold text-cyan-400 uppercase mb-2 block">
+                  Home Team
+                </label>
+                <select
+                  className="w-full bg-black border border-gray-700 rounded-lg px-4 py-3 text-white focus:border-cyan-500 outline-none"
+                  value={teamAId}
+                  onChange={(e) => setTeamAId(e.target.value)}>
+                  <option value="">-- Select Team A --</option>
+                  {teams.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.roster?.length || 0})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-green-400 uppercase mb-2 block">
+                  Away Team
+                </label>
+                <select
+                  className="w-full bg-black border border-gray-700 rounded-lg px-4 py-3 text-white focus:border-green-500 outline-none"
+                  value={teamBId}
+                  onChange={(e) => setTeamBId(e.target.value)}>
+                  <option value="">-- Select Team B --</option>
+                  {teams.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.roster?.length || 0})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  className="w-full bg-black border border-gray-700 rounded-lg px-4 py-3 text-white focus:border-gray-500 outline-none"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">
+                  Overs
+                </label>
+                <input
+                  type="number"
+                  className="w-full bg-black border border-gray-700 rounded-lg px-4 py-3 text-white focus:border-gray-500 outline-none"
+                  value={overs}
+                  onChange={(e) => setOvers(e.target.value)}
+                />
+              </div>
+            </div>
+            <button
+              onClick={handleCreateMatch}
+              disabled={creating || !teamAId || !teamBId}
+              className="w-full mt-6 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-xl shadow-lg transition-all disabled:opacity-50">
+              {creating ? "Scheduling..." : "Create Match"}
+            </button>
+          </>
+        ) : (
+          <>
+            <h3 className="text-white font-bold text-lg mb-2 flex items-center gap-2">
+              <span>⚡</span> Auto League Scheduler
+            </h3>
+            <p className="text-gray-500 text-sm mb-6">
+              Generates a Round Robin schedule where every team plays every
+              other team once.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">
+                  Start Date
+                </label>
+                <input
+                  type="date"
+                  className="w-full bg-black border border-gray-700 rounded-lg px-4 py-3 text-white focus:border-blue-500 outline-none"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">
+                  Matches Per Day
+                </label>
+                <input
+                  type="number"
+                  className="w-full bg-black border border-gray-700 rounded-lg px-4 py-3 text-white focus:border-blue-500 outline-none"
+                  value={matchesPerDay}
+                  onChange={(e) => setMatchesPerDay(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">
+                  Overs
+                </label>
+                <input
+                  type="number"
+                  className="w-full bg-black border border-gray-700 rounded-lg px-4 py-3 text-white focus:border-blue-500 outline-none"
+                  value={autoOvers}
+                  onChange={(e) => setAutoOvers(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 bg-blue-900/20 border border-blue-500/30 p-4 rounded-lg">
+              <h4 className="text-blue-400 font-bold text-sm mb-1">Summary</h4>
+              <p className="text-gray-400 text-xs">
+                Teams:{" "}
+                <span className="text-white font-bold">{teams.length}</span>{" "}
+                <br />
+                Total Matches:{" "}
+                <span className="text-white font-bold">
+                  {(teams.length * (teams.length - 1)) / 2}
+                </span>{" "}
+                <br />
+                Duration:{" "}
+                <span className="text-white font-bold">
+                  {Math.ceil(
+                    (teams.length * (teams.length - 1)) / 2 / matchesPerDay
+                  )}{" "}
+                  Days
+                </span>
+              </p>
+            </div>
+
+            <button
+              onClick={handleAutoSchedule}
+              disabled={creating || teams.length < 2}
+              className="w-full mt-6 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-3 rounded-xl shadow-lg transition-all disabled:opacity-50">
+              {creating ? "Generating..." : "Generate Schedule"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// --- 3. MAIN SETUP PANEL ---
 export default function AuctionAdminPanel({ tournamentId, onClose }) {
   const [tab, setTab] = useState("pool");
-  const [poolFilter, setPoolFilter] = useState("PENDING"); // 'PENDING' | 'SOLD' | 'UNSOLD'
+  const [poolFilter, setPoolFilter] = useState("PENDING");
 
   const [auctionPlayers, setAuctionPlayers] = useState([]);
   const [teams, setTeams] = useState([]);
-  const [teamsMap, setTeamsMap] = useState({}); // Lookup { id: "Team Name" }
+  // eslint-disable-next-line
+  const [teamsMap, setTeamsMap] = useState({});
   const [showPicker, setShowPicker] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   // --- REAL-TIME DATA FETCHING ---
   useEffect(() => {
-    // 1. Subscribe to Auction Pool (The Master List)
+    // 1. Players
     const pRef = collection(db, "tournaments", tournamentId, "auctionPlayers");
     const qPool = query(pRef, orderBy("name"));
-
     const unsubPool = onSnapshot(qPool, (snap) => {
-      const players = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setAuctionPlayers(players);
+      setAuctionPlayers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
 
-    // 2. Subscribe to Teams (For Wallet management & Name lookup)
+    // 2. Teams
     const tRef = collection(db, "tournaments", tournamentId, "teams");
     const unsubTeams = onSnapshot(tRef, (snap) => {
-      const teamsData = [];
-      const mapping = {};
+      const tList = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setTeams(tList);
 
-      snap.docs.forEach((doc) => {
-        const d = doc.data();
-        teamsData.push({ id: doc.id, ...d });
-        mapping[doc.id] = d.name;
-      });
-
-      setTeams(teamsData);
-      setTeamsMap(mapping);
+      const map = {};
+      tList.forEach((t) => (map[t.id] = t.name));
+      setTeamsMap(map);
     });
 
     return () => {
@@ -184,17 +496,18 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
 
     selectedGlobalPlayers.forEach((p) => {
       const newRef = doc(colRef);
-      // We do NOT set IDs here, we let Firestore generate a new ID for the auction entry
-      // But we keep 'originalPlayerId' to link back to stats if needed
       batch.set(newRef, {
         originalPlayerId: p.id,
         name: p.name,
         role: p.role || "All-Rounder",
-        basePrice: 500, // Default base price
+        mobile: p.mobile || "",
+        photoURL: p.photoURL || "",
+        basePrice: 500,
         status: "PENDING",
         soldPrice: 0,
         teamId: null,
-        isOwner: false, // Default
+        isOwner: false,
+        isIcon: false,
         statsSnapshot: {
           runs: p.stats?.runs || 0,
           wickets: p.stats?.wickets || 0,
@@ -215,20 +528,11 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
       "auctionPlayers",
       playerId
     );
-    await updateDoc(ref, { basePrice: parseInt(newPrice) || 0 });
+    const price = parseInt(newPrice);
+    await updateDoc(ref, { basePrice: isNaN(price) ? 0 : price });
   };
 
-  const deletePlayer = async (playerId) => {
-    if (
-      !window.confirm("Remove player from Auction Pool? This cannot be undone.")
-    )
-      return;
-    await deleteDoc(
-      doc(db, "tournaments", tournamentId, "auctionPlayers", playerId)
-    );
-  };
-
-  const reAddPlayer = async (playerId) => {
+  const toggleIconStatus = async (playerId, currentStatus) => {
     const ref = doc(
       db,
       "tournaments",
@@ -236,41 +540,182 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
       "auctionPlayers",
       playerId
     );
-    // Resetting to PENDING removes them from the team effectively in the data view
-    await updateDoc(ref, { status: "PENDING", soldPrice: 0, teamId: null });
+    await updateDoc(ref, { isIcon: !currentStatus });
+  };
+
+  const deletePlayer = async (playerId) => {
+    if (!window.confirm("Remove player? This cannot be undone.")) return;
+    await deleteDoc(
+      doc(db, "tournaments", tournamentId, "auctionPlayers", playerId)
+    );
+  };
+
+  const reAddPlayer = async (playerId) => {
+    if (!window.confirm("Reset to PENDING? Refunds purse & updates squad."))
+      return;
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const playerRef = doc(
+          db,
+          "tournaments",
+          tournamentId,
+          "auctionPlayers",
+          playerId
+        );
+        const playerSnap = await transaction.get(playerRef);
+
+        if (!playerSnap.exists()) throw new Error("Player not found!");
+        const playerData = playerSnap.data();
+
+        if (playerData.status === "SOLD" && playerData.teamId) {
+          const teamRef = doc(
+            db,
+            "tournaments",
+            tournamentId,
+            "teams",
+            playerData.teamId
+          );
+          const teamSnap = await transaction.get(teamRef);
+
+          if (teamSnap.exists()) {
+            const teamData = teamSnap.data();
+
+            // Safe calculations
+            const currentSpent = Number(teamData.spent) || 0;
+            const refundAmount = Number(playerData.soldPrice) || 0;
+            const newSpent = Math.max(0, currentSpent - refundAmount);
+
+            const currentRoster = Array.isArray(teamData.roster)
+              ? teamData.roster
+              : [];
+            // Filter out player
+            const newRoster = currentRoster
+              .filter((p) => p.id !== playerId)
+              .map((p) => ({
+                id: p.id || "",
+                name: p.name || "Unknown",
+                role: p.role || "Player",
+                soldPrice: Number(p.soldPrice) || 0,
+                isOwner: !!p.isOwner,
+                isIcon: !!p.isIcon,
+                originalId: p.originalId || null,
+              }));
+
+            transaction.update(teamRef, {
+              spent: newSpent,
+              roster: newRoster,
+            });
+          }
+        }
+
+        transaction.update(playerRef, {
+          status: "PENDING",
+          soldPrice: 0,
+          teamId: null,
+        });
+      });
+    } catch (e) {
+      console.error("Error resetting player:", e);
+      alert("Failed to reset player: " + e.message);
+    }
   };
 
   const updateTeamPurse = async (teamId, newPurse) => {
     const ref = doc(db, "tournaments", tournamentId, "teams", teamId);
-    await updateDoc(ref, { purse: parseInt(newPurse) || 0 });
+    const purseVal = parseInt(newPurse);
+    await updateDoc(ref, { purse: isNaN(purseVal) ? 0 : purseVal });
   };
 
   const handleReset = async () => {
     if (
       !window.confirm(
-        "⚠ DANGER: This will delete the Auction Room and remove all players from the Auction Pool.\n\nAre you sure?"
+        "⚠ DANGER: DELETE ALL Auction Data & Teams? Cannot be undone."
       )
     )
       return;
 
+    setIsResetting(true);
     try {
-      await resetAuction(tournamentId);
-      alert("Auction deleted successfully.");
+      const batchSize = 500;
+      let batch = writeBatch(db);
+      let opCount = 0;
+
+      // 1. Delete Players
+      const poolRef = collection(
+        db,
+        "tournaments",
+        tournamentId,
+        "auctionPlayers"
+      );
+      const poolSnap = await getDocs(poolRef);
+      poolSnap.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+        opCount++;
+        if (opCount >= batchSize) {
+          batch.commit();
+          batch = writeBatch(db);
+          opCount = 0;
+        }
+      });
+
+      // 2. Delete State
+      const stateDocRef = doc(
+        db,
+        "tournaments",
+        tournamentId,
+        "auction",
+        "state"
+      );
+      batch.delete(stateDocRef);
+      opCount++;
+
+      // 3. Delete Teams
+      const teamSnap = await getDocs(
+        collection(db, "tournaments", tournamentId, "teams")
+      );
+      teamSnap.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+        opCount++;
+        if (opCount >= batchSize) {
+          batch.commit();
+          batch = writeBatch(db);
+          opCount = 0;
+        }
+      });
+
+      // 4. ✅ Delete Matches (Also need to clear matches on full reset)
+      const matchSnap = await getDocs(
+        collection(db, "tournaments", tournamentId, "matches")
+      );
+      matchSnap.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+        opCount++;
+        if (opCount >= batchSize) {
+          batch.commit();
+          batch = writeBatch(db);
+          opCount = 0;
+        }
+      });
+
+      if (opCount > 0) await batch.commit();
+
+      alert("Reset Complete.");
       onClose();
       window.location.reload();
     } catch (e) {
       console.error(e);
-      alert("Error resetting auction: " + e.message);
+      alert("Error: " + e.message);
+    } finally {
+      setIsResetting(false);
     }
   };
 
-  // --- FILTER DISPLAY LIST ---
-  // Simply filter the master list based on the selected tab
   const displayList = auctionPlayers.filter((p) => {
     if (poolFilter === "SOLD") return p.status === "SOLD";
     if (poolFilter === "UNSOLD")
       return p.status === "UNSOLD" || p.status === "UNSOLD_PASSED";
-    return p.status === "PENDING"; // Default
+    return p.status === "PENDING";
   });
 
   return (
@@ -293,33 +738,42 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
         </button>
       </div>
 
-      <div className="flex border-b border-gray-800 bg-gray-900">
+      <div className="flex border-b border-gray-800 bg-gray-900 overflow-x-auto">
         <button
           onClick={() => setTab("pool")}
-          className={`flex-1 py-4 text-sm font-bold uppercase tracking-wider ${
+          className={`flex-1 min-w-[100px] py-4 text-sm font-bold uppercase tracking-wider ${
             tab === "pool"
               ? "text-cyan-400 border-b-2 border-cyan-400"
               : "text-gray-500 hover:text-white"
           }`}>
-          Player Pool ({auctionPlayers.length})
+          Players
         </button>
         <button
           onClick={() => setTab("teams")}
-          className={`flex-1 py-4 text-sm font-bold uppercase tracking-wider ${
+          className={`flex-1 min-w-[100px] py-4 text-sm font-bold uppercase tracking-wider ${
             tab === "teams"
               ? "text-green-400 border-b-2 border-green-400"
               : "text-gray-500 hover:text-white"
           }`}>
-          Team Wallets ({teams.length})
+          Wallets
         </button>
         <button
           onClick={() => setTab("owners")}
-          className={`flex-1 py-4 text-sm font-bold uppercase tracking-wider ${
+          className={`flex-1 min-w-[100px] py-4 text-sm font-bold uppercase tracking-wider ${
             tab === "owners"
               ? "text-purple-400 border-b-2 border-purple-400"
               : "text-gray-500 hover:text-white"
           }`}>
           Owners
+        </button>
+        <button
+          onClick={() => setTab("matches")}
+          className={`flex-1 min-w-[100px] py-4 text-sm font-bold uppercase tracking-wider ${
+            tab === "matches"
+              ? "text-yellow-400 border-b-2 border-yellow-400"
+              : "text-gray-500 hover:text-white"
+          }`}>
+          Matches
         </button>
       </div>
 
@@ -366,12 +820,19 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   {displayList.map((p) => (
                     <tr key={p.id} className="hover:bg-gray-800/50">
                       <td className="p-4 font-bold text-white">
-                        {p.name}
-                        {p.isOwner && (
-                          <span className="ml-2 text-[9px] bg-purple-900 text-purple-300 px-1.5 py-0.5 rounded">
-                            OWNER
-                          </span>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {p.name}
+                          {p.isOwner && (
+                            <span className="text-[9px] bg-purple-900 text-purple-300 px-1.5 py-0.5 rounded">
+                              OWNER
+                            </span>
+                          )}
+                          {p.isIcon && (
+                            <span className="text-[9px] bg-yellow-600/20 text-yellow-400 border border-yellow-600/50 px-1.5 py-0.5 rounded flex items-center gap-1">
+                              ★ ICON
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="p-4">{p.role}</td>
                       <td className="p-4">
@@ -392,17 +853,24 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                       </td>
                       {poolFilter === "SOLD" && (
                         <td className="p-4 text-white">
-                          {/* Look up team name from ID */}
                           {teamsMap[p.teamId] || "Unknown Team"}
                         </td>
                       )}
                       <td className="p-4 text-right flex justify-end gap-3 items-center">
+                        <button
+                          onClick={() => toggleIconStatus(p.id, p.isIcon)}
+                          className={`text-lg transition-colors ${
+                            p.isIcon
+                              ? "text-yellow-400 hover:text-yellow-300"
+                              : "text-gray-600 hover:text-gray-400"
+                          }`}>
+                          ★
+                        </button>
                         {(poolFilter === "UNSOLD" || poolFilter === "SOLD") && (
                           <button
                             onClick={() => reAddPlayer(p.id)}
-                            title="Reset to Pending"
                             className="bg-cyan-900/50 text-cyan-400 hover:bg-cyan-600 hover:text-white px-2 py-1 rounded transition-colors">
-                            ↺ Re-Add
+                            ↺
                           </button>
                         )}
                         <button
@@ -429,36 +897,60 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
         {/* --- TAB: TEAM WALLETS --- */}
         {tab === "teams" && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {teams.map((t) => (
-              <div
-                key={t.id}
-                className="bg-gray-900 border border-gray-800 p-6 rounded-xl flex items-center justify-between">
-                <div>
-                  <div className="font-bold text-white text-lg">{t.name}</div>
-                  <div className="text-xs text-gray-500 mt-1">
-                    {/* We can calculate current players based on auctionPlayers data if we wanted, 
-                        but relying on roster.length for display is fine if your backend/auction logic syncs it */}
-                    Squad Size: {t.roster?.length || 0}
+            {teams.map((t) => {
+              const purse = Number(t.purse) || 0;
+              const spent = Number(t.spent) || 0;
+              const remaining = purse - spent;
+              const percentUsed = purse > 0 ? (spent / purse) * 100 : 0;
+              return (
+                <div
+                  key={t.id}
+                  className="bg-gray-900 border border-gray-800 p-6 rounded-xl flex flex-col gap-3">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="font-bold text-white text-lg">
+                        {t.name}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        Squad: {t.roster?.length || 0}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <label className="text-[10px] text-gray-500 font-bold uppercase block">
+                        Remaining
+                      </label>
+                      <div
+                        className={`text-xl font-mono font-bold ${
+                          remaining < 1000 ? "text-red-400" : "text-white"
+                        }`}>
+                        ₹{remaining.toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="h-1.5 w-full bg-gray-800 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${
+                        remaining < 2000 ? "bg-red-500" : "bg-green-500"
+                      }`}
+                      style={{ width: `${percentUsed}%` }}></div>
+                  </div>
+                  <div className="flex justify-between items-center pt-2 border-t border-gray-800">
+                    <div className="text-xs text-gray-500">
+                      Purse:{" "}
+                      <span className="text-green-400 font-bold">
+                        ₹{purse.toLocaleString()}
+                      </span>
+                    </div>
+                    <input
+                      type="number"
+                      className="bg-black border border-gray-700 rounded px-2 py-1 w-24 text-white text-right text-xs focus:border-green-500 outline-none"
+                      value={t.purse || 0}
+                      onChange={(e) => updateTeamPurse(t.id, e.target.value)}
+                    />
                   </div>
                 </div>
-                <div className="text-right">
-                  <label className="text-[10px] text-green-500 font-bold uppercase block mb-1">
-                    Total Purse
-                  </label>
-                  <input
-                    type="number"
-                    className="bg-black border border-gray-700 rounded-lg px-3 py-2 text-white font-mono text-right w-32 focus:border-green-500 outline-none"
-                    value={t.purse || 0}
-                    onChange={(e) => updateTeamPurse(t.id, e.target.value)}
-                  />
-                </div>
-              </div>
-            ))}
-            {teams.length === 0 && (
-              <div className="text-gray-500 col-span-2 text-center">
-                No teams found in tournament.
-              </div>
-            )}
+              );
+            })}
           </div>
         )}
 
@@ -469,20 +961,27 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
           </div>
         )}
 
-        {/* --- 3. DANGER ZONE --- */}
+        {/* --- TAB: MATCHES (New Auto Scheduler) --- */}
+        {tab === "matches" && (
+          <AuctionMatchScheduler tournamentId={tournamentId} teams={teams} />
+        )}
+
+        {/* --- DANGER ZONE --- */}
         <div className="mt-12 border-t border-red-900/50 pt-8 mb-8">
           <div className="bg-red-950/20 border border-red-900/50 rounded-xl p-6 flex flex-col md:flex-row justify-between items-center gap-4">
             <div>
               <h4 className="text-red-500 font-bold text-lg">Danger Zone</h4>
               <p className="text-red-400/60 text-sm">
-                Deleting the auction will remove the "Live State" and clear the
-                player pool.
+                Deleting the auction will remove the "Live State", clear the
+                player pool, <strong>DELETE ALL TEAMS</strong> and{" "}
+                <strong>MATCHES</strong>.
               </p>
             </div>
             <button
               onClick={handleReset}
-              className="bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-6 rounded-lg shadow-lg whitespace-nowrap transition-all hover:scale-105">
-              ⚠ Delete Auction Data
+              disabled={isResetting}
+              className="bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-6 rounded-lg shadow-lg whitespace-nowrap transition-all hover:scale-105 disabled:opacity-50">
+              {isResetting ? "Deleting..." : "⚠ Delete Auction Data"}
             </button>
           </div>
         </div>

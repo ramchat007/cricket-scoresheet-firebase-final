@@ -1,10 +1,10 @@
-// src/hooks/useScoring.js
 import {
   ballTransaction,
   undoLast,
   finishMatch,
   deleteMatch,
 } from "../utils/firestore.js";
+import { syncMatchStatsToGlobalPlayers } from "../utils/statsSync"; // ✅ NEW IMPORT
 
 /**
  * SCORING HOOK (Transaction Based - Auto Switch)
@@ -31,13 +31,11 @@ export function useScoring({ tournamentId, matchId, match }) {
   }
 
   // --- HELPER: Initialize Second Innings ---
-  // Sets up the 2nd innings structure, swaps teams, and resets scores
   function initializeSecondInnings(s) {
     const prevInnings = s.innings[0];
     const nextInnings = s.innings[1] || {};
 
     // 1. Swap Squads (Batting Team becomes Bowling Team)
-    // Fallback to existing lists if available, otherwise swap
     const prevBowl = Array.isArray(prevInnings.bowlersList)
       ? prevInnings.bowlersList
       : [];
@@ -123,7 +121,6 @@ export function useScoring({ tournamentId, matchId, match }) {
       s.meta.result = `${inn.battingTeam} won by ${wicketsRemain} wicket${
         wicketsRemain === 1 ? "" : "s"
       }`;
-      // Force clear prompts
       inn.awaitingNewBowler = false;
       inn.awaitingNewBatsman = false;
       return;
@@ -140,7 +137,6 @@ export function useScoring({ tournamentId, matchId, match }) {
     }
 
     // --- CASE C: Overs Limit Reached ---
-    // Strict check: Over count meets limit AND ball count is 0 (over just finished)
     if (oversLimit > 0 && inn.over >= oversLimit && inn.overBallCount === 0) {
       isInningsEnded = true;
     }
@@ -148,17 +144,13 @@ export function useScoring({ tournamentId, matchId, match }) {
     // === EXECUTE END OF INNINGS LOGIC ===
     if (isInningsEnded) {
       inn.completed = true;
-      inn.awaitingNewBowler = false; // Prevent modal
+      inn.awaitingNewBowler = false;
       inn.awaitingNewBatsman = false;
 
-      // 1st Innings Just Finished -> AUTO START 2nd INNINGS
       if (idx === 0) {
-        // Set Target
         s.meta.target = (inn.score || 0) + 1;
-        // Initialize Next Innings
         initializeSecondInnings(s);
       } else if (idx === 1) {
-        // 2nd Innings Just Finished -> END MATCH
         s.meta.matchStatus = "finished";
         const a = s.innings?.[0]?.score || 0;
         const b = inn.score || 0;
@@ -186,16 +178,13 @@ export function useScoring({ tournamentId, matchId, match }) {
         const idx = s.currentInnings || 0;
         const inn = s.innings?.[idx];
 
-        // Safety checks
         if (!inn) return s;
-        if (inn.completed) return s; // Stop if already done
+        if (inn.completed) return s;
         if (inn.awaitingNewBatsman || inn.awaitingNewBowler) return s;
 
-        // Register Batting Order
         addToBattingOrder(inn, inn.striker);
         addToBattingOrder(inn, inn.nonStriker);
 
-        // Determine runs
         let runs = 0;
         if (["WD", "NB", "B", "LB"].includes(code)) {
           runs = extraRuns || 0;
@@ -229,7 +218,6 @@ export function useScoring({ tournamentId, matchId, match }) {
           inn.batsmenStats[whoOut].fielder = fielder;
           inn.batsmenStats[whoOut].bowler = bowler;
 
-          // Generate out text
           let outText = `b ${bowler}`;
           if (wType === "caught") outText = `c ${fielder} b ${bowler}`;
           else if (wType === "runout") outText = `run out (${fielder})`;
@@ -361,8 +349,6 @@ export function useScoring({ tournamentId, matchId, match }) {
             inn.over = (inn.over || 0) + 1;
             inn.overBallCount = 0;
             if (code !== "W") s = swapStrike(s, idx);
-            // Default to asking for new bowler
-            // (Only triggers if innings doesn't end in next check)
             inn.awaitingNewBowler = true;
           }
         }
@@ -372,7 +358,6 @@ export function useScoring({ tournamentId, matchId, match }) {
         inn.ballsLog = inn.ballsLog || [];
         inn.ballsLog.push(code);
 
-        // --- CHECK FOR INNINGS END / AUTO SWITCH ---
         checkFinishAndSetResult(s, idx);
 
         return s;
@@ -452,7 +437,6 @@ export function useScoring({ tournamentId, matchId, match }) {
   async function handleEndInnings() {
     if (!tournamentId || !matchId) return;
     await ballTransaction(tournamentId, matchId, (s) => {
-      // Manual Override to End Innings (e.g., Declaration)
       const idx = s.currentInnings || 0;
       const inn = s.innings?.[idx];
       if (inn) {
@@ -472,17 +456,42 @@ export function useScoring({ tournamentId, matchId, match }) {
     });
   }
 
+  // ✅ UPDATED: Handle Finish + Sync to Global Players
   async function handleFinishMatch(reason = "Completed") {
     if (!match) return;
-    let winner = "TBD";
-    if (match.innings && match.innings[0] && match.innings[1]) {
-      if (match.innings[0].score > match.innings[1].score)
-        winner = match.meta?.teamA;
-      else if (match.innings[1].score > match.innings[0].score)
-        winner = match.meta?.teamB;
-      else winner = "Tie";
+
+    // Determine Winner if not already set
+    let winner = match.meta?.winner || "TBD";
+    let winnerId = match.meta?.winnerId || null;
+
+    if (!match.meta?.matchStatus || match.meta.matchStatus !== "finished") {
+      if (match.innings && match.innings[0] && match.innings[1]) {
+        if (match.innings[0].score > match.innings[1].score) {
+          winner = match.meta?.teamA;
+          winnerId = match.meta?.teamAId;
+        } else if (match.innings[1].score > match.innings[0].score) {
+          winner = match.meta?.teamB;
+          winnerId = match.meta?.teamBId;
+        } else {
+          winner = "Tie";
+        }
+      }
     }
-    await finishMatch(tournamentId, matchId, winner, reason);
+
+    try {
+      // 1. Finish Match in DB
+      await finishMatch(tournamentId, matchId, winner, reason);
+
+      // 2. 🔥 SYNC TO GLOBAL STATS (The New Part)
+      // Pass full match data so it includes innings
+      // (Assuming 'match' state is relatively fresh or using snapshot inside utility)
+      await syncMatchStatsToGlobalPlayers(tournamentId, matchId, match);
+
+      alert("Match Finished & Player Stats Updated!");
+    } catch (error) {
+      console.error("Error finishing match:", error);
+      alert("Error finishing match: " + error.message);
+    }
   }
 
   async function handleSwitchInnings(idx) {

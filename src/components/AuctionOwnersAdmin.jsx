@@ -7,7 +7,8 @@ import {
   addDoc,
   query,
   where,
-  writeBatch,
+  writeBatch, // Used for atomic updates
+  arrayUnion, // Used to add to roster array
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { listGlobalPlayers, createGlobalPlayer } from "../utils/firestore";
@@ -33,7 +34,6 @@ const OwnerAssignmentForm = ({ team, globalPlayers, onSave, onCancel }) => {
   });
 
   // "Owner is Player" Logic
-  // Check if the passed team object implies the owner is playing (passed from parent)
   const [isPlayer, setIsPlayer] = useState(team?.isOwnerPlaying || false);
   const [playerRole, setPlayerRole] = useState("All-Rounder");
 
@@ -333,12 +333,16 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
       let finalOwnerId = payload.selectedPlayerId;
       let ownerName = "";
       let ownerRole = "Owner";
+      let ownerPhoto = ""; // ✅ NEW: Variable to store photo
       let ownerStats = {};
 
       // --- A. Handle "New Profile" Creation ---
       if (payload.mode === "new") {
         ownerName = payload.newOwnerData.name;
         ownerRole = payload.isPlayer ? payload.playerRole : "Owner";
+        // New profiles created here won't have a photo yet unless we add upload to this form.
+        // For now, it stays empty string.
+        ownerPhoto = "";
 
         // Create in Global DB
         finalOwnerId = await createGlobalPlayer({
@@ -347,6 +351,7 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
           mobile: payload.newOwnerData.mobile,
           battingStyle: payload.newOwnerData.battingStyle || "Right Hand Bat",
           bowlingStyle: payload.newOwnerData.bowlingStyle || "Right Arm Medium",
+          photoURL: "", // New profiles created here default to empty
         });
       } else {
         // Existing Mode: Get details
@@ -355,6 +360,7 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
           ownerName = p.name;
           ownerRole = p.role;
           ownerStats = p.stats || {};
+          ownerPhoto = p.photoURL || ""; // ✅ NEW: Capture existing photo
         }
       }
 
@@ -363,6 +369,7 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
         name: payload.teamName,
         purse: payload.purse,
         ownerId: finalOwnerId,
+        ownerName: ownerName, // [Image of Database Schema] Save ownerName to team doc for easy display
       };
 
       // --- C. Update or Create Team Document ---
@@ -375,11 +382,11 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
         await updateDoc(teamRef, teamData);
       } else {
         // CREATE NEW TEAM
-        // Note: New teams don't need 'roster' array anymore!
         const newTeamData = {
           ...teamData,
           spent: 0,
           stats: { played: 0, won: 0, lost: 0, points: 0, nrr: 0 },
+          roster: [], // Initialize roster
         };
         const docRef = await addDoc(
           collection(db, `tournaments/${tournamentId}/teams`),
@@ -389,7 +396,7 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
         resultingTeamId = docRef.id;
       }
 
-      // --- D. Handle "Owner as Player" Logic (Single Source of Truth) ---
+      // --- D. Handle "Owner as Player" Logic (Syncs AuctionPlayers & Team Roster) ---
 
       const auctionPlayersRef = collection(
         db,
@@ -397,27 +404,32 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
       );
 
       if (payload.isPlayer) {
-        // 1. Check if this player is ALREADY in the auction pool (to avoid duplicates)
-        // We look for originalPlayerId matches
+        // 1. Check if this player is ALREADY in the auction pool
         const existingEntryQuery = query(
           auctionPlayersRef,
           where("originalPlayerId", "==", finalOwnerId)
         );
         const querySnap = await getDocs(existingEntryQuery);
 
+        let auctionPlayerId;
+
         if (!querySnap.empty) {
-          // Player exists in tournament, update them to be SOLD to this team
-          const existingDocId = querySnap.docs[0].id;
-          await updateDoc(doc(auctionPlayersRef, existingDocId), {
+          // UPDATE EXISTING
+          const existingDoc = querySnap.docs[0];
+          auctionPlayerId = existingDoc.id;
+          await updateDoc(doc(auctionPlayersRef, auctionPlayerId), {
             status: "SOLD",
             teamId: resultingTeamId,
-            soldPrice: 0, // Owners usually cost 0
+            soldPrice: 0,
             isOwner: true,
-            role: ownerRole, // Ensure role is updated if changed
+            isIcon: true,
+            role: ownerRole,
+            // We can update the photo here too if it was missing
+            photoURL: ownerPhoto,
           });
         } else {
-          // Player NOT in tournament, create new entry directly as SOLD
-          await addDoc(auctionPlayersRef, {
+          // CREATE NEW
+          const newPlayerRef = await addDoc(auctionPlayersRef, {
             originalPlayerId: finalOwnerId,
             name: ownerName,
             role: ownerRole,
@@ -426,20 +438,41 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
             soldPrice: 0,
             basePrice: 0,
             isOwner: true,
+            isIcon: true,
+
+            // ✅ NEW: Add Photo URL here
+            photoURL: ownerPhoto,
+
             statsSnapshot: {
               runs: ownerStats.runs || 0,
               wickets: ownerStats.wickets || 0,
               matches: ownerStats.matches || 0,
             },
           });
+          auctionPlayerId = newPlayerRef.id;
         }
+
+        // 2. CRITICAL: Update Team Roster
+        const rosterItem = {
+          id: auctionPlayerId,
+          name: ownerName,
+          role: ownerRole,
+          soldPrice: 0,
+          isOwner: true,
+          isIcon: true,
+          originalId: finalOwnerId,
+
+          // ✅ NEW: Add Photo URL to roster object too (for easy display in Team Card)
+          photoURL: ownerPhoto,
+        };
+
+        await updateDoc(teamRef, {
+          roster: arrayUnion(rosterItem),
+        });
       }
-      // NOTE: If payload.isPlayer is FALSE, we might technically need to remove them
-      // from auctionPlayers if they were previously playing, but we'll skip that complex logic
-      // for now to avoid accidental deletions.
 
       setEditingTeam(null);
-      await fetchData(); // Refresh all lists
+      await fetchData();
     } catch (e) {
       console.error(e);
       alert("Failed to save changes: " + e.message);

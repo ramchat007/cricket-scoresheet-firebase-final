@@ -1,4 +1,3 @@
-// src/utils/firestore.js
 import {
   doc,
   onSnapshot,
@@ -15,7 +14,7 @@ import {
   arrayRemove,
   addDoc,
   orderBy,
-  or, // ✅ Required for RBAC queries
+  or,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -103,7 +102,7 @@ function sanitizeForCommit(value, path = "root", seen = new WeakSet()) {
 
 /* ---------------------- Public API ---------------------- */
 
-// ✅ NEW: Get Single Tournament (for permission checking in details page)
+// Get Single Tournament
 export async function getTournament(tournamentId) {
   if (!tournamentId) return null;
   const ref = doc(db, "tournaments", tournamentId);
@@ -111,21 +110,18 @@ export async function getTournament(tournamentId) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
-// ✅ NEW: List Tournaments where User is OWNER or SCORER (Editable)
+// List Tournaments where User is OWNER or SCORER (Editable)
 export async function listMyEditableTournaments(userId) {
   if (!userId) return [];
   try {
-    // 1. Check if user is Global Admin
     const userRef = doc(db, "users", userId);
     const userSnap = await getDoc(userRef);
     const isGlobalAdmin = userSnap.exists() && userSnap.data().isAdmin === true;
 
-    // 2. If Admin, return EVERYTHING
     if (isGlobalAdmin) {
-      return await listTournaments(); // Reuse your existing "list all" function
+      return await listTournaments();
     }
 
-    // 3. Otherwise, return only assigned tournaments (Standard User)
     const q = query(
       collection(db, "tournaments"),
       or(
@@ -142,29 +138,15 @@ export async function listMyEditableTournaments(userId) {
   }
 }
 
-// FULL MATCH SUBSCRIPTION (Kept for Scoring Page)
-export function subscribeMatch(tournamentId, matchId, cb) {
-  if (!tournamentId || !matchId) {
-    throw new Error("subscribeMatch requires tournamentId and matchId");
-  }
-  const dRef = doc(db, "tournaments", tournamentId, "matches", matchId);
-  return onSnapshot(dRef, (snap) => {
-    if (!snap.exists()) {
-      cb(null);
-      return;
-    }
-    try {
-      const data = snap.data();
-      const safe = JSON.parse(JSON.stringify(data));
-      cb({ id: snap.id, ...safe }); // Ensure ID is passed back
-    } catch (e) {
-      console.warn("subscribeMatch: failed to JSON-clone snapshot", e);
-      cb({ id: snap.id, ...snap.data() });
-    }
+export const subscribeMatch = (tournamentId, matchId, callback) => {
+  if (!matchId || matchId === "new") return;
+  const ref = doc(db, "tournaments", tournamentId, "matches", matchId);
+  return onSnapshot(ref, (doc) => {
+    callback(doc.exists() ? doc.data() : null);
   });
-}
+};
 
-// 🚀 NEW: OPTIMIZED Lightweight Subscription (For Headers/Live Tickers)
+// OPTIMIZED Lightweight Subscription
 export function subscribeMatchLite(tournamentId, matchId, cb) {
   if (!tournamentId || !matchId) return () => {};
 
@@ -181,7 +163,6 @@ export function subscribeMatchLite(tournamentId, matchId, cb) {
     const i = data.currentInnings || 0;
     const innings = data.innings?.[i] || {};
 
-    // Only send essential data for header
     const livePayload = {
       battingTeam: innings.battingTeam,
       score: innings.score || 0,
@@ -195,7 +176,7 @@ export function subscribeMatchLite(tournamentId, matchId, cb) {
     };
 
     const hash = JSON.stringify(livePayload);
-    if (hash === lastHash) return; // Skip update if nothing changed visually
+    if (hash === lastHash) return;
 
     lastHash = hash;
     cb(livePayload);
@@ -206,7 +187,6 @@ export async function createMatch(tournamentId, matchId, payload) {
   if (!tournamentId || !matchId)
     throw new Error("createMatch needs tournamentId and matchId");
 
-  // Ensure tournament doc exists / update timestamp
   const tDoc = doc(db, "tournaments", tournamentId);
   await setDoc(
     tDoc,
@@ -269,7 +249,6 @@ export async function createMatch(tournamentId, matchId, payload) {
     awaitingNewBowler: false,
   };
 
-  // Match date
   const matchDate =
     normalizeDate(payload?.meta?.date) ||
     normalizeDate(payload?.date) ||
@@ -286,7 +265,7 @@ export async function createMatch(tournamentId, matchId, payload) {
     bowlersList: [...bowl],
     innings: [innings0, innings1],
     currentInnings: 0,
-    history: [],
+    undoStack: [], // Use undoStack instead of history
     status: desiredStatus,
     createdAt: payload?.meta?.createdAt || new Date().toISOString(),
     date: matchDate,
@@ -303,14 +282,12 @@ export async function createMatch(tournamentId, matchId, payload) {
   });
 }
 
-// Global list (For public view or fallback)
 export async function listTournaments() {
   const colRef = collection(db, "tournaments");
   const snaps = await getDocs(colRef);
   return snaps.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-/** Internal: fetch and normalize all matches for a tournament */
 async function fetchAllMatches(tournamentId) {
   const colRef = collection(db, "tournaments", tournamentId, "matches");
   const snaps = await getDocs(colRef);
@@ -340,114 +317,123 @@ export async function listMatches(tournamentId) {
   }
 }
 
-export const deleteMatch = async (tournamentId, matchId) => {
+/* ---------------------- transactions ---------------------- */
+
+/**
+ * ✅ OPTIMIZED: Lite Transaction
+ * Stops saving full match snapshots. Only saves essential state for undo.
+ */
+export const ballTransaction = async (tournamentId, matchId, updateFn) => {
+  const matchRef = doc(db, "tournaments", tournamentId, "matches", matchId);
+
   try {
-    const matchRef = doc(db, "tournaments", tournamentId, "matches", matchId);
-    await deleteDoc(matchRef);
-    console.log("Match deleted:", matchId);
-  } catch (error) {
-    console.error("Error deleting match:", error);
-    throw error;
+    await runTransaction(db, async (transaction) => {
+      const matchDoc = await transaction.get(matchRef);
+      if (!matchDoc.exists()) throw "Match does not exist!";
+
+      const currentState = matchDoc.data();
+
+      // 1. Create a "Lite" Snapshot for Undo (Tiny size)
+      const currentInningsIndex = currentState.currentInnings || 0;
+      const currentInningsData =
+        currentState.innings?.[currentInningsIndex] || {};
+
+      const liteSnapshot = {
+        score: currentInningsData.score || 0,
+        wickets: currentInningsData.wickets || 0,
+        over: currentInningsData.over || 0,
+        overBallCount: currentInningsData.overBallCount || 0,
+        striker: currentInningsData.striker || "",
+        nonStriker: currentInningsData.nonStriker || "",
+        currentBowler: currentInningsData.currentBowler || "",
+        batsmenStats: currentInningsData.batsmenStats || {},
+        bowlerStats: currentInningsData.bowlerStats || {},
+        extras: currentInningsData.extras || {},
+        ballsLog: currentInningsData.ballsLog || [],
+        timeline: currentInningsData.timeline || [],
+      };
+
+      // 2. Run the Scoring Logic
+      let newState = updateFn(currentState);
+
+      // 3. Attach the Lite Snapshot to an 'undoStack' instead of 'history'
+      let undoStack = newState.undoStack || [];
+      undoStack.push(liteSnapshot);
+      if (undoStack.length > 6) undoStack.shift(); // Keep last 6 states only
+      newState.undoStack = undoStack;
+
+      // 4. CLEANUP: Remove the bloated 'history' array if it exists
+      if (newState.history) {
+        delete newState.history;
+      }
+
+      // 5. Commit Update
+      transaction.set(matchRef, newState);
+    });
+  } catch (e) {
+    console.error("Transaction Error:", e);
+    throw e;
   }
 };
 
-/* ---------------------- transactions ---------------------- */
+/**
+ * ✅ OPTIMIZED: Undo Last Ball
+ * Restores state from the 'undoStack'.
+ */
+export const undoLast = async (tournamentId, matchId) => {
+  const matchRef = doc(db, "tournaments", tournamentId, "matches", matchId);
 
-export async function ballTransaction(tournamentId, matchId, handler) {
-  if (!tournamentId || !matchId)
-    throw new Error("ballTransaction needs tournamentId and matchId");
+  await runTransaction(db, async (transaction) => {
+    const matchDoc = await transaction.get(matchRef);
+    if (!matchDoc.exists()) throw "Match not found";
 
-  const dRef = doc(db, "tournaments", tournamentId, "matches", matchId);
+    const data = matchDoc.data();
+    const undoStack = data.undoStack || [];
 
-  const maxRetries = 5;
-  let attempts = 0;
-
-  while (attempts < maxRetries) {
-    try {
-      await runTransaction(db, async (tx) => {
-        const snap = await tx.get(dRef);
-        if (!snap.exists()) {
-          throw new Error(
-            `Match not found at path tournaments/${tournamentId}/matches/${matchId}`
-          );
-        }
-
-        const current = snap.data();
-        let working;
-        try {
-          working = JSON.parse(JSON.stringify(current));
-        } catch (e) {
-          console.warn("ballTransaction: JSON clone failed", e);
-          working = current;
-        }
-
-        const next = handler(working) || working;
-
-        const prevSnapshot = sanitizeForCommit(current, "prev");
-        if (prevSnapshot && typeof prevSnapshot === "object") {
-          delete prevSnapshot.history;
-        }
-
-        const hist = Array.isArray(current.history) ? current.history : [];
-
-        const cleanedNext = sanitizeForCommit(next, "next");
-        if (!cleanedNext || typeof cleanedNext !== "object") {
-          throw new Error("Sanitizer produced invalid document");
-        }
-
-        // Limit history to 50 instead of 200 to save space
-        cleanedNext.history = [...hist, prevSnapshot].slice(-50);
-
-        tx.set(dRef, cleanedNext);
-      });
-
-      return;
-    } catch (err) {
-      attempts++;
-      console.error("ballTransaction attempt", attempts, "error:", err);
-      if (attempts >= maxRetries) throw err;
+    if (undoStack.length === 0) {
+      throw new Error("Nothing to undo (Limit reached)");
     }
-  }
-}
 
-export async function undoLast(tournamentId, matchId) {
-  if (!tournamentId || !matchId)
-    throw new Error("undoLast needs tournamentId and matchId");
-  const dRef = doc(db, "tournaments", tournamentId, "matches", matchId);
-  await runTransaction(db, async (tx) => {
-    const snap = await tx.get(dRef);
-    if (!snap.exists()) throw new Error("Match not found");
-    const data = snap.data();
-    const hist = Array.isArray(data.history) ? data.history : [];
-    if (hist.length === 0) throw new Error("No history to undo");
-    const prev = hist[hist.length - 1];
-    prev.history = hist.slice(0, -1);
-    tx.set(dRef, prev);
+    // 1. Pop the last saved Lite state
+    const previousLiteState = undoStack.pop();
+
+    // 2. Restore it into the current innings
+    const idx = data.currentInnings || 0;
+
+    // Safety: Just overwrite the current innings stats with the snapshot
+    data.innings[idx] = {
+      ...data.innings[idx], // Keep other fields like names/squads
+      ...previousLiteState, // Overwrite stats/scores with snapshot
+    };
+
+    // 3. Save back (with reduced stack)
+    data.undoStack = undoStack;
+    transaction.set(matchRef, data);
   });
-}
+};
 
-export async function finishMatch(
-  tournamentId,
-  matchId,
-  winner,
-  reason = "Completed"
-) {
-  if (!tournamentId || !matchId)
-    throw new Error("finishMatch needs tournamentId and matchId");
-
-  const dRef = doc(db, "tournaments", tournamentId, "matches", matchId);
-  await runTransaction(db, async (tx) => {
-    const snap = await tx.get(dRef);
-    if (!snap.exists()) throw new Error("Match not found");
-
-    tx.update(dRef, {
-      winner: winner || "TBD",
-      resultReason: reason,
-      status: "finished",
-      finishedAt: new Date().toISOString(),
-    });
+export const finishMatch = async (tournamentId, matchId, winner, reason) => {
+  const ref = doc(db, "tournaments", tournamentId, "matches", matchId);
+  await updateDoc(ref, {
+    "meta.matchStatus": "finished",
+    "meta.status": "finished", // Legacy support
+    "meta.result": `${winner} won (${reason})`,
+    "meta.winner": winner,
+    status: "finished", // Root level support
+    winner: winner,
   });
-}
+};
+
+export const deleteMatch = async (tournamentId, matchId) => {
+  await deleteDoc(doc(db, "tournaments", tournamentId, "matches", matchId));
+};
+
+export const updateMatch = async (tournamentId, matchId, data) => {
+  await updateDoc(
+    doc(db, "tournaments", tournamentId, "matches", matchId),
+    data
+  );
+};
 
 export async function listTeams(tournamentId) {
   if (!tournamentId) return [];
@@ -471,20 +457,19 @@ export async function addTeam(
 ) {
   try {
     const teamsRef = collection(db, "tournaments", tournamentId, "teams");
-    // We use a generated ID, but store the name inside
-    await addDoc(teamsRef, {
+    const docRef = await addDoc(teamsRef, {
       name: teamName,
-      players: playersArray, // Array of Strings (Legacy/Simple)
-      ...extraData, // Contains { roster: [{id, name...}] } (New)
+      players: playersArray,
+      ...extraData,
       createdAt: new Date().toISOString(),
     });
+    return docRef; // ✅ Return doc ref so we can get ID
   } catch (error) {
     console.error("Error adding team:", error);
     throw error;
   }
 }
 
-// 2. UPDATE TEAM
 export async function updateTeam(
   tournamentId,
   teamId,
@@ -504,7 +489,6 @@ export async function updateTeam(
   }
 }
 
-// 3. DELETE TEAM
 export async function deleteTeam(tournamentId, teamId) {
   try {
     const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
@@ -587,7 +571,6 @@ export async function addTournament(tournamentId, meta = {}, ownerId = null) {
   if (!tournamentId) throw new Error("Tournament ID is required");
 
   const ref = doc(db, "tournaments", tournamentId);
-  // Check if exists so we don't overwrite permissions if just updating meta
   const snap = await getDoc(ref);
   const exists = snap.exists();
 
@@ -603,7 +586,6 @@ export async function addTournament(tournamentId, meta = {}, ownerId = null) {
     ...meta,
   };
 
-  // ✅ CRITICAL: Assign Owner Permissions if this is a new tournament
   if (!exists && ownerId) {
     payload.ownerId = ownerId;
     payload.scorers = [ownerId];
@@ -636,7 +618,6 @@ export async function getMatch(tournamentId, matchId) {
     throw new Error("Both Tournament ID and Match ID are required");
   }
 
-  // Path: tournaments/{tournamentId}/matches/{matchId}
   const matchRef = doc(db, "tournaments", tournamentId, "matches", matchId);
   const snap = await getDoc(matchRef);
 
@@ -655,13 +636,11 @@ export async function listMatchesForTournament(tournamentId) {
 
   return snaps.docs.map((docSnap) => {
     const data = docSnap.data();
-
-    // Normalize data (helper logic you had earlier)
     const date = data.date || data.meta?.date || data.createdAt;
 
     return {
       id: docSnap.id,
-      ...data, // Spread all data so we don't lose innings/stats
+      ...data,
       date: date,
     };
   });
@@ -741,49 +720,36 @@ export async function addBallEvent(tournamentId, matchId, event) {
   });
 }
 
-/**
- * Create a new match with an auto-generated Firestore ID.
- * Returns the new matchId (string).
- */
 export async function createMatchAuto(tournamentId, payload = {}) {
   if (!tournamentId) throw new Error("createMatchAuto needs tournamentId");
-
-  // create a new DocumentReference under tournaments/{tournamentId}/matches/{autoId}
   const newDocRef = doc(collection(db, "tournaments", tournamentId, "matches"));
   const newId = newDocRef.id;
-
-  // Reuse your existing createMatch initializer (keeps behavior consistent)
   await createMatch(tournamentId, newId, payload);
-
   return newId;
 }
 
 // ---------------------- RBAC & ACCESS MANAGEMENT ----------------------
 
-// 1. UPDATE Create Tournament to save Owner ID & Default Access Lists
 export const createTournament = async (data, userId) => {
   if (!userId) throw new Error("User must be logged in");
 
   const docRef = await addDoc(collection(db, "tournaments"), {
     ...data,
-    ownerId: userId, // The Creator
-    scorers: [userId], // Owner is automatically a scorer
-    viewers: [], // Empty viewers list initially
+    ownerId: userId,
+    scorers: [userId],
+    viewers: [],
     createdAt: new Date().toISOString(),
   });
   return docRef.id;
 };
 
-// 2. Find a user ID by their Email (for assigning scorers/viewers)
 export const findUserByEmail = async (email) => {
   const q = query(collection(db, "users"), where("email", "==", email));
   const snapshot = await getDocs(q);
   if (snapshot.empty) return null;
-  // Return the first match (uid is the doc ID in 'users' collection)
   return snapshot.docs[0].id;
 };
 
-// 3. Add a Scorer to a Tournament
 export const addScorerToTournament = async (tournamentId, userId) => {
   const ref = doc(db, "tournaments", tournamentId);
   await updateDoc(ref, {
@@ -791,7 +757,6 @@ export const addScorerToTournament = async (tournamentId, userId) => {
   });
 };
 
-// 4. Remove a Scorer
 export const removeScorerFromTournament = async (tournamentId, userId) => {
   const ref = doc(db, "tournaments", tournamentId);
   await updateDoc(ref, {
@@ -799,7 +764,6 @@ export const removeScorerFromTournament = async (tournamentId, userId) => {
   });
 };
 
-// 5. Add a Viewer (Read-Only) to a Tournament
 export const addViewerToTournament = async (tournamentId, userId) => {
   const ref = doc(db, "tournaments", tournamentId);
   await updateDoc(ref, {
@@ -807,19 +771,17 @@ export const addViewerToTournament = async (tournamentId, userId) => {
   });
 };
 
-// 6. Remove a Viewer
 export const removeViewerFromTournament = async (tournamentId, userId) => {
   const ref = doc(db, "tournaments", tournamentId);
   await updateDoc(ref, {
     viewers: arrayRemove(userId),
   });
 };
-// ---------------------- End of RBAC & ACCESS MANAGEMENT ----------------------
 
+// ✅ EXPORTED: List Tournament Teams
 export const listTournamentTeams = async (tournamentId) => {
   if (!tournamentId) return [];
   try {
-    // Assuming you store teams in a sub-collection: tournaments/{id}/teams
     const teamsRef = collection(db, "tournaments", tournamentId, "teams");
     const snapshot = await getDocs(teamsRef);
     return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
@@ -837,7 +799,6 @@ export async function createGlobalPlayer(playerData) {
       ...playerData,
       createdAt: new Date().toISOString(),
       stats: {
-        // Initialize empty stats
         matches: 0,
         runs: 0,
         wickets: 0,
@@ -858,7 +819,7 @@ export async function createGlobalPlayer(playerData) {
 export async function listGlobalPlayers() {
   try {
     const playersRef = collection(db, "players");
-    const q = query(playersRef, orderBy("name")); // Sort by name alphabetically
+    const q = query(playersRef, orderBy("name"));
     const snap = await getDocs(q);
     return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
   } catch (e) {
@@ -886,6 +847,44 @@ export async function deleteGlobalPlayer(playerId) {
     await deleteDoc(ref);
   } catch (e) {
     console.error("Error deleting player:", e);
+    throw e;
+  }
+}
+
+/* ---------------------- Auction & Owner Management ---------------------- */
+
+// 1. Register Owner as a SOLD player (for stats tracking)
+export async function registerOwnerAsPlayer(tournamentId, teamId, ownerData) {
+  // ownerData: { name, role, playerId (global) }
+  try {
+    const ref = collection(db, "tournaments", tournamentId, "auctionPlayers");
+    await addDoc(ref, {
+      name: ownerData.name,
+      role: ownerData.role,
+      status: "SOLD",
+      teamId: teamId,
+      soldPrice: 0, // Owners typically cost 0 in budget
+      isOwner: true,
+      playerId: ownerData.playerId, // Link to global player ID
+      createdAt: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error("Error registering owner as player:", e);
+    throw e;
+  }
+}
+
+// 2. Generic helper to add a player to the Auction Pool
+export async function addAuctionPlayer(tournamentId, playerData) {
+  try {
+    const ref = collection(db, "tournaments", tournamentId, "auctionPlayers");
+    const docRef = await addDoc(ref, {
+      ...playerData,
+      createdAt: new Date().toISOString(),
+    });
+    return docRef.id;
+  } catch (e) {
+    console.error("Error adding auction player:", e);
     throw e;
   }
 }

@@ -1,11 +1,11 @@
 // src/components/LiveScoring.jsx
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { doc, getDoc } from "firebase/firestore"; // Added for permission check
-import { db } from "../utils/firebase"; // Added for DB access
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../utils/firebase";
 import { subscribeMatch } from "../utils/firestore";
 import { useScoring } from "../hooks/useScoring";
-import { useAuth } from "../hooks/useAuth"; // Added Auth hook
+import { useAuth } from "../hooks/useAuth";
 
 import ScoreInput from "./ScoreInput.jsx";
 import ScoreTable from "./ScoreTable.jsx";
@@ -25,7 +25,7 @@ const getLocalMatch = (tId, mId) => {
 export default function LiveScoring() {
   const { tournamentId, matchId } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth(); // Get current user
+  const { user } = useAuth();
 
   const [match, setMatch] = useState(() =>
     getLocalMatch(tournamentId, matchId)
@@ -126,6 +126,22 @@ export default function LiveScoring() {
     return match.name || "Live Match";
   };
 
+  // --- VALIDATION LOGIC ---
+  const currentInnings = match.innings?.[match.currentInnings || 0] || {};
+  const { striker, nonStriker, currentBowler } = currentInnings;
+  const isMatchLive =
+    !match.status ||
+    match.status.toLowerCase() === "live" ||
+    match.status.toLowerCase() === "in-progress";
+
+  const missingFields = [];
+  if (isMatchLive) {
+    if (!striker) missingFields.push("Striker");
+    if (!nonStriker) missingFields.push("Non-Striker");
+    if (!currentBowler) missingFields.push("Bowler");
+  }
+  const hasSetupIssues = missingFields.length > 0;
+
   // 5. Render Layout
   return (
     <div className="min-h-screen bg-[#0f172a] w-full font-sans text-gray-100">
@@ -172,6 +188,25 @@ export default function LiveScoring() {
                     )}
                   </div>
                 </div>
+
+                {/* --- WARNING BANNER --- */}
+                {hasSetupIssues && canScore && (
+                  <div className="bg-yellow-900/20 border-b border-yellow-700/30 p-4 flex items-start gap-3 animate-in slide-in-from-top">
+                    <div className="text-xl">⚠️</div>
+                    <div>
+                      <h4 className="text-yellow-500 font-bold text-sm">
+                        Setup Required
+                      </h4>
+                      <p className="text-yellow-200/70 text-xs mt-1 leading-relaxed">
+                        Please select{" "}
+                        <strong className="text-yellow-400 border-b border-yellow-400/50">
+                          {missingFields.join(", ")}
+                        </strong>{" "}
+                        to unlock scoring controls.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* --- CONDITIONAL RENDERING FOR SECURITY --- */}
                 {canScore ? (

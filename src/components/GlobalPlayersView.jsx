@@ -1,13 +1,17 @@
-// src/components/GlobalPlayersView.jsx
 import React, { useEffect, useState, useRef, useMemo } from "react";
 import {
   listGlobalPlayers,
   createGlobalPlayer,
   updateGlobalPlayer,
   deleteGlobalPlayer,
+  listTournaments,
+  listMatchesForTournament,
 } from "../utils/firestore";
+import { doc, writeBatch } from "firebase/firestore";
+import { db } from "../utils/firebase";
 import { useAuth } from "../hooks/useAuth";
 import { useNavigate } from "react-router-dom";
+import { aggregateCareerStats } from "../utils/statsHelper";
 
 export default function GlobalPlayersView() {
   const { user } = useAuth();
@@ -16,8 +20,8 @@ export default function GlobalPlayersView() {
 
   const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  // --- CHANGE: Renamed for clarity, as it shows more than just history now ---
   const [expandedPlayerId, setExpandedPlayerId] = useState(null);
 
   const [sortConfig, setSortConfig] = useState({
@@ -40,15 +44,160 @@ export default function GlobalPlayersView() {
     photoURL: "",
   });
 
+  // 1. Initial Load
   useEffect(() => {
     fetchPlayers();
   }, []);
+
+  // 2. Automatic Background Sync (Once per session)
+  useEffect(() => {
+    const hasSynced = sessionStorage.getItem("globalStatsSynced");
+    // Only auto-sync if user is logged in and hasn't synced this session
+    if (user && !hasSynced) {
+      handleSyncAllStats(true); // true = silent mode (no alerts)
+    }
+  }, [user]);
 
   const fetchPlayers = async () => {
     setLoading(true);
     const data = await listGlobalPlayers();
     setPlayers(data);
     setLoading(false);
+  };
+
+  // 🔥 SYNC FUNCTION (Refactored for Auto-Run)
+  const handleSyncAllStats = async (isAuto = false) => {
+    if (
+      !isAuto &&
+      !window.confirm(
+        "This will scan ALL tournaments and recalculate stats. Continue?"
+      )
+    )
+      return;
+
+    setIsSyncing(true);
+    try {
+      // 1. Fetch Data
+      const allPlayers = await listGlobalPlayers();
+      const allTournaments = await listTournaments();
+      const playerHistoryMap = {};
+
+      allPlayers.forEach((p) => (playerHistoryMap[p.id] = []));
+
+      // 2. Iterate Matches
+      for (const tourn of allTournaments) {
+        const matches = await listMatchesForTournament(tourn.id);
+        const finishedMatches = matches.filter(
+          (m) => m.status === "finished" || m.meta?.matchStatus === "finished"
+        );
+
+        for (const match of finishedMatches) {
+          if (!match.innings) continue;
+
+          const findPlayerIdByName = (name) => {
+            if (!name) return null;
+            const found = allPlayers.find(
+              (p) => p.name.toLowerCase() === name.toLowerCase().trim()
+            );
+            return found ? found.id : null;
+          };
+
+          match.innings.forEach((inn) => {
+            // Batting
+            if (inn.batsmenStats) {
+              Object.entries(inn.batsmenStats).forEach(([name, stats]) => {
+                const pid = findPlayerIdByName(name);
+                if (pid) {
+                  playerHistoryMap[pid].push({
+                    tournamentId: tourn.id,
+                    matchId: match.id,
+                    date: match.date || match.createdAt,
+                    opponent:
+                      inn.battingTeam === match.meta?.teamA
+                        ? match.meta?.teamB
+                        : match.meta?.teamA,
+                    runs: Number(stats.runs) || 0,
+                    wickets: 0,
+                    type: "bat",
+                  });
+                }
+              });
+            }
+            // Bowling
+            if (inn.bowlerStats) {
+              Object.entries(inn.bowlerStats).forEach(([name, stats]) => {
+                const pid = findPlayerIdByName(name);
+                if (pid) {
+                  const existingEntry = playerHistoryMap[pid].find(
+                    (h) => h.matchId === match.id
+                  );
+                  if (existingEntry) {
+                    existingEntry.wickets = Number(stats.wickets) || 0;
+                  } else {
+                    playerHistoryMap[pid].push({
+                      tournamentId: tourn.id,
+                      matchId: match.id,
+                      date: match.date || match.createdAt,
+                      opponent: inn.bowlingTeam || "Opponent",
+                      runs: 0,
+                      wickets: Number(stats.wickets) || 0,
+                      type: "bowl",
+                    });
+                  }
+                }
+              });
+            }
+          });
+        }
+      }
+
+      // 3. Batch Update
+      const batch = writeBatch(db);
+      let opCount = 0;
+
+      for (const player of allPlayers) {
+        const newHistory = playerHistoryMap[player.id];
+
+        if (newHistory && newHistory.length > 0) {
+          let totalRuns = 0;
+          let totalWickets = 0;
+          let maxScore = 0;
+
+          newHistory.forEach((h) => {
+            totalRuns += h.runs;
+            totalWickets += h.wickets;
+            if (h.runs > maxScore) maxScore = h.runs;
+          });
+
+          const ref = doc(db, "players", player.id);
+          batch.update(ref, {
+            stats: {
+              matches: newHistory.length,
+              runs: totalRuns,
+              wickets: totalWickets,
+              highestScore: maxScore,
+              history: newHistory,
+            },
+          });
+          opCount++;
+        }
+      }
+
+      if (opCount > 0) await batch.commit();
+
+      // Mark as synced for this session so we don't spam the DB
+      sessionStorage.setItem("globalStatsSynced", "true");
+
+      if (!isAuto) alert(`Sync Complete! Updated ${opCount} players.`);
+
+      // Refresh the view
+      fetchPlayers();
+    } catch (e) {
+      console.error("Sync Failed:", e);
+      if (!isAuto) alert("Sync Failed: " + e.message);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleDelete = async (playerId, e) => {
@@ -63,6 +212,12 @@ export default function GlobalPlayersView() {
     }
   };
 
+  const goToMatch = (tournamentId, matchId) => {
+    if (tournamentId && matchId) {
+      navigate(`/tournaments/${tournamentId}/scorecard/${matchId}`);
+    }
+  };
+
   const handleSort = (key) => {
     let direction = "desc";
     if (sortConfig.key === key && sortConfig.direction === "desc") {
@@ -72,36 +227,41 @@ export default function GlobalPlayersView() {
   };
 
   const sortedPlayers = useMemo(() => {
-    let sortable = [...players];
+    let processed = players.map((p) => ({
+      ...p,
+      calculatedStats: aggregateCareerStats(p),
+    }));
+
     if (searchTerm) {
-      sortable = sortable.filter((p) =>
+      processed = processed.filter((p) =>
         p.name.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
     if (sortConfig.key) {
-      sortable.sort((a, b) => {
+      processed.sort((a, b) => {
         let valA, valB;
         if (["name", "role"].includes(sortConfig.key)) {
           valA = a[sortConfig.key];
           valB = b[sortConfig.key];
         } else {
-          valA = a.stats?.[sortConfig.key] || 0;
-          valB = b.stats?.[sortConfig.key] || 0;
+          valA = a.calculatedStats?.[sortConfig.key] || 0;
+          valB = b.calculatedStats?.[sortConfig.key] || 0;
         }
+
         if (typeof valA === "string") valA = valA.toLowerCase();
         if (typeof valB === "string") valB = valB.toLowerCase();
+
         if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
         if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
         return 0;
       });
     }
-    return sortable;
+    return processed;
   }, [players, sortConfig, searchTerm]);
 
   // --- COMPRESSION UTILITY ---
   const compressImage = (file, maxWidth = 400) => {
-    // Increased max width slightly for better quality
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
@@ -115,7 +275,7 @@ export default function GlobalPlayersView() {
           canvas.width = maxWidth;
           canvas.height = img.height * ratio;
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          resolve(canvas.toDataURL("image/jpeg", 0.8)); // Slightly higher quality
+          resolve(canvas.toDataURL("image/jpeg", 0.8));
         };
       };
     });
@@ -153,7 +313,6 @@ export default function GlobalPlayersView() {
     e.stopPropagation();
     const sanitizeStyle = (val, defaultVal) =>
       !val || val === "Unknown" ? defaultVal : val;
-
     setFormData({
       id: player.id,
       name: player.name,
@@ -197,7 +356,6 @@ export default function GlobalPlayersView() {
     }
   };
 
-  // --- CHANGE: Renamed function for clarity ---
   const toggleRowExpansion = (playerId) => {
     setExpandedPlayerId(expandedPlayerId === playerId ? null : playerId);
   };
@@ -217,14 +375,13 @@ export default function GlobalPlayersView() {
     </span>
   );
 
-  // --- HELPER: Detail Row Item ---
   const DetailItem = ({ label, value, isMono = false }) => (
-    <div className="flex flex-col">
-      <span className="text-[10px] uppercase font-bold text-gray-500">
+    <div className="flex flex-col p-2 bg-gray-900/50 rounded border border-gray-800">
+      <span className="text-[9px] uppercase font-bold text-gray-500 mb-1">
         {label}
       </span>
       <span
-        className={`text-sm text-white ${
+        className={`text-sm text-white break-words ${
           isMono ? "font-mono text-cyan-400" : ""
         }`}>
         {value || "N/A"}
@@ -237,15 +394,21 @@ export default function GlobalPlayersView() {
       <div className="max-w-[1400px] mx-auto">
         {/* HEADER */}
         <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-          <div>
+          <div className="text-center md:text-left">
             <h1 className="text-2xl font-black uppercase tracking-tighter">
-              <span className="text-cyan-500">🌍</span> <span>Global Player Database</span>
+              <span className="text-cyan-500">🌍</span>{" "}
+              <span>Global Database</span>
             </h1>
-            <p className="text-gray-400 text-xs mt-1">
+            <p className="text-gray-400 text-xs mt-1 flex items-center gap-2">
               {players.length} players registered.
+              {isSyncing && (
+                <span className="text-cyan-400 animate-pulse font-bold ml-2">
+                  Syncing History...
+                </span>
+              )}
             </p>
           </div>
-          <div className="flex gap-2 w-full md:w-auto">
+          <div className="flex flex-wrap gap-2 w-full md:w-auto justify-center md:justify-end">
             <input
               type="text"
               placeholder="🔍 Search name..."
@@ -253,6 +416,15 @@ export default function GlobalPlayersView() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
+            {/* MANUAL RE-SYNC BUTTON */}
+            {user && (
+              <button
+                onClick={() => handleSyncAllStats(false)}
+                disabled={isSyncing}
+                className="bg-gray-700 hover:bg-gray-600 text-gray-200 px-4 py-2 rounded-lg font-bold text-sm shadow-lg whitespace-nowrap transition-colors flex items-center gap-2 border border-gray-600">
+                {isSyncing ? "⏳" : "🔄"} Sync
+              </button>
+            )}
             {user && (
               <button
                 onClick={openAddModal}
@@ -275,7 +447,7 @@ export default function GlobalPlayersView() {
                 <thead className="bg-gray-950 text-gray-400 text-[10px] uppercase font-bold tracking-wider">
                   <tr>
                     <th
-                      className="px-4 py-3 cursor-pointer hover:text-white group w-[30%]"
+                      className="px-4 py-3 cursor-pointer hover:text-white group w-[40%] md:w-[30%]"
                       onClick={() => handleSort("name")}>
                       Player Details <SortIcon colKey="name" />
                     </th>
@@ -290,7 +462,7 @@ export default function GlobalPlayersView() {
                       Runs <SortIcon colKey="runs" />
                     </th>
                     <th
-                      className="px-2 py-3 text-center cursor-pointer hover:text-white group hidden sm:table-cell"
+                      className="px-2 py-3 text-center cursor-pointer hover:text-white group hidden md:table-cell"
                       onClick={() => handleSort("highestScore")}>
                       HS <SortIcon colKey="highestScore" />
                     </th>
@@ -315,7 +487,6 @@ export default function GlobalPlayersView() {
                     sortedPlayers.map((player) => (
                       <React.Fragment key={player.id}>
                         <tr
-                          // --- CHANGE: Clicking anywhere toggles the big view ---
                           onClick={() => toggleRowExpansion(player.id)}
                           className={`hover:bg-gray-800/50 transition-colors cursor-pointer ${
                             expandedPlayerId === player.id
@@ -330,18 +501,18 @@ export default function GlobalPlayersView() {
                                   "https://cdn-icons-png.flaticon.com/512/847/847969.png"
                                 }
                                 alt=""
-                                className="w-10 h-10 rounded-full object-cover bg-gray-700 border border-gray-600"
+                                className="w-10 h-10 rounded-full object-cover bg-gray-700 border border-gray-600 flex-shrink-0"
                                 onError={(e) => {
                                   e.target.src =
                                     "https://cdn-icons-png.flaticon.com/512/847/847969.png";
                                 }}
                               />
-                              <div className="flex flex-col">
-                                <span className="font-bold text-white text-sm leading-tight">
+                              <div className="flex flex-col overflow-hidden">
+                                <span className="font-bold text-white text-sm leading-tight truncate max-w-[120px] md:max-w-none">
                                   {player.name}
                                 </span>
                                 <div className="flex flex-wrap gap-1 mt-1">
-                                  <span className="text-[9px] bg-gray-800 text-gray-300 px-1.5 rounded border border-gray-700">
+                                  <span className="text-[9px] bg-gray-800 text-gray-300 px-1.5 rounded border border-gray-700 truncate">
                                     {player.role}
                                   </span>
                                 </div>
@@ -349,20 +520,19 @@ export default function GlobalPlayersView() {
                             </div>
                           </td>
                           <td className="px-2 py-3 text-center text-white font-mono">
-                            {player.stats?.matches || 0}
+                            {player.calculatedStats.matches}
                           </td>
                           <td className="px-2 py-3 text-center font-bold text-cyan-400">
-                            {player.stats?.runs || 0}
+                            {player.calculatedStats.runs}
                           </td>
-                          <td className="px-2 py-3 text-center text-gray-400 hidden sm:table-cell">
-                            {player.stats?.highestScore || 0}
+                          <td className="px-2 py-3 text-center text-gray-400 hidden md:table-cell">
+                            {player.calculatedStats.highestScore}
                           </td>
                           <td className="px-2 py-3 text-center font-bold text-green-400">
-                            {player.stats?.wickets || 0}
+                            {player.calculatedStats.wickets}
                           </td>
                           <td className="px-4 py-3 text-right">
                             <div className="flex justify-end gap-2 items-center">
-                              {/* --- CHANGE: Added Expand/Collapse chevron icon --- */}
                               <span
                                 className="text-gray-500 mr-2 text-xs transition-transform duration-200 transform"
                                 style={{
@@ -391,12 +561,10 @@ export default function GlobalPlayersView() {
                           </td>
                         </tr>
 
-                        {/* --- CHANGE: NEW EXPANDED ROW DESIGN (BIG IMAGE) --- */}
                         {expandedPlayerId === player.id && (
                           <tr className="bg-gray-950/80 border-t border-b border-gray-800 animate-in slide-in-from-top-1">
-                            <td colSpan={8} className="p-6">
+                            <td colSpan={8} className="p-4 md:p-6">
                               <div className="flex flex-col md:flex-row gap-6 items-start">
-                                {/* BIG IMAGE VIEW */}
                                 <div className="flex-shrink-0">
                                   <img
                                     src={
@@ -404,7 +572,6 @@ export default function GlobalPlayersView() {
                                       "https://cdn-icons-png.flaticon.com/512/847/847969.png"
                                     }
                                     alt={player.name}
-                                    // Large size, rounded corners, shadow, border
                                     className="w-32 h-32 md:w-40 md:h-40 rounded-2xl object-cover border-2 border-cyan-500/50 shadow-lg shadow-cyan-900/20 bg-gray-800"
                                     onError={(e) => {
                                       e.target.src =
@@ -412,43 +579,102 @@ export default function GlobalPlayersView() {
                                     }}
                                   />
                                 </div>
+                                <div className="flex-grow w-full">
+                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                                    <DetailItem
+                                      label="Full Name"
+                                      value={player.name}
+                                    />
+                                    <DetailItem
+                                      label="Role"
+                                      value={player.role}
+                                    />
+                                    <DetailItem
+                                      label="Batting"
+                                      value={player.battingStyle}
+                                    />
+                                    <DetailItem
+                                      label="Bowling"
+                                      value={player.bowlingStyle}
+                                    />
+                                    <DetailItem
+                                      label="Mobile"
+                                      value={player.mobile}
+                                      isMono={true}
+                                    />
+                                    <DetailItem
+                                      label="Registered"
+                                      value={
+                                        player.createdAt
+                                          ? new Date(
+                                              player.createdAt
+                                            ).toLocaleDateString()
+                                          : "N/A"
+                                      }
+                                    />
+                                  </div>
 
-                                {/* DETAILED INFO */}
-                                <div className="flex-grow grid grid-cols-2 md:grid-cols-3 gap-4 bg-gray-900/50 p-4 rounded-xl border border-gray-800">
-                                  <DetailItem
-                                    label="Full Name"
-                                    value={player.name}
-                                  />
-                                  <DetailItem
-                                    label="Role"
-                                    value={player.role}
-                                  />
-                                  <DetailItem
-                                    label="Mobile"
-                                    value={player.mobile}
-                                    isMono={true}
-                                  />
-                                  <DetailItem
-                                    label="Batting Style"
-                                    value={player.battingStyle}
-                                  />
-                                  <DetailItem
-                                    label="Bowling Style"
-                                    value={player.bowlingStyle}
-                                  />
-                                  <DetailItem
-                                    label="Registered On"
-                                    value={
-                                      player.createdAt
-                                        ? new Date(
-                                            player.createdAt
-                                          ).toLocaleDateString()
-                                        : "N/A"
-                                    }
-                                  />
-
-                                  {/* Add Payment Screenshot link for Admins if needed later */}
-                                  {/* {user && player.paymentScreenshotURL && ( ... )} */}
+                                  <div className="pt-4 border-t border-gray-800">
+                                    <h4 className="text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2">
+                                      <span>📜</span> Match History (
+                                      {player.calculatedStats.history.length})
+                                    </h4>
+                                    {player.calculatedStats.history.length >
+                                    0 ? (
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                        {player.calculatedStats.history
+                                          .slice(0, 10)
+                                          .map((match, idx) => (
+                                            <div
+                                              key={idx}
+                                              onClick={() =>
+                                                goToMatch(
+                                                  match.tournamentId,
+                                                  match.matchId
+                                                )
+                                              }
+                                              className="bg-gray-800 border border-gray-700 p-3 rounded-lg cursor-pointer hover:border-cyan-500/50 hover:bg-gray-750 transition-all flex justify-between items-center group">
+                                              <div>
+                                                <div className="text-[10px] text-gray-500 mb-0.5">
+                                                  {new Date(
+                                                    match.date
+                                                  ).toLocaleDateString() ||
+                                                    "Date"}
+                                                </div>
+                                                <div className="font-bold text-sm text-gray-200">
+                                                  vs{" "}
+                                                  {match.opponent || "Opponent"}
+                                                </div>
+                                              </div>
+                                              <div className="text-right flex flex-col items-end">
+                                                <div className="flex gap-2 text-xs">
+                                                  {match.runs > 0 && (
+                                                    <span className="text-cyan-400 font-bold">
+                                                      {match.runs} R
+                                                    </span>
+                                                  )}
+                                                  {match.wickets > 0 && (
+                                                    <span className="text-green-400 font-bold">
+                                                      {match.wickets} W
+                                                    </span>
+                                                  )}
+                                                  {match.runs === 0 &&
+                                                    match.wickets === 0 && (
+                                                      <span className="text-gray-500">
+                                                        -
+                                                      </span>
+                                                    )}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          ))}
+                                      </div>
+                                    ) : (
+                                      <div className="text-sm text-gray-600 italic p-3 border border-dashed border-gray-800 rounded bg-gray-900/50">
+                                        No match history found.
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             </td>
@@ -463,7 +689,7 @@ export default function GlobalPlayersView() {
           )}
         </div>
 
-        {/* MODAL (Same as before) */}
+        {/* MODAL */}
         {showModal && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
             <div className="bg-gray-900 border border-gray-700 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -479,7 +705,6 @@ export default function GlobalPlayersView() {
               </div>
               <div className="overflow-y-auto p-6">
                 <form onSubmit={handleSubmit} className="space-y-5">
-                  {/* 1. PROFILE PHOTO */}
                   <div className="flex flex-col items-center">
                     <div
                       className="relative group cursor-pointer"
@@ -514,8 +739,6 @@ export default function GlobalPlayersView() {
                       />
                     </div>
                   </div>
-
-                  {/* 2. TEXT FIELDS */}
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
                       Full Name
@@ -529,7 +752,6 @@ export default function GlobalPlayersView() {
                       required
                     />
                   </div>
-
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
                       Mobile
@@ -543,8 +765,6 @@ export default function GlobalPlayersView() {
                       }
                     />
                   </div>
-
-                  {/* 3. ROLE BUTTONS (Grid Layout) */}
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
                       Role
@@ -570,8 +790,6 @@ export default function GlobalPlayersView() {
                       ))}
                     </div>
                   </div>
-
-                  {/* 4. STYLES (Side-by-Side) */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
@@ -613,7 +831,6 @@ export default function GlobalPlayersView() {
                       </select>
                     </div>
                   </div>
-
                   <button
                     type="submit"
                     disabled={processingImage}
