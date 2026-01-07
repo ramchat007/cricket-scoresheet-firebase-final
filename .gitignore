@@ -13,6 +13,7 @@ node_modules
 dist
 .env
 .DS_Store
+service-account.json
 
 # Firebase config
 

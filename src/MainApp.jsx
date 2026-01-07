@@ -30,6 +30,7 @@ import {
 import { useAuth } from "./hooks/useAuth.jsx";
 import MigrationTool from "./components/MigrationTool.jsx";
 import AuctionDashboard from "./pages/AuctionDashboard.jsx";
+import GlobalPlayerRegistration from "./pages/GlobalPlayerRegistration.jsx";
 
 export default function MainApp() {
   const navigate = useNavigate();
@@ -245,6 +246,7 @@ export default function MainApp() {
           <Route path="/profile" element={<Profile />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/register-player" element={<GlobalPlayerRegistration />} />
           <Route path="/migrate" element={<MigrationTool />} />
           <Route path="/tournaments/:id" element={<TournamentDetails />} />
           <Route

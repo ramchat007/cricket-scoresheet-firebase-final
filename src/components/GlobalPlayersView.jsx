@@ -1,6 +1,5 @@
 // src/components/GlobalPlayersView.jsx
 import React, { useEffect, useState, useRef, useMemo } from "react";
-// 1. IMPORT deleteGlobalPlayer
 import {
   listGlobalPlayers,
   createGlobalPlayer,
@@ -18,6 +17,7 @@ export default function GlobalPlayersView() {
   const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  // --- CHANGE: Renamed for clarity, as it shows more than just history now ---
   const [expandedPlayerId, setExpandedPlayerId] = useState(null);
 
   const [sortConfig, setSortConfig] = useState({
@@ -29,6 +29,7 @@ export default function GlobalPlayersView() {
   const [isEditing, setIsEditing] = useState(false);
   const [processingImage, setProcessingImage] = useState(false);
 
+  // Form State
   const [formData, setFormData] = useState({
     id: "",
     name: "",
@@ -50,20 +51,13 @@ export default function GlobalPlayersView() {
     setLoading(false);
   };
 
-  // --- 2. DELETE HANDLER ---
   const handleDelete = async (playerId, e) => {
-    e.stopPropagation(); // Stop row from expanding
-
-    const confirmDelete = window.confirm(
-      "⚠ Are you sure you want to permanently delete this player? This cannot be undone."
-    );
-    if (!confirmDelete) return;
+    e.stopPropagation();
+    if (!window.confirm("⚠ Permanently delete this player?")) return;
 
     try {
       await deleteGlobalPlayer(playerId);
-      // Remove from local state immediately for speed
       setPlayers((prev) => prev.filter((p) => p.id !== playerId));
-      alert("Player deleted successfully.");
     } catch (error) {
       alert("Failed to delete player.");
     }
@@ -95,10 +89,8 @@ export default function GlobalPlayersView() {
           valA = a.stats?.[sortConfig.key] || 0;
           valB = b.stats?.[sortConfig.key] || 0;
         }
-
         if (typeof valA === "string") valA = valA.toLowerCase();
         if (typeof valB === "string") valB = valB.toLowerCase();
-
         if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
         if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
         return 0;
@@ -107,45 +99,40 @@ export default function GlobalPlayersView() {
     return sortable;
   }, [players, sortConfig, searchTerm]);
 
-  const handleImageUpload = (event) => {
+  // --- COMPRESSION UTILITY ---
+  const compressImage = (file, maxWidth = 400) => {
+    // Increased max width slightly for better quality
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d");
+          const ratio = maxWidth / img.width;
+          canvas.width = maxWidth;
+          canvas.height = img.height * ratio;
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", 0.8)); // Slightly higher quality
+        };
+      };
+    });
+  };
+
+  const handleImageUpload = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
-    if (file.size > 0.2 * 900 * 900)
-      return alert("Image too large (Max 200KB)");
-
     setProcessingImage(true);
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (e) => {
-      const img = new Image();
-      img.src = e.target.result;
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        const MAX_WIDTH = 200;
-        const MAX_HEIGHT = 200;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-        canvas.width = width;
-        canvas.height = height;
-        ctx.drawImage(img, 0, 0, width, height);
-        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
-        setFormData((prev) => ({ ...prev, photoURL: compressedBase64 }));
-        setProcessingImage(false);
-      };
-    };
+    try {
+      const compressedBase64 = await compressImage(file, 400);
+      setFormData((prev) => ({ ...prev, photoURL: compressedBase64 }));
+    } catch (error) {
+      alert("Failed to process image.");
+    } finally {
+      setProcessingImage(false);
+    }
   };
 
   const openAddModal = () => {
@@ -176,7 +163,6 @@ export default function GlobalPlayersView() {
       mobile: player.mobile || "",
       photoURL: player.photoURL || "",
     });
-
     setIsEditing(true);
     setShowModal(true);
   };
@@ -198,39 +184,53 @@ export default function GlobalPlayersView() {
         alert("Player Updated!");
       } else {
         const { id, ...payload } = formData;
-        await createGlobalPlayer(payload);
+        await createGlobalPlayer({
+          ...payload,
+          stats: { matches: 0, runs: 0, wickets: 0 },
+        });
         alert("Player Created!");
       }
       setShowModal(false);
       fetchPlayers();
     } catch (error) {
-      console.error(error);
       alert("Error saving player.");
     }
   };
 
-  const toggleHistory = (playerId) => {
+  // --- CHANGE: Renamed function for clarity ---
+  const toggleRowExpansion = (playerId) => {
     setExpandedPlayerId(expandedPlayerId === playerId ? null : playerId);
   };
 
-  const SortIcon = ({ colKey }) => {
-    if (sortConfig.key !== colKey)
-      return (
-        <span className="text-gray-600 ml-1 opacity-0 group-hover:opacity-50">
-          ⇅
-        </span>
-      );
-    return (
-      <span className="text-cyan-400 ml-1">
-        {sortConfig.direction === "asc" ? "↑" : "↓"}
-      </span>
-    );
-  };
+  const SortIcon = ({ colKey }) => (
+    <span
+      className={
+        sortConfig.key === colKey
+          ? "text-cyan-400 ml-1"
+          : "text-gray-600 ml-1 opacity-0 group-hover:opacity-50"
+      }>
+      {sortConfig.key === colKey
+        ? sortConfig.direction === "asc"
+          ? "↑"
+          : "↓"
+        : "⇅"}
+    </span>
+  );
 
-  const goToMatch = (tournamentId, matchId) => {
-    if (!tournamentId || !matchId) return;
-    navigate(`/tournaments/${tournamentId}/scorecard/${matchId}`);
-  };
+  // --- HELPER: Detail Row Item ---
+  const DetailItem = ({ label, value, isMono = false }) => (
+    <div className="flex flex-col">
+      <span className="text-[10px] uppercase font-bold text-gray-500">
+        {label}
+      </span>
+      <span
+        className={`text-sm text-white ${
+          isMono ? "font-mono text-cyan-400" : ""
+        }`}>
+        {value || "N/A"}
+      </span>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-[#0f172a] text-white p-2 md:p-4 pb-20">
@@ -239,14 +239,12 @@ export default function GlobalPlayersView() {
         <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
           <div>
             <h1 className="text-2xl font-black uppercase tracking-tighter">
-              <span className="text-cyan-500">🌍</span>{" "}
-              <span>Global Player Database</span>
+              <span className="text-cyan-500">🌍</span> <span>Global Player Database</span>
             </h1>
             <p className="text-gray-400 text-xs mt-1">
-              {players.length} players registered across all tournaments.
+              {players.length} players registered.
             </p>
           </div>
-
           <div className="flex gap-2 w-full md:w-auto">
             <input
               type="text"
@@ -265,7 +263,7 @@ export default function GlobalPlayersView() {
           </div>
         </div>
 
-        {/* TABLE VIEW */}
+        {/* TABLE */}
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden shadow-2xl">
           {loading ? (
             <div className="p-12 text-center text-cyan-500 animate-pulse text-sm font-mono">
@@ -301,15 +299,6 @@ export default function GlobalPlayersView() {
                       onClick={() => handleSort("wickets")}>
                       Wkts <SortIcon colKey="wickets" />
                     </th>
-                    <th
-                      className="px-2 py-3 text-center cursor-pointer hover:text-white group hidden sm:table-cell"
-                      onClick={() => handleSort("bestBowling")}>
-                      BB <SortIcon colKey="bestBowling" />
-                    </th>
-                    <th className="px-2 py-3 text-center hidden md:table-cell">
-                      Field{" "}
-                      <span className="text-[9px] text-gray-600">(Ct/St)</span>
-                    </th>
                     <th className="px-4 py-3 text-right">Action</th>
                   </tr>
                 </thead>
@@ -326,7 +315,8 @@ export default function GlobalPlayersView() {
                     sortedPlayers.map((player) => (
                       <React.Fragment key={player.id}>
                         <tr
-                          onClick={() => toggleHistory(player.id)}
+                          // --- CHANGE: Clicking anywhere toggles the big view ---
+                          onClick={() => toggleRowExpansion(player.id)}
                           className={`hover:bg-gray-800/50 transition-colors cursor-pointer ${
                             expandedPlayerId === player.id
                               ? "bg-gray-800/30"
@@ -355,13 +345,9 @@ export default function GlobalPlayersView() {
                                     {player.role}
                                   </span>
                                 </div>
-                                <div className="text-[9px] text-gray-500 mt-0.5 hidden sm:block">
-                                  {player.battingStyle} • {player.bowlingStyle}
-                                </div>
                               </div>
                             </div>
                           </td>
-
                           <td className="px-2 py-3 text-center text-white font-mono">
                             {player.stats?.matches || 0}
                           </td>
@@ -374,34 +360,29 @@ export default function GlobalPlayersView() {
                           <td className="px-2 py-3 text-center font-bold text-green-400">
                             {player.stats?.wickets || 0}
                           </td>
-                          <td className="px-2 py-3 text-center text-gray-400 hidden sm:table-cell">
-                            {player.stats?.bestBowling || "-"}
-                          </td>
-                          <td className="px-2 py-3 text-center text-gray-400 text-xs hidden md:table-cell">
-                            {player.stats?.catches || 0} /{" "}
-                            {player.stats?.stumpings || 0}
-                          </td>
-
-                          {/* 3. ACTIONS COLUMN (UPDATED) */}
                           <td className="px-4 py-3 text-right">
                             <div className="flex justify-end gap-2 items-center">
-                              <span className="text-gray-600 text-xs mr-2">
-                                {expandedPlayerId === player.id ? "▲" : "▼"}
+                              {/* --- CHANGE: Added Expand/Collapse chevron icon --- */}
+                              <span
+                                className="text-gray-500 mr-2 text-xs transition-transform duration-200 transform"
+                                style={{
+                                  transform:
+                                    expandedPlayerId === player.id
+                                      ? "rotate(180deg)"
+                                      : "rotate(0deg)",
+                                }}>
+                                ▼
                               </span>
-
                               {user && (
                                 <>
                                   <button
                                     onClick={(e) => openEditModal(player, e)}
-                                    className="text-gray-400 hover:text-white p-1.5 rounded hover:bg-gray-700 transition-all"
-                                    title="Edit Player">
+                                    className="text-gray-400 hover:text-white p-1.5 rounded hover:bg-gray-700 transition-all">
                                     ✎
                                   </button>
-                                  {/* DELETE BUTTON */}
                                   <button
                                     onClick={(e) => handleDelete(player.id, e)}
-                                    className="text-red-500 hover:text-red-400 p-1.5 rounded hover:bg-red-900/20 transition-all"
-                                    title="Delete Player">
+                                    className="text-red-500 hover:text-red-400 p-1.5 rounded hover:bg-red-900/20 transition-all">
                                     🗑
                                   </button>
                                 </>
@@ -410,71 +391,65 @@ export default function GlobalPlayersView() {
                           </td>
                         </tr>
 
+                        {/* --- CHANGE: NEW EXPANDED ROW DESIGN (BIG IMAGE) --- */}
                         {expandedPlayerId === player.id && (
-                          <tr className="bg-gray-950/50">
-                            <td colSpan={8} className="p-0">
-                              <div className="p-4 border-b border-gray-800 animate-in slide-in-from-top-2">
-                                <h4 className="text-xs font-bold text-gray-500 uppercase mb-3 flex items-center gap-2">
-                                  <span>📜</span> Recent Match History
-                                </h4>
-                                {player.stats?.history &&
-                                player.stats.history.length > 0 ? (
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                                    {player.stats.history.map((log, idx) => (
-                                      <div
-                                        key={idx}
-                                        onClick={() =>
-                                          goToMatch(
-                                            log.tournamentId,
-                                            log.matchId
-                                          )
-                                        }
-                                        className="bg-gray-900 border border-gray-800 p-3 rounded-lg cursor-pointer hover:border-cyan-500/50 hover:bg-gray-800 transition-all group">
-                                        <div className="flex justify-between items-start mb-1">
-                                          <span className="text-[10px] text-gray-500">
-                                            {log.date}
-                                          </span>
-                                          <span className="text-[10px] text-gray-400 group-hover:text-cyan-400">
-                                            View ↗
-                                          </span>
-                                        </div>
-                                        <div className="font-bold text-sm text-gray-200 mb-1">
-                                          vs {log.opponent}
-                                        </div>
-                                        <div className="flex gap-3 text-xs">
-                                          {log.runs !== undefined && (
-                                            <span
-                                              className={
-                                                log.runs >= 30
-                                                  ? "text-yellow-400 font-bold"
-                                                  : "text-gray-400"
-                                              }>
-                                              {log.runs} Runs
-                                            </span>
-                                          )}
-                                          {log.wickets !== undefined && (
-                                            <span
-                                              className={
-                                                log.wickets >= 2
-                                                  ? "text-green-400 font-bold"
-                                                  : "text-gray-400"
-                                              }>
-                                              {log.wickets} Wkts
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <div className="text-sm text-gray-600 italic p-2 border border-dashed border-gray-800 rounded bg-gray-900/50">
-                                    No match history available yet.
-                                    <span className="block text-[10px] mt-1 text-gray-700">
-                                      (History populates automatically when you
-                                      finish matches using this player)
-                                    </span>
-                                  </div>
-                                )}
+                          <tr className="bg-gray-950/80 border-t border-b border-gray-800 animate-in slide-in-from-top-1">
+                            <td colSpan={8} className="p-6">
+                              <div className="flex flex-col md:flex-row gap-6 items-start">
+                                {/* BIG IMAGE VIEW */}
+                                <div className="flex-shrink-0">
+                                  <img
+                                    src={
+                                      player.photoURL ||
+                                      "https://cdn-icons-png.flaticon.com/512/847/847969.png"
+                                    }
+                                    alt={player.name}
+                                    // Large size, rounded corners, shadow, border
+                                    className="w-32 h-32 md:w-40 md:h-40 rounded-2xl object-cover border-2 border-cyan-500/50 shadow-lg shadow-cyan-900/20 bg-gray-800"
+                                    onError={(e) => {
+                                      e.target.src =
+                                        "https://cdn-icons-png.flaticon.com/512/847/847969.png";
+                                    }}
+                                  />
+                                </div>
+
+                                {/* DETAILED INFO */}
+                                <div className="flex-grow grid grid-cols-2 md:grid-cols-3 gap-4 bg-gray-900/50 p-4 rounded-xl border border-gray-800">
+                                  <DetailItem
+                                    label="Full Name"
+                                    value={player.name}
+                                  />
+                                  <DetailItem
+                                    label="Role"
+                                    value={player.role}
+                                  />
+                                  <DetailItem
+                                    label="Mobile"
+                                    value={player.mobile}
+                                    isMono={true}
+                                  />
+                                  <DetailItem
+                                    label="Batting Style"
+                                    value={player.battingStyle}
+                                  />
+                                  <DetailItem
+                                    label="Bowling Style"
+                                    value={player.bowlingStyle}
+                                  />
+                                  <DetailItem
+                                    label="Registered On"
+                                    value={
+                                      player.createdAt
+                                        ? new Date(
+                                            player.createdAt
+                                          ).toLocaleDateString()
+                                        : "N/A"
+                                    }
+                                  />
+
+                                  {/* Add Payment Screenshot link for Admins if needed later */}
+                                  {/* {user && player.paymentScreenshotURL && ( ... )} */}
+                                </div>
                               </div>
                             </td>
                           </tr>
@@ -488,8 +463,9 @@ export default function GlobalPlayersView() {
           )}
         </div>
 
+        {/* MODAL (Same as before) */}
         {showModal && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
             <div className="bg-gray-900 border border-gray-700 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
               <div className="p-4 border-b border-gray-800 bg-gray-950 flex justify-between items-center sticky top-0 z-10">
                 <h3 className="text-lg font-bold text-white">
@@ -503,24 +479,31 @@ export default function GlobalPlayersView() {
               </div>
               <div className="overflow-y-auto p-6">
                 <form onSubmit={handleSubmit} className="space-y-5">
+                  {/* 1. PROFILE PHOTO */}
                   <div className="flex flex-col items-center">
                     <div
                       className="relative group cursor-pointer"
                       onClick={() => fileInputRef.current.click()}>
-                      <img
-                        src={
-                          formData.photoURL ||
-                          "https://cdn-icons-png.flaticon.com/512/847/847969.png"
-                        }
-                        alt="Player"
-                        className={`w-24 h-24 rounded-full border-4 border-gray-800 shadow-lg object-cover bg-gray-700 transition-opacity ${
-                          processingImage ? "opacity-50" : "opacity-100"
-                        }`}
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <span className="text-white text-xs font-bold uppercase">
-                          Upload
-                        </span>
+                      <div
+                        className={`w-28 h-28 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl ${
+                          formData.photoURL
+                            ? "border-cyan-500"
+                            : "border-dashed border-gray-600 hover:border-gray-400"
+                        }`}>
+                        {formData.photoURL ? (
+                          <img
+                            src={formData.photoURL}
+                            alt="Preview"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="text-center">
+                            <span className="text-3xl">📷</span>
+                            <p className="text-[10px] text-gray-400 uppercase mt-1 font-bold">
+                              Photo
+                            </p>
+                          </div>
+                        )}
                       </div>
                       <input
                         type="file"
@@ -531,12 +514,14 @@ export default function GlobalPlayersView() {
                       />
                     </div>
                   </div>
+
+                  {/* 2. TEXT FIELDS */}
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
                       Full Name
                     </label>
                     <input
-                      className="w-full bg-gray-800 border border-gray-700 rounded p-3 text-white focus:border-cyan-500 outline-none transition-colors"
+                      className="w-full bg-black border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500 outline-none"
                       value={formData.name}
                       onChange={(e) =>
                         setFormData({ ...formData, name: e.target.value })
@@ -544,79 +529,95 @@ export default function GlobalPlayersView() {
                       required
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                      Mobile
+                    </label>
+                    <input
+                      type="tel"
+                      className="w-full bg-black border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500 outline-none"
+                      value={formData.mobile}
+                      onChange={(e) =>
+                        setFormData({ ...formData, mobile: e.target.value })
+                      }
+                    />
+                  </div>
+
+                  {/* 3. ROLE BUTTONS (Grid Layout) */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                      Role
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        "Batsman",
+                        "Bowler",
+                        "All-Rounder",
+                        "Wicket Keeper",
+                      ].map((role) => (
+                        <button
+                          key={role}
+                          type="button"
+                          onClick={() => setFormData({ ...formData, role })}
+                          className={`py-3 px-2 rounded-lg text-xs font-bold border transition-all ${
+                            formData.role === role
+                              ? "bg-cyan-900/40 border-cyan-500 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.2)]"
+                              : "bg-gray-800 border-gray-800 text-gray-400 hover:bg-gray-700"
+                          }`}>
+                          {role}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 4. STYLES (Side-by-Side) */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                        Role
+                        Batting
                       </label>
                       <select
-                        className="w-full bg-gray-800 border border-gray-700 rounded p-3 text-white outline-none"
-                        value={formData.role}
+                        className="w-full bg-black border border-gray-700 rounded-xl px-3 py-3 text-sm text-white outline-none focus:border-cyan-500"
+                        value={formData.battingStyle}
                         onChange={(e) =>
-                          setFormData({ ...formData, role: e.target.value })
+                          setFormData({
+                            ...formData,
+                            battingStyle: e.target.value,
+                          })
                         }>
-                        <option>Batsman</option>
-                        <option>Bowler</option>
-                        <option>All-Rounder</option>
-                        <option>Wicket Keeper</option>
+                        <option>Right Hand Bat</option>
+                        <option>Left Hand Bat</option>
                       </select>
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                        Phone
+                        Bowling
                       </label>
-                      <input
-                        className="w-full bg-gray-800 border border-gray-700 rounded p-3 text-white outline-none"
-                        value={formData.mobile}
+                      <select
+                        className="w-full bg-black border border-gray-700 rounded-xl px-3 py-3 text-sm text-white outline-none focus:border-cyan-500"
+                        value={formData.bowlingStyle}
                         onChange={(e) =>
-                          setFormData({ ...formData, mobile: e.target.value })
-                        }
-                      />
+                          setFormData({
+                            ...formData,
+                            bowlingStyle: e.target.value,
+                          })
+                        }>
+                        <option>Right Arm Medium</option>
+                        <option>Right Arm Fast</option>
+                        <option>Right Arm Spin</option>
+                        <option>Left Arm Medium</option>
+                        <option>Left Arm Fast</option>
+                        <option>Left Arm Spin</option>
+                        <option>None</option>
+                      </select>
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                      Batting Style
-                    </label>
-                    <select
-                      className="w-full bg-gray-800 border border-gray-700 rounded p-3 text-white outline-none"
-                      value={formData.battingStyle}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          battingStyle: e.target.value,
-                        })
-                      }>
-                      <option>Right Hand Bat</option>
-                      <option>Left Hand Bat</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                      Bowling Style
-                    </label>
-                    <select
-                      className="w-full bg-gray-800 border border-gray-700 rounded p-3 text-white outline-none"
-                      value={formData.bowlingStyle}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          bowlingStyle: e.target.value,
-                        })
-                      }>
-                      <option>None</option>
-                      <option>Right Arm Fast</option>
-                      <option>Right Arm Medium</option>
-                      <option>Right Arm Spin</option>
-                      <option>Left Arm Fast</option>
-                      <option>Left Arm Medium</option>
-                      <option>Left Arm Spin</option>
-                    </select>
-                  </div>
+
                   <button
                     type="submit"
                     disabled={processingImage}
-                    className="w-full bg-cyan-600 hover:bg-cyan-500 py-3 rounded-lg font-bold text-white mt-4 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed">
+                    className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-4 rounded-xl shadow-lg transition-all disabled:opacity-50">
                     {processingImage
                       ? "Processing..."
                       : isEditing

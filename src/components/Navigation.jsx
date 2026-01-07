@@ -2,8 +2,8 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import { auth, db } from "../utils/firebase"; // Added db import
-import { doc, getDoc } from "firebase/firestore"; // Added Firestore functions
+import { auth, db } from "../utils/firebase";
+import { doc, getDoc } from "firebase/firestore";
 
 export default function Navigation() {
   const [isOpen, setIsOpen] = useState(false);
@@ -32,13 +32,10 @@ export default function Navigation() {
       }
     }
     fetchProfileData();
-  }, [user]); // Re-run when user auth state changes
+  }, [user]);
 
   // Determine which image to show: Firestore > Auth > Default
-  const displayImage =
-    profileData?.photoURL ||
-    user?.photoURL ||
-    null;
+  const displayImage = profileData?.photoURL || user?.photoURL || null;
 
   // --- LOGIC: Get Tournament ID from URL ---
   const pathSegments = location.pathname.split("/");
@@ -73,7 +70,7 @@ export default function Navigation() {
     });
   }
 
-  // 3. Admin Dashboard
+  // 3. Admin Dashboard (Only if logged in)
   if (user) {
     links.push({ name: "🏆 Dashboard", path: "/dashboard" });
   }
@@ -94,8 +91,7 @@ export default function Navigation() {
           <Link
             to="/"
             className="text-2xl font-black text-white tracking-tighter flex items-center gap-2 z-50"
-            onClick={() => setIsOpen(false)}
-          >
+            onClick={() => setIsOpen(false)}>
             <span className="text-cyan-500">⚡</span> CRIC
             <span className="text-cyan-500">SCORE</span>
           </Link>
@@ -111,16 +107,35 @@ export default function Navigation() {
                   isActive(link.path)
                     ? "text-cyan-400 border-b-2 border-cyan-400 pb-1"
                     : "text-gray-300 hover:text-white"
-                }`}
-              >
+                }`}>
                 {link.name}
               </Link>
             ))}
 
-            {/* Render Auth Buttons */}
+            {/* --- PLAYER REGISTRATION LINK (PUBLIC) --- */}
+            {!user && (
+              <>
+                <Link
+                  to="/register-player"
+                  className="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition-all shadow-lg shadow-cyan-900/20 flex items-center gap-2">
+                  <span>📝</span> Register as Player
+                </Link>
+                
+                  <Link
+                    to="/login"
+                    onClick={() => setIsOpen(false)}
+                    className="block px-3 py-3 rounded-lg text-base font-bold bg-gradient-to-r from-cyan-900/50 to-blue-900/50 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-900/70">
+                    Login
+                  </Link>
+              </>
+            )}
+
+            {/* Render Auth Buttons (Only show User Profile/Logout if logged in) */}
             {user ? (
               <div className="flex items-center gap-4 ml-4 pl-4 border-l border-gray-700">
-                <Link to="/profile" className="group flex items-center gap-2 text-sm font-bold text-gray-300 hover:text-white">
+                <Link
+                  to="/profile"
+                  className="group flex items-center gap-2 text-sm font-bold text-gray-300 hover:text-white">
                   {displayImage ? (
                     <img
                       src={displayImage}
@@ -137,42 +152,34 @@ export default function Navigation() {
                 </Link>
                 <button
                   onClick={handleLogout}
-                  className="text-sm font-bold text-red-400 hover:text-red-300 transition-colors"
-                >
+                  className="text-sm font-bold text-red-400 hover:text-red-300 transition-colors">
                   Logout
                 </button>
               </div>
-            ) : (
+            ) : // HIDDEN: Login/Signup links are commented out per requirement
+            // You can uncomment these later when you want to enable public signups again
+            /*
               <div className="flex items-center gap-4 border-l border-gray-700 pl-4 ml-2">
-                <Link
-                  to="/login"
-                  className="text-sm font-bold text-cyan-400 hover:text-cyan-300"
-                >
-                  Login
-                </Link>
-                <Link
-                  to="/register"
-                  className="bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition-all shadow-lg shadow-cyan-900/20"
-                >
-                  Sign Up
-                </Link>
+                <Link to="/login" className="...">Login</Link>
+                <Link to="/register" className="...">Sign Up</Link>
               </div>
-            )}
+              */
+            null}
           </div>
 
           {/* --- 3. MOBILE HAMBURGER BUTTON --- */}
-          <div className="md:hidden flex items-center">
+          <div className="md:hidden flex items-center gap-3">
+            {/* Show Register button on mobile header too if space allows, or put in menu */}
+
             <button
               onClick={() => setIsOpen(!isOpen)}
-              className="text-gray-300 hover:text-white focus:outline-none p-2 rounded-md hover:bg-gray-800 transition-colors"
-            >
+              className="text-gray-300 hover:text-white focus:outline-none p-2 rounded-md hover:bg-gray-800 transition-colors">
               {isOpen ? (
                 <svg
                   className="w-6 h-6"
                   fill="none"
                   stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
+                  viewBox="0 0 24 24">
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -185,8 +192,7 @@ export default function Navigation() {
                   className="w-6 h-6"
                   fill="none"
                   stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
+                  viewBox="0 0 24 24">
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -214,58 +220,54 @@ export default function Navigation() {
                   isActive(link.path)
                     ? "bg-cyan-900/30 text-cyan-400 border-l-4 border-cyan-500"
                     : "text-gray-300 hover:bg-gray-800 hover:text-white"
-                }`}
-              >
+                }`}>
                 {link.name}
               </Link>
             ))}
 
+            {/* Mobile Register Link */}
+            {!user && (
+              <>
+                <Link
+                  to="/register-player"
+                  onClick={() => setIsOpen(false)}
+                  className="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition-all shadow-lg shadow-cyan-900/20 flex items-center gap-2">
+                  📝 Register as Player
+                </Link>                
+                <Link
+                  to="/login"
+                  onClick={() => setIsOpen(false)}
+                  className="block px-3 py-3 rounded-lg text-base font-bold bg-gradient-to-r from-cyan-900/50 to-blue-900/50 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-900/70">
+                  Login
+                </Link>
+              </>
+            )}
+
             {/* Mobile Auth Section */}
-            <div className="border-t border-gray-800 pt-4 mt-2">
-              {user ? (
-                <>
-                  <Link
-                    to="/profile"
-                    onClick={() => setIsOpen(false)}
-                    className="flex items-center gap-3 px-3 py-3 rounded-lg text-base font-bold text-gray-300 hover:bg-gray-800 hover:text-white mb-2"
-                  >
-                    {displayImage ? (
-                      <img
-                        src={displayImage}
-                        alt="Profile"
-                        className="w-8 h-8 rounded-full border border-gray-600 object-cover"
-                      />
-                    ) : (
-                      <span className="text-xl">👤</span>
-                    )}
-                    My Profile
-                  </Link>
-                  <button
-                    onClick={handleLogout}
-                    className="w-full text-left px-3 py-3 rounded-lg text-base font-bold text-red-400 hover:bg-red-900/20"
-                  >
-                    Logout
-                  </button>
-                </>
-              ) : (
-                <div className="grid grid-cols-2 gap-3 mt-2">
-                  <Link
-                    to="/login"
-                    onClick={() => setIsOpen(false)}
-                    className="block text-center px-3 py-3 rounded-lg font-bold text-gray-300 bg-gray-800 hover:bg-gray-700"
-                  >
-                    Login
-                  </Link>
-                  <Link
-                    to="/register"
-                    onClick={() => setIsOpen(false)}
-                    className="block text-center px-3 py-3 rounded-lg font-bold text-white bg-cyan-600 hover:bg-cyan-500"
-                  >
-                    Sign Up
-                  </Link>
-                </div>
-              )}
-            </div>
+            {user && (
+              <div className="border-t border-gray-800 pt-4 mt-2">
+                <Link
+                  to="/profile"
+                  onClick={() => setIsOpen(false)}
+                  className="flex items-center gap-3 px-3 py-3 rounded-lg text-base font-bold text-gray-300 hover:bg-gray-800 hover:text-white mb-2">
+                  {displayImage ? (
+                    <img
+                      src={displayImage}
+                      alt="Profile"
+                      className="w-8 h-8 rounded-full border border-gray-600 object-cover"
+                    />
+                  ) : (
+                    <span className="text-xl">👤</span>
+                  )}
+                  My Profile
+                </Link>
+                <button
+                  onClick={handleLogout}
+                  className="w-full text-left px-3 py-3 rounded-lg text-base font-bold text-red-400 hover:bg-red-900/20">
+                  Logout
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
