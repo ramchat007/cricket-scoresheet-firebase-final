@@ -1,27 +1,162 @@
+// src/hooks/useScoring.js
 import {
   ballTransaction,
   undoLast,
   finishMatch,
   deleteMatch,
 } from "../utils/firestore.js";
-import { syncMatchStatsToGlobalPlayers } from "../utils/statsSync"; // ✅ NEW IMPORT
+import { syncMatchStatsToGlobalPlayers } from "../utils/statsSync";
+const norm = (k) => String(k || "").trim();
+function recalculateInningsState(inn) {
+  if (!inn) return inn;
+
+  // 1. Reset Totals
+  inn.score = 0;
+  inn.wickets = 0;
+  inn.over = 0;
+  inn.overBallCount = 0;
+  inn.extras = { wides: 0, noBalls: 0, byes: 0, legByes: 0 };
+
+  // 2. Map Normalized Names to Real Keys
+  // This allows us to find "Roshan " even if the key is "Roshan"
+  const batterKeyMap = {};
+  Object.keys(inn.batsmenStats || {}).forEach((key) => {
+    batterKeyMap[norm(key)] = key;
+    // Reset stats while we're here
+    inn.batsmenStats[key].runs = 0;
+    inn.batsmenStats[key].balls = 0;
+    inn.batsmenStats[key].fours = 0;
+    inn.batsmenStats[key].sixes = 0;
+  });
+
+  const bowlerKeyMap = {};
+  Object.keys(inn.bowlerStats || {}).forEach((key) => {
+    bowlerKeyMap[norm(key)] = key;
+    // Reset stats
+    inn.bowlerStats[key].runs = 0;
+    inn.bowlerStats[key].balls = 0;
+    inn.bowlerStats[key].wickets = 0;
+  });
+
+  // 3. Replay History
+  const history = inn.timeline || inn.ballsLog || [];
+
+  history.forEach((ball) => {
+    // Normalize Ball Data
+    let runVal = 0;
+    let isW = false,
+      isWD = false,
+      isNB = false,
+      isB = false,
+      isLB = false;
+
+    // Default to current striker if missing (Edge case fallback)
+    let batterName = inn.striker;
+    let bowlerName = inn.currentBowler;
+
+    if (typeof ball === "object") {
+      runVal = ball.runs || 0;
+      isW = ball.isWicket;
+      isWD = ball.isWide;
+      isNB = ball.isNoBall;
+      isB = ball.isBye;
+      isLB = ball.isLegBye;
+      // Prefer the name stored in the event
+      if (ball.batter) batterName = ball.batter;
+      if (ball.bowler) bowlerName = ball.bowler;
+    } else {
+      // Legacy String Format
+      const code = String(ball);
+      if (code === "W") isW = true;
+      else if (code.includes("WD")) {
+        isWD = true;
+        runVal = 1 + (parseInt(code.replace("WD", "")) || 0);
+      } else if (code.includes("NB")) {
+        isNB = true;
+        runVal = 1 + (parseInt(code.replace("NB", "")) || 0);
+      } else runVal = parseInt(code) || 0;
+    }
+
+    // Lookup real keys using normalized names
+    const batterKey = batterKeyMap[norm(batterName)];
+    const bowlerKey = bowlerKeyMap[norm(bowlerName)];
+
+    // --- CALCULATION LOGIC ---
+
+    // 1. Total Score
+    inn.score += runVal;
+
+    // 2. Extras
+    if (isWD) {
+      inn.extras.wides += runVal;
+    } else if (isNB) {
+      inn.extras.noBalls += 1;
+      // If runs were scored off the bat on a NB, add them to score (penalty already added)
+      if (!isB && !isLB) {
+        inn.score += runVal - 1;
+      }
+    } else if (isB) {
+      inn.extras.byes += runVal;
+    } else if (isLB) {
+      inn.extras.legByes += runVal;
+    }
+
+    // 3. Batting Stats
+    if (batterKey && inn.batsmenStats[batterKey]) {
+      // Legal ball count
+      if (!isWD) {
+        inn.batsmenStats[batterKey].balls += 1;
+      }
+      // Runs off bat
+      if (!isWD && !isB && !isLB) {
+        const batRuns = isNB ? runVal - 1 : runVal; // Remove NB penalty from batter's runs
+        inn.batsmenStats[batterKey].runs += batRuns;
+
+        if (batRuns === 4) inn.batsmenStats[batterKey].fours += 1;
+        if (batRuns === 6) inn.batsmenStats[batterKey].sixes += 1;
+      }
+    }
+
+    // 4. Bowling Stats
+    if (bowlerKey && inn.bowlerStats[bowlerKey]) {
+      // Bowler runs (exclude byes/legbyes)
+      if (!isB && !isLB) {
+        inn.bowlerStats[bowlerKey].runs += runVal;
+      }
+      // Legal ball count
+      if (!isWD && !isNB) {
+        inn.bowlerStats[bowlerKey].balls += 1;
+      }
+      // Wickets (exclude runouts)
+      if (isW && !isDataRunOut(ball)) {
+        inn.bowlerStats[bowlerKey].wickets += 1;
+      }
+    }
+
+    // 5. Overs & Wickets
+    if (isW) inn.wickets += 1;
+
+    if (!isWD && !isNB) {
+      inn.overBallCount += 1;
+      if (inn.overBallCount === 6) {
+        inn.over += 1;
+        inn.overBallCount = 0;
+      }
+    }
+  });
+
+  return inn;
+}
+
+function isDataRunOut(ball) {
+  if (typeof ball !== "object") return false;
+  return ball.wicketType === "runout";
+}
 
 /**
- * SCORING HOOK (Transaction Based - Auto Switch)
- * Handles ball-by-ball scoring, auto-switching innings, and match completion.
+ * MAIN SCORING HOOK
  */
 export function useScoring({ tournamentId, matchId, match }) {
-  // --- HELPER: Swap Strike ---
-  function swapStrike(s, inningIdx) {
-    const inn = s.innings?.[inningIdx];
-    if (!inn) return s;
-    const t = inn.striker;
-    inn.striker = inn.nonStriker;
-    inn.nonStriker = t;
-    return s;
-  }
-
-  // --- HELPER: Register Batting Order ---
   function addToBattingOrder(inn, playerName) {
     if (!inn || !playerName) return;
     if (!inn.battingOrder) inn.battingOrder = [];
@@ -30,499 +165,206 @@ export function useScoring({ tournamentId, matchId, match }) {
     }
   }
 
-  // --- HELPER: Initialize Second Innings ---
-  function initializeSecondInnings(s) {
-    const prevInnings = s.innings[0];
-    const nextInnings = s.innings[1] || {};
-
-    // 1. Swap Squads (Batting Team becomes Bowling Team)
-    const prevBowl = Array.isArray(prevInnings.bowlersList)
-      ? prevInnings.bowlersList
-      : [];
-    const prevBat = Array.isArray(prevInnings.batsmenList)
-      ? prevInnings.batsmenList
-      : [];
-
-    nextInnings.batsmenList = [...prevBowl];
-    nextInnings.bowlersList = [...prevBat];
-
-    // 2. Set Team Names
-    if (s.meta?.teamA && s.meta?.teamB) {
-      nextInnings.battingTeam =
-        prevInnings.battingTeam === s.meta.teamA ? s.meta.teamB : s.meta.teamA;
-      nextInnings.bowlingTeam = prevInnings.battingTeam;
-    }
-
-    // 3. Set Openers
-    nextInnings.striker = nextInnings.batsmenList[0] || "";
-    nextInnings.nonStriker = nextInnings.batsmenList[1] || "";
-    nextInnings.currentBowler = nextInnings.bowlersList[0] || "";
-
-    // 4. Setup Lists
-    nextInnings.nextBatsmen = (nextInnings.batsmenList || [])
-      .slice(2)
-      .filter(Boolean);
-
-    nextInnings.battingOrder = [
-      nextInnings.striker,
-      nextInnings.nonStriker,
-    ].filter(Boolean);
-
-    // 5. Initialize Stats
-    nextInnings.batsmenStats = Object.fromEntries(
-      (nextInnings.batsmenList || []).map((n) => [
-        n,
-        { runs: 0, balls: 0, fours: 0, sixes: 0 },
-      ])
-    );
-    nextInnings.bowlerStats = Object.fromEntries(
-      (nextInnings.bowlersList || []).map((n) => [
-        n,
-        { balls: 0, runs: 0, wickets: 0 },
-      ])
-    );
-
-    // 6. Reset Scores
-    nextInnings.score = 0;
-    nextInnings.wickets = 0;
-    nextInnings.over = 0;
-    nextInnings.overBallCount = 0;
-    nextInnings.extras = { wides: 0, noBalls: 0, byes: 0, legByes: 0 };
-    nextInnings.ballsLog = [];
-    nextInnings.timeline = [];
-
-    // 7. Clear Flags
-    nextInnings.awaitingNewBatsman = false;
-    nextInnings.awaitingNewBowler = false;
-    nextInnings.completed = false;
-
-    // 8. Save
-    s.innings[1] = nextInnings;
-    s.currentInnings = 1; // SWITCH POINTER
-
-    return s;
-  }
-
-  // --- LOGIC: Check Finish / End Innings / Target ---
-  function checkFinishAndSetResult(s, idx) {
-    s.meta = s.meta || {};
-    const inn = s.innings?.[idx];
-    if (!inn) return;
-
-    const oversLimit = parseInt(s.meta?.overs || 0);
-    const target = s.meta?.target;
-    let isInningsEnded = false;
-
-    // --- CASE A: Chasing Team Won (2nd Innings) ---
-    if (idx === 1 && target && (inn.score || 0) >= target) {
-      inn.completed = true;
-      s.meta.matchStatus = "finished";
-      const wicketsRemain = Math.max(10 - (inn.wickets || 0), 0);
-      s.meta.result = `${inn.battingTeam} won by ${wicketsRemain} wicket${
-        wicketsRemain === 1 ? "" : "s"
-      }`;
-      inn.awaitingNewBowler = false;
-      inn.awaitingNewBatsman = false;
-      return;
-    }
-
-    // --- CASE B: All Out ---
-    const totalPlayers = Array.isArray(inn.batsmenList)
-      ? inn.batsmenList.length
-      : 11;
-    const maxWickets = totalPlayers > 0 ? totalPlayers - 1 : 10;
-
-    if ((inn.wickets || 0) >= maxWickets) {
-      isInningsEnded = true;
-    }
-
-    // --- CASE C: Overs Limit Reached ---
-    if (oversLimit > 0 && inn.over >= oversLimit && inn.overBallCount === 0) {
-      isInningsEnded = true;
-    }
-
-    // === EXECUTE END OF INNINGS LOGIC ===
-    if (isInningsEnded) {
-      inn.completed = true;
-      inn.awaitingNewBowler = false;
-      inn.awaitingNewBatsman = false;
-
-      if (idx === 0) {
-        s.meta.target = (inn.score || 0) + 1;
-        initializeSecondInnings(s);
-      } else if (idx === 1) {
-        s.meta.matchStatus = "finished";
-        const a = s.innings?.[0]?.score || 0;
-        const b = inn.score || 0;
-
-        if (a > b) s.meta.result = `${s.meta.teamA} won by ${a - b} runs`;
-        else if (b > a)
-          s.meta.result = `${s.meta.teamB} won by ${
-            10 - (inn.wickets || 0)
-          } wickets`;
-        else s.meta.result = "Match tied";
-      }
-    }
-  }
-
   // --- 1. HANDLE BALL ---
   async function handleBall(code, extraData = {}, extraRuns = 0) {
-    if (!tournamentId || !matchId || matchId === "new" || !match) return;
-    if (match.meta?.matchStatus === "finished") {
-      alert("Match has finished.");
-      return;
-    }
+    if (!tournamentId || !matchId || !match) return;
 
     try {
       await ballTransaction(tournamentId, matchId, (s) => {
         const idx = s.currentInnings || 0;
         const inn = s.innings?.[idx];
+        if (!inn || inn.completed) return s;
 
-        if (!inn) return s;
-        if (inn.completed) return s;
-        if (inn.awaitingNewBatsman || inn.awaitingNewBowler) return s;
+        // Ensure stats objects exist for current players
+        const striker = inn.striker;
+        const bowler = inn.currentBowler;
 
+        if (striker && (!inn.batsmenStats || !inn.batsmenStats[striker])) {
+          inn.batsmenStats = inn.batsmenStats || {};
+          inn.batsmenStats[striker] = { runs: 0, balls: 0, fours: 0, sixes: 0 };
+        }
+        if (bowler && (!inn.bowlerStats || !inn.bowlerStats[bowler])) {
+          inn.bowlerStats = inn.bowlerStats || {};
+          inn.bowlerStats[bowler] = { runs: 0, balls: 0, wickets: 0 };
+        }
+
+        // 1. Prepare New Ball Object
+        const newBall = {
+          id: Date.now(),
+          code: code,
+          runs: 0,
+          isWicket: code === "W",
+          isWide: code === "WD",
+          isNoBall: code === "NB",
+          isBye: code === "B",
+          isLegBye: code === "LB",
+          batter: striker, // Save exact string from DB
+          bowler: bowler, // Save exact string from DB
+          ...extraData,
+        };
+
+        if (newBall.isWide || newBall.isNoBall) {
+          newBall.runs = 1 + extraRuns;
+        } else if (newBall.isBye || newBall.isLegBye) {
+          newBall.runs = extraRuns;
+        } else if (!newBall.isWicket) {
+          newBall.runs = parseInt(code) || 0;
+        }
+
+        // 2. Add to Timeline
+        inn.timeline = inn.timeline || [];
+        inn.ballsLog = inn.ballsLog || [];
+
+        inn.timeline.push(newBall);
+        inn.ballsLog.push(code);
+
+        // 3. AUTO-HEAL
+        recalculateInningsState(inn);
+
+        // 4. Update Strike & Order
         addToBattingOrder(inn, inn.striker);
         addToBattingOrder(inn, inn.nonStriker);
 
-        let runs = 0;
-        if (["WD", "NB", "B", "LB"].includes(code)) {
-          runs = extraRuns || 0;
-        } else if (code !== "W") {
-          runs = parseInt(code, 10) || 0;
+        let shouldSwap = false;
+        const runsPhysical = extraRuns || newBall.runs;
+
+        // Simple odd/even swap (ignoring boundary logic for robustness)
+        if (runsPhysical % 2 !== 0) shouldSwap = true;
+
+        // End of Over Swap
+        const isLegal = !newBall.isWide && !newBall.isNoBall;
+        if (isLegal && inn.overBallCount === 0 && inn.over > 0) {
+          shouldSwap = !shouldSwap;
+          inn.awaitingNewBowler = true;
         }
 
-        let ballCounted = false;
+        if (shouldSwap) {
+          const t = inn.striker;
+          inn.striker = inn.nonStriker;
+          inn.nonStriker = t;
+        }
 
-        // === WICKET ===
-        if (code === "W") {
+        if (newBall.isWicket) {
           inn.awaitingNewBatsman = true;
-          inn.wickets = (inn.wickets || 0) + 1;
-
-          const whoOut = extraData.whoOut || inn.striker;
-          const wType = extraData.wicketType || "bowled";
-          const fielder = extraData.fielderName || "";
-          const bowler = inn.currentBowler || "";
-
-          inn.batsmenStats = inn.batsmenStats || {};
-          inn.batsmenStats[whoOut] = inn.batsmenStats[whoOut] || {
-            runs: 0,
-            balls: 0,
-            fours: 0,
-            sixes: 0,
-          };
-
-          if (whoOut === inn.striker) inn.batsmenStats[whoOut].balls += 1;
-
-          inn.batsmenStats[whoOut].wicketType = wType;
-          inn.batsmenStats[whoOut].fielder = fielder;
-          inn.batsmenStats[whoOut].bowler = bowler;
-
-          let outText = `b ${bowler}`;
-          if (wType === "caught") outText = `c ${fielder} b ${bowler}`;
-          else if (wType === "runout") outText = `run out (${fielder})`;
-          else if (wType === "stumped") outText = `st ${fielder} b ${bowler}`;
-          else if (wType === "lbw") outText = `lbw b ${bowler}`;
-          else if (wType === "hitwicket") outText = `hit wicket b ${bowler}`;
-          inn.batsmenStats[whoOut].out = outText;
-
-          inn.bowlerStats = inn.bowlerStats || {};
-          inn.bowlerStats[bowler] = inn.bowlerStats[bowler] || {
-            balls: 0,
-            runs: 0,
-            wickets: 0,
-          };
-
-          if (wType !== "runout") {
-            inn.bowlerStats[bowler].balls += 1;
-            inn.bowlerStats[bowler].wickets += 1;
-          } else {
-            inn.bowlerStats[bowler].balls += 1;
-          }
-
-          ballCounted = true;
-
           inn.fallOfWickets = inn.fallOfWickets || [];
           inn.fallOfWickets.push({
             score: inn.score,
             wicketNo: inn.wickets,
-            over: `${inn.over}.${inn.overBallCount + 1}`,
-            batsman: whoOut,
-            type: wType,
-            fielder: fielder,
+            over: `${inn.over}.${inn.overBallCount}`,
+            batsman: extraData.whoOut || inn.striker,
           });
         }
 
-        // === WIDE / NO BALL ===
-        else if (code === "WD" || code === "NB") {
-          inn.score = (inn.score || 0) + 1 + runs;
-          inn.extras = inn.extras || {
-            wides: 0,
-            noBalls: 0,
-            byes: 0,
-            legByes: 0,
-          };
-          if (code === "WD") inn.extras.wides += 1 + runs;
-          if (code === "NB") inn.extras.noBalls += 1 + runs;
-
-          inn.bowlerStats = inn.bowlerStats || {};
-          inn.bowlerStats[inn.currentBowler] = inn.bowlerStats[
-            inn.currentBowler
-          ] || { balls: 0, runs: 0, wickets: 0 };
-          inn.bowlerStats[inn.currentBowler].runs += 1 + runs;
-
-          if (code === "NB") {
-            inn.batsmenStats = inn.batsmenStats || {};
-            inn.batsmenStats[inn.striker] = inn.batsmenStats[inn.striker] || {
-              runs: 0,
-              balls: 0,
-              fours: 0,
-              sixes: 0,
-            };
-            inn.batsmenStats[inn.striker].balls += 1;
-            inn.batsmenStats[inn.striker].runs += runs;
-          }
-          if (runs % 2 !== 0) s = swapStrike(s, idx);
-        }
-
-        // === BYES / LEG BYES ===
-        else if (code === "B" || code === "LB") {
-          inn.score = (inn.score || 0) + runs;
-          inn.extras = inn.extras || {
-            wides: 0,
-            noBalls: 0,
-            byes: 0,
-            legByes: 0,
-          };
-          if (code === "B") inn.extras.byes += runs;
-          if (code === "LB") inn.extras.legByes += runs;
-
-          inn.bowlerStats = inn.bowlerStats || {};
-          inn.bowlerStats[inn.currentBowler] = inn.bowlerStats[
-            inn.currentBowler
-          ] || { balls: 0, runs: 0, wickets: 0 };
-          inn.bowlerStats[inn.currentBowler].balls += 1;
-
-          inn.batsmenStats = inn.batsmenStats || {};
-          inn.batsmenStats[inn.striker] = inn.batsmenStats[inn.striker] || {
-            runs: 0,
-            balls: 0,
-            fours: 0,
-            sixes: 0,
-          };
-          inn.batsmenStats[inn.striker].balls += 1;
-
-          ballCounted = true;
-          if (runs % 2 !== 0) s = swapStrike(s, idx);
-        }
-
-        // === REGULAR RUNS ===
-        else {
-          inn.score = (inn.score || 0) + runs;
-          inn.batsmenStats = inn.batsmenStats || {};
-          inn.batsmenStats[inn.striker] = inn.batsmenStats[inn.striker] || {
-            runs: 0,
-            balls: 0,
-            fours: 0,
-            sixes: 0,
-          };
-          inn.batsmenStats[inn.striker].runs += runs;
-          inn.batsmenStats[inn.striker].balls += 1;
-          if (runs === 4) inn.batsmenStats[inn.striker].fours += 1;
-          if (runs === 6) inn.batsmenStats[inn.striker].sixes += 1;
-
-          inn.bowlerStats = inn.bowlerStats || {};
-          inn.bowlerStats[inn.currentBowler] = inn.bowlerStats[
-            inn.currentBowler
-          ] || { balls: 0, runs: 0, wickets: 0 };
-          inn.bowlerStats[inn.currentBowler].runs += runs;
-          inn.bowlerStats[inn.currentBowler].balls += 1;
-
-          ballCounted = true;
-          if (runs % 2 !== 0) s = swapStrike(s, idx);
-        }
-
-        // === OVER COMPLETION ===
-        if (ballCounted) {
-          inn.overBallCount = (inn.overBallCount || 0) + 1;
-          if (inn.overBallCount === 6) {
-            inn.over = (inn.over || 0) + 1;
-            inn.overBallCount = 0;
-            if (code !== "W") s = swapStrike(s, idx);
-            inn.awaitingNewBowler = true;
-          }
-        }
-
-        inn.timeline = inn.timeline || [];
-        inn.timeline.push(code === "0" ? "•" : code);
-        inn.ballsLog = inn.ballsLog || [];
-        inn.ballsLog.push(code);
-
         checkFinishAndSetResult(s, idx);
-
         return s;
       });
     } catch (e) {
-      console.error("Ball Transaction Failed:", e);
-      alert("Error saving score: " + e.message);
+      console.error("Scoring Error:", e);
+      alert("Error: " + e.message);
+    }
+  }
+
+  // --- LOGIC: Check Finish ---
+  function checkFinishAndSetResult(s, idx) {
+    const inn = s.innings?.[idx];
+    const target = s.meta?.target;
+
+    if (idx === 1 && target && inn.score >= target) {
+      inn.completed = true;
+      s.meta.matchStatus = "finished";
+      s.meta.result = `${inn.battingTeam} won by ${10 - inn.wickets} wickets`;
+    }
+
+    const maxOvers = parseInt(s.meta?.overs || 20);
+    const isAllOut = inn.wickets >= 10;
+    const isOversDone = inn.over >= maxOvers;
+
+    if (isAllOut || isOversDone) {
+      inn.completed = true;
+      inn.awaitingNewBowler = false;
+
+      if (idx === 0) {
+        s.meta.target = inn.score + 1;
+      } else {
+        s.meta.matchStatus = "finished";
+        const runDiff = (s.innings[0].score || 0) - inn.score;
+        if (runDiff > 0)
+          s.meta.result = `${s.meta.teamA} won by ${runDiff} runs`;
+        else s.meta.result = "Match Tied";
+      }
     }
   }
 
   // --- WRAPPERS ---
-  async function handleExtraBallRuns(extraType, runs) {
-    let code = "";
-    if (extraType === "wides") code = "WD";
-    if (extraType === "noBalls") code = "NB";
-    if (extraType === "byes") code = "B";
-    if (extraType === "legByes") code = "LB";
-    await handleBall(code, {}, runs);
-  }
+  const handleExtraBallRuns = (type, runs) => {
+    let code = "WD";
+    if (type === "noBalls") code = "NB";
+    if (type === "byes") code = "B";
+    if (type === "legByes") code = "LB";
+    handleBall(code, {}, runs);
+  };
 
-  async function handleNewBatsman(newPlayer) {
-    if (!tournamentId || !matchId) return;
+  const handleUndo = async () => {
+    await undoLast(tournamentId, matchId);
+  };
+
+  const handleNewBatsman = async (player) => {
     await ballTransaction(tournamentId, matchId, (s) => {
-      const idx = s.currentInnings || 0;
-      const inn = s.innings?.[idx];
-      if (!inn) return s;
-
-      inn.striker = newPlayer;
-      const currentNext = inn.nextBatsmen || inn.batsmenList || [];
-      inn.nextBatsmen = currentNext.filter((p) => p !== newPlayer);
+      const inn = s.innings[s.currentInnings];
+      inn.striker = player;
       inn.awaitingNewBatsman = false;
-      addToBattingOrder(inn, newPlayer);
       return s;
     });
-  }
+  };
 
-  async function handleConfirmBowler(name) {
-    if (!tournamentId || !matchId) return;
+  const handleConfirmBowler = async (player) => {
     await ballTransaction(tournamentId, matchId, (s) => {
-      const idx = s.currentInnings || 0;
-      const inn = s.innings?.[idx];
-      if (!inn) return s;
-      inn.bowlerStats = inn.bowlerStats || {};
-      if (!inn.bowlerStats[name])
-        inn.bowlerStats[name] = { balls: 0, runs: 0, wickets: 0 };
-      inn.currentBowler = name;
+      const inn = s.innings[s.currentInnings];
+      inn.currentBowler = player;
       inn.awaitingNewBowler = false;
       return s;
     });
-  }
+  };
 
-  async function handleChangeBowler(name) {
-    return handleConfirmBowler(name);
-  }
+  const handleChangeBowler = handleConfirmBowler;
 
-  async function handleStrikeChange(newStriker, newNonStriker) {
-    if (!tournamentId || !matchId) return;
+  const handleStrikeChange = async (s, ns) => {
+    await ballTransaction(tournamentId, matchId, (state) => {
+      const inn = state.innings[state.currentInnings];
+      inn.striker = s;
+      inn.nonStriker = ns;
+      return state;
+    });
+  };
+
+  const handleEndInnings = async () => {
     await ballTransaction(tournamentId, matchId, (s) => {
-      const idx = s.currentInnings || 0;
-      const inn = s.innings?.[idx];
-      if (!inn) return s;
-      if (newStriker) inn.striker = newStriker;
-      if (newNonStriker) inn.nonStriker = newNonStriker;
+      const inn = s.innings[s.currentInnings];
+      inn.completed = true;
+      checkFinishAndSetResult(s, s.currentInnings);
       return s;
     });
-  }
+  };
 
-  async function handleUndo() {
-    if (!tournamentId || !matchId) return;
-    try {
-      await undoLast(tournamentId, matchId);
-    } catch (e) {
-      alert("Undo failed: " + e.message);
-    }
-  }
+  const handleFinishMatch = async (reason) => {
+    await finishMatch(tournamentId, matchId, match.meta?.teamA, reason);
+    await syncMatchStatsToGlobalPlayers(tournamentId, matchId, match);
+  };
 
-  async function handleEndInnings() {
-    if (!tournamentId || !matchId) return;
-    await ballTransaction(tournamentId, matchId, (s) => {
-      const idx = s.currentInnings || 0;
-      const inn = s.innings?.[idx];
-      if (inn) {
-        inn.completed = true;
-        inn.awaitingNewBowler = false;
-        inn.awaitingNewBatsman = false;
-        if (idx === 0) {
-          s.meta = s.meta || {};
-          s.meta.target = (inn.score || 0) + 1;
-          initializeSecondInnings(s);
-        } else {
-          s.meta = s.meta || {};
-          s.meta.matchStatus = "finished";
-        }
-      }
-      return s;
-    });
-  }
-
-  // ✅ UPDATED: Handle Finish + Sync to Global Players
-  async function handleFinishMatch(reason = "Completed") {
-    if (!match) return;
-
-    // Determine Winner if not already set
-    let winner = match.meta?.winner || "TBD";
-    let winnerId = match.meta?.winnerId || null;
-
-    if (!match.meta?.matchStatus || match.meta.matchStatus !== "finished") {
-      if (match.innings && match.innings[0] && match.innings[1]) {
-        if (match.innings[0].score > match.innings[1].score) {
-          winner = match.meta?.teamA;
-          winnerId = match.meta?.teamAId;
-        } else if (match.innings[1].score > match.innings[0].score) {
-          winner = match.meta?.teamB;
-          winnerId = match.meta?.teamBId;
-        } else {
-          winner = "Tie";
-        }
-      }
-    }
-
-    try {
-      // 1. Finish Match in DB
-      await finishMatch(tournamentId, matchId, winner, reason);
-
-      // 2. 🔥 SYNC TO GLOBAL STATS (The New Part)
-      // Pass full match data so it includes innings
-      // (Assuming 'match' state is relatively fresh or using snapshot inside utility)
-      await syncMatchStatsToGlobalPlayers(tournamentId, matchId, match);
-
-      alert("Match Finished & Player Stats Updated!");
-    } catch (error) {
-      console.error("Error finishing match:", error);
-      alert("Error finishing match: " + error.message);
-    }
-  }
-
-  async function handleSwitchInnings(idx) {
-    await ballTransaction(tournamentId, matchId, (s) => {
-      s.currentInnings = idx;
-      return s;
-    });
-  }
-
-  async function handleDeleteMatch() {
-    if (window.confirm("Delete match?")) {
-      await deleteMatch(tournamentId, matchId);
-    }
-  }
-
-  function computeResultString(s) {
-    return s?.meta?.result || "";
-  }
+  const handleDeleteMatch = async () => {
+    await deleteMatch(tournamentId, matchId);
+  };
 
   return {
     handleBall,
     handleExtraBallRuns,
+    handleUndo,
     handleNewBatsman,
     handleConfirmBowler,
     handleChangeBowler,
     handleStrikeChange,
-    handleUndo,
     handleEndInnings,
     handleFinishMatch,
-    handleSwitchInnings,
     handleDeleteMatch,
-    computeResultString,
   };
 }

@@ -10,6 +10,7 @@ import { useAuth } from "../hooks/useAuth";
 import ScoreInput from "./ScoreInput.jsx";
 import ScoreTable from "./ScoreTable.jsx";
 import ScoreSummary from "./ScoreSummary.jsx";
+import MatchCommentary from "./MatchCommentary.jsx";
 
 // Helper to get local backup if network fails
 const getLocalMatch = (tId, mId) => {
@@ -267,6 +268,15 @@ export default function LiveScoring() {
                 }`}>
                 📊 Scorecard
               </button>
+              <button
+                onClick={() => setActiveTab("commentary")}
+                className={`flex-1 sm:flex-none px-6 py-2.5 rounded-lg text-sm font-bold transition-all duration-300 ${
+                  activeTab === "commentary"
+                    ? "bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg shadow-cyan-500/20"
+                    : "text-gray-400 hover:text-white hover:bg-gray-800/50"
+                }`}>
+                🎙️ Commentary
+              </button>
             </div>
 
             {/* 2. Content Container */}
@@ -286,6 +296,12 @@ export default function LiveScoring() {
                     <div className="flex flex-col gap-6">
                       <ScoreTable match={match} />
                     </div>
+                  </div>
+                )}
+
+                {activeTab === "commentary" && (
+                  <div className="p-0 sm:p-2 animate-in fade-in zoom-in-95 duration-300">
+                    <MatchCommentary match={match} />
                   </div>
                 )}
               </div>

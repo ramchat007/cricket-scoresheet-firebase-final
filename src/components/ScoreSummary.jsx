@@ -11,10 +11,16 @@ export default function ScoreSummary({ match }) {
       </div>
     );
 
-  const inningsList = Array.isArray(match.innings) ? match.innings : [];
+  // ✅ FIX: Handle both Array and Object (Map) formats
+  const inningsList = Array.isArray(match.innings)
+    ? match.innings
+    : [match.innings?.[0], match.innings?.[1]].filter(Boolean);
+
   const status = match.status || match.meta?.status || "upcoming";
   const result = match.winner || match.meta?.result || match.result?.winner;
   const currentInningIndex = match.currentInnings || 0;
+
+  // Use the list we just normalized
   const currentInning = inningsList[currentInningIndex];
   const inn1 = inningsList[0];
   const inn2 = inningsList[1];

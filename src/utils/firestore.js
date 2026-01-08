@@ -333,42 +333,45 @@ export const ballTransaction = async (tournamentId, matchId, updateFn) => {
 
       const currentState = matchDoc.data();
 
-      // 1. Create a "Lite" Snapshot for Undo (Tiny size)
+      // 1. Create a "Lite" Snapshot for Undo
       const currentInningsIndex = currentState.currentInnings || 0;
       const currentInningsData =
         currentState.innings?.[currentInningsIndex] || {};
 
-      const liteSnapshot = {
-        score: currentInningsData.score || 0,
-        wickets: currentInningsData.wickets || 0,
-        over: currentInningsData.over || 0,
-        overBallCount: currentInningsData.overBallCount || 0,
-        striker: currentInningsData.striker || "",
-        nonStriker: currentInningsData.nonStriker || "",
-        currentBowler: currentInningsData.currentBowler || "",
-        batsmenStats: currentInningsData.batsmenStats || {},
-        bowlerStats: currentInningsData.bowlerStats || {},
-        extras: currentInningsData.extras || {},
-        ballsLog: currentInningsData.ballsLog || [],
-        timeline: currentInningsData.timeline || [],
-      };
+      // 🔥 CRITICAL FIX: JSON.parse(JSON.stringify(...)) creates a DEEP COPY.
+      // This ensures the snapshot is frozen in time and won't include the new ball.
+      const liteSnapshot = JSON.parse(
+        JSON.stringify({
+          score: currentInningsData.score || 0,
+          wickets: currentInningsData.wickets || 0,
+          over: currentInningsData.over || 0,
+          overBallCount: currentInningsData.overBallCount || 0,
+          striker: currentInningsData.striker || "",
+          nonStriker: currentInningsData.nonStriker || "",
+          currentBowler: currentInningsData.currentBowler || "",
+          batsmenStats: currentInningsData.batsmenStats || {},
+          bowlerStats: currentInningsData.bowlerStats || {},
+          extras: currentInningsData.extras || {},
+          ballsLog: currentInningsData.ballsLog || [],
+          timeline: currentInningsData.timeline || [],
+        })
+      );
 
-      // 2. Run the Scoring Logic
+      // 2. Run the Scoring Logic (This mutates currentState)
       let newState = updateFn(currentState);
 
-      // 3. Attach the Lite Snapshot to an 'undoStack' instead of 'history'
+      // 3. Attach Snapshot to Stack
       let undoStack = newState.undoStack || [];
       undoStack.push(liteSnapshot);
-      if (undoStack.length > 6) undoStack.shift(); // Keep last 6 states only
+
+      // Limit stack size
+      if (undoStack.length > 6) {
+        undoStack = undoStack.slice(undoStack.length - 6);
+      }
       newState.undoStack = undoStack;
 
-      // 4. CLEANUP: Remove the bloated 'history' array if it exists
-      if (newState.history) {
-        delete newState.history;
-      }
-
-      // 5. Commit Update
-      transaction.set(matchRef, newState);
+      // 4. Sanitize & Commit
+      transaction.set(matchRef, sanitizeForCommit(newState));
     });
   } catch (e) {
     console.error("Transaction Error:", e);
@@ -383,33 +386,48 @@ export const ballTransaction = async (tournamentId, matchId, updateFn) => {
 export const undoLast = async (tournamentId, matchId) => {
   const matchRef = doc(db, "tournaments", tournamentId, "matches", matchId);
 
-  await runTransaction(db, async (transaction) => {
-    const matchDoc = await transaction.get(matchRef);
-    if (!matchDoc.exists()) throw "Match not found";
+  try {
+    await runTransaction(db, async (transaction) => {
+      const matchDoc = await transaction.get(matchRef);
+      if (!matchDoc.exists()) throw "Match not found";
 
-    const data = matchDoc.data();
-    const undoStack = data.undoStack || [];
+      const data = matchDoc.data();
+      const undoStack = data.undoStack || [];
 
-    if (undoStack.length === 0) {
-      throw new Error("Nothing to undo (Limit reached)");
-    }
+      if (undoStack.length === 0) {
+        throw new Error("Nothing to undo (Limit reached)");
+      }
 
-    // 1. Pop the last saved Lite state
-    const previousLiteState = undoStack.pop();
+      // 1. Pop the last saved Lite state
+      // We clone it to detach from the reference
+      const previousLiteState = JSON.parse(JSON.stringify(undoStack.pop()));
 
-    // 2. Restore it into the current innings
-    const idx = data.currentInnings || 0;
+      // 2. Restore it into the current innings
+      const idx = data.currentInnings || 0;
 
-    // Safety: Just overwrite the current innings stats with the snapshot
-    data.innings[idx] = {
-      ...data.innings[idx], // Keep other fields like names/squads
-      ...previousLiteState, // Overwrite stats/scores with snapshot
-    };
+      // Merge restored stats into the current innings object
+      // We keep existing names/arrays but overwrite the scores/stats
+      data.innings[idx] = {
+        ...data.innings[idx],
+        ...previousLiteState,
+      };
 
-    // 3. Save back (with reduced stack)
-    data.undoStack = undoStack;
-    transaction.set(matchRef, data);
-  });
+      // 3. Update the stack in the main object
+      data.undoStack = undoStack;
+
+      // 4. SANITIZE & COMMIT
+      // Using sanitizeForCommit is crucial to prevent "failed-precondition" due to bad data
+      const cleanData = sanitizeForCommit(data);
+
+      transaction.set(matchRef, cleanData);
+    });
+    console.log("Undo successful");
+  } catch (e) {
+    console.error("Undo Transaction Failed:", e);
+    // If transaction fails (contention), we can try a simple update as fallback
+    // (Optional, but usually safer to just let the user retry)
+    throw new Error("Undo failed. Please try again.");
+  }
 };
 
 export const finishMatch = async (tournamentId, matchId, winner, reason) => {

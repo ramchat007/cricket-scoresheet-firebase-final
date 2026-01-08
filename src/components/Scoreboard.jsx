@@ -21,7 +21,6 @@ export default function Scoreboard({ match }) {
     <div className="w-full max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* 1. Match Header Card */}
       <MatchSummary match={match} />
-
       {/* 2. Detailed Scorecard */}
       <div className="mt-6">
         <ScoreTable match={match} />

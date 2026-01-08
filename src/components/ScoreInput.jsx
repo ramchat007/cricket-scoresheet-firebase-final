@@ -3,6 +3,8 @@ import React, { useMemo, useState } from "react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { doc, updateDoc } from "firebase/firestore";
 import { db } from "../utils/firebase";
+import { updateMatch } from "../utils/matchService"; // Ensure this import exists
+import MatchCorrectionModal from "./MatchCorrectionModal.jsx";
 
 const RUN_BUTTONS = ["0", "1", "2", "3", "4", "5", "6"];
 const MAIN_BUTTONS = ["0", "1", "2", "3", "4", "5", "6"];
@@ -34,70 +36,123 @@ export default function ScoreInput({
   const [incoming, setIncoming] = useState("");
   const [newBowler, setNewBowler] = useState("");
   const [extraType, setExtraType] = useState("wides");
+  const [showCorrectionModal, setShowCorrectionModal] = useState(false);
 
   // --- HELPER: Safely get player name ---
   const getPlayerName = (player) => {
     if (!player) return "";
     if (typeof player === "object") {
-      return player.name || "Unknown";
+      return player.name || player.playerName || player.label || "Unknown";
     }
-    return player;
+    return String(player).trim();
   };
 
   // -- Memoized Data --
   const inningIndex = match?.currentInnings || 0;
   const m = match?.innings?.[inningIndex] || {};
 
+  // Extract Tournament ID safely
+  const tournamentId = match?.meta?.tournament || match?.tournamentId;
+
   // --- SAFETY CHECK: MAX OVERS ---
   const MAX_OVERS = match?.meta?.overs ? parseInt(match.meta.overs) : 50;
   const isInningsLimitReached = m.over >= MAX_OVERS;
 
-  // --- FINISH MATCH BUTTON VALIDATION ---
+  // --- FINISH MATCH VALIDATION ---
   const isCurrentInningsDone = m.completed;
-  const isMatchFinished = match.meta?.matchStatus === "finished";
+  const isMatchFinished = match?.meta?.matchStatus === "finished";
   const canFinishMatch =
     isMatchFinished || (inningIndex === 1 && isCurrentInningsDone);
 
+  // --- LOGIC: RESUME MATCH ---
+  const handleResumeMatch = async () => {
+    if (
+      !window.confirm(
+        "Unlock match? This will remove winner status and resume play."
+      )
+    )
+      return;
+
+    const idx = match.currentInnings || 0;
+
+    try {
+      await updateMatch(tournamentId, match.id, {
+        "meta.matchStatus": "ongoing",
+        status: "ongoing",
+        "meta.result": null,
+        winner: null, // Clear Winner
+        "meta.winner": null,
+        [`innings.${idx}.completed`]: false,
+        [`innings.${idx}.awaitingNewBatsman`]: false,
+        [`innings.${idx}.awaitingNewBowler`]: false,
+      });
+    } catch (e) {
+      alert("Failed to resume match: " + e.message);
+    }
+  };
+
   // --- VALIDATION: Setup Completeness ---
-  // ✅ Check if essential roles are filled
   const hasStriker = Boolean(m.striker);
   const hasNonStriker = Boolean(m.nonStriker);
   const hasBowler = Boolean(m.currentBowler);
   const isSetupComplete = hasStriker && hasNonStriker && hasBowler;
 
-  // --- SQUAD SELECTOR ---
+  // --- 🛠️ ROBUST SQUAD SELECTOR (Fixed) ---
+  // This logic works even if names have spaces or case differences
   const { currentBattingSquad, currentBowlingSquad } = useMemo(() => {
-    const teamAName = match.meta?.teamA;
-    const teamBName = match.meta?.teamB;
-    const currentBattingName = m.battingTeam;
+    const norm = (str) => (str ? String(str).trim().toLowerCase() : "");
+
+    const teamAName = norm(match?.meta?.teamA);
+    const teamBName = norm(match?.meta?.teamB);
+    const currentBattingName = norm(m.battingTeam);
 
     let batList = [];
     let bowlList = [];
+    const squadA = match?.teamASquad || [];
+    const squadB = match?.teamBSquad || [];
 
-    if (currentBattingName === teamAName) {
-      batList = match.teamASquad || [];
-      bowlList = match.teamBSquad || [];
-    } else if (currentBattingName === teamBName) {
-      batList = match.teamBSquad || [];
-      bowlList = match.teamASquad || [];
-    } else {
-      batList = m.batsmenList || [];
+    // 1. Try Matching Team Names
+    if (currentBattingName && teamAName && currentBattingName === teamAName) {
+      batList = squadA;
+      bowlList = squadB;
+    } else if (
+      currentBattingName &&
+      teamBName &&
+      currentBattingName === teamBName
+    ) {
+      batList = squadB;
+      bowlList = squadA;
+    }
+    // 2. Fallback: Use Innings Lists directly
+    else if (m.batsmenList?.length > 0) {
+      batList = m.batsmenList;
       bowlList = m.bowlersList || [];
+    }
+    // 3. Last Resort: Guess based on Innings Index
+    else {
+      if (inningIndex === 0) {
+        batList = squadA;
+        bowlList = squadB;
+      } else {
+        batList = squadB;
+        bowlList = squadA;
+      }
     }
 
     return { currentBattingSquad: batList, currentBowlingSquad: bowlList };
-  }, [match, m.battingTeam]);
+  }, [match, m.battingTeam, inningIndex]);
 
   // --- Batting Options ---
   const battingOptions = useMemo(() => {
     const set = new Set();
     if (m.striker) set.add(getPlayerName(m.striker));
     if (m.nonStriker) set.add(getPlayerName(m.nonStriker));
+
     currentBattingSquad.forEach((n) => {
       const pName = getPlayerName(n);
-      const isOut =
-        m.batsmenStats && m.batsmenStats[pName] && m.batsmenStats[pName].out;
-      if (!isOut) set.add(pName);
+      const isOut = m.batsmenStats?.[pName]?.out;
+      // Only add if NOT out
+      if (!isOut && pName) set.add(pName);
     });
     return Array.from(set);
   }, [m, currentBattingSquad]);
@@ -107,6 +162,7 @@ export default function ScoreInput({
     return currentBattingSquad
       .map((p) => getPlayerName(p))
       .filter((name) => {
+        if (!name) return false;
         if (m.batsmenStats?.[name]?.out) return false;
         if (name === getPlayerName(m.striker)) return false;
         if (name === getPlayerName(m.nonStriker)) return false;
@@ -116,31 +172,41 @@ export default function ScoreInput({
 
   // --- Fielding Team ---
   const fieldingTeamPlayers = useMemo(() => {
-    return currentBowlingSquad.map((p) => getPlayerName(p));
+    return currentBowlingSquad.map((p) => getPlayerName(p)).filter((n) => n);
   }, [currentBowlingSquad]);
 
+  // --- Stats Calculations ---
   const calculatedExtras = useMemo(() => {
     const stats = { wd: 0, nb: 0, b: 0, lb: 0 };
-    if (m.ballsLog) {
-      m.ballsLog.forEach((log) => {
-        const lowerLog = log.toLowerCase();
-        let runs = 1;
-        if (log.includes("+")) runs = parseInt(log.split("+")[1]) || 1;
-        if (lowerLog.includes("wd") || lowerLog.includes("wide"))
-          stats.wd += runs;
-        else if (lowerLog.includes("nb") || lowerLog.includes("no"))
-          stats.nb += 1;
-        else if (lowerLog.includes("lb") || lowerLog.includes("leg"))
-          stats.lb += runs;
-        else if (
-          (lowerLog.includes("b") || lowerLog.includes("bye")) &&
-          !lowerLog.includes("lb")
-        )
-          stats.b += runs;
-      });
-    }
+    const history = m.timeline || m.ballsLog || [];
+
+    history.forEach((ball) => {
+      if (typeof ball === "object") {
+        if (ball.isWide) stats.wd += ball.runs || 1;
+        else if (ball.isNoBall) stats.nb += 1;
+        else if (ball.isBye) stats.b += ball.runs;
+        else if (ball.isLegBye) stats.lb += ball.runs;
+        return;
+      }
+      const log = String(ball);
+      const lowerLog = log.toLowerCase();
+      let runs = 1;
+      if (log.includes("+")) runs = parseInt(log.split("+")[1]) || 1;
+
+      if (lowerLog.includes("wd") || lowerLog.includes("wide"))
+        stats.wd += runs;
+      else if (lowerLog.includes("nb") || lowerLog.includes("no"))
+        stats.nb += 1;
+      else if (lowerLog.includes("lb") || lowerLog.includes("leg"))
+        stats.lb += runs;
+      else if (
+        (lowerLog.includes("b") || lowerLog.includes("bye")) &&
+        !lowerLog.includes("lb")
+      )
+        stats.b += runs;
+    });
     return stats;
-  }, [m.ballsLog]);
+  }, [m.timeline, m.ballsLog]);
 
   const totalExtras =
     calculatedExtras.wd +
@@ -149,24 +215,38 @@ export default function ScoreInput({
     calculatedExtras.lb;
 
   const lastOverBalls = useMemo(() => {
-    if (!m.ballsLog || m.ballsLog.length === 0) return [];
+    const history = m.timeline || m.ballsLog || [];
+    if (history.length === 0) return [];
+
     let legalCount = 0;
     const lastBalls = [];
-    for (let i = m.ballsLog.length - 1; i >= 0 && legalCount < 6; i--) {
-      const ball = m.ballsLog[i];
-      lastBalls.unshift(ball);
-      const bLower = ball.toLowerCase();
-      if (
-        !bLower.startsWith("wd") &&
-        !bLower.startsWith("wide") &&
-        !bLower.startsWith("nb") &&
-        !bLower.startsWith("no")
-      ) {
-        legalCount++;
+
+    for (let i = history.length - 1; i >= 0 && legalCount < 6; i--) {
+      const ball = history[i];
+      let displayValue = "";
+      if (typeof ball === "object") {
+        if (ball.isWicket) displayValue = "W";
+        else displayValue = String(ball.runs);
+        if (ball.isWide) displayValue = "wd";
+        else if (ball.isNoBall) displayValue = "nb";
+        lastBalls.unshift(displayValue);
+        if (!ball.isWide && !ball.isNoBall) legalCount++;
+      } else {
+        displayValue = String(ball);
+        lastBalls.unshift(displayValue);
+        const bLower = displayValue.toLowerCase();
+        if (
+          !bLower.startsWith("wd") &&
+          !bLower.startsWith("wide") &&
+          !bLower.startsWith("nb") &&
+          !bLower.startsWith("no")
+        ) {
+          legalCount++;
+        }
       }
     }
     return lastBalls;
-  }, [m.ballsLog]);
+  }, [m.timeline, m.ballsLog]);
 
   if (!user || !match) return null;
 
@@ -175,10 +255,10 @@ export default function ScoreInput({
     const handleStartMatch = async () => {
       if (!tossWinner) return alert("Select Toss Winner");
 
-      const tournamentId = match.meta?.tournament;
-      const matchId = match.id;
+      const tid = match.meta?.tournament || match.id;
+      const mid = match.id;
 
-      if (!tournamentId || !matchId) {
+      if (!mid) {
         alert("System Error: Missing Match ID. Please refresh.");
         return;
       }
@@ -213,15 +293,9 @@ export default function ScoreInput({
           batsmenStats: {},
           bowlerStats: {},
           ballsLog: [],
+          timeline: [],
         };
-
-        const matchRef = doc(
-          db,
-          "tournaments",
-          tournamentId,
-          "matches",
-          matchId
-        );
+        const matchRef = doc(db, "tournaments", tournamentId, "matches", mid);
         await updateDoc(matchRef, {
           "meta.toss": { winner: tossWinner, decision: tossDecision },
           "meta.status": "ongoing",
@@ -246,10 +320,10 @@ export default function ScoreInput({
           <div className="space-y-4">
             <div>
               <label className="block text-sm text-gray-500 mb-1 font-bold uppercase">
-                Who won the toss?
+                Who won?
               </label>
               <select
-                className="bg-gray-900 border border-gray-700 text-white rounded p-3 w-full text-base"
+                className="bg-gray-900 border border-gray-700 text-white rounded p-3 w-full"
                 value={tossWinner}
                 onChange={(e) => setTossWinner(e.target.value)}>
                 <option value="">-- Select Team --</option>
@@ -264,18 +338,18 @@ export default function ScoreInput({
               <div className="flex gap-2">
                 <button
                   onClick={() => setTossDecision("Bat")}
-                  className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${
+                  className={`flex-1 py-3 rounded-lg font-bold text-sm ${
                     tossDecision === "Bat"
-                      ? "bg-cyan-600 text-white shadow-lg"
+                      ? "bg-cyan-600 text-white"
                       : "bg-gray-700 text-gray-400"
                   }`}>
                   Bat 🏏
                 </button>
                 <button
                   onClick={() => setTossDecision("Bowl")}
-                  className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${
+                  className={`flex-1 py-3 rounded-lg font-bold text-sm ${
                     tossDecision === "Bowl"
-                      ? "bg-green-600 text-white shadow-lg"
+                      ? "bg-green-600 text-white"
                       : "bg-gray-700 text-gray-400"
                   }`}>
                   Bowl 🥎
@@ -285,8 +359,8 @@ export default function ScoreInput({
             <button
               onClick={handleStartMatch}
               disabled={startLoading || !tossWinner}
-              className="w-full py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-bold rounded-lg shadow-lg uppercase tracking-widest mt-4">
-              {startLoading ? "Starting..." : "Start Match 🚀"}
+              className="w-full py-4 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg mt-4">
+              Start Match 🚀
             </button>
           </div>
         </div>
@@ -304,15 +378,16 @@ export default function ScoreInput({
   }
 
   // --- Scoring Logic ---
-  // ✅ UPDATED: Disable if setup is incomplete
   const disableBallEntry =
+    match.meta?.status === "finished" ||
+    m.completed ||
     Boolean(m.awaitingNewBowler) ||
     Boolean(m.awaitingNewBatsman) ||
-    match.meta?.status === "finished" ||
     isWicketMenuOpen ||
     !isSetupComplete;
 
-  const isLastInnings = match.currentInnings === match.innings.length - 1;
+  const isLastInnings =
+    match.currentInnings === (match.innings || []).length - 1;
 
   const handleStrikerChange = (newStriker) => {
     if (newStriker === getPlayerName(m.nonStriker)) return alert("Same Player");
@@ -323,7 +398,6 @@ export default function ScoreInput({
     onStrikeChange?.(getPlayerName(m.striker), newNonStriker);
   };
   const handleBallClick = (val) => {
-    // Extra safety check
     if (!isSetupComplete) {
       alert("Please select Striker, Non-Striker, and Bowler first!");
       return;
@@ -361,11 +435,10 @@ export default function ScoreInput({
     }
   };
 
-  // Styles
   const inputClass =
     "w-full bg-gray-800 text-white border border-gray-600 rounded-lg px-3 py-2 text-base focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all";
   const inputErrorClass =
-    "w-full bg-gray-800 text-white border-2 border-red-500 rounded-lg px-3 py-2 text-base shadow-sm shadow-red-900"; // Red border for missing
+    "w-full bg-gray-800 text-white border-2 border-red-500 rounded-lg px-3 py-2 text-base shadow-sm shadow-red-900";
   const optionClass = "bg-gray-800 text-white";
 
   return (
@@ -572,7 +645,7 @@ export default function ScoreInput({
         </>
       )}
 
-      {/* OVERLAY: New Batsman Required */}
+      {/* OVERLAYS (Batsman/Bowler) */}
       {m.awaitingNewBatsman && (
         <div className="absolute inset-0 bg-gray-900/95 z-20 flex flex-col justify-center items-center p-6 animate-in fade-in">
           <h6 className="text-cyan-400 font-bold mb-4 text-xl">
@@ -598,8 +671,6 @@ export default function ScoreInput({
           </button>
         </div>
       )}
-
-      {/* OVERLAY: New Bowler Required */}
       {m.awaitingNewBowler && !isInningsLimitReached && (
         <div className="absolute inset-0 bg-gray-900/95 z-20 flex flex-col justify-center items-center p-6 animate-in fade-in">
           <h6 className="text-yellow-400 font-bold mb-4 text-xl">
@@ -643,14 +714,22 @@ export default function ScoreInput({
         {isLastInnings && (
           <button
             disabled={!canFinishMatch}
-            className={`col-span-2 py-3 text-sm font-bold text-white rounded shadow-lg transition-all
-              ${
-                !canFinishMatch
-                  ? "bg-gray-700 text-gray-500 border border-gray-600 cursor-not-allowed opacity-60"
-                  : "bg-green-600 hover:bg-green-500"
-              }`}
+            className={`col-span-2 py-3 text-sm font-bold text-white rounded shadow-lg transition-all ${
+              !canFinishMatch
+                ? "bg-gray-700 text-gray-500 cursor-not-allowed opacity-60"
+                : "bg-green-600 hover:bg-green-500"
+            }`}
             onClick={() => onFinishMatch("Completed")}>
             {isMatchFinished ? "✅ MATCH FINISHED" : "🏆 FINISH MATCH"}
+          </button>
+        )}
+
+        {/* ✅ RESUME BUTTON: Appears if match is finished */}
+        {isMatchFinished && (
+          <button
+            onClick={handleResumeMatch}
+            className="col-span-2 py-3 bg-yellow-600 hover:bg-yellow-500 text-white font-bold rounded shadow-lg animate-pulse">
+            🔓 UNLOCK / RESUME MATCH
           </button>
         )}
 
@@ -665,7 +744,7 @@ export default function ScoreInput({
         )}
       </div>
 
-      {/* Logs */}
+      {/* Logs & Corrections */}
       <div className="bg-black/40 -mx-5 -mb-5 mt-2 p-4 text-sm font-mono border-t border-gray-800">
         <div className="flex justify-between items-end text-gray-400 mb-2 border-b border-gray-800 pb-2">
           <div>
@@ -719,6 +798,19 @@ export default function ScoreInput({
             )}
           </div>
         </div>
+        <button
+          onClick={() => setShowCorrectionModal(true)}
+          className="bg-gray-700 text-gray-300 px-4 py-2 rounded text-sm font-bold w-full mt-2">
+          🛠 Fix/Audit
+        </button>
+        {/* FIX: Passed correct props */}
+        {showCorrectionModal && (
+          <MatchCorrectionModal
+            match={match}
+            tournamentId={tournamentId}
+            onClose={() => setShowCorrectionModal(false)}
+          />
+        )}
       </div>
     </div>
   );
