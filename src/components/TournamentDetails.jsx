@@ -1,4 +1,3 @@
-// src/pages/TournamentDetails.jsx
 import React, { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
@@ -481,73 +480,93 @@ export default function TournamentDetails() {
   // --- REFACTORED DETAILED STATS (UPDATED to include ALL players) ---
   const detailedStats = useMemo(() => {
     const players = {};
+    const idToNameMap = {}; // 🌉 The Bridge
 
-    // 1. Initialize stats for EVERY player in the team rosters (even if they haven't played)
+    // A. Initialize stats from Rosters & Build Map
     tournamentTeams.forEach((team) => {
       const teamName = team.name || "Unknown Team";
-      // Handle both simple string array and object roster
-      const memberNames = team.roster?.map((r) => r.name) || team.players || [];
 
-      memberNames.forEach((playerName) => {
-        players[playerName] = {
-          name: playerName,
-          team: teamName,
-          runs: 0,
-          balls: 0,
-          fours: 0,
-          sixes: 0,
-          innings: 0,
-          notOuts: 0,
-          hs: 0,
-          wickets: 0,
-          runsConceded: 0,
-          ballsBowled: 0,
-          history: [],
-        };
-      });
+      // Handle roster (objects) or legacy players (strings)
+      if (team.roster && Array.isArray(team.roster)) {
+        team.roster.forEach((p) => {
+          const pName = p.name || "Unknown";
+          // Map ID -> Name
+          if (p.id) idToNameMap[p.id] = pName;
+
+          // Initialize Player
+          if (!players[pName]) {
+            players[pName] = createPlayerStatsObject(pName, teamName);
+          }
+        });
+      } else if (team.players && Array.isArray(team.players)) {
+        team.players.forEach((pName) => {
+          if (!players[pName]) {
+            players[pName] = createPlayerStatsObject(pName, teamName);
+          }
+        });
+      }
     });
 
-    const initPlayer = (name, team) => {
-      if (!players[name]) {
-        players[name] = {
-          name,
-          team,
-          runs: 0,
-          balls: 0,
-          fours: 0,
-          sixes: 0,
-          innings: 0,
-          notOuts: 0,
-          hs: 0,
-          wickets: 0,
-          runsConceded: 0,
-          ballsBowled: 0,
-          history: [],
-        };
+    // Helper to create empty stats object
+    function createPlayerStatsObject(name, team) {
+      return {
+        name,
+        team,
+        runs: 0,
+        balls: 0,
+        fours: 0,
+        sixes: 0,
+        innings: 0,
+        notOuts: 0,
+        hs: 0,
+        wickets: 0,
+        runsConceded: 0,
+        ballsBowled: 0,
+        history: [],
+      };
+    }
+
+    // Helper: Resolve Name and Get/Create Player Object
+    const getPlayer = (key, teamName) => {
+      // 1. Try resolving ID to Name
+      let resolvedName = idToNameMap[key] || key; // Fallback to key if no map found
+
+      // 2. Normalize
+      resolvedName = String(resolvedName).trim();
+
+      // 3. Init if missing
+      if (!players[resolvedName]) {
+        players[resolvedName] = createPlayerStatsObject(resolvedName, teamName);
       }
+
+      return players[resolvedName];
     };
 
+    // B. Aggregate from Matches
     matches.forEach((m) => {
       const inningsList = Array.isArray(m.innings) ? m.innings : [];
+
       inningsList.forEach((inn) => {
         if (!inn) return;
         const battingTeam = inn.battingTeam;
-        const bowlingTeam = inn.bowlingTeam;
-        const date = m.date;
+        const bowlingTeam = inn.bowlingTeam || "Opponent"; // Fallback
+        const date = m.date || m.createdAt;
 
+        // --- Batting ---
         if (inn.batsmenStats) {
-          Object.entries(inn.batsmenStats).forEach(([name, s]) => {
-            initPlayer(name, battingTeam);
-            // Even if they scored 0, record the innings
+          Object.entries(inn.batsmenStats).forEach(([key, s]) => {
+            const p = getPlayer(key, battingTeam);
+
             if (s.balls > 0 || s.out) {
-              players[name].runs += s.runs || 0;
-              players[name].balls += s.balls || 0;
-              players[name].fours += s.fours || 0;
-              players[name].sixes += s.sixes || 0;
-              players[name].innings += 1;
-              if (!s.out) players[name].notOuts += 1;
-              if ((s.runs || 0) > players[name].hs) players[name].hs = s.runs;
-              players[name].history.push({
+              p.runs += Number(s.runs) || 0;
+              p.balls += Number(s.balls) || 0;
+              p.fours += Number(s.fours) || 0;
+              p.sixes += Number(s.sixes) || 0;
+              p.innings += 1;
+              if (!s.out) p.notOuts += 1;
+              if ((s.runs || 0) > p.hs) p.hs = s.runs;
+
+              p.history.push({
                 type: "bat",
                 matchId: m.id,
                 date,
@@ -555,28 +574,29 @@ export default function TournamentDetails() {
                 runs: s.runs,
                 balls: s.balls,
                 out: s.out,
-                isNotOut: !s.out,
-                mvpPoints: s.runs * 1 + s.fours * 1 + s.sixes * 2,
               });
             }
           });
         }
+
+        // --- Bowling ---
         if (inn.bowlerStats) {
-          Object.entries(inn.bowlerStats).forEach(([name, s]) => {
-            initPlayer(name, bowlingTeam); // Same player might exist
+          Object.entries(inn.bowlerStats).forEach(([key, s]) => {
+            const p = getPlayer(key, bowlingTeam);
+
             if (s.balls > 0) {
-              players[name].wickets += s.wickets || 0;
-              players[name].runsConceded += s.runs || 0;
-              players[name].ballsBowled += s.balls || 0;
-              players[name].history.push({
+              p.wickets += Number(s.wickets) || 0;
+              p.runsConceded += Number(s.runs) || 0;
+              p.ballsBowled += Number(s.balls) || 0;
+
+              p.history.push({
                 type: "bowl",
                 matchId: m.id,
                 date,
                 opponent: battingTeam,
                 wickets: s.wickets,
-                runsConceded: s.runs,
+                runs: s.runs,
                 overs: `${Math.floor(s.balls / 6)}.${s.balls % 6}`,
-                mvpPoints: s.wickets * 20,
               });
             }
           });
@@ -584,6 +604,7 @@ export default function TournamentDetails() {
       });
     });
 
+    // C. Calculate Averages & Rates
     return Object.values(players).map((p) => {
       const batAvg =
         p.innings - p.notOuts > 0
@@ -597,6 +618,7 @@ export default function TournamentDetails() {
       const bowlAvg =
         p.wickets > 0 ? (p.runsConceded / p.wickets).toFixed(2) : "0.00";
       const mvp = p.runs * 1 + p.wickets * 20 + p.fours * 1 + p.sixes * 2;
+
       return { ...p, batAvg, batSR, bowlEco, bowlAvg, mvp };
     });
   }, [matches, tournamentTeams]);

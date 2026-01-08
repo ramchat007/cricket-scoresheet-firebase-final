@@ -133,8 +133,15 @@ const MatchCorrectionModal = ({ match, tournamentId, onClose }) => {
         [`innings.${currentIdx}.striker`]: manualStriker,
         [`innings.${currentIdx}.nonStriker`]: manualNonStriker,
         [`innings.${currentIdx}.currentBowler`]: manualBowler,
+
+        // 🔥 CRITICAL FIX: FORCE CLEAR FLAGS
+        [`innings.${currentIdx}.awaitingNewBatsman`]: false,
+        [`innings.${currentIdx}.awaitingNewBowler`]: false,
+        [`innings.${currentIdx}.completed`]: false,
       };
+
       await updateMatch(tournamentId, match.id, updateData);
+      alert("Updated! Scoring unlocked.");
       onClose();
     } catch (e) {
       console.error(e);
@@ -513,7 +520,7 @@ const MatchCorrectionModal = ({ match, tournamentId, onClose }) => {
                 onClick={handleManualSave}
                 disabled={loading}
                 className="flex-1 py-3 rounded-lg font-bold text-white bg-red-600 hover:bg-red-500 shadow-lg transition-colors">
-                {loading ? "Saving..." : "Force Overwrite"}
+                {loading ? "Saving..." : "Force Overwrite & Unlock"}
               </button>
             </div>
           </div>

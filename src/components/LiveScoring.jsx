@@ -11,6 +11,8 @@ import ScoreInput from "./ScoreInput.jsx";
 import ScoreTable from "./ScoreTable.jsx";
 import ScoreSummary from "./ScoreSummary.jsx";
 import MatchCommentary from "./MatchCommentary.jsx";
+import MatchInfo from "./MatchInfo.jsx"; // ✅ NEW IMPORT
+import MatchCorrectionModal from "./MatchCorrectionModal.jsx";
 
 // Helper to get local backup if network fails
 const getLocalMatch = (tId, mId) => {
@@ -32,6 +34,7 @@ export default function LiveScoring() {
     getLocalMatch(tournamentId, matchId)
   );
   const [activeTab, setActiveTab] = useState("summary");
+  const [showCorrectionModal, setShowCorrectionModal] = useState(false);
 
   // New State for Permissions
   const [canScore, setCanScore] = useState(false);
@@ -133,7 +136,8 @@ export default function LiveScoring() {
   const isMatchLive =
     !match.status ||
     match.status.toLowerCase() === "live" ||
-    match.status.toLowerCase() === "in-progress";
+    match.status.toLowerCase() === "in-progress" ||
+    match.status.toLowerCase() === "ongoing";
 
   const missingFields = [];
   if (isMatchLive) {
@@ -181,6 +185,11 @@ export default function LiveScoring() {
                     Scoring Console
                   </span>
                   <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowCorrectionModal(true)}
+                      className="text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-400 px-2 py-1 rounded border border-gray-700 transition-colors">
+                      🛠 Fix
+                    </button>
                     <span className="text-[10px] text-gray-500 uppercase font-bold">
                       {match.status === "finished" ? "Finished" : "Live"}
                     </span>
@@ -277,6 +286,15 @@ export default function LiveScoring() {
                 }`}>
                 🎙️ Commentary
               </button>
+              <button
+                onClick={() => setActiveTab("info")}
+                className={`flex-1 sm:flex-none px-6 py-2.5 rounded-lg text-sm font-bold transition-all duration-300 ${
+                  activeTab === "info"
+                    ? "bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg shadow-cyan-500/20"
+                    : "text-gray-400 hover:text-white hover:bg-gray-800/50"
+                }`}>
+                ℹ️ Info
+              </button>
             </div>
 
             {/* 2. Content Container */}
@@ -304,11 +322,27 @@ export default function LiveScoring() {
                     <MatchCommentary match={match} />
                   </div>
                 )}
+
+                {/* ✅ INFO TAB */}
+                {activeTab === "info" && (
+                  <div className="p-2 sm:p-4 animate-in fade-in slide-in-from-right-4 duration-300">
+                    <MatchInfo match={match} />
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* ✅ CORRECTION MODAL (Hidden by default) */}
+      {showCorrectionModal && (
+        <MatchCorrectionModal
+          match={match}
+          tournamentId={tournamentId}
+          onClose={() => setShowCorrectionModal(false)}
+        />
+      )}
     </div>
   );
 }

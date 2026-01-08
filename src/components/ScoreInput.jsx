@@ -3,7 +3,7 @@ import React, { useMemo, useState } from "react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { doc, updateDoc } from "firebase/firestore";
 import { db } from "../utils/firebase";
-import { updateMatch } from "../utils/matchService"; // Ensure this import exists
+import { updateMatch } from "../utils/firestore"; // Use centralized firestore
 import MatchCorrectionModal from "./MatchCorrectionModal.jsx";
 
 const RUN_BUTTONS = ["0", "1", "2", "3", "4", "5", "6"];
@@ -50,8 +50,6 @@ export default function ScoreInput({
   // -- Memoized Data --
   const inningIndex = match?.currentInnings || 0;
   const m = match?.innings?.[inningIndex] || {};
-
-  // Extract Tournament ID safely
   const tournamentId = match?.meta?.tournament || match?.tournamentId;
 
   // --- SAFETY CHECK: MAX OVERS ---
@@ -61,10 +59,27 @@ export default function ScoreInput({
   // --- FINISH MATCH VALIDATION ---
   const isCurrentInningsDone = m.completed;
   const isMatchFinished = match?.meta?.matchStatus === "finished";
+  const isLastInnings =
+    match?.currentInnings === (match?.innings?.length || 2) - 1;
+
   const canFinishMatch =
     isMatchFinished || (inningIndex === 1 && isCurrentInningsDone);
 
-  // --- LOGIC: RESUME MATCH ---
+  // --- LOGIC: FORCE RESUME ---
+  const handleForceResume = async () => {
+    if (!window.confirm("Force Unlock? This clears all waiting flags.")) return;
+    try {
+      const idx = match.currentInnings || 0;
+      await updateMatch(tournamentId, match.id, {
+        [`innings.${idx}.awaitingNewBatsman`]: false,
+        [`innings.${idx}.awaitingNewBowler`]: false,
+        [`innings.${idx}.completed`]: false,
+      });
+    } catch (e) {
+      alert("Failed to unlock: " + e.message);
+    }
+  };
+
   const handleResumeMatch = async () => {
     if (
       !window.confirm(
@@ -80,11 +95,9 @@ export default function ScoreInput({
         "meta.matchStatus": "ongoing",
         status: "ongoing",
         "meta.result": null,
-        winner: null, // Clear Winner
+        winner: null,
         "meta.winner": null,
         [`innings.${idx}.completed`]: false,
-        [`innings.${idx}.awaitingNewBatsman`]: false,
-        [`innings.${idx}.awaitingNewBowler`]: false,
       });
     } catch (e) {
       alert("Failed to resume match: " + e.message);
@@ -97,89 +110,177 @@ export default function ScoreInput({
   const hasBowler = Boolean(m.currentBowler);
   const isSetupComplete = hasStriker && hasNonStriker && hasBowler;
 
-  // --- 🛠️ ROBUST SQUAD SELECTOR (Fixed) ---
-  // This logic works even if names have spaces or case differences
+  // --- 🛠️ SUPER-ROBUST SQUAD MERGER ---
   const { currentBattingSquad, currentBowlingSquad } = useMemo(() => {
     const norm = (str) => (str ? String(str).trim().toLowerCase() : "");
-
     const teamAName = norm(match?.meta?.teamA);
     const teamBName = norm(match?.meta?.teamB);
     const currentBattingName = norm(m.battingTeam);
 
-    let batList = [];
-    let bowlList = [];
-    const squadA = match?.teamASquad || [];
-    const squadB = match?.teamBSquad || [];
+    const batSet = new Map();
+    const bowlSet = new Map();
 
-    // 1. Try Matching Team Names
+    const addPlayers = (list, targetSet) => {
+      if (!Array.isArray(list)) return;
+      list.forEach((p) => {
+        const name = getPlayerName(p);
+        if (name && !targetSet.has(name)) targetSet.set(name, p);
+      });
+    };
+
+    // 1. Determine which squad is which
+    let isTeamABatting = false;
+
     if (currentBattingName && teamAName && currentBattingName === teamAName) {
-      batList = squadA;
-      bowlList = squadB;
+      isTeamABatting = true;
     } else if (
       currentBattingName &&
       teamBName &&
       currentBattingName === teamBName
     ) {
-      batList = squadB;
-      bowlList = squadA;
-    }
-    // 2. Fallback: Use Innings Lists directly
-    else if (m.batsmenList?.length > 0) {
-      batList = m.batsmenList;
-      bowlList = m.bowlersList || [];
-    }
-    // 3. Last Resort: Guess based on Innings Index
-    else {
-      if (inningIndex === 0) {
-        batList = squadA;
-        bowlList = squadB;
-      } else {
-        batList = squadB;
-        bowlList = squadA;
-      }
+      isTeamABatting = false;
+    } else {
+      // Fallback based on innings index
+      isTeamABatting = inningIndex === 0;
     }
 
-    return { currentBattingSquad: batList, currentBowlingSquad: bowlList };
-  }, [match, m.battingTeam, inningIndex]);
+    // 2. Merge Lists based on determination
+    // Team A
+    const squadA = match?.teamASquad || [];
+    // Team B
+    const squadB = match?.teamBSquad || [];
 
-  // --- Batting Options ---
+    // Innings Lists (Backup)
+    const innBatList = m.batsmenList || [];
+    const innBowlList = m.bowlersList || [];
+
+    if (isTeamABatting) {
+      // Batting: Team A Squad + Innings Bat List
+      addPlayers(squadA, batSet);
+      addPlayers(innBatList, batSet);
+
+      // Bowling: Team B Squad + Innings Bowl List
+      addPlayers(squadB, bowlSet);
+      addPlayers(innBowlList, bowlSet);
+    } else {
+      // Batting: Team B Squad + Innings Bat List
+      addPlayers(squadB, batSet);
+      addPlayers(innBatList, batSet);
+
+      // Bowling: Team A Squad + Innings Bowl List
+      addPlayers(squadA, bowlSet);
+      addPlayers(innBowlList, bowlSet);
+    }
+
+    return {
+      currentBattingSquad: Array.from(batSet.values()),
+      currentBowlingSquad: Array.from(bowlSet.values()),
+    };
+  }, [match, m.battingTeam, inningIndex, m.batsmenList, m.bowlersList]);
+
+  // --- HELPER: Out Players ---
+  const outPlayersSet = useMemo(() => {
+    const outSet = new Set();
+    if (m.batsmenStats) {
+      Object.keys(m.batsmenStats).forEach((name) => {
+        const p = m.batsmenStats[name];
+        if (p.out || p.wicketType) outSet.add(getPlayerName(name));
+      });
+    }
+    if (m.fallOfWickets) {
+      m.fallOfWickets.forEach((w) => {
+        if (w.batsman) outSet.add(getPlayerName(w.batsman));
+      });
+    }
+    return outSet;
+  }, [m.batsmenStats, m.fallOfWickets]);
+
+  // --- 🎯 BATTING OPTIONS (Dropdowns) ---
   const battingOptions = useMemo(() => {
     const set = new Set();
+    // 1. Always include current guys
     if (m.striker) set.add(getPlayerName(m.striker));
     if (m.nonStriker) set.add(getPlayerName(m.nonStriker));
 
+    // 2. Add Squad Members
     currentBattingSquad.forEach((n) => {
       const pName = getPlayerName(n);
-      const isOut = m.batsmenStats?.[pName]?.out;
-      // Only add if NOT out
-      if (!isOut && pName) set.add(pName);
+      if (pName && !outPlayersSet.has(pName)) {
+        set.add(pName);
+      }
     });
-    return Array.from(set);
-  }, [m, currentBattingSquad]);
 
-  // --- Next Batsman List ---
-  const nextBatsmenList = useMemo(() => {
-    return currentBattingSquad
-      .map((p) => getPlayerName(p))
-      .filter((name) => {
-        if (!name) return false;
-        if (m.batsmenStats?.[name]?.out) return false;
-        if (name === getPlayerName(m.striker)) return false;
-        if (name === getPlayerName(m.nonStriker)) return false;
-        return true;
+    // 3. Fallback: Add players from Stats Keys
+    if (m.batsmenStats) {
+      Object.keys(m.batsmenStats).forEach((name) => {
+        const pName = getPlayerName(name);
+        if (pName && !outPlayersSet.has(pName)) {
+          set.add(pName);
+        }
       });
-  }, [m, currentBattingSquad]);
+    }
 
-  // --- Fielding Team ---
+    return Array.from(set).sort();
+  }, [m, currentBattingSquad, outPlayersSet]);
+
+  // --- 🎯 NEXT BATSMAN LIST ---
+  const nextBatsmenList = useMemo(() => {
+    const options = new Set();
+
+    // 1. From Squad
+    currentBattingSquad.forEach((p) => {
+      const name = getPlayerName(p);
+      if (
+        name &&
+        !outPlayersSet.has(name) &&
+        name !== getPlayerName(m.striker) &&
+        name !== getPlayerName(m.nonStriker)
+      ) {
+        options.add(name);
+      }
+    });
+
+    // 2. From Stats Keys (Fallback)
+    if (m.batsmenStats) {
+      Object.keys(m.batsmenStats).forEach((name) => {
+        const pName = getPlayerName(name);
+        if (
+          pName &&
+          !outPlayersSet.has(pName) &&
+          pName !== getPlayerName(m.striker) &&
+          pName !== getPlayerName(m.nonStriker)
+        ) {
+          options.add(pName);
+        }
+      });
+    }
+
+    return Array.from(options).sort();
+  }, [m, currentBattingSquad, outPlayersSet]);
+
+  // --- FIELDING TEAM ---
   const fieldingTeamPlayers = useMemo(() => {
-    return currentBowlingSquad.map((p) => getPlayerName(p)).filter((n) => n);
-  }, [currentBowlingSquad]);
+    const bowlerSet = new Set();
 
-  // --- Stats Calculations ---
+    // 1. From Squad
+    currentBowlingSquad.forEach((p) => bowlerSet.add(getPlayerName(p)));
+
+    // 2. From Stats (Fallback)
+    if (m.bowlerStats) {
+      Object.keys(m.bowlerStats).forEach((name) =>
+        bowlerSet.add(getPlayerName(name))
+      );
+    }
+
+    return Array.from(bowlerSet)
+      .filter((n) => n)
+      .sort();
+  }, [currentBowlingSquad, m.bowlerStats]);
+
+  // --- STATS ---
   const calculatedExtras = useMemo(() => {
     const stats = { wd: 0, nb: 0, b: 0, lb: 0 };
     const history = m.timeline || m.ballsLog || [];
-
     history.forEach((ball) => {
       if (typeof ball === "object") {
         if (ball.isWide) stats.wd += ball.runs || 1;
@@ -188,22 +289,6 @@ export default function ScoreInput({
         else if (ball.isLegBye) stats.lb += ball.runs;
         return;
       }
-      const log = String(ball);
-      const lowerLog = log.toLowerCase();
-      let runs = 1;
-      if (log.includes("+")) runs = parseInt(log.split("+")[1]) || 1;
-
-      if (lowerLog.includes("wd") || lowerLog.includes("wide"))
-        stats.wd += runs;
-      else if (lowerLog.includes("nb") || lowerLog.includes("no"))
-        stats.nb += 1;
-      else if (lowerLog.includes("lb") || lowerLog.includes("leg"))
-        stats.lb += runs;
-      else if (
-        (lowerLog.includes("b") || lowerLog.includes("bye")) &&
-        !lowerLog.includes("lb")
-      )
-        stats.b += runs;
     });
     return stats;
   }, [m.timeline, m.ballsLog]);
@@ -217,10 +302,8 @@ export default function ScoreInput({
   const lastOverBalls = useMemo(() => {
     const history = m.timeline || m.ballsLog || [];
     if (history.length === 0) return [];
-
     let legalCount = 0;
     const lastBalls = [];
-
     for (let i = history.length - 1; i >= 0 && legalCount < 6; i--) {
       const ball = history[i];
       let displayValue = "";
@@ -231,18 +314,6 @@ export default function ScoreInput({
         else if (ball.isNoBall) displayValue = "nb";
         lastBalls.unshift(displayValue);
         if (!ball.isWide && !ball.isNoBall) legalCount++;
-      } else {
-        displayValue = String(ball);
-        lastBalls.unshift(displayValue);
-        const bLower = displayValue.toLowerCase();
-        if (
-          !bLower.startsWith("wd") &&
-          !bLower.startsWith("wide") &&
-          !bLower.startsWith("nb") &&
-          !bLower.startsWith("no")
-        ) {
-          legalCount++;
-        }
       }
     }
     return lastBalls;
@@ -254,22 +325,18 @@ export default function ScoreInput({
   if (!match.meta?.toss || !match.meta?.toss?.winner) {
     const handleStartMatch = async () => {
       if (!tossWinner) return alert("Select Toss Winner");
-
       const tid = match.meta?.tournament || match.id;
       const mid = match.id;
-
       if (!mid) {
         alert("System Error: Missing Match ID. Please refresh.");
         return;
       }
-
       setStartLoading(true);
       try {
         const teamA = match.meta.teamA;
         const teamB = match.meta.teamB;
         const squadA = match.teamASquad || [];
         const squadB = match.teamBSquad || [];
-
         const isTeamABatting =
           (tossWinner === teamA && tossDecision === "Bat") ||
           (tossWinner === teamB && tossDecision === "Bowl");
@@ -310,85 +377,67 @@ export default function ScoreInput({
         setStartLoading(false);
       }
     };
-
     return (
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 text-center space-y-6 shadow-xl">
-        <h3 className="text-xl font-bold text-white flex items-center justify-center gap-2">
-          <span>🪙</span> Match Toss
-        </h3>
-        <div className="bg-gray-800/50 p-4 rounded-xl border border-dashed border-gray-700">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm text-gray-500 mb-1 font-bold uppercase">
-                Who won?
-              </label>
-              <select
-                className="bg-gray-900 border border-gray-700 text-white rounded p-3 w-full"
-                value={tossWinner}
-                onChange={(e) => setTossWinner(e.target.value)}>
-                <option value="">-- Select Team --</option>
-                <option value={match.meta?.teamA}>{match.meta?.teamA}</option>
-                <option value={match.meta?.teamB}>{match.meta?.teamB}</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm text-gray-500 mb-1 font-bold uppercase">
-                Decision
-              </label>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setTossDecision("Bat")}
-                  className={`flex-1 py-3 rounded-lg font-bold text-sm ${
-                    tossDecision === "Bat"
-                      ? "bg-cyan-600 text-white"
-                      : "bg-gray-700 text-gray-400"
-                  }`}>
-                  Bat 🏏
-                </button>
-                <button
-                  onClick={() => setTossDecision("Bowl")}
-                  className={`flex-1 py-3 rounded-lg font-bold text-sm ${
-                    tossDecision === "Bowl"
-                      ? "bg-green-600 text-white"
-                      : "bg-gray-700 text-gray-400"
-                  }`}>
-                  Bowl 🥎
-                </button>
-              </div>
-            </div>
-            <button
-              onClick={handleStartMatch}
-              disabled={startLoading || !tossWinner}
-              className="w-full py-4 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg mt-4">
-              Start Match 🚀
-            </button>
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 text-center shadow-xl">
+        <h3 className="text-xl font-bold text-white mb-4">🪙 Match Toss</h3>
+        <div className="bg-gray-800/50 p-4 rounded-xl border border-dashed border-gray-700 space-y-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Who won?</label>
+            <select
+              className="bg-gray-900 border border-gray-700 text-white rounded p-2 w-full"
+              value={tossWinner}
+              onChange={(e) => setTossWinner(e.target.value)}>
+              <option value="">-- Select Team --</option>
+              <option value={match.meta?.teamA}>{match.meta?.teamA}</option>
+              <option value={match.meta?.teamB}>{match.meta?.teamB}</option>
+            </select>
           </div>
-        </div>
-        {onDeleteMatch && (
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Decision</label>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setTossDecision("Bat")}
+                className={`flex-1 py-2 rounded font-bold ${
+                  tossDecision === "Bat"
+                    ? "bg-cyan-600 text-white"
+                    : "bg-gray-700"
+                }`}>
+                Bat
+              </button>
+              <button
+                onClick={() => setTossDecision("Bowl")}
+                className={`flex-1 py-2 rounded font-bold ${
+                  tossDecision === "Bowl"
+                    ? "bg-green-600 text-white"
+                    : "bg-gray-700"
+                }`}>
+                Bowl
+              </button>
+            </div>
+          </div>
           <button
-            onClick={() => {
-              if (window.confirm("Delete Match?")) onDeleteMatch();
-            }}
-            className="text-red-500 text-sm hover:underline pt-2">
-            Delete Match
+            onClick={handleStartMatch}
+            disabled={startLoading || !tossWinner}
+            className="w-full py-3 bg-green-600 text-white font-bold rounded mt-4">
+            Start Match
           </button>
-        )}
+        </div>
       </div>
     );
   }
 
-  // --- Scoring Logic ---
-  const disableBallEntry =
-    match.meta?.status === "finished" ||
-    m.completed ||
-    Boolean(m.awaitingNewBowler) ||
-    Boolean(m.awaitingNewBatsman) ||
-    isWicketMenuOpen ||
-    !isSetupComplete;
+  // --- SCORING STATUS CHECKS ---
+  const statusChecks = {
+    isFinished: match.meta?.status === "finished",
+    isCompleted: m.completed,
+    awaitingBowler: Boolean(m.awaitingNewBowler),
+    awaitingBatsman: Boolean(m.awaitingNewBatsman),
+    setupIncomplete: !isSetupComplete,
+  };
 
-  const isLastInnings =
-    match.currentInnings === (match.innings || []).length - 1;
+  const disableBallEntry = Object.values(statusChecks).some(Boolean);
 
+  // --- Handlers ---
   const handleStrikerChange = (newStriker) => {
     if (newStriker === getPlayerName(m.nonStriker)) return alert("Same Player");
     onStrikeChange?.(newStriker, getPlayerName(m.nonStriker));
@@ -454,6 +503,28 @@ export default function ScoreInput({
           {m.battingTeam}
         </span>
       </div>
+
+      {/* --- DIAGNOSTIC STATUS BAR --- */}
+      {disableBallEntry && !isMatchFinished && (
+        <div className="bg-yellow-900/30 border border-yellow-600/30 rounded p-2 text-center">
+          <span className="text-yellow-400 text-xs font-bold uppercase tracking-wide">
+            {statusChecks.awaitingBatsman
+              ? "Waiting for Batsman"
+              : statusChecks.awaitingBowler
+              ? "Waiting for Bowler"
+              : statusChecks.setupIncomplete
+              ? "Setup Incomplete"
+              : statusChecks.isCompleted
+              ? "Innings Completed"
+              : "Scoring Locked"}
+          </span>
+          <button
+            onClick={handleForceResume}
+            className="ml-3 text-[10px] bg-yellow-700 hover:bg-yellow-600 text-white px-2 py-0.5 rounded uppercase">
+            Force Unlock
+          </button>
+        </div>
+      )}
 
       {/* Batsmen Controls */}
       <div className="grid grid-cols-1 gap-3 bg-gray-800/40 p-3 rounded-lg border border-gray-700">
@@ -617,7 +688,6 @@ export default function ScoreInput({
             </button>
           </div>
 
-          {/* Extras */}
           <div className="bg-gray-800/30 border border-gray-700 rounded-lg p-3">
             <div className="mb-2">
               <select
@@ -648,29 +718,49 @@ export default function ScoreInput({
       {/* OVERLAYS (Batsman/Bowler) */}
       {m.awaitingNewBatsman && (
         <div className="absolute inset-0 bg-gray-900/95 z-20 flex flex-col justify-center items-center p-6 animate-in fade-in">
-          <h6 className="text-cyan-400 font-bold mb-4 text-xl">
-            New Batsman Required
-          </h6>
-          <select
-            className={`${inputClass} h-14 text-lg mb-4`}
-            value={incoming}
-            onChange={(e) => setIncoming(e.target.value)}>
-            <option value="">Select Batsman</option>
-            {nextBatsmenList.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-          <button
-            className="w-full bg-cyan-600 text-white py-4 rounded font-bold shadow-lg text-lg"
-            onClick={() => {
-              if (incoming) onNewBatsman(incoming);
-            }}>
-            CONFIRM
-          </button>
+          {nextBatsmenList.length === 0 ? (
+            <div className="text-center">
+              <div className="text-5xl mb-4">🏏</div>
+              <h6 className="text-red-500 font-black mb-2 text-3xl uppercase tracking-widest">
+                All Out!
+              </h6>
+              <p className="text-gray-400 mb-8 text-sm max-w-xs mx-auto">
+                No more batsmen available.
+              </p>
+              <button
+                className="w-full bg-red-600 hover:bg-red-500 text-white py-4 px-8 rounded-xl font-bold shadow-lg text-lg flex items-center justify-center gap-3 transition-all hover:scale-105"
+                onClick={onEndInnings}>
+                <span>🛑</span> End Innings
+              </button>
+            </div>
+          ) : (
+            <>
+              <h6 className="text-cyan-400 font-bold mb-4 text-xl">
+                New Batsman Required
+              </h6>
+              <select
+                className={`${inputClass} h-14 text-lg mb-4`}
+                value={incoming}
+                onChange={(e) => setIncoming(e.target.value)}>
+                <option value="">Select Batsman</option>
+                {nextBatsmenList.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="w-full bg-cyan-600 text-white py-4 rounded font-bold shadow-lg text-lg"
+                onClick={() => {
+                  if (incoming) onNewBatsman(incoming);
+                }}>
+                CONFIRM
+              </button>
+            </>
+          )}
         </div>
       )}
+
       {m.awaitingNewBowler && !isInningsLimitReached && (
         <div className="absolute inset-0 bg-gray-900/95 z-20 flex flex-col justify-center items-center p-6 animate-in fade-in">
           <h6 className="text-yellow-400 font-bold mb-4 text-xl">
@@ -803,7 +893,6 @@ export default function ScoreInput({
           className="bg-gray-700 text-gray-300 px-4 py-2 rounded text-sm font-bold w-full mt-2">
           🛠 Fix/Audit
         </button>
-        {/* FIX: Passed correct props */}
         {showCorrectionModal && (
           <MatchCorrectionModal
             match={match}

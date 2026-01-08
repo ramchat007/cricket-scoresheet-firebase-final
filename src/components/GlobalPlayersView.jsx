@@ -32,8 +32,6 @@ export default function GlobalPlayersView() {
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [processingImage, setProcessingImage] = useState(false);
-
-  // Form State
   const [formData, setFormData] = useState({
     id: "",
     name: "",
@@ -44,19 +42,9 @@ export default function GlobalPlayersView() {
     photoURL: "",
   });
 
-  // 1. Initial Load
   useEffect(() => {
     fetchPlayers();
   }, []);
-
-  // 2. Automatic Background Sync (Once per session)
-  useEffect(() => {
-    const hasSynced = sessionStorage.getItem("globalStatsSynced");
-    // Only auto-sync if user is logged in and hasn't synced this session
-    if (user && !hasSynced) {
-      handleSyncAllStats(true); // true = silent mode (no alerts)
-    }
-  }, [user]);
 
   const fetchPlayers = async () => {
     setLoading(true);
@@ -65,80 +53,159 @@ export default function GlobalPlayersView() {
     setLoading(false);
   };
 
-  // 🔥 SYNC FUNCTION (Refactored for Auto-Run)
-  const handleSyncAllStats = async (isAuto = false) => {
+  // 🔥 ROBUST SYNC ENGINE (Fixes "0 Data Updated")
+  const handleSyncAllStats = async () => {
     if (
-      !isAuto &&
       !window.confirm(
-        "This will scan ALL tournaments and recalculate stats. Continue?"
+        "Start Full Sync? Open Console (F12) to monitor progress."
       )
     )
       return;
 
     setIsSyncing(true);
+    console.clear();
+    // console.log("🚀 STARTING DEEP SYNC...");
+
     try {
-      // 1. Fetch Data
       const allPlayers = await listGlobalPlayers();
       const allTournaments = await listTournaments();
       const playerHistoryMap = {};
 
+      // Initialize map
       allPlayers.forEach((p) => (playerHistoryMap[p.id] = []));
 
-      // 2. Iterate Matches
+      // console.log(
+      //   `📚 Reference Data: ${allPlayers.length} Global Players loaded.`
+      // );
+
       for (const tourn of allTournaments) {
         const matches = await listMatchesForTournament(tourn.id);
-        const finishedMatches = matches.filter(
-          (m) => m.status === "finished" || m.meta?.matchStatus === "finished"
-        );
+        const finishedMatches = matches.filter((m) => {
+          const s = (m.status || m.meta?.matchStatus || "").toLowerCase();
+          return s === "finished" || s === "completed" || s === "ongoing"; // Check ongoing too for testing
+        });
+
+        // console.log(
+        //   `🔎 Tournament: "${tourn.name}" - Checking ${finishedMatches.length} matches...`
+        // );
 
         for (const match of finishedMatches) {
-          if (!match.innings) continue;
+          // 1. SAFE INNINGS EXTRACTION (Handle Array vs Map)
+          let inningsArray = [];
+          if (Array.isArray(match.innings)) {
+            inningsArray = match.innings;
+          } else if (match.innings && typeof match.innings === "object") {
+            inningsArray = Object.values(match.innings);
+          }
 
-          const findPlayerIdByName = (name) => {
-            if (!name) return null;
-            const found = allPlayers.find(
-              (p) => p.name.toLowerCase() === name.toLowerCase().trim()
-            );
-            return found ? found.id : null;
+          if (inningsArray.length === 0) {
+            console.warn(`   ⚠️ Match ${match.id} has no innings data.`);
+            continue;
+          }
+
+          // 2. BUILD BRIDGE (Squad -> Global ID)
+          const matchToGlobalID = {};
+
+          const addToBridge = (list) => {
+            if (!list) return;
+            list.forEach((p) => {
+              const pName = (p.name || "").trim().toLowerCase();
+              const pId = p.originalId || p.originalPlayerId;
+              if (pName && pId) matchToGlobalID[pName] = pId; // Name -> Global ID
+              if (p.id && pId) matchToGlobalID[p.id] = pId; // MatchID -> Global ID
+            });
           };
 
-          match.innings.forEach((inn) => {
-            // Batting
+          addToBridge(match.teamASquad);
+          addToBridge(match.teamBSquad);
+
+          // 3. PROCESS INNINGS
+          inningsArray.forEach((inn, innIndex) => {
+            if (!inn) return;
+
+            // --- Process Batting ---
             if (inn.batsmenStats) {
-              Object.entries(inn.batsmenStats).forEach(([name, stats]) => {
-                const pid = findPlayerIdByName(name);
-                if (pid) {
-                  playerHistoryMap[pid].push({
-                    tournamentId: tourn.id,
-                    matchId: match.id,
-                    date: match.date || match.createdAt,
-                    opponent:
-                      inn.battingTeam === match.meta?.teamA
-                        ? match.meta?.teamB
-                        : match.meta?.teamA,
-                    runs: Number(stats.runs) || 0,
-                    wickets: 0,
-                    type: "bat",
-                  });
+              Object.entries(inn.batsmenStats).forEach(([key, stats]) => {
+                const rawName = key.trim();
+                const lowerName = rawName.toLowerCase();
+
+                // A. Try Squad Bridge
+                let globalId =
+                  matchToGlobalID[lowerName] || matchToGlobalID[key];
+
+                // B. Try Global DB Fuzzy Search (The "Hail Mary")
+                if (!globalId) {
+                  const found = allPlayers.find(
+                    (gp) => gp.name.trim().toLowerCase() === lowerName
+                  );
+                  if (found) {
+                    globalId = found.id;
+                    // console.log(`      🔹 Fuzzy Matched: "${rawName}" -> Global Player "${found.name}"`);
+                  }
+                }
+
+                if (globalId && playerHistoryMap[globalId]) {
+                  // Prevent duplicate entries for the same match
+                  const exists = playerHistoryMap[globalId].some(
+                    (h) => h.matchId === match.id
+                  );
+                  if (!exists) {
+                    playerHistoryMap[globalId].push({
+                      tournamentId: tourn.id,
+                      matchId: match.id,
+                      date:
+                        match.date ||
+                        match.createdAt ||
+                        new Date().toISOString(),
+                      opponent:
+                        inn.battingTeam === match.meta?.teamA
+                          ? match.meta?.teamB
+                          : match.meta?.teamA,
+                      runs: Number(stats.runs) || 0,
+                      wickets: 0,
+                      type: "bat",
+                    });
+                  }
+                } else {
+                  console.warn(
+                    `      ❌ UNMAPPED BATSMAN: "${rawName}" (No matching Global Player found)`
+                  );
                 }
               });
             }
-            // Bowling
+
+            // --- Process Bowling ---
             if (inn.bowlerStats) {
-              Object.entries(inn.bowlerStats).forEach(([name, stats]) => {
-                const pid = findPlayerIdByName(name);
-                if (pid) {
-                  const existingEntry = playerHistoryMap[pid].find(
+              Object.entries(inn.bowlerStats).forEach(([key, stats]) => {
+                const rawName = key.trim();
+                const lowerName = rawName.toLowerCase();
+
+                let globalId =
+                  matchToGlobalID[lowerName] || matchToGlobalID[key];
+
+                if (!globalId) {
+                  const found = allPlayers.find(
+                    (gp) => gp.name.trim().toLowerCase() === lowerName
+                  );
+                  if (found) globalId = found.id;
+                }
+
+                if (globalId && playerHistoryMap[globalId]) {
+                  const existing = playerHistoryMap[globalId].find(
                     (h) => h.matchId === match.id
                   );
-                  if (existingEntry) {
-                    existingEntry.wickets = Number(stats.wickets) || 0;
+                  if (existing) {
+                    existing.wickets =
+                      (existing.wickets || 0) + (Number(stats.wickets) || 0);
                   } else {
-                    playerHistoryMap[pid].push({
+                    playerHistoryMap[globalId].push({
                       tournamentId: tourn.id,
                       matchId: match.id,
-                      date: match.date || match.createdAt,
-                      opponent: inn.bowlingTeam || "Opponent",
+                      date:
+                        match.date ||
+                        match.createdAt ||
+                        new Date().toISOString(),
+                      opponent: inn.battingTeam || "Opponent",
                       runs: 0,
                       wickets: Number(stats.wickets) || 0,
                       type: "bowl",
@@ -151,14 +218,19 @@ export default function GlobalPlayersView() {
         }
       }
 
-      // 3. Batch Update
+      // 4. WRITE UPDATES
       const batch = writeBatch(db);
       let opCount = 0;
 
       for (const player of allPlayers) {
         const newHistory = playerHistoryMap[player.id];
 
-        if (newHistory && newHistory.length > 0) {
+        // We update EVERY player who has ANY history found, ensuring clean slate
+        if (newHistory) {
+          // Sort by Date Descending
+          newHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+          // Calculate Aggregates
           let totalRuns = 0;
           let totalWickets = 0;
           let maxScore = 0;
@@ -183,27 +255,29 @@ export default function GlobalPlayersView() {
         }
       }
 
-      if (opCount > 0) await batch.commit();
+      if (opCount > 0) {
+        await batch.commit();
+        // console.log(`✅ DATABASE UPDATED: ${opCount} players synced.`);
+        alert(`Success! Updated stats for ${opCount} players.`);
+      } else {
+        console.warn("⚠️ No data updates found. Check player names spelling.");
+        alert("Sync finished, but no matching stats were found.");
+      }
 
-      // Mark as synced for this session so we don't spam the DB
       sessionStorage.setItem("globalStatsSynced", "true");
-
-      if (!isAuto) alert(`Sync Complete! Updated ${opCount} players.`);
-
-      // Refresh the view
       fetchPlayers();
     } catch (e) {
-      console.error("Sync Failed:", e);
-      if (!isAuto) alert("Sync Failed: " + e.message);
+      console.error("❌ Sync Error:", e);
+      alert("Sync Error: " + e.message);
     } finally {
       setIsSyncing(false);
     }
   };
 
+  // ... (Rest of your handlers: handleDelete, goToMatch, handleSort, etc.) ...
   const handleDelete = async (playerId, e) => {
     e.stopPropagation();
     if (!window.confirm("⚠ Permanently delete this player?")) return;
-
     try {
       await deleteGlobalPlayer(playerId);
       setPlayers((prev) => prev.filter((p) => p.id !== playerId));
@@ -403,7 +477,7 @@ export default function GlobalPlayersView() {
               {players.length} players registered.
               {isSyncing && (
                 <span className="text-cyan-400 animate-pulse font-bold ml-2">
-                  Syncing History...
+                  Syncing...
                 </span>
               )}
             </p>
@@ -416,7 +490,6 @@ export default function GlobalPlayersView() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
-            {/* MANUAL RE-SYNC BUTTON */}
             {user && (
               <button
                 onClick={() => handleSyncAllStats(false)}
@@ -671,7 +744,8 @@ export default function GlobalPlayersView() {
                                       </div>
                                     ) : (
                                       <div className="text-sm text-gray-600 italic p-3 border border-dashed border-gray-800 rounded bg-gray-900/50">
-                                        No match history found.
+                                        No match history recorded. Try clicking
+                                        Sync!
                                       </div>
                                     )}
                                   </div>
