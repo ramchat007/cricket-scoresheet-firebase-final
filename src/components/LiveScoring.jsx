@@ -1,5 +1,5 @@
 // src/components/LiveScoring.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../utils/firebase";
@@ -11,7 +11,7 @@ import ScoreInput from "./ScoreInput.jsx";
 import ScoreTable from "./ScoreTable.jsx";
 import ScoreSummary from "./ScoreSummary.jsx";
 import MatchCommentary from "./MatchCommentary.jsx";
-import MatchInfo from "./MatchInfo.jsx"; // ✅ NEW IMPORT
+import MatchInfo from "./MatchInfo.jsx"; 
 import MatchCorrectionModal from "./MatchCorrectionModal.jsx";
 
 // Helper to get local backup if network fails
@@ -35,314 +35,165 @@ export default function LiveScoring() {
   );
   const [activeTab, setActiveTab] = useState("summary");
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
-
-  // New State for Permissions
   const [canScore, setCanScore] = useState(false);
 
-  // 1. Permission Logic (Secure the UI)
+  // 1. Permission Logic
   useEffect(() => {
     async function checkPermissions() {
-      // A. Generic Matches: Open to everyone logged in
       if (tournamentId === "generic") {
         setCanScore(!!user);
         return;
       }
-
-      // B. Private Tournaments: Check DB
       if (!user || !tournamentId) {
         setCanScore(false);
         return;
       }
-
       try {
         const tRef = doc(db, "tournaments", tournamentId);
         const tSnap = await getDoc(tRef);
-
         if (tSnap.exists()) {
           const tData = tSnap.data();
-          const isOwner = tData.ownerId === user.uid;
-          const isScorer = tData.scorers?.includes(user.uid);
-          setCanScore(isOwner || isScorer);
+          setCanScore(tData.ownerId === user.uid || tData.scorers?.includes(user.uid));
         }
       } catch (err) {
-        console.error("Permission check failed:", err);
         setCanScore(false);
       }
     }
     checkPermissions();
   }, [tournamentId, user]);
 
-  // 2. Data Subscription
+  // 2. Data Subscription (WITH DATA RECOVERY FIX)
   useEffect(() => {
     if (!tournamentId || !matchId) return;
 
     const unsub = subscribeMatch(tournamentId, matchId, (data) => {
       if (data) {
-        const matchData = { ...data, id: matchId };
+        let processedInnings = [];
+        if (data.innings) {
+          if (Array.isArray(data.innings)) {
+            processedInnings = data.innings.filter(inn => inn && inn.battingTeam);
+          } else {
+            processedInnings = Object.keys(data.innings)
+              .sort((a, b) => Number(a) - Number(b))
+              .map(key => data.innings[key])
+              .filter(inn => inn && inn.battingTeam);
+          }
+        }
+        
+        const matchData = { ...data, innings: processedInnings, id: matchId };
         setMatch(matchData);
-        localStorage.setItem(
-          `dfl-fb-${tournamentId || "default"}-${matchId}`,
-          JSON.stringify(matchData)
-        );
-      } else {
-        console.warn("Match not found in DB");
+        localStorage.setItem(`dfl-fb-${tournamentId}-${matchId}`, JSON.stringify(matchData));
       }
     });
-
     return () => unsub && unsub();
   }, [tournamentId, matchId]);
 
-  // 3. Initialize Scoring Engine
   const scoring = useScoring({ tournamentId, matchId, match }) || {};
   const {
-    handleBall,
-    handleExtraBallRuns,
-    handleNewBatsman,
-    handleConfirmBowler,
-    handleChangeBowler,
-    handleStrikeChange,
-    handleUndo,
-    handleEndInnings,
-    handleFinishMatch,
-    handleDeleteMatch,
+    handleBall, handleExtraBallRuns, handleNewBatsman, handleConfirmBowler,
+    handleChangeBowler, handleStrikeChange, handleUndo, handleEndInnings,
+    handleFinishMatch, handleDeleteMatch,
   } = scoring;
 
-  // 4. Loading State
   if (!match) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-950 text-cyan-500 animate-pulse">
-        <div className="text-4xl mb-4">🏏</div>
-        <div className="text-xl font-bold tracking-widest">
-          LOADING LIVE SCORING...
-        </div>
-        <div className="text-sm text-gray-600 mt-4">
-          Waiting for connection...
-        </div>
+      <div className="flex flex-col items-center justify-center h-screen bg-gray-950 text-cyan-500 animate-pulse">
+        <div className="text-5xl mb-6">🏏</div>
+        <div className="text-2xl font-bold tracking-widest uppercase">Syncing Live Data...</div>
       </div>
     );
   }
 
-  // Helper for Header Title
   const getMatchTitle = () => {
-    if (match.meta?.teamA && match.meta?.teamB) {
-      return `${match.meta.teamA} vs ${match.meta.teamB}`;
-    }
+    if (match.meta?.teamA && match.meta?.teamB) return `${match.meta.teamA} v ${match.meta.teamB}`;
     return match.name || "Live Match";
   };
 
-  // --- VALIDATION LOGIC ---
-  const currentInnings = match.innings?.[match.currentInnings || 0] || {};
-  const { striker, nonStriker, currentBowler } = currentInnings;
-  const isMatchLive =
-    !match.status ||
-    match.status.toLowerCase() === "live" ||
-    match.status.toLowerCase() === "in-progress" ||
-    match.status.toLowerCase() === "ongoing";
-
-  const missingFields = [];
-  if (isMatchLive) {
-    if (!striker) missingFields.push("Striker");
-    if (!nonStriker) missingFields.push("Non-Striker");
-    if (!currentBowler) missingFields.push("Bowler");
-  }
-  const hasSetupIssues = missingFields.length > 0;
-
-  // 5. Render Layout
   return (
-    <div className="min-h-screen bg-[#0f172a] w-full font-sans text-gray-100">
-      {/* --- TOP HEADER --- */}
-      <div className="bg-gray-900/80 backdrop-blur-md border-b border-gray-800 px-4 py-3 flex items-center justify-between sticky top-0 z-50 shadow-lg">
-        <button
-          onClick={() => navigate(`/tournaments/${tournamentId}`)}
-          className="text-gray-400 hover:text-white text-sm font-bold flex items-center gap-2 transition-colors">
-          ← Dashboard
-        </button>
-
-        <div className="text-sm font-bold text-white tracking-wide uppercase truncate max-w-[50%] text-center">
-          {getMatchTitle()}
-        </div>
-
-        <div
-          className={`text-[10px] font-mono px-2 py-1 rounded border ${
-            match.status === "finished"
-              ? "bg-green-900/20 text-green-400 border-green-900/50"
-              : "bg-red-900/20 text-red-400 border-red-900/50 animate-pulse"
+    <div className="h-screen w-full bg-[#080c14] font-sans text-gray-100 flex flex-col overflow-hidden">
+      
+      {/* --- TOP HEADER (Increased Height and Font) --- */}
+      <div className="flex-none bg-gray-900 border-b border-gray-800 px-4 h-14 flex items-center justify-between z-50">
+        <button onClick={() => navigate(`/tournaments/${tournamentId}`)} className="text-gray-400 text-2xl active:scale-90 p-1">🏠</button>
+        <div className="flex flex-col items-center overflow-hidden">
+          {/* Increased text size to sm/base */}
+          <span className="text-sm font-bold text-gray-300 uppercase truncate max-w-[180px]">{getMatchTitle()}</span>
+          <span className={`text-[10px] font-black tracking-widest uppercase px-2 rounded mt-0.5 ${
+            match.status === "finished" ? "text-green-500 bg-green-500/10" : "text-red-500 animate-pulse bg-red-500/10"
           }`}>
-          {match.status?.toUpperCase() ||
-            match.meta?.status?.toUpperCase() ||
-            "LIVE"}
+            {match.status?.toUpperCase() || "LIVE"}
+          </span>
         </div>
+        {/* Increased padding and text size for Fix button */}
+        <button onClick={() => setShowCorrectionModal(true)} className="bg-gray-800 border border-gray-700 text-xs px-3 py-2 rounded-lg font-bold active:scale-95 transition-all text-cyan-400">
+            🛠 Fix
+        </button>
       </div>
 
-      <div className="w-full max-w-[1920px] mx-auto p-2 sm:p-4 lg:p-6">
-        <div className="flex flex-col xl:grid xl:grid-cols-12 gap-6 items-start">
-          {/* --- LEFT COLUMN: SCORING CONSOLE (Sticky) --- */}
-          <div className="xl:col-span-4 flex flex-col gap-4 order-last xl:order-first w-full">
-            <div className="xl:sticky xl:top-20 z-40">
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl overflow-hidden ring-1 ring-white/5">
-                <div className="bg-gray-950/50 p-3 border-b border-gray-800 flex justify-between items-center">
-                  <span className="text-xs font-bold text-cyan-500 uppercase tracking-widest pl-1">
-                    Scoring Console
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setShowCorrectionModal(true)}
-                      className="text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-400 px-2 py-1 rounded border border-gray-700 transition-colors">
-                      🛠 Fix
-                    </button>
-                    <span className="text-[10px] text-gray-500 uppercase font-bold">
-                      {match.status === "finished" ? "Finished" : "Live"}
-                    </span>
-                    {match.status !== "finished" && (
-                      <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse mr-1"></div>
-                    )}
-                  </div>
-                </div>
+      {/* --- MAIN CONTENT --- */}
+      <div className="flex-1 relative overflow-hidden flex flex-col">
+        {canScore ? (
+          <ScoreInput
+            match={match}
+            onBall={handleBall}
+            onNewBatsman={handleNewBatsman}
+            onChangeBowler={handleChangeBowler}
+            onUndo={handleUndo}
+            onEndInnings={handleEndInnings}
+            onStrikeChange={handleStrikeChange}
+            onExtraBallRuns={handleExtraBallRuns}
+            onConfirmBowler={handleConfirmBowler}
+            onFinishMatch={(winner) => { handleFinishMatch(winner); navigate(`/tournaments/${tournamentId}`); }}
+            onDeleteMatch={() => { handleDeleteMatch(); navigate(`/tournaments/${tournamentId}`); }}
+          />
+        ) : (
+          <div className="flex-1 overflow-y-auto p-4 text-base">
+            <ScoreSummary match={match} />
+            <ScoreTable match={match} />
+          </div>
+        )}
 
-                {/* --- WARNING BANNER --- */}
-                {hasSetupIssues && canScore && (
-                  <div className="bg-yellow-900/20 border-b border-yellow-700/30 p-4 flex items-start gap-3 animate-in slide-in-from-top">
-                    <div className="text-xl">⚠️</div>
-                    <div>
-                      <h4 className="text-yellow-500 font-bold text-sm">
-                        Setup Required
-                      </h4>
-                      <p className="text-yellow-200/70 text-xs mt-1 leading-relaxed">
-                        Please select{" "}
-                        <strong className="text-yellow-400 border-b border-yellow-400/50">
-                          {missingFields.join(", ")}
-                        </strong>{" "}
-                        to unlock scoring controls.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* --- CONDITIONAL RENDERING FOR SECURITY --- */}
-                {canScore ? (
-                  <ScoreInput
-                    match={match}
-                    onBall={handleBall}
-                    onNewBatsman={handleNewBatsman}
-                    onChangeBowler={handleChangeBowler}
-                    onUndo={handleUndo}
-                    onEndInnings={handleEndInnings}
-                    onStrikeChange={handleStrikeChange}
-                    onExtraBallRuns={handleExtraBallRuns}
-                    onConfirmBowler={handleConfirmBowler}
-                    onFinishMatch={(winner) => {
-                      handleFinishMatch(winner);
-                      navigate("/");
-                    }}
-                    onDeleteMatch={() => {
-                      handleDeleteMatch();
-                      navigate("/");
-                    }}
-                  />
-                ) : (
-                  <div className="p-8 text-center bg-gray-900/80">
-                    <div className="text-5xl mb-4">👀</div>
-                    <h3 className="text-white font-bold text-lg">
-                      Spectator Mode
-                    </h3>
-                    <p className="text-gray-500 text-sm mt-2">
-                      You are viewing the live scorecard. <br /> Scoring
-                      controls are restricted to officials.
-                    </p>
-                  </div>
-                )}
-              </div>
+        {/* --- TABS OVERLAY --- */}
+        {activeTab !== 'summary' && (
+          <div className="absolute inset-0 bg-[#080c14] z-40 flex flex-col animate-in slide-in-from-bottom duration-300">
+            <div className="flex justify-between items-center p-4 border-b border-gray-800 bg-gray-900">
+              <h3 className="text-cyan-500 font-bold uppercase text-sm tracking-widest">{activeTab}</h3>
+              <button onClick={() => setActiveTab('summary')} className="text-gray-400 text-2xl px-3">✕</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 text-base">
+              {activeTab === "scorecard" && <ScoreTable match={match} />}
+              {activeTab === "commentary" && <MatchCommentary match={match} />}
+              {activeTab === "info" && <MatchInfo match={match} />}
             </div>
           </div>
-
-          {/* --- RIGHT COLUMN: SCORECARD & SUMMARY --- */}
-          <div className="xl:col-span-8 w-full min-w-0 flex flex-col gap-4">
-            {/* 1. Custom Tab Switcher */}
-            <div className="bg-gray-900/90 backdrop-blur border border-gray-800 p-1 rounded-xl w-full sm:w-fit flex gap-1 self-start sticky top-[60px] xl:static z-30 shadow-md">
-              <button
-                onClick={() => setActiveTab("summary")}
-                className={`flex-1 sm:flex-none px-6 py-2.5 rounded-lg text-sm font-bold transition-all duration-300 ${
-                  activeTab === "summary"
-                    ? "bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg shadow-cyan-500/20"
-                    : "text-gray-400 hover:text-white hover:bg-gray-800/50"
-                }`}>
-                📝 Summary
-              </button>
-              <button
-                onClick={() => setActiveTab("scorecard")}
-                className={`flex-1 sm:flex-none px-6 py-2.5 rounded-lg text-sm font-bold transition-all duration-300 ${
-                  activeTab === "scorecard"
-                    ? "bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg shadow-cyan-500/20"
-                    : "text-gray-400 hover:text-white hover:bg-gray-800/50"
-                }`}>
-                📊 Scorecard
-              </button>
-              <button
-                onClick={() => setActiveTab("commentary")}
-                className={`flex-1 sm:flex-none px-6 py-2.5 rounded-lg text-sm font-bold transition-all duration-300 ${
-                  activeTab === "commentary"
-                    ? "bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg shadow-cyan-500/20"
-                    : "text-gray-400 hover:text-white hover:bg-gray-800/50"
-                }`}>
-                🎙️ Commentary
-              </button>
-              <button
-                onClick={() => setActiveTab("info")}
-                className={`flex-1 sm:flex-none px-6 py-2.5 rounded-lg text-sm font-bold transition-all duration-300 ${
-                  activeTab === "info"
-                    ? "bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg shadow-cyan-500/20"
-                    : "text-gray-400 hover:text-white hover:bg-gray-800/50"
-                }`}>
-                ℹ️ Info
-              </button>
-            </div>
-
-            {/* 2. Content Container */}
-            <div className="relative">
-              {/* Background Decor */}
-              <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500/10 to-blue-600/10 rounded-2xl blur-xl opacity-50 -z-10"></div>
-
-              <div className="bg-gray-900/60 backdrop-blur-md border border-gray-800 rounded-2xl overflow-hidden shadow-2xl p-1 sm:p-2">
-                {activeTab === "summary" && (
-                  <div className="p-2 sm:p-4 animate-in fade-in slide-in-from-left-4 duration-300">
-                    <ScoreSummary match={match} />
-                  </div>
-                )}
-
-                {activeTab === "scorecard" && (
-                  <div className="p-0 sm:p-2 animate-in fade-in slide-in-from-right-4 duration-300">
-                    <div className="flex flex-col gap-6">
-                      <ScoreTable match={match} />
-                    </div>
-                  </div>
-                )}
-
-                {activeTab === "commentary" && (
-                  <div className="p-0 sm:p-2 animate-in fade-in zoom-in-95 duration-300">
-                    <MatchCommentary match={match} />
-                  </div>
-                )}
-
-                {/* ✅ INFO TAB */}
-                {activeTab === "info" && (
-                  <div className="p-2 sm:p-4 animate-in fade-in slide-in-from-right-4 duration-300">
-                    <MatchInfo match={match} />
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* ✅ CORRECTION MODAL (Hidden by default) */}
+      {/* --- BOTTOM NAVIGATION (Increased Height and Font) --- */}
+      <nav className="flex-none h-16 bg-gray-950 border-t border-gray-800 grid grid-cols-4 items-center">
+        <NavBtn active={activeTab === 'summary'} onClick={() => setActiveTab('summary')} icon="📝" label="Score" />
+        <NavBtn active={activeTab === 'scorecard'} onClick={() => setActiveTab('scorecard')} icon="📊" label="Card" />
+        <NavBtn active={activeTab === 'commentary'} onClick={() => setActiveTab('commentary')} icon="🎙️" label="Logs" />
+        <NavBtn active={activeTab === 'info'} onClick={() => setActiveTab('info')} icon="ℹ️" label="Info" />
+      </nav>
+
       {showCorrectionModal && (
-        <MatchCorrectionModal
-          match={match}
-          tournamentId={tournamentId}
-          onClose={() => setShowCorrectionModal(false)}
-        />
+        <MatchCorrectionModal match={match} tournamentId={tournamentId} onClose={() => setShowCorrectionModal(false)} />
       )}
     </div>
+  );
+}
+
+// Sub-component for Footer (Increased sizes)
+function NavBtn({ active, onClick, icon, label }) {
+  return (
+    <button onClick={onClick} className={`flex flex-col items-center justify-center h-full w-full transition-all ${
+      active ? "text-cyan-400 bg-gray-900 border-t-4 border-cyan-500" : "text-gray-500"
+    }`}>
+      {/* Icon size increased */}
+      <span className="text-xl">{icon}</span>
+      {/* Label size increased from 9px to 11px */}
+      <span className="text-[11px] font-black uppercase mt-1 tracking-wider">{label}</span>
+    </button>
   );
 }
