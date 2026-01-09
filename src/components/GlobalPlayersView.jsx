@@ -7,20 +7,18 @@ import {
   listTournaments,
   listMatchesForTournament,
 } from "../utils/firestore";
-import { doc, writeBatch } from "firebase/firestore";
-import { db } from "../utils/firebase";
 import { useAuth } from "../hooks/useAuth";
 import { useNavigate } from "react-router-dom";
-import { aggregateCareerStats } from "../utils/statsHelper";
 
 export default function GlobalPlayersView() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
 
+  // --- STATE ---
   const [players, setPlayers] = useState([]);
+  const [allMatches, setAllMatches] = useState([]); // Stores every match from every tournament
   const [loading, setLoading] = useState(true);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedPlayerId, setExpandedPlayerId] = useState(null);
 
@@ -42,244 +40,233 @@ export default function GlobalPlayersView() {
     photoURL: "",
   });
 
+  // --- 1. DATA FETCHING (AUTO LOAD EVERYTHING) ---
   useEffect(() => {
-    fetchPlayers();
+    const loadRealTimeData = async () => {
+      setLoading(true);
+      try {
+        // A. Load Players
+        const playersList = await listGlobalPlayers();
+        setPlayers(playersList);
+
+        // B. Load ALL Matches from ALL Tournaments
+        const tournaments = await listTournaments();
+        let collectedMatches = [];
+
+        // Run in parallel for speed
+        await Promise.all(
+          tournaments.map(async (t) => {
+            const matches = await listMatchesForTournament(t.id);
+            // Tag match with tournament ID for linking
+            const tagged = matches.map((m) => ({ ...m, tournamentId: t.id }));
+            collectedMatches = [...collectedMatches, ...tagged];
+          })
+        );
+
+        setAllMatches(collectedMatches);
+      } catch (err) {
+        console.error("Error loading global data:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadRealTimeData();
   }, []);
 
-  const fetchPlayers = async () => {
-    setLoading(true);
-    const data = await listGlobalPlayers();
-    setPlayers(data);
-    setLoading(false);
-  };
+  // --- 2. LIVE STATS CALCULATION ENGINE ---
+  const { processedPlayers, orangeCap, purpleCap } = useMemo(() => {
+    if (players.length === 0)
+      return { processedPlayers: [], orangeCap: null, purpleCap: null };
 
-  // 🔥 ROBUST SYNC ENGINE (Fixes "0 Data Updated")
-  const handleSyncAllStats = async () => {
-    if (
-      !window.confirm(
-        "Start Full Sync? Open Console (F12) to monitor progress."
-      )
-    )
-      return;
+    // A. Map: PlayerID -> Stats Object
+    const statsMap = {};
+    players.forEach((p) => {
+      statsMap[p.id] = {
+        ...p,
+        calculatedStats: {
+          matches: 0,
+          runs: 0,
+          wickets: 0,
+          highestScore: 0,
+          history: [],
+        },
+      };
+    });
 
-    setIsSyncing(true);
-    console.clear();
-    // console.log("🚀 STARTING DEEP SYNC...");
+    // B. Map: Name/OriginalID -> GlobalID (For matching match data to global players)
+    const identityMap = {};
+    players.forEach((p) => {
+      // Clean name for fuzzy match
+      identityMap[p.name.trim().toLowerCase()] = p.id;
+      // Also map by ID if available
+      identityMap[p.id] = p.id;
+    });
 
-    try {
-      const allPlayers = await listGlobalPlayers();
-      const allTournaments = await listTournaments();
-      const playerHistoryMap = {};
+    // C. Process Every Match
+    allMatches.forEach((match) => {
+      // Only count finished/live matches
+      const status = (match.status || match.meta?.status || "").toLowerCase();
+      if (!["finished", "completed", "ongoing", "live"].includes(status))
+        return;
 
-      // Initialize map
-      allPlayers.forEach((p) => (playerHistoryMap[p.id] = []));
+      // Extract Innings
+      let inningsArray = [];
+      if (Array.isArray(match.innings)) {
+        inningsArray = match.innings;
+      } else if (match.innings && typeof match.innings === "object") {
+        inningsArray = Object.values(match.innings);
+      }
 
-      // console.log(
-      //   `📚 Reference Data: ${allPlayers.length} Global Players loaded.`
-      // );
+      if (inningsArray.length === 0) return;
 
-      for (const tourn of allTournaments) {
-        const matches = await listMatchesForTournament(tourn.id);
-        const finishedMatches = matches.filter((m) => {
-          const s = (m.status || m.meta?.matchStatus || "").toLowerCase();
-          return s === "finished" || s === "completed" || s === "ongoing"; // Check ongoing too for testing
-        });
+      // Helper: Find Global Player ID from Match Player Data
+      const findGlobalId = (name, originalId) => {
+        const lowerName = (name || "").trim().toLowerCase();
+        // 1. Try Bridge ID (if stored in squad)
+        if (originalId && identityMap[originalId])
+          return identityMap[originalId];
+        // 2. Try Fuzzy Name
+        return identityMap[lowerName];
+      };
 
-        // console.log(
-        //   `🔎 Tournament: "${tourn.name}" - Checking ${finishedMatches.length} matches...`
-        // );
+      inningsArray.forEach((inn) => {
+        // Batting Stats
+        if (inn.batsmenStats) {
+          Object.entries(inn.batsmenStats).forEach(([pName, s]) => {
+            const gid = findGlobalId(pName, null); // We don't have originalID easily here, rely on name
+            if (gid && statsMap[gid]) {
+              const p = statsMap[gid];
+              const r = Number(s.runs) || 0;
 
-        for (const match of finishedMatches) {
-          // 1. SAFE INNINGS EXTRACTION (Handle Array vs Map)
-          let inningsArray = [];
-          if (Array.isArray(match.innings)) {
-            inningsArray = match.innings;
-          } else if (match.innings && typeof match.innings === "object") {
-            inningsArray = Object.values(match.innings);
-          }
+              // Only add if they actually played
+              if (s.balls > 0 || s.out) {
+                // Check if we already added this match to history (to avoid double counting if bad data)
+                const alreadyProcessed = p.calculatedStats.history.some(
+                  (h) => h.matchId === match.id
+                );
 
-          if (inningsArray.length === 0) {
-            console.warn(`   ⚠️ Match ${match.id} has no innings data.`);
-            continue;
-          }
-
-          // 2. BUILD BRIDGE (Squad -> Global ID)
-          const matchToGlobalID = {};
-
-          const addToBridge = (list) => {
-            if (!list) return;
-            list.forEach((p) => {
-              const pName = (p.name || "").trim().toLowerCase();
-              const pId = p.originalId || p.originalPlayerId;
-              if (pName && pId) matchToGlobalID[pName] = pId; // Name -> Global ID
-              if (p.id && pId) matchToGlobalID[p.id] = pId; // MatchID -> Global ID
-            });
-          };
-
-          addToBridge(match.teamASquad);
-          addToBridge(match.teamBSquad);
-
-          // 3. PROCESS INNINGS
-          inningsArray.forEach((inn, innIndex) => {
-            if (!inn) return;
-
-            // --- Process Batting ---
-            if (inn.batsmenStats) {
-              Object.entries(inn.batsmenStats).forEach(([key, stats]) => {
-                const rawName = key.trim();
-                const lowerName = rawName.toLowerCase();
-
-                // A. Try Squad Bridge
-                let globalId =
-                  matchToGlobalID[lowerName] || matchToGlobalID[key];
-
-                // B. Try Global DB Fuzzy Search (The "Hail Mary")
-                if (!globalId) {
-                  const found = allPlayers.find(
-                    (gp) => gp.name.trim().toLowerCase() === lowerName
-                  );
-                  if (found) {
-                    globalId = found.id;
-                    // console.log(`      🔹 Fuzzy Matched: "${rawName}" -> Global Player "${found.name}"`);
-                  }
-                }
-
-                if (globalId && playerHistoryMap[globalId]) {
-                  // Prevent duplicate entries for the same match
-                  const exists = playerHistoryMap[globalId].some(
-                    (h) => h.matchId === match.id
-                  );
-                  if (!exists) {
-                    playerHistoryMap[globalId].push({
-                      tournamentId: tourn.id,
-                      matchId: match.id,
-                      date:
-                        match.date ||
-                        match.createdAt ||
-                        new Date().toISOString(),
-                      opponent:
-                        inn.battingTeam === match.meta?.teamA
-                          ? match.meta?.teamB
-                          : match.meta?.teamA,
-                      runs: Number(stats.runs) || 0,
-                      wickets: 0,
-                      type: "bat",
-                    });
-                  }
+                if (!alreadyProcessed) {
+                  p.calculatedStats.matches += 1;
+                  p.calculatedStats.history.push({
+                    matchId: match.id,
+                    tournamentId: match.tournamentId,
+                    date: match.date,
+                    opponent:
+                      inn.battingTeam === match.meta?.teamA
+                        ? match.meta?.teamB
+                        : match.meta?.teamA,
+                    runs: r,
+                    wickets: 0, // Will update below
+                  });
                 } else {
-                  console.warn(
-                    `      ❌ UNMAPPED BATSMAN: "${rawName}" (No matching Global Player found)`
-                  );
-                }
-              });
-            }
-
-            // --- Process Bowling ---
-            if (inn.bowlerStats) {
-              Object.entries(inn.bowlerStats).forEach(([key, stats]) => {
-                const rawName = key.trim();
-                const lowerName = rawName.toLowerCase();
-
-                let globalId =
-                  matchToGlobalID[lowerName] || matchToGlobalID[key];
-
-                if (!globalId) {
-                  const found = allPlayers.find(
-                    (gp) => gp.name.trim().toLowerCase() === lowerName
-                  );
-                  if (found) globalId = found.id;
-                }
-
-                if (globalId && playerHistoryMap[globalId]) {
-                  const existing = playerHistoryMap[globalId].find(
+                  // Update existing entry (rare edge case)
+                  const entry = p.calculatedStats.history.find(
                     (h) => h.matchId === match.id
                   );
-                  if (existing) {
-                    existing.wickets =
-                      (existing.wickets || 0) + (Number(stats.wickets) || 0);
-                  } else {
-                    playerHistoryMap[globalId].push({
-                      tournamentId: tourn.id,
-                      matchId: match.id,
-                      date:
-                        match.date ||
-                        match.createdAt ||
-                        new Date().toISOString(),
-                      opponent: inn.battingTeam || "Opponent",
-                      runs: 0,
-                      wickets: Number(stats.wickets) || 0,
-                      type: "bowl",
-                    });
-                  }
+                  entry.runs += r;
                 }
-              });
+
+                p.calculatedStats.runs += r;
+                if (r > p.calculatedStats.highestScore)
+                  p.calculatedStats.highestScore = r;
+              }
             }
           });
         }
-      }
 
-      // 4. WRITE UPDATES
-      const batch = writeBatch(db);
-      let opCount = 0;
+        // Bowling Stats
+        if (inn.bowlerStats) {
+          Object.entries(inn.bowlerStats).forEach(([pName, s]) => {
+            const gid = findGlobalId(pName, null);
+            if (gid && statsMap[gid]) {
+              const p = statsMap[gid];
+              const w = Number(s.wickets) || 0;
 
-      for (const player of allPlayers) {
-        const newHistory = playerHistoryMap[player.id];
+              if (s.balls > 0) {
+                const alreadyProcessed = p.calculatedStats.history.some(
+                  (h) => h.matchId === match.id
+                );
 
-        // We update EVERY player who has ANY history found, ensuring clean slate
-        if (newHistory) {
-          // Sort by Date Descending
-          newHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
+                if (!alreadyProcessed) {
+                  // Played as bowler only
+                  p.calculatedStats.matches += 1;
+                  p.calculatedStats.history.push({
+                    matchId: match.id,
+                    tournamentId: match.tournamentId,
+                    date: match.date,
+                    opponent: inn.battingTeam || "Opponent",
+                    runs: 0,
+                    wickets: w,
+                  });
+                } else {
+                  // Played as all-rounder (already added in batting)
+                  const entry = p.calculatedStats.history.find(
+                    (h) => h.matchId === match.id
+                  );
+                  entry.wickets += w;
+                }
 
-          // Calculate Aggregates
-          let totalRuns = 0;
-          let totalWickets = 0;
-          let maxScore = 0;
-
-          newHistory.forEach((h) => {
-            totalRuns += h.runs;
-            totalWickets += h.wickets;
-            if (h.runs > maxScore) maxScore = h.runs;
+                p.calculatedStats.wickets += w;
+              }
+            }
           });
-
-          const ref = doc(db, "players", player.id);
-          batch.update(ref, {
-            stats: {
-              matches: newHistory.length,
-              runs: totalRuns,
-              wickets: totalWickets,
-              highestScore: maxScore,
-              history: newHistory,
-            },
-          });
-          opCount++;
         }
-      }
+      });
+    });
 
-      if (opCount > 0) {
-        await batch.commit();
-        // console.log(`✅ DATABASE UPDATED: ${opCount} players synced.`);
-        alert(`Success! Updated stats for ${opCount} players.`);
-      } else {
-        console.warn("⚠️ No data updates found. Check player names spelling.");
-        alert("Sync finished, but no matching stats were found.");
-      }
+    // D. Sort & Filter for Display
+    let result = Object.values(statsMap);
 
-      sessionStorage.setItem("globalStatsSynced", "true");
-      fetchPlayers();
-    } catch (e) {
-      console.error("❌ Sync Error:", e);
-      alert("Sync Error: " + e.message);
-    } finally {
-      setIsSyncing(false);
+    // Apply Search Filter
+    if (searchTerm) {
+      result = result.filter((p) =>
+        p.name.toLowerCase().includes(searchTerm.toLowerCase())
+      );
     }
-  };
 
-  // ... (Rest of your handlers: handleDelete, goToMatch, handleSort, etc.) ...
+    // Apply Sort
+    result.sort((a, b) => {
+      let valA, valB;
+      if (["name", "role"].includes(sortConfig.key)) {
+        valA = a[sortConfig.key];
+        valB = b[sortConfig.key];
+      } else {
+        valA = a.calculatedStats[sortConfig.key] || 0;
+        valB = b.calculatedStats[sortConfig.key] || 0;
+      }
+
+      if (typeof valA === "string") valA = valA.toLowerCase();
+      if (typeof valB === "string") valB = valB.toLowerCase();
+
+      if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
+      if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    // E. Calculate Caps (Orange/Purple)
+    const allStats = Object.values(statsMap);
+    const orange = [...allStats].sort(
+      (a, b) => b.calculatedStats.runs - a.calculatedStats.runs
+    )[0];
+    const purple = [...allStats].sort(
+      (a, b) => b.calculatedStats.wickets - a.calculatedStats.wickets
+    )[0];
+
+    return {
+      processedPlayers: result,
+      orangeCap: orange?.calculatedStats.runs > 0 ? orange : null,
+      purpleCap: purple?.calculatedStats.wickets > 0 ? purple : null,
+    };
+  }, [players, allMatches, searchTerm, sortConfig]);
+
+  // --- ACTIONS ---
   const handleDelete = async (playerId, e) => {
     e.stopPropagation();
     if (!window.confirm("⚠ Permanently delete this player?")) return;
     try {
       await deleteGlobalPlayer(playerId);
+      // Optimistic update
       setPlayers((prev) => prev.filter((p) => p.id !== playerId));
     } catch (error) {
       alert("Failed to delete player.");
@@ -300,41 +287,7 @@ export default function GlobalPlayersView() {
     setSortConfig({ key, direction });
   };
 
-  const sortedPlayers = useMemo(() => {
-    let processed = players.map((p) => ({
-      ...p,
-      calculatedStats: aggregateCareerStats(p),
-    }));
-
-    if (searchTerm) {
-      processed = processed.filter((p) =>
-        p.name.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-
-    if (sortConfig.key) {
-      processed.sort((a, b) => {
-        let valA, valB;
-        if (["name", "role"].includes(sortConfig.key)) {
-          valA = a[sortConfig.key];
-          valB = b[sortConfig.key];
-        } else {
-          valA = a.calculatedStats?.[sortConfig.key] || 0;
-          valB = b.calculatedStats?.[sortConfig.key] || 0;
-        }
-
-        if (typeof valA === "string") valA = valA.toLowerCase();
-        if (typeof valB === "string") valB = valB.toLowerCase();
-
-        if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
-        if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
-        return 0;
-      });
-    }
-    return processed;
-  }, [players, sortConfig, searchTerm]);
-
-  // --- COMPRESSION UTILITY ---
+  // --- COMPRESSION ---
   const compressImage = (file, maxWidth = 400) => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -424,7 +377,9 @@ export default function GlobalPlayersView() {
         alert("Player Created!");
       }
       setShowModal(false);
-      fetchPlayers();
+      // Reload players to reflect changes (matches remain same)
+      const data = await listGlobalPlayers();
+      setPlayers(data);
     } catch (error) {
       alert("Error saving player.");
     }
@@ -474,12 +429,8 @@ export default function GlobalPlayersView() {
               <span>Global Database</span>
             </h1>
             <p className="text-gray-400 text-xs mt-1 flex items-center gap-2">
-              {players.length} players registered.
-              {isSyncing && (
-                <span className="text-cyan-400 animate-pulse font-bold ml-2">
-                  Syncing...
-                </span>
-              )}
+              {processedPlayers.length} players found.
+              {/* No more Sync button needed, it's live */}
             </p>
           </div>
           <div className="flex flex-wrap gap-2 w-full md:w-auto justify-center md:justify-end">
@@ -492,14 +443,6 @@ export default function GlobalPlayersView() {
             />
             {user && (
               <button
-                onClick={() => handleSyncAllStats(false)}
-                disabled={isSyncing}
-                className="bg-gray-700 hover:bg-gray-600 text-gray-200 px-4 py-2 rounded-lg font-bold text-sm shadow-lg whitespace-nowrap transition-colors flex items-center gap-2 border border-gray-600">
-                {isSyncing ? "⏳" : "🔄"} Sync
-              </button>
-            )}
-            {user && (
-              <button
                 onClick={openAddModal}
                 className="bg-cyan-600 hover:bg-cyan-500 px-4 py-2 rounded-lg font-bold text-sm shadow-lg whitespace-nowrap transition-colors">
                 + Add
@@ -508,11 +451,51 @@ export default function GlobalPlayersView() {
           </div>
         </div>
 
+        {/* ✅ ORANGE & PURPLE CAPS SECTION */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+          {orangeCap && (
+            <div className="bg-gradient-to-br from-orange-900/20 to-gray-900 border border-orange-500/20 p-5 rounded-2xl flex items-center gap-5 shadow-lg relative overflow-hidden">
+              <div className="bg-orange-500/10 p-3 rounded-full text-3xl">
+                🏏
+              </div>
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-widest text-orange-500 mb-1">
+                  Global Orange Cap
+                </div>
+                <div className="text-xl font-bold text-white">
+                  {orangeCap.name}
+                </div>
+                <div className="text-sm text-gray-400 font-mono">
+                  {orangeCap.calculatedStats.runs} Runs
+                </div>
+              </div>
+            </div>
+          )}
+          {purpleCap && (
+            <div className="bg-gradient-to-br from-purple-900/20 to-gray-900 border border-purple-500/20 p-5 rounded-2xl flex items-center gap-5 shadow-lg relative overflow-hidden">
+              <div className="bg-purple-500/10 p-3 rounded-full text-3xl">
+                🥎
+              </div>
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-widest text-purple-500 mb-1">
+                  Global Purple Cap
+                </div>
+                <div className="text-xl font-bold text-white">
+                  {purpleCap.name}
+                </div>
+                <div className="text-sm text-gray-400 font-mono">
+                  {purpleCap.calculatedStats.wickets} Wickets
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* TABLE */}
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden shadow-2xl">
           {loading ? (
             <div className="p-12 text-center text-cyan-500 animate-pulse text-sm font-mono">
-              Loading Database...
+              Fetching all tournament data...
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -548,7 +531,7 @@ export default function GlobalPlayersView() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-800">
-                  {sortedPlayers.length === 0 ? (
+                  {processedPlayers.length === 0 ? (
                     <tr>
                       <td
                         colSpan={8}
@@ -557,7 +540,7 @@ export default function GlobalPlayersView() {
                       </td>
                     </tr>
                   ) : (
-                    sortedPlayers.map((player) => (
+                    processedPlayers.map((player) => (
                       <React.Fragment key={player.id}>
                         <tr
                           onClick={() => toggleRowExpansion(player.id)}
@@ -687,6 +670,7 @@ export default function GlobalPlayersView() {
                                     />
                                   </div>
 
+                                  {/* ✅ UNIFIED MATCH HISTORY UI */}
                                   <div className="pt-4 border-t border-gray-800">
                                     <h4 className="text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2">
                                       <span>📜</span> Match History (
@@ -719,16 +703,18 @@ export default function GlobalPlayersView() {
                                                   {match.opponent || "Opponent"}
                                                 </div>
                                               </div>
+
+                                              {/* ✅ Shows Both Stats in One Card */}
                                               <div className="text-right flex flex-col items-end">
                                                 <div className="flex gap-2 text-xs">
                                                   {match.runs > 0 && (
                                                     <span className="text-cyan-400 font-bold">
-                                                      {match.runs} R
+                                                      🏏 {match.runs}
                                                     </span>
                                                   )}
                                                   {match.wickets > 0 && (
                                                     <span className="text-green-400 font-bold">
-                                                      {match.wickets} W
+                                                      🥎 {match.wickets}
                                                     </span>
                                                   )}
                                                   {match.runs === 0 &&
@@ -744,8 +730,7 @@ export default function GlobalPlayersView() {
                                       </div>
                                     ) : (
                                       <div className="text-sm text-gray-600 italic p-3 border border-dashed border-gray-800 rounded bg-gray-900/50">
-                                        No match history recorded. Try clicking
-                                        Sync!
+                                        No match history recorded.
                                       </div>
                                     )}
                                   </div>
@@ -763,7 +748,7 @@ export default function GlobalPlayersView() {
           )}
         </div>
 
-        {/* MODAL */}
+        {/* MODAL (UNCHANGED) */}
         {showModal && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
             <div className="bg-gray-900 border border-gray-700 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">

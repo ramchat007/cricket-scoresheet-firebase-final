@@ -1,4 +1,3 @@
-// src/pages/AuctionDashboard.jsx
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { collection, query, onSnapshot } from "firebase/firestore";
@@ -9,49 +8,38 @@ import {
   placeBid,
   markSold,
   markUnsold,
-  initializeAuction,
 } from "../utils/auction";
 import AuctionAdminPanel from "../components/AuctionAdminPanel";
 
 export default function AuctionDashboard() {
   const { id: tournamentId } = useParams();
 
-  // --- Data State ---
   const [auctionState, setAuctionState] = useState(null);
-  const [allPlayers, setAllPlayers] = useState([]); // Master List
-  const [teamsMap, setTeamsMap] = useState({}); // To lookup Team Name by ID
-  const [teams, setTeams] = useState([]); // Array for Bidding Grid
+  const [allPlayers, setAllPlayers] = useState([]);
+  const [teamsMap, setTeamsMap] = useState({});
+  const [teams, setTeams] = useState([]);
 
-  // --- UI State ---
   const [filterRole, setFilterRole] = useState("All");
-  const [queueTab, setQueueTab] = useState("upcoming"); // "upcoming" | "sold" | "unsold"
+  const [queueTab, setQueueTab] = useState("upcoming");
   const [showAdmin, setShowAdmin] = useState(false);
 
-  // --- Realtime Subscriptions ---
   useEffect(() => {
-    // 1. Subscribe to Auction State
     const unsubState = subscribeAuctionState(tournamentId, setAuctionState);
 
-    // 2. Subscribe to Teams
     const teamsRef = collection(db, "tournaments", tournamentId, "teams");
     const qTeams = query(teamsRef);
-
     const unsubTeams = onSnapshot(qTeams, (snapshot) => {
       const teamData = [];
       const mapping = {};
-
       snapshot.docs.forEach((doc) => {
         const data = doc.data();
-        const t = { id: doc.id, ...data };
-        teamData.push(t);
+        teamData.push({ id: doc.id, ...data });
         mapping[doc.id] = data.name;
       });
-
       setTeams(teamData);
       setTeamsMap(mapping);
     });
 
-    // 3. Subscribe to ALL Auction Players
     const playersRef = collection(
       db,
       "tournaments",
@@ -59,13 +47,11 @@ export default function AuctionDashboard() {
       "auctionPlayers"
     );
     const qPlayers = query(playersRef);
-
     const unsubPlayers = onSnapshot(qPlayers, (snapshot) => {
       const players = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
-      // Sort alphabetically for the list view
       players.sort((a, b) => a.name.localeCompare(b.name));
       setAllPlayers(players);
     });
@@ -77,37 +63,33 @@ export default function AuctionDashboard() {
     };
   }, [tournamentId]);
 
-  // --- Derived Lists ---
   const upcomingPlayers = allPlayers.filter((p) => p.status === "PENDING");
   const soldPlayers = allPlayers.filter((p) => p.status === "SOLD");
   const unsoldPlayers = allPlayers.filter(
     (p) => p.status === "UNSOLD" || p.status === "UNSOLD_PASSED"
   );
 
-  // --- 🔥 NEW: Random Player Picker ---
   const pickRandomPlayer = () => {
     if (upcomingPlayers.length === 0) return alert("No players left in pool!");
-
-    // Simple random selection
     const randomIndex = Math.floor(Math.random() * upcomingPlayers.length);
     const randomPlayer = upcomingPlayers[randomIndex];
-
-    // Start bidding for this player
     startBidding(tournamentId, randomPlayer);
   };
 
-  // --- Loading State ---
   if (!auctionState) {
     return (
       <div className="min-h-screen bg-black flex flex-col items-center justify-center text-white p-4">
         <div className="bg-gray-900 border border-gray-800 p-8 rounded-2xl text-center max-w-md shadow-2xl">
           <div className="text-4xl mb-4">⚠️</div>
           <h2 className="text-2xl font-bold mb-2">Auction Room Not Ready</h2>
-          <button
-            onClick={() => initializeAuction(tournamentId)}
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-lg mt-4">
-            🚀 Initialize Auction
-          </button>
+          <p className="text-gray-400 mb-4">
+            Please initialize auction from Tournament Details page.
+          </p>
+          <Link
+            to={`/tournaments/${tournamentId}`}
+            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-lg mt-4 inline-block text-center">
+            🔗 Go to Tournament
+          </Link>
         </div>
       </div>
     );
@@ -115,7 +97,6 @@ export default function AuctionDashboard() {
 
   const isLive = auctionState.status === "LIVE";
   const currentPlayer = auctionState.currentPlayer;
-
   const calculateNextBid = (current) => {
     if (current < 1000) return current + 100;
     if (current < 5000) return current + 200;
@@ -123,10 +104,8 @@ export default function AuctionDashboard() {
   };
   const nextBidAmount = isLive ? calculateNextBid(auctionState.currentBid) : 0;
 
-  // --- RENDER STAGE (Updated with Randomizer & Photo)  ---
   const renderStage = () => {
     if (!isLive || !currentPlayer) {
-      // Empty Stage: Show Random Picker Button
       return (
         <div className="bg-gray-900/50 border-2 border-dashed border-gray-800 rounded-2xl p-12 mb-8 text-center flex flex-col items-center justify-center min-h-[300px]">
           <div className="text-6xl mb-4 opacity-50">🎲</div>
@@ -149,9 +128,7 @@ export default function AuctionDashboard() {
     return (
       <div className="bg-gradient-to-b from-gray-800 to-gray-900 border border-cyan-500/50 rounded-2xl p-6 mb-8 text-center relative overflow-hidden shadow-2xl shadow-cyan-900/20">
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 to-blue-600 animate-pulse"></div>
-
         <div className="relative z-10 flex flex-col md:flex-row items-center justify-center gap-8">
-          {/* Player Photo Section */}
           <div className="relative group">
             <div className="absolute -inset-1 bg-gradient-to-r from-cyan-600 to-blue-600 rounded-full blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200"></div>
             <img
@@ -172,8 +149,6 @@ export default function AuctionDashboard() {
               </div>
             )}
           </div>
-
-          {/* Player Info & Bid Status */}
           <div className="flex-1">
             <div className="inline-block bg-cyan-900/30 text-cyan-400 text-xs font-bold uppercase tracking-widest mb-2 px-3 py-1 rounded border border-cyan-500/20">
               Current Lot
@@ -187,7 +162,6 @@ export default function AuctionDashboard() {
                 Base: ₹{currentPlayer.basePrice}
               </span>
             </p>
-
             <div className="flex flex-col sm:flex-row justify-center gap-4 sm:gap-12 mb-8 bg-gray-950/30 p-4 rounded-xl border border-white/5">
               <div className="text-center">
                 <div className="text-[10px] text-gray-500 uppercase font-bold tracking-wider mb-1">
@@ -207,7 +181,6 @@ export default function AuctionDashboard() {
                 </div>
               </div>
             </div>
-
             <div className="flex gap-4 justify-center">
               <button
                 onClick={() => markUnsold(tournamentId, currentPlayer.id)}
@@ -227,23 +200,19 @@ export default function AuctionDashboard() {
     );
   };
 
-  // 2. The List
   const renderQueue = () => {
     let displayList = [];
     if (queueTab === "upcoming") displayList = upcomingPlayers;
     if (queueTab === "sold") displayList = soldPlayers;
     if (queueTab === "unsold") displayList = unsoldPlayers;
-
-    if (filterRole !== "All") {
+    if (filterRole !== "All")
       displayList = displayList.filter((p) => p.role === filterRole);
-    }
 
     return (
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
         <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
           <div className="flex items-center gap-4 overflow-x-auto w-full md:w-auto">
             <div className="flex bg-gray-800 rounded-lg p-1 border border-gray-700">
-              {/* Tab buttons ... (Unchanged) */}
               <button
                 onClick={() => setQueueTab("upcoming")}
                 className={`px-4 py-1.5 rounded-md text-sm font-bold ${
@@ -273,7 +242,6 @@ export default function AuctionDashboard() {
               </button>
             </div>
           </div>
-
           <div className="flex gap-2">
             <button
               onClick={() => setShowAdmin(true)}
@@ -299,7 +267,6 @@ export default function AuctionDashboard() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {displayList.map((player) => {
-              // SOLD CARD (Unchanged)
               if (queueTab === "sold") {
                 const teamName = teamsMap[player.teamId] || "Unknown Team";
                 return (
@@ -340,19 +307,15 @@ export default function AuctionDashboard() {
                 );
               }
 
-              // UPCOMING / UNSOLD CARD
               return (
                 <div
                   key={player.id}
-                  // Optional: Allow manual start only if you really want to override randomness
-                  // onClick={() => queueTab === "upcoming" && startBidding(tournamentId, player)}
                   className={`p-3 rounded border flex justify-between items-center transition-all ${
                     queueTab === "upcoming"
                       ? "bg-gray-800 border-gray-700 group"
                       : "bg-gray-900/50 border-gray-800 opacity-75"
                   }`}>
                   <div className="flex items-center gap-3">
-                    {/* Small Photo in list */}
                     <img
                       src={
                         player.photoURL ||
@@ -365,7 +328,6 @@ export default function AuctionDashboard() {
                           "https://cdn-icons-png.flaticon.com/512/847/847969.png")
                       }
                     />
-
                     <div>
                       <div className="font-bold text-white">
                         {player.name}
@@ -385,8 +347,6 @@ export default function AuctionDashboard() {
                       </div>
                     </div>
                   </div>
-
-                  {/* Option: Keep Manual Bid button for admins if needed, or hide to force randomizer */}
                   {queueTab === "upcoming" && (
                     <button
                       onClick={() => startBidding(tournamentId, player)}

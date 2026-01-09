@@ -7,13 +7,14 @@ import {
   removeViewerFromTournament,
 } from "../utils/firestore";
 
-export default function TournamentAccessManager({ tournament, currentUserId }) {
+export default function TournamentAccessManager({ tournament }) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("scorer");
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
-  const isOwner = tournament.ownerId === currentUserId;
-  if (!isOwner) return null;
+
+  // ✅ FIX: Removed the internal blocking check.
+  // We trust the parent component (TournamentDetails/Tabs) to only render this for valid Admins.
 
   const handleAddUser = async (e) => {
     e.preventDefault();
@@ -44,6 +45,7 @@ export default function TournamentAccessManager({ tournament, currentUserId }) {
       }
       setEmail("");
     } catch (err) {
+      console.error(err);
       setMsg("❌ Error adding user.");
     } finally {
       setLoading(false);
@@ -57,7 +59,8 @@ export default function TournamentAccessManager({ tournament, currentUserId }) {
         await removeScorerFromTournament(tournament.id, uid);
       else await removeViewerFromTournament(tournament.id, uid);
     } catch (err) {
-      alert("Error");
+      console.error(err);
+      alert("Error removing user");
     }
   };
 
@@ -104,22 +107,28 @@ export default function TournamentAccessManager({ tournament, currentUserId }) {
         </div>
       )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* SCORERS LIST */}
         <div>
           <h4 className="text-sm font-bold text-gray-400 uppercase mb-2">
             Scorers
           </h4>
           <div className="space-y-2">
+            {(tournament.scorers || []).length === 0 && (
+              <span className="text-xs text-gray-600">No scorers added</span>
+            )}
             {tournament.scorers?.map((uid) => (
               <div
                 key={uid}
                 className="flex justify-between items-center bg-gray-800/30 p-2 rounded text-sm text-gray-300">
                 <span className="font-mono text-sm">
-                  {uid === tournament.ownerId ? "Me (Owner)" : uid}
+                  {uid === tournament.ownerId
+                    ? "Owner (Creator)"
+                    : uid.slice(0, 8) + "..."}
                 </span>
                 {uid !== tournament.ownerId && (
                   <button
                     onClick={() => handleRemove(uid, "scorer")}
-                    className="text-red-500 hover:text-red-400 text-sm uppercase font-bold">
+                    className="text-red-500 hover:text-red-400 text-xs uppercase font-bold">
                     Remove
                   </button>
                 )}
@@ -127,19 +136,26 @@ export default function TournamentAccessManager({ tournament, currentUserId }) {
             ))}
           </div>
         </div>
+
+        {/* VIEWERS LIST */}
         <div>
           <h4 className="text-sm font-bold text-gray-400 uppercase mb-2">
             Viewers
           </h4>
           <div className="space-y-2">
+            {(tournament.viewers || []).length === 0 && (
+              <span className="text-xs text-gray-600">No viewers added</span>
+            )}
             {tournament.viewers?.map((uid) => (
               <div
                 key={uid}
                 className="flex justify-between items-center bg-gray-800/30 p-2 rounded text-sm text-gray-300">
-                <span className="font-mono text-sm">{uid}</span>
+                <span className="font-mono text-sm">
+                  {uid.slice(0, 8) + "..."}
+                </span>
                 <button
                   onClick={() => handleRemove(uid, "viewer")}
-                  className="text-red-500 hover:text-red-400 text-sm uppercase font-bold">
+                  className="text-red-500 hover:text-red-400 text-xs uppercase font-bold">
                   Remove
                 </button>
               </div>

@@ -1,5 +1,4 @@
-// src/components/AuctionAdminPanel.jsx
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import {
   collection,
   updateDoc,
@@ -11,14 +10,17 @@ import {
   onSnapshot,
   getDocs,
   runTransaction,
-  addDoc,
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { listGlobalPlayers } from "../utils/firestore";
 import AuctionOwnersAdmin from "./AuctionOwnersAdmin";
+import MatchScheduler from "./MatchScheduler"; // ✅ Import reused component
 
 // --- 1. GLOBAL PLAYER SEARCH MODAL (Unchanged) ---
 const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
+  // ... (Keep existing GlobalPlayerPicker code exactly as it was) ...
+  // For brevity in this response, assume the code from the previous step exists here.
+  // Use the exact same code for GlobalPlayerPicker provided in previous steps.
   const [players, setPlayers] = useState([]);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState([]);
@@ -120,326 +122,6 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
             Import {selected.length} Players
           </button>
         </div>
-      </div>
-    </div>
-  );
-};
-
-// --- 2. MATCH SCHEDULER (UPDATED: Single + Auto) ---
-const AuctionMatchScheduler = ({ tournamentId, teams }) => {
-  const [mode, setMode] = useState("single"); // 'single' | 'auto'
-
-  // Single Match State
-  const [teamAId, setTeamAId] = useState("");
-  const [teamBId, setTeamBId] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [overs, setOvers] = useState(10);
-  const [creating, setCreating] = useState(false);
-
-  // Auto Schedule State
-  const [startDate, setStartDate] = useState(
-    new Date().toISOString().slice(0, 10)
-  );
-  const [matchesPerDay, setMatchesPerDay] = useState(2);
-  const [autoOvers, setAutoOvers] = useState(10);
-
-  const sanitizeSquad = (roster) => {
-    if (!roster) return [];
-    return roster.map(player => {
-      // Destructure to separate photoURL from the rest of the data
-      const { photoURL, statsSnapshot, ...lightweightPlayer } = player;
-      return lightweightPlayer; // Return only name, id, role, etc.
-    });
-  };
-
-  // --- CREATE SINGLE MATCH ---
-  const handleCreateMatch = async () => {
-    if (!teamAId || !teamBId) return alert("Select both teams");
-    if (teamAId === teamBId) return alert("Cannot play against same team");
-
-    setCreating(true);
-    try {
-      const teamA = teams.find((t) => t.id === teamAId);
-      const teamB = teams.find((t) => t.id === teamBId);
-
-      const matchPayload = {
-        meta: {
-          tournament: tournamentId,
-          teamA: teamA.name,
-          teamB: teamB.name,
-          teamAId: teamA.id,
-          teamBId: teamB.id,
-          overs: Number(overs),
-          date: date,
-          status: "upcoming",
-          createdAt: new Date().toISOString(),
-          format: "T20",
-        },
-        teamASquad: sanitizeSquad(teamA.roster), 
-        teamBSquad: sanitizeSquad(teamB.roster),
-        innings: [],
-        status: "upcoming",
-        date: date,
-      };
-
-      await addDoc(
-        collection(db, "tournaments", tournamentId, "matches"),
-        matchPayload
-      );
-      alert("Match scheduled successfully!");
-      setTeamAId("");
-      setTeamBId("");
-    } catch (e) {
-      console.error(e);
-      alert("Error: " + e.message);
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  // --- 🔥 AUTO SCHEDULE LOGIC (Round Robin) ---
-  const handleAutoSchedule = async () => {
-    if (teams.length < 2)
-      return alert("Need at least 2 teams to generate a schedule.");
-    if (
-      !window.confirm(
-        `Generate Round Robin schedule for ${teams.length} teams?`
-      )
-    )
-      return;
-
-    setCreating(true);
-    try {
-      const batch = writeBatch(db);
-      const matchesCol = collection(db, "tournaments", tournamentId, "matches");
-
-      let matchCount = 0;
-      let dayOffset = 0;
-      let matchesToday = 0;
-
-      // Round Robin Algorithm
-      for (let i = 0; i < teams.length; i++) {
-        for (let j = i + 1; j < teams.length; j++) {
-          const teamA = teams[i];
-          const teamB = teams[j];
-
-          // Calculate Date
-          const matchDate = new Date(startDate);
-          matchDate.setDate(matchDate.getDate() + dayOffset);
-          const dateString = matchDate.toISOString().slice(0, 10);
-
-          const newMatchRef = doc(matchesCol); // Generate ID
-
-          batch.set(newMatchRef, {
-            meta: {
-              tournament: tournamentId,
-              teamA: teamA.name,
-              teamB: teamB.name,
-              teamAId: teamA.id,
-              teamBId: teamB.id,
-              overs: Number(autoOvers),
-              date: dateString,
-              status: "upcoming",
-              createdAt: new Date().toISOString(),
-              format: "League",
-            },
-            teamASquad: sanitizeSquad(teamA.roster), 
-            teamBSquad: sanitizeSquad(teamB.roster),
-            innings: [],
-            status: "upcoming",
-            date: dateString,
-          });
-
-          matchCount++;
-          matchesToday++;
-
-          // Move to next day if limit reached
-          if (matchesToday >= matchesPerDay) {
-            dayOffset++;
-            matchesToday = 0;
-          }
-        }
-      }
-
-      await batch.commit();
-      alert(`Successfully generated ${matchCount} league matches!`);
-      setMode("single"); // Go back
-    } catch (e) {
-      console.error(e);
-      alert("Error generating schedule: " + e.message);
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  return (
-    <div className="space-y-6 animate-in fade-in">
-      {/* TOGGLE TABS */}
-      <div className="flex bg-gray-900 border border-gray-800 rounded-lg p-1">
-        <button
-          onClick={() => setMode("single")}
-          className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${
-            mode === "single"
-              ? "bg-gray-700 text-white"
-              : "text-gray-500 hover:text-gray-300"
-          }`}>
-          Single Match
-        </button>
-        <button
-          onClick={() => setMode("auto")}
-          className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${
-            mode === "auto"
-              ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white"
-              : "text-gray-500 hover:text-gray-300"
-          }`}>
-          ⚡ Auto Scheduler
-        </button>
-      </div>
-
-      <div className="bg-gray-900 border border-gray-800 p-6 rounded-xl">
-        {mode === "single" ? (
-          <>
-            <h3 className="text-white font-bold text-lg mb-4 flex items-center gap-2">
-              <span>📅</span> Schedule Match
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="text-xs font-bold text-cyan-400 uppercase mb-2 block">
-                  Home Team
-                </label>
-                <select
-                  className="w-full bg-black border border-gray-700 rounded-lg px-4 py-3 text-white focus:border-cyan-500 outline-none"
-                  value={teamAId}
-                  onChange={(e) => setTeamAId(e.target.value)}>
-                  <option value="">-- Select Team A --</option>
-                  {teams.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} ({t.roster?.length || 0})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-bold text-green-400 uppercase mb-2 block">
-                  Away Team
-                </label>
-                <select
-                  className="w-full bg-black border border-gray-700 rounded-lg px-4 py-3 text-white focus:border-green-500 outline-none"
-                  value={teamBId}
-                  onChange={(e) => setTeamBId(e.target.value)}>
-                  <option value="">-- Select Team B --</option>
-                  {teams.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} ({t.roster?.length || 0})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">
-                  Date
-                </label>
-                <input
-                  type="date"
-                  className="w-full bg-black border border-gray-700 rounded-lg px-4 py-3 text-white focus:border-gray-500 outline-none"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">
-                  Overs
-                </label>
-                <input
-                  type="number"
-                  className="w-full bg-black border border-gray-700 rounded-lg px-4 py-3 text-white focus:border-gray-500 outline-none"
-                  value={overs}
-                  onChange={(e) => setOvers(e.target.value)}
-                />
-              </div>
-            </div>
-            <button
-              onClick={handleCreateMatch}
-              disabled={creating || !teamAId || !teamBId}
-              className="w-full mt-6 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-xl shadow-lg transition-all disabled:opacity-50">
-              {creating ? "Scheduling..." : "Create Match"}
-            </button>
-          </>
-        ) : (
-          <>
-            <h3 className="text-white font-bold text-lg mb-2 flex items-center gap-2">
-              <span>⚡</span> Auto League Scheduler
-            </h3>
-            <p className="text-gray-500 text-sm mb-6">
-              Generates a Round Robin schedule where every team plays every
-              other team once.
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div>
-                <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">
-                  Start Date
-                </label>
-                <input
-                  type="date"
-                  className="w-full bg-black border border-gray-700 rounded-lg px-4 py-3 text-white focus:border-blue-500 outline-none"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">
-                  Matches Per Day
-                </label>
-                <input
-                  type="number"
-                  className="w-full bg-black border border-gray-700 rounded-lg px-4 py-3 text-white focus:border-blue-500 outline-none"
-                  value={matchesPerDay}
-                  onChange={(e) => setMatchesPerDay(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">
-                  Overs
-                </label>
-                <input
-                  type="number"
-                  className="w-full bg-black border border-gray-700 rounded-lg px-4 py-3 text-white focus:border-blue-500 outline-none"
-                  value={autoOvers}
-                  onChange={(e) => setAutoOvers(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="mt-6 bg-blue-900/20 border border-blue-500/30 p-4 rounded-lg">
-              <h4 className="text-blue-400 font-bold text-sm mb-1">Summary</h4>
-              <p className="text-gray-400 text-xs">
-                Teams:{" "}
-                <span className="text-white font-bold">{teams.length}</span>{" "}
-                <br />
-                Total Matches:{" "}
-                <span className="text-white font-bold">
-                  {(teams.length * (teams.length - 1)) / 2}
-                </span>{" "}
-                <br />
-                Duration:{" "}
-                <span className="text-white font-bold">
-                  {Math.ceil(
-                    (teams.length * (teams.length - 1)) / 2 / matchesPerDay
-                  )}{" "}
-                  Days
-                </span>
-              </p>
-            </div>
-
-            <button
-              onClick={handleAutoSchedule}
-              disabled={creating || teams.length < 2}
-              className="w-full mt-6 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-3 rounded-xl shadow-lg transition-all disabled:opacity-50">
-              {creating ? "Generating..." : "Generate Schedule"}
-            </button>
-          </>
-        )}
       </div>
     </div>
   );
@@ -628,6 +310,8 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
   };
 
   const handleReset = async () => {
+    // ... (Use same reset logic as before) ...
+    // For brevity, ensuring this part isn't truncated
     if (
       !window.confirm(
         "⚠ DANGER: DELETE ALL Auction Data & Teams? Cannot be undone."
@@ -684,7 +368,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
         }
       });
 
-      // 4. ✅ Delete Matches (Also need to clear matches on full reset)
+      // 4. Matches
       const matchSnap = await getDocs(
         collection(db, "tournaments", tournamentId, "matches")
       );
@@ -961,9 +645,9 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
           </div>
         )}
 
-        {/* --- TAB: MATCHES (New Auto Scheduler) --- */}
+        {/* --- TAB: MATCHES (Reused Component) --- */}
         {tab === "matches" && (
-          <AuctionMatchScheduler tournamentId={tournamentId} teams={teams} />
+          <MatchScheduler tournamentId={tournamentId} teams={teams} />
         )}
 
         {/* --- DANGER ZONE --- */}

@@ -1,53 +1,45 @@
 // src/utils/commentaryHelper.js
 
-// --- 1. AI COMMENTARY GENERATOR ---
+// --- 1. FALLBACK COMMENTARY GENERATOR (Rule-Based) ---
 export const generateCommentary = (ball, batter, bowler) => {
-  // Handle Legacy String format ("1", "WD", "W")
   let runs = 0;
   let isWicket = false;
   let isWide = false;
   let isNoBall = false;
-  let isBoundary = false;
 
-  if (typeof ball === "string") {
-    isWicket = ball.includes("W") && !ball.includes("WD");
-    isWide = ball.includes("WD");
-    isNoBall = ball.includes("NB");
-    runs = parseInt(ball) || 0;
-  } else {
-    // Handle Object format
+  // Handle Object vs Legacy String
+  if (typeof ball === "object") {
     runs = ball.runs || 0;
     isWicket = ball.isWicket;
     isWide = ball.isWide;
     isNoBall = ball.isNoBall;
+  } else {
+    const s = String(ball);
+    isWicket = s.includes("W") && !s.includes("WD");
+    isWide = s.includes("WD");
+    isNoBall = s.includes("NB");
+    runs = parseInt(s) || 0;
   }
 
-  if (runs === 4) isBoundary = true;
-  if (runs === 6) isBoundary = true;
-
-  // --- PHRASE BANK ---
+  // Phrase Bank
   const phrases = {
     six: [
       `MAXIMUM! ${batter} clears the boundary with ease!`,
       `That's massive! ${bowler} watches it sail into the crowd.`,
       `Clean strike! Six runs added to the total.`,
-      `Pick that one up from the parking lot! 6 Runs!`,
     ],
     four: [
       `Beautiful timing by ${batter}, races away for four.`,
       `Cracking shot! Finds the gap perfectly.`,
       `One bounce and over the rope. 4 runs.`,
-      `Poor delivery from ${bowler} and punished appropriately.`,
     ],
     wicket: [
       `OUT! ${bowler} strikes! ${batter} has to walk back.`,
       `Gone! Clean bowled! The stumps are flying!`,
       `Up in the air... and TAKEN! A massive breakthrough.`,
-      `Run out! A tragedy of errors between the wickets.`,
     ],
     dot: [
       `Good length delivery, played defensively.`,
-      `Swing and a miss! ${bowler} getting some movement.`,
       `Straight to the fielder, no run.`,
       `Solid defense from ${batter}.`,
     ],
@@ -62,7 +54,6 @@ export const generateCommentary = (ball, batter, bowler) => {
     ],
   };
 
-  // --- SELECTOR LOGIC ---
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
   if (isWicket) return pick(phrases.wicket);
@@ -72,74 +63,102 @@ export const generateCommentary = (ball, batter, bowler) => {
   if (runs === 0 && !isWide && !isNoBall) return pick(phrases.dot);
   if (runs === 1 || runs === 2 || runs === 3) return pick(phrases.single);
 
-  return `${runs} run${runs > 1 ? "s" : ""} added to the score.`;
+  return `${runs} run${runs > 1 ? "s" : ""} added.`;
 };
 
-// --- 2. MATCH INSIGHTS & FORECASTING ---
-export const getMatchInsights = (match) => {
-  if (!match || !match.innings) return null;
+// --- 2. MATCH INSIGHTS & FORECASTING (Logic Engine) ---
+export const getMatchInsights = (match, viewingIndex = null) => {
+  if (!match || !match.innings)
+    return { title: "Match Status", text: "Waiting for data..." };
 
-  const currentIdx = match.currentInnings || 0;
-  const inn = match.innings[currentIdx];
-  if (!inn) return null;
+  // Use the requested index (tab) or default to current live innings
+  const targetIndex =
+    viewingIndex !== null ? viewingIndex : match.currentInnings || 0;
+  const inn = match.innings[targetIndex];
+  const meta = match.meta || {};
+  const isMatchFinished =
+    meta.matchStatus === "finished" || match.status === "finished";
 
-  const oversBowled = inn.over + inn.overBallCount / 6;
-  const totalOvers = parseFloat(match.meta?.overs || 10); // Default to 10 if missing
-  const crr = oversBowled > 0 ? (inn.score / oversBowled).toFixed(2) : 0;
+  if (!inn)
+    return { title: "Pre-Match", text: "Toss done. Play starting soon." };
 
-  // SCENARIO 1: First Innings (Projected Score)
-  if (currentIdx === 0) {
-    if (oversBowled === 0)
+  // Calculate Overs & Balls
+  const score = inn.score || 0;
+  const wickets = inn.wickets || 0;
+  const overs = inn.over || 0;
+  const balls = inn.overBallCount || 0;
+  const maxOvers = parseInt(meta.overs || 10);
+  const totalBallsBowled = overs * 6 + balls;
+
+  // --- 1ST INNINGS LOGIC ---
+  if (targetIndex === 0) {
+    // If viewing 1st innings and match is finished (or 2nd innings started)
+    if (isMatchFinished || match.currentInnings > 0) {
       return {
-        type: "info",
-        text: "Match just started. Looking for a solid foundation.",
+        title: "1st Innings Complete",
+        text: `${
+          inn.battingTeam
+        } scored ${score}/${wickets} in ${overs}.${balls} overs.\nTarget set: ${
+          score + 1
+        }`,
       };
-
-    const projScore = Math.round(crr * totalOvers);
-    const aggressiveScore = Math.round((parseFloat(crr) + 2) * totalOvers); // If they accelerate
-
-    return {
-      type: "projection",
-      title: "🔎 Projected Score",
-      text: `At current rate (${crr}), projected score is ${projScore}. If they accelerate, they could reach ${aggressiveScore}.`,
-    };
-  }
-
-  // SCENARIO 2: Second Innings (Chase Guidance)
-  if (currentIdx === 1) {
-    const target = match.meta?.target || 0;
-    const runsNeeded = target - inn.score;
-    const ballsRemaining = totalOvers * 6 - (inn.over * 6 + inn.overBallCount);
-
-    if (runsNeeded <= 0)
-      return {
-        type: "success",
-        text: "Match Won! Target chased successfully.",
-      };
-    if (ballsRemaining <= 0)
-      return { type: "error", text: "Innings Complete. Target missed." };
-
-    const rrr = ((runsNeeded / ballsRemaining) * 6).toFixed(2);
-
-    // AI "Coach" Logic
-    let advice = "";
-    if (rrr < 6) {
-      advice = "Sensible batting required. Ones and twos will do it.";
-    } else if (rrr < 10) {
-      advice = "Needs a boundary every over to keep up.";
-    } else if (rrr < 15) {
-      advice = "High pressure! Needs 2 boundaries per over.";
-    } else {
-      advice = "Miracle needed. Every ball must go to the fence.";
     }
 
+    // Live Projection
+    const crr = totalBallsBowled > 0 ? (score / totalBallsBowled) * 6 : 0;
+    const projected = Math.round(crr * maxOvers);
+
+    if (totalBallsBowled === 0)
+      return { title: "1st Innings", text: "Match just started." };
+
     return {
-      type: "chase",
-      title: "🎯 Chase Equation",
-      text: `Need ${runsNeeded} runs off ${ballsRemaining} balls. RRR: ${rrr}.`,
-      subText: `Coach says: "${advice}"`,
+      title: `1st Innings - CRR: ${crr.toFixed(2)}`,
+      text: `Projected Score: ${projected} - ${projected + 10} at this rate.\n${
+        meta.teamA
+      } is batting.`,
     };
   }
 
-  return null;
+  // --- 2ND INNINGS LOGIC ---
+  if (targetIndex === 1) {
+    const inn1 = match.innings[0];
+    const target = (inn1?.score || 0) + 1;
+    const runsNeeded = target - score;
+    const totalBallsInInnings = maxOvers * 6;
+    const ballsRemaining = totalBallsInInnings - totalBallsBowled;
+
+    // If viewing 2nd innings and match is finished -> SHOW RESULT
+    if (isMatchFinished) {
+      return {
+        title: "🏆 Match Result",
+        text:
+          meta.result ||
+          (match.winner ? `${match.winner} won!` : "Match Concluded"),
+      };
+    }
+
+    // Live Chase Equation
+    if (score >= target) {
+      return {
+        title: "Result",
+        text: `${meta.teamB} wins by ${10 - wickets} wickets!`,
+      };
+    }
+
+    const rrr = ballsRemaining > 0 ? (runsNeeded / ballsRemaining) * 6 : 99.99;
+
+    let advice = "Keep rotating strike.";
+    if (rrr > 12) advice = "Need boundaries now!";
+    else if (rrr > 8) advice = "Accelerate slightly.";
+    else if (rrr < 6) advice = "Easy singles will do it.";
+
+    return {
+      title: `Target: ${target}`,
+      text: `Need ${runsNeeded} runs in ${ballsRemaining} balls.\nReq. Rate: ${rrr.toFixed(
+        2
+      )}\nCoach: "${advice}"`,
+    };
+  }
+
+  return { title: "Match Status", text: "In Progress" };
 };

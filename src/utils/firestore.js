@@ -184,61 +184,43 @@ export function subscribeMatchLite(tournamentId, matchId, cb) {
 }
 
 export async function createMatch(tournamentId, matchId, payload) {
-  if (!tournamentId || !matchId)
+  if (!tournamentId || !matchId) {
     throw new Error("createMatch needs tournamentId and matchId");
+  }
 
-  const tDoc = doc(db, "tournaments", tournamentId);
-  await setDoc(
-    tDoc,
-    { id: tournamentId, updatedAt: new Date().toISOString() },
-    { merge: true }
-  );
+  const matchDate =
+    normalizeDate(payload?.meta?.date) || localDateString();
 
-  const bats = Array.isArray(payload.batsmenList) ? payload.batsmenList : [];
-  const bowl = Array.isArray(payload.bowlersList) ? payload.bowlersList : [];
+  const status =
+    payload?.meta?.status ||
+    normalizeStatus(undefined, matchDate) ||
+    "upcoming";
 
-  const innings0 = {
-    battingTeam: payload.meta?.teamA || "",
-    score: 0,
-    wickets: 0,
-    over: 0,
-    overBallCount: 0,
-    ballsLog: [],
-    batsmenList: [...bats],
-    bowlersList: [...bowl],
-    striker: bats[0] || "",
-    nonStriker: bats[1] || "",
-    nextBatsmen: (bats.slice(2) || []).filter(Boolean),
-    currentBowler: bowl[0] || "",
-    batsmenStats: Object.fromEntries(
-      (bats || [])
-        .filter(Boolean)
-        .map((n) => [n, { runs: 0, balls: 0, fours: 0, sixes: 0, out: null }])
-    ),
-    bowlerStats: Object.fromEntries(
-      (bowl || [])
-        .filter(Boolean)
-        .map((n) => [n, { balls: 0, runs: 0, wickets: 0 }])
-    ),
-    extras: { wides: 0, noBalls: 0, byes: 0, legByes: 0 },
-    fallOfWickets: [],
-    timeline: [],
-    awaitingNewBatsman: false,
-    awaitingNewBowler: false,
+  /**
+   * 🔒 FREEZE SQUADS (IMMUTABLE SNAPSHOT)
+   */
+  const squads = {
+    teamA: (payload.squads?.teamA || []).map(p => ({
+      id: p.id || null,
+      name: p.name,
+      role: p.role || null,
+    })),
+    teamB: (payload.squads?.teamB || []).map(p => ({
+      id: p.id || null,
+      name: p.name,
+      role: p.role || null,
+    })),
   };
 
-  const innings1 = {
-    battingTeam: payload.meta?.teamB || "",
+  const emptyInnings = {
+    battingTeam: "",
     score: 0,
     wickets: 0,
     over: 0,
     overBallCount: 0,
     ballsLog: [],
-    batsmenList: [],
-    bowlersList: [],
     striker: "",
     nonStriker: "",
-    nextBatsmen: [],
     currentBowler: "",
     batsmenStats: {},
     bowlerStats: {},
@@ -249,38 +231,26 @@ export async function createMatch(tournamentId, matchId, payload) {
     awaitingNewBowler: false,
   };
 
-  const matchDate =
-    normalizeDate(payload?.meta?.date) ||
-    normalizeDate(payload?.date) ||
-    localDateString();
-
-  const desiredStatus =
-    payload?.meta?.status ||
-    normalizeStatus(undefined, matchDate) ||
-    "in-progress";
-
-  const initial = {
-    ...payload,
-    batsmenList: [...bats],
-    bowlersList: [...bowl],
-    innings: [innings0, innings1],
-    currentInnings: 0,
-    undoStack: [], // Use undoStack instead of history
-    status: desiredStatus,
-    createdAt: payload?.meta?.createdAt || new Date().toISOString(),
-    date: matchDate,
+  const matchDoc = {
     meta: {
-      ...(payload?.meta || {}),
+      ...payload.meta,
       date: matchDate,
-      status: desiredStatus,
+      status,
+      createdAt: new Date().toISOString(),
     },
+
+    squads,               // ⭐ CRITICAL
+    innings: [emptyInnings, emptyInnings],
+    currentInnings: 0,
+    undoStack: [],
+    status,
   };
 
-  const matchDoc = doc(db, "tournaments", tournamentId, "matches", matchId);
-  await setDoc(matchDoc, sanitizeForCommit(initial, "initial"), {
-    merge: true,
-  });
+  const ref = doc(db, "tournaments", tournamentId, "matches", matchId);
+
+  await setDoc(ref, sanitizeForCommit(matchDoc));
 }
+
 
 export async function listTournaments() {
   const colRef = collection(db, "tournaments");
@@ -590,27 +560,39 @@ export async function addTournament(tournamentId, meta = {}, ownerId = null) {
 
   const ref = doc(db, "tournaments", tournamentId);
   const snap = await getDoc(ref);
-  const exists = snap.exists();
+
+  if (snap.exists()) {
+    throw new Error("Tournament with this name already exists");
+  }
 
   const payload = {
     id: tournamentId,
     name: meta.name || tournamentId,
+    organizer: meta.organizer || "",
     location: meta.location || "",
     format: meta.format || null,
-    organizer: meta.organizer || "",
-    startDate: normalizeDate(meta.startDate) || localDateString(),
-    createdAt: meta.createdAt || new Date().toISOString(),
+
     status: meta.status || "upcoming",
-    ...meta,
+
+    ownerId: ownerId || null,
+    scorers: ownerId ? [ownerId] : [],
+    viewers: [],
+
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+
+    // ✅ Future-safe placeholders
+    stats: {
+      matchesPlayed: 0,
+      orangeCap: null,
+      purpleCap: null,
+      pointsTable: [],
+    },
   };
 
-  if (!exists && ownerId) {
-    payload.ownerId = ownerId;
-    payload.scorers = [ownerId];
-    payload.viewers = [];
-  }
+  await setDoc(ref, payload); // ❗ NO merge
 
-  await setDoc(ref, payload, { merge: true });
+  return tournamentId;
 }
 
 export async function listTournamentDetails() {

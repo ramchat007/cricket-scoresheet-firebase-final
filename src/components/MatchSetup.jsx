@@ -1,18 +1,14 @@
 // src/components/MatchSetup.jsx
 import React, { useState, useEffect } from "react";
+import { useAuth } from "../hooks/useAuth.jsx";
 import {
-  addTeam,
-  addTournament,
   subscribeTournaments,
   listTournamentTeams,
-  listGlobalPlayers, // Imported Global Fetcher
+  listGlobalPlayers,
+  addTournament,
+  createMatch, // ✅ New architecture
 } from "../utils/firestore.js";
-import { useAuth } from "../hooks/useAuth.jsx";
-import { getFirestore, writeBatch, doc, collection } from "firebase/firestore";
 
-const db = getFirestore();
-
-// --- 1. REUSABLE PLAYER SELECTOR MODAL ---
 const PlayerPickerModal = ({ isOpen, onClose, onSelect, title }) => {
   const [players, setPlayers] = useState([]);
   const [search, setSearch] = useState("");
@@ -96,96 +92,62 @@ const PlayerPickerModal = ({ isOpen, onClose, onSelect, title }) => {
   );
 };
 
-export default function MatchSetup({
-  onCreate,
-  tournamentId: initialTournament,
-  allTeams = [],
-  availableTournaments: initialAvailableTournaments = [],
-}) {
+export default function MatchSetup({ allTeams = [], initialTournament }) {
   const { user } = useAuth();
 
-  // --- STATE ---
   const [activeTab, setActiveTab] = useState("single");
-  const [teams, setTeams] = useState(allTeams || []);
-  const [isTournamentSpecific, setIsTournamentSpecific] = useState(false);
-  const [availableTournaments, setAvailableTournaments] = useState(
-    initialAvailableTournaments || []
-  );
-
+  const [teams, setTeams] = useState(allTeams);
+  const [availableTournaments, setAvailableTournaments] = useState([]);
   const [tournament, setTournament] = useState(initialTournament || "");
   const [tournamentDate, setTournamentDate] = useState(
     new Date().toISOString().slice(0, 10)
   );
   const [tournamentFormat, setTournamentFormat] = useState("T20");
+  const [overs, setOvers] = useState(4);
 
   // Single Match
   const [teamA, setTeamA] = useState("");
   const [teamB, setTeamB] = useState("");
-  const [overs, setOvers] = useState(4);
+  const [teamARoster, setTeamARoster] = useState([]);
+  const [teamBRoster, setTeamBRoster] = useState([]);
   const [batsmenText, setBatsmenText] = useState("");
   const [bowlersText, setBowlersText] = useState("");
 
-  // Hidden Roster (The Brains)
-  const [teamARoster, setTeamARoster] = useState([]);
-  const [teamBRoster, setTeamBRoster] = useState([]);
-
-  // Modal State
+  // Modal
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalTarget, setModalTarget] = useState("A"); // 'A' or 'B'
+  const [modalTarget, setModalTarget] = useState("A");
 
   // Auto Schedule
-  const [selectedTeamIds, setSelectedTeamIds] = useState(new Set());
+  const [selectedTeams, setSelectedTeams] = useState(new Set());
 
-  // --- EFFECTS ---
-  useEffect(() => {
-    setTournament(initialTournament || "");
-    setAvailableTournaments(initialAvailableTournaments || []);
-  }, [initialTournament, initialAvailableTournaments]);
-
+  // Fetch tournaments
   useEffect(() => {
     const unsub = subscribeTournaments(setAvailableTournaments);
     return () => unsub && unsub();
   }, []);
 
+  // Load teams for selected tournament
   useEffect(() => {
-    async function loadTeams() {
-      if (!tournament) {
-        setTeams(allTeams);
-        setIsTournamentSpecific(false);
-        return;
-      }
-      const specificTeams = await listTournamentTeams(tournament);
-      if (specificTeams && specificTeams.length > 0) {
-        setTeams(specificTeams);
-        setIsTournamentSpecific(true);
-      } else {
-        setTeams(allTeams);
-        setIsTournamentSpecific(false);
-      }
+    if (!tournament) {
+      setTeams(allTeams);
+      return;
     }
-    loadTeams();
+    listTournamentTeams(tournament).then((t) => {
+      setTeams(t.length ? t : allTeams);
+    });
   }, [tournament, allTeams]);
 
-  // --- LOGIC ---
-  const handleTeamChange = (e, setTeamName, setTextInput, setRosterState) => {
-    const newName = e.target.value;
-    setTeamName(newName);
-    const team = teams.find((t) => t.name === newName || t.id === newName);
-
-    if (team) {
-      if (team.roster?.length > 0) {
-        setRosterState(team.roster);
-        setTextInput(team.roster.map((p) => p.name).join(", "));
-      } else if (team.players?.length > 0) {
-        setRosterState(team.players.map((n) => ({ id: `leg_${n}`, name: n })));
-        setTextInput(team.players.join(", "));
-      } else {
-        setRosterState([]);
-        setTextInput("");
-      }
+  const handleTeamChange = (e, setTeamName, setText, setRoster) => {
+    const val = e.target.value;
+    setTeamName(val);
+    const t = teams.find((t) => t.name === val || t.id === val);
+    if (t) {
+      const roster = t.roster?.length ? t.roster.map((p) => ({ ...p })) : [];
+      setRoster(roster);
+      setText(roster.map((p) => p.name).join(", "));
     } else {
-      setRosterState([]);
-      setTextInput("");
+      setRoster([]);
+      setText("");
     }
   };
 
@@ -195,24 +157,30 @@ export default function MatchSetup({
   };
 
   const handlePlayersPicked = (pickedPlayers) => {
-    const newRosterItems = pickedPlayers.map((p) => ({
+    const newRoster = pickedPlayers.map((p) => ({
       id: p.id,
       name: p.name,
-      role: p.role,
-      isGuest: false,
+      role: p.role || "Unknown",
+      isOwner: false,
+      isIcon: false,
+      soldPrice: 0,
+      originalId: p.id,
     }));
 
     if (modalTarget === "A") {
-      const updatedRoster = [...teamARoster, ...newRosterItems];
-      setTeamARoster(updatedRoster);
-      // Append text
-      const currentText = batsmenText ? batsmenText + ", " : "";
-      setBatsmenText(currentText + pickedPlayers.map((p) => p.name).join(", "));
+      setTeamARoster((prev) => [...prev, ...newRoster]);
+      setBatsmenText((prev) =>
+        prev
+          ? prev + ", " + newRoster.map((p) => p.name).join(",")
+          : newRoster.map((p) => p.name).join(",")
+      );
     } else {
-      const updatedRoster = [...teamBRoster, ...newRosterItems];
-      setTeamBRoster(updatedRoster);
-      const currentText = bowlersText ? bowlersText + ", " : "";
-      setBowlersText(currentText + pickedPlayers.map((p) => p.name).join(", "));
+      setTeamBRoster((prev) => [...prev, ...newRoster]);
+      setBowlersText((prev) =>
+        prev
+          ? prev + ", " + newRoster.map((p) => p.name).join(",")
+          : newRoster.map((p) => p.name).join(",")
+      );
     }
   };
 
@@ -227,20 +195,23 @@ export default function MatchSetup({
       );
       if (existing) return existing;
       return {
-        id: `guest_${Date.now()}_${Math.random()}`,
+        id: crypto.randomUUID(),
         name,
-        isGuest: true,
+        role: "Unknown",
+        isOwner: false,
+        isIcon: false,
+        soldPrice: 0,
+        originalId: "",
       };
     });
   };
 
-  const handleSubmit = async () => {
+  // --- Submit Single Match ---
+  const handleSubmitSingle = async () => {
     if (!user || !tournament || !teamA || !teamB)
       return alert("Missing fields");
 
-    // Create Tournament if needed
-    const exists = availableTournaments.find((t) => t.id === tournament);
-    if (!exists) {
+    if (!availableTournaments.find((t) => t.id === tournament)) {
       await addTournament(tournament, {
         name: tournament,
         createdAt: new Date().toISOString(),
@@ -251,26 +222,70 @@ export default function MatchSetup({
     const squadA = getSmartSquad(batsmenText, teamARoster);
     const squadB = getSmartSquad(bowlersText, teamBRoster);
 
-    const payload = {
+    const matchId = `match_${Date.now()}`;
+    await createMatch(tournament, matchId, {
       meta: {
-        tournament,
-        teamA,
-        teamB,
+        teamAName: teamA,
+        teamBName: teamB,
         overs: Number(overs),
-        createdAt: new Date().toISOString(),
-        status: "upcoming",
         date: tournamentDate,
         format: tournamentFormat,
       },
-      teamASquad: squadA,
-      teamBSquad: squadB,
-      innings: [],
-    };
+      squads: { teamA: squadA, teamB: squadB },
+    });
 
-    if (onCreate) await onCreate({ payload, tournament });
+    alert("Match created!");
   };
 
-  // Styles
+  // --- Auto Schedule ---
+  const toggleTeamSelection = (teamId) => {
+    setSelectedTeams((prev) => {
+      const copy = new Set(prev);
+      if (copy.has(teamId)) copy.delete(teamId);
+      else copy.add(teamId);
+      return copy;
+    });
+  };
+
+  const handleAutoScheduleSubmit = async () => {
+    if (selectedTeams.size < 2 || !tournament)
+      return alert("Select at least 2 teams");
+
+    if (!availableTournaments.find((t) => t.id === tournament)) {
+      await addTournament(tournament, {
+        name: tournament,
+        createdAt: new Date().toISOString(),
+        status: "upcoming",
+      });
+    }
+
+    const selectedTeamObjs = teams.filter((t) => selectedTeams.has(t.id));
+
+    for (let i = 0; i < selectedTeamObjs.length; i++) {
+      for (let j = i + 1; j < selectedTeamObjs.length; j++) {
+        const team1 = selectedTeamObjs[i];
+        const team2 = selectedTeamObjs[j];
+        const matchId = `match_${Date.now()}_${Math.random()}`;
+        await createMatch(tournament, matchId, {
+          meta: {
+            teamAName: team1.name,
+            teamBName: team2.name,
+            overs: Number(overs),
+            date: tournamentDate,
+            format: tournamentFormat,
+          },
+          squads: { teamA: team1.roster || [], teamB: team2.roster || [] },
+        });
+      }
+    }
+
+    alert(
+      `${(selectedTeams.size * (selectedTeams.size - 1)) / 2} matches created!`
+    );
+    setSelectedTeams(new Set());
+  };
+
+  // --- Styles ---
   const inputClass =
     "w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-3 focus:outline-none focus:border-cyan-500 transition-all";
   const labelClass =
@@ -316,11 +331,11 @@ export default function MatchSetup({
             <div>
               <label className={labelClass}>Tournament</label>
               <input
-                list="tList"
                 value={tournament}
                 onChange={(e) => setTournament(e.target.value)}
                 className={inputClass}
                 placeholder="Select/Type Name"
+                list="tList"
               />
               <datalist id="tList">
                 {availableTournaments.map((t) => (
@@ -348,9 +363,9 @@ export default function MatchSetup({
             </div>
           </div>
 
+          {/* SINGLE MATCH */}
           {activeTab === "single" && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in">
-              {/* TEAM A */}
               <div>
                 <label className={`${labelClass} text-cyan-400`}>
                   Team A Name
@@ -367,7 +382,7 @@ export default function MatchSetup({
                   }
                   className={inputClass}
                   list="teamList"
-                  placeholder="e.g. India"
+                  placeholder="Team A"
                 />
                 <datalist id="teamList">
                   {teams.map((t) => (
@@ -387,11 +402,10 @@ export default function MatchSetup({
                   value={batsmenText}
                   onChange={(e) => setBatsmenText(e.target.value)}
                   className={`${inputClass} h-24 text-sm font-mono`}
-                  placeholder="Type names (comma) or pick..."
+                  placeholder="Type names or pick..."
                 />
               </div>
 
-              {/* TEAM B */}
               <div>
                 <label className={`${labelClass} text-green-400`}>
                   Team B Name
@@ -408,9 +422,8 @@ export default function MatchSetup({
                   }
                   className={inputClass}
                   list="teamList"
-                  placeholder="e.g. Australia"
+                  placeholder="Team B"
                 />
-
                 <div className="flex justify-between items-center mt-3 mb-1">
                   <label className={labelClass}>Squad</label>
                   <button
@@ -423,12 +436,12 @@ export default function MatchSetup({
                   value={bowlersText}
                   onChange={(e) => setBowlersText(e.target.value)}
                   className={`${inputClass} h-24 text-sm font-mono`}
-                  placeholder="Type names (comma) or pick..."
+                  placeholder="Type names or pick..."
                 />
               </div>
 
               <button
-                onClick={handleSubmit}
+                onClick={handleSubmitSingle}
                 disabled={!teamA || !teamB}
                 className="col-span-1 md:col-span-2 py-4 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold rounded-lg shadow-lg hover:shadow-cyan-500/20 transition-all uppercase tracking-widest mt-4 disabled:opacity-50">
                 + Create Match
@@ -436,11 +449,67 @@ export default function MatchSetup({
             </div>
           )}
 
-          {/* Auto Schedule Placeholder (Simplified for brevity as logic is same) */}
+          {/* AUTO SCHEDULE */}
           {activeTab === "auto" && (
-            <div className="text-center py-10 text-gray-500">
-              Auto-scheduler uses Team Manager teams. <br /> Please create teams
-              in Dashboard first for bulk scheduling.
+            <div className="animate-in fade-in">
+              <p className="text-gray-400 mb-4">
+                Select teams to auto-generate matches (round-robin):
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-80 overflow-y-auto mb-4 border-t border-gray-800 pt-2">
+                {teams.map((team) => (
+                  <label
+                    key={team.id}
+                    className="flex items-center gap-2 p-2 bg-gray-800 rounded hover:bg-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedTeams.has(team.id)}
+                      onChange={() => toggleTeamSelection(team.id)}
+                      className="accent-cyan-500"
+                    />
+                    <span className="text-white">{team.name}</span>
+                  </label>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div>
+                  <label className={labelClass}>Date</label>
+                  <input
+                    type="date"
+                    value={tournamentDate}
+                    onChange={(e) => setTournamentDate(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Overs</label>
+                  <input
+                    type="number"
+                    value={overs}
+                    onChange={(e) => setOvers(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Format</label>
+                  <select
+                    value={tournamentFormat}
+                    onChange={(e) => setTournamentFormat(e.target.value)}
+                    className={inputClass}>
+                    <option value="T20">T20</option>
+                    <option value="T10">T10</option>
+                    <option value="ODI">ODI</option>
+                  </select>
+                </div>
+              </div>
+
+              <button
+                onClick={handleAutoScheduleSubmit}
+                disabled={selectedTeams.size < 2}
+                className="py-4 w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold rounded-lg shadow-lg hover:shadow-cyan-500/20 transition-all uppercase tracking-widest disabled:opacity-50">
+                Generate {(selectedTeams.size * (selectedTeams.size - 1)) / 2}{" "}
+                Matches
+              </button>
             </div>
           )}
         </div>

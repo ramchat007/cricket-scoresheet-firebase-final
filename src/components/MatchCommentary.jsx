@@ -1,99 +1,126 @@
 // src/components/MatchCommentary.jsx
 import React, { useMemo, useState, useEffect } from "react";
-import {
-  generateCommentary,
-  getMatchInsights,
-} from "../utils/commentaryHelper"; // Keep your old helper as fallback
-import { fetchAICommentary, fetchMatchAnalysis } from "../utils/gemini"; // Import AI
+import { getMatchInsights } from "../utils/commentaryHelper";
+import { fetchAICommentary, fetchMatchAnalysis } from "../utils/gemini";
 
 export default function MatchCommentary({ match }) {
   if (!match) return null;
 
-  const currentIdx = match.currentInnings || 0;
-  const inn = match.innings?.[currentIdx];
-
-  // Local state to store AI generated text (cache)
+  const [activeInningIndex, setActiveInningIndex] = useState(
+    match.currentInnings || 0
+  );
   const [aiComments, setAiComments] = useState({});
   const [aiInsight, setAiInsight] = useState(null);
   const [isTyping, setIsTyping] = useState(false);
 
-  // 1. Generate Timeline Data WITH OVER SUMMARIES
+  useEffect(() => {
+    // If match moves to next innings, optionally auto-switch (disabled for now to let user browse)
+  }, [match.currentInnings]);
+
+  const inn = match.innings?.[activeInningIndex];
+
+  // ✅ Helper defined inside component scope
+  const generateFallbackCommentary = (e) => {
+    if (e.isWicket)
+      return `${e.bowler} takes the wicket of ${e.batter}! ${e.dismissalText}.`;
+    if (e.runs === 4) return `${e.batter} smashes it for FOUR! Great shot.`;
+    if (e.runs === 6)
+      return `High and handsome! ${e.batter} clears the rope for SIX!`;
+    if (e.extrasType)
+      return `${e.extrasType} from ${e.bowler}. ${e.runs} runs added.`;
+    if (e.runs === 0) return `${e.bowler} bowls a dot ball to ${e.batter}.`;
+    return `${e.batter} takes ${e.runs} run${e.runs !== 1 ? "s" : ""}.`;
+  };
+
   const timelineData = useMemo(() => {
     if (!inn || (!inn.timeline && !inn.ballsLog)) return [];
 
     const rawLogs = inn.timeline || inn.ballsLog || [];
     const processedEvents = [];
 
-    // Counters for "Running Totals"
     let currentScore = 0;
     let currentWickets = 0;
-
-    // Counters for "This Over"
     let overRuns = 0;
     let overWickets = 0;
     let legalBallCount = 0;
     let overNumber = 0;
 
-    // Iterate Chronologically (Oldest -> Newest) to calculate totals
     rawLogs.forEach((ball, originalIndex) => {
-      // Normalize Data
       let runs = 0;
       let isW = false;
       let isLegal = true;
       let batter = "Batter";
       let bowler = "Bowler";
+      let extrasType = "";
+      let dismissalText = "";
 
-      // Handle Object vs Legacy String
       if (typeof ball === "object") {
         runs = ball.runs || 0;
         isW = ball.isWicket;
-        // Wides and NoBalls don't count towards the 6-ball over limit
-        if (ball.isWide || ball.isNoBall) isLegal = false;
         batter = ball.batter || batter;
         bowler = ball.bowler || bowler;
+
+        if (ball.isWide) {
+          isLegal = false;
+          extrasType = "Wide";
+        } else if (ball.isNoBall) {
+          isLegal = false;
+          extrasType = "No Ball";
+        } else if (ball.isBye) {
+          extrasType = "Bye";
+        } else if (ball.isLegBye) {
+          extrasType = "Leg Bye";
+        }
+
+        if (isW) {
+          const wType = ball.wicketType || "bowled";
+          if (wType === "caught")
+            dismissalText = `Caught by ${ball.fielderName || "Fielder"}`;
+          else if (wType === "runout")
+            dismissalText = `Run Out (${ball.whoOut || "Batter"})`;
+          else if (wType === "stumped")
+            dismissalText = `Stumped by ${ball.fielderName || "Keeper"}`;
+          else if (wType === "lbw") dismissalText = "LBW";
+          else dismissalText = "Bowled";
+        }
       } else {
         const s = String(ball);
         isW = s === "W";
-        // Simple heuristic for legacy strings
         if (s.includes("WD") || s.includes("NB")) isLegal = false;
         runs = parseInt(s) || 0;
-        // Legacy strings often didn't store the extra run, assume +1 for extras if string
-        if (s.includes("WD") || s.includes("NB"))
-          runs = (parseInt(s.replace(/\D/g, "")) || 0) + 1;
+        if (s.includes("WD")) extrasType = "Wide";
+        if (s.includes("NB")) extrasType = "No Ball";
       }
 
-      // Update Stats
       currentScore += runs;
       if (isW) currentWickets++;
-
       overRuns += runs;
       if (isW) overWickets++;
       if (isLegal) legalBallCount++;
 
-      // Add BALL Event
       processedEvents.push({
         type: "BALL",
-        id: originalIndex, // Key for AI text lookup
+        id: `${activeInningIndex}-${originalIndex}`,
         val:
           typeof ball === "object" ? (ball.isWicket ? "W" : ball.runs) : ball,
         runs,
         isWicket: isW,
+        isBoundary: runs === 4 || runs === 6,
+        extrasType,
+        dismissalText,
         batter,
         bowler,
-        // Pass raw for AI
         raw:
           typeof ball === "object"
             ? ball
             : { runs, isWicket: isW, batter, bowler },
       });
 
-      // Check for Over Completion (6 legal balls)
       if (isLegal && legalBallCount === 6) {
         overNumber++;
-        // Add SUMMARY Event
         processedEvents.push({
           type: "SUMMARY",
-          id: `summary-${overNumber}`,
+          id: `summary-${activeInningIndex}-${overNumber}`,
           over: overNumber,
           runs: overRuns,
           wickets: overWickets,
@@ -101,180 +128,202 @@ export default function MatchCommentary({ match }) {
           totalWickets: currentWickets,
           bowler: bowler,
         });
-
-        // Reset Over Stats
         overRuns = 0;
         overWickets = 0;
         legalBallCount = 0;
       }
     });
 
-    // Reverse for Display (Newest First) and Hydrate Text
     return processedEvents.reverse().map((event) => {
       if (event.type === "SUMMARY") return event;
-
-      // For Ball events, generate text
       const aiText = aiComments[event.id];
       return {
         ...event,
-        text:
-          aiText || generateCommentary(event.raw, event.batter, event.bowler),
+        text: aiText || generateFallbackCommentary(event),
         isAI: !!aiText,
       };
     });
-  }, [inn, aiComments]);
+  }, [inn, aiComments, activeInningIndex]);
 
-  // 2. EFFECT: Fetch AI Commentary for the NEWEST Ball Only
   useEffect(() => {
-    if (!inn || !inn.timeline || inn.timeline.length === 0) return;
+    if (!inn || !timelineData.length) return;
+    const latestEvent = timelineData.find((e) => e.type === "BALL");
+    if (!latestEvent) return;
 
-    const latestIndex = inn.timeline.length - 1;
-    const latestBall = inn.timeline[latestIndex];
-
-    if (!aiComments[latestIndex]) {
+    if (!aiComments[latestEvent.id]) {
       setIsTyping(true);
+      const context = {
+        batter: latestEvent.batter,
+        bowler: latestEvent.bowler,
+        runs: latestEvent.runs,
+        isWicket: latestEvent.isWicket,
+        wicketType: latestEvent.dismissalText,
+        extras: latestEvent.extrasType,
+        matchSituation: `${inn.score}/${inn.wickets} in ${inn.over}.${inn.overBallCount} overs`,
+      };
 
-      const ballData =
-        typeof latestBall === "object"
-          ? latestBall
-          : {
-              runs: parseInt(latestBall) || 0,
-              isWicket: latestBall === "W",
-              batter: "Batsman",
-              bowler: "Bowler",
-            };
-
-      fetchAICommentary(ballData).then((text) => {
+      fetchAICommentary(context).then((text) => {
         if (text) {
-          setAiComments((prev) => ({ ...prev, [latestIndex]: text }));
+          setAiComments((prev) => ({ ...prev, [latestEvent.id]: text }));
         }
         setIsTyping(false);
       });
 
-      if (latestIndex > 0 && latestIndex % 6 === 0) {
+      const ballCount = inn.timeline?.length || 0;
+      if (ballCount > 0 && ballCount % 6 === 0) {
         fetchMatchAnalysis(match, inn).then((analysis) => {
           if (analysis) setAiInsight(analysis);
         });
       }
     }
-  }, [inn?.timeline?.length]);
+  }, [timelineData.length, activeInningIndex]);
 
-  // 3. Fallback Insights
-  const ruleBasedInsights = getMatchInsights(match);
+  // ✅ PASS ACTIVE INDEX HERE
+  const ruleBasedInsights = getMatchInsights(match, activeInningIndex);
 
   return (
     <div className="flex flex-col gap-4 h-full">
-      {/* --- AI INSIGHTS CARD --- */}
+      <div className="flex bg-gray-900 border border-gray-800 rounded-lg p-1">
+        {match.innings.map((_, idx) => (
+          <button
+            key={idx}
+            onClick={() => setActiveInningIndex(idx)}
+            className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${
+              activeInningIndex === idx
+                ? "bg-cyan-900/50 text-cyan-400 shadow-sm border border-cyan-800"
+                : "text-gray-500 hover:text-gray-300"
+            }`}>
+            {idx === 0 ? "1st Innings" : "2nd Innings"}
+          </button>
+        ))}
+      </div>
+
       <div
-        className={`p-4 rounded-xl border shadow-lg transition-all duration-500
-          ${
-            aiInsight
-              ? "bg-indigo-900/40 border-indigo-500"
-              : "bg-gray-800 border-gray-700"
-          }`}>
+        className={`p-4 rounded-xl border shadow-lg transition-all duration-500 ${
+          aiInsight
+            ? "bg-indigo-900/20 border-indigo-500/50"
+            : "bg-gray-800 border-gray-700"
+        }`}>
         <div className="flex items-center gap-2 mb-2">
           <span className="text-xl">{aiInsight ? "🤖" : "📊"}</span>
           <h4 className="font-bold text-white uppercase text-xs tracking-widest">
             {aiInsight
-              ? "Gemini Coach AI"
+              ? "Gemini Coach Analysis"
               : ruleBasedInsights?.title || "Match Insight"}
           </h4>
         </div>
-        <div className="text-white font-mono text-sm leading-relaxed whitespace-pre-line">
+        <div className="text-gray-300 font-mono text-sm leading-relaxed whitespace-pre-line">
           {aiInsight ||
             ruleBasedInsights?.text ||
-            "Analyzing match situation..."}
+            "Waiting for enough data to analyze..."}
         </div>
       </div>
 
-      {/* --- SCROLLING COMMENTARY --- */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden flex-1 min-h-[300px] flex flex-col">
-        <div className="bg-gray-950/50 p-3 border-b border-gray-800 flex justify-between items-center">
-          <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-            Ball by Ball
+      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden flex-1 min-h-[400px] flex flex-col relative">
+        <div className="bg-gray-950/50 p-3 border-b border-gray-800 flex justify-between items-center sticky top-0 z-10 backdrop-blur-sm">
+          <span className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+            <span>🎙️</span> Ball by Ball
           </span>
           <div className="flex items-center gap-2">
             {isTyping && (
-              <span className="text-[10px] text-cyan-400 animate-pulse">
-                AI is typing...
+              <span className="text-[10px] text-cyan-400 animate-pulse font-bold">
+                AI writing...
               </span>
             )}
-            <span className="text-[10px] bg-red-600/20 text-red-400 px-2 py-0.5 rounded animate-pulse">
-              ● LIVE
-            </span>
+            {activeInningIndex === match.currentInnings && (
+              <span className="text-[10px] bg-red-600/20 text-red-400 px-2 py-0.5 rounded border border-red-900/50 animate-pulse">
+                ● LIVE
+              </span>
+            )}
           </div>
         </div>
 
-        <div className="divide-y divide-gray-800 max-h-[500px] overflow-y-auto">
+        <div className="divide-y divide-gray-800 overflow-y-auto custom-scrollbar">
           {timelineData.length === 0 ? (
-            <div className="p-8 text-center text-gray-600 italic text-sm">
-              Waiting for the first ball...
+            <div className="p-12 text-center text-gray-600 italic text-sm">
+              No data for this innings yet.
             </div>
           ) : (
-            timelineData.map((c, i) => {
-              // RENDER OVER SUMMARY
-              if (c.type === "SUMMARY") {
+            timelineData.map((event) => {
+              if (event.type === "SUMMARY") {
                 return (
                   <div
-                    key={`sum-${c.id}`}
-                    className="bg-gray-800/80 p-3 border-y border-gray-700 flex justify-between items-center animate-in slide-in-from-left-4">
+                    key={event.id}
+                    className="bg-gray-800/50 p-4 border-y border-gray-700/50 flex justify-between items-center">
                     <div>
-                      <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block">
-                        End of Over {c.over}
-                      </span>
-                      <span className="text-white font-bold text-sm">
-                        {c.runs} runs •{" "}
-                        {c.wickets > 0 ? `${c.wickets} wkts` : "0 wkts"}
-                      </span>
+                      <div className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">
+                        End of Over {event.over}
+                      </div>
+                      <div className="text-white font-bold text-sm">
+                        {event.runs} Runs • {event.wickets} Wickets
+                      </div>
+                      <div className="text-xs text-gray-400 italic">
+                        Bowled by {event.bowler}
+                      </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-xs text-gray-500 uppercase">
-                        Total
+                      <div className="text-[10px] text-gray-500 uppercase">
+                        Score
                       </div>
-                      <div className="text-xl font-black text-cyan-400 font-mono leading-none">
-                        {c.totalScore}/{c.totalWickets}
+                      <div className="text-xl font-mono font-black text-white">
+                        {event.totalScore}/{event.totalWickets}
                       </div>
                     </div>
                   </div>
                 );
               }
 
-              // RENDER BALL
               return (
                 <div
-                  key={c.id}
-                  className="p-4 flex gap-4 hover:bg-white/5 transition-colors animate-in slide-in-from-top-2">
-                  <div className="flex flex-col items-center gap-1 pt-1">
+                  key={event.id}
+                  className="p-4 flex gap-4 hover:bg-white/5 transition-colors group">
+                  <div className="flex flex-col items-center pt-1">
                     <div
-                      className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm shadow-lg
-                     ${
-                       c.val === "W"
-                         ? "bg-red-600 text-white"
-                         : c.val == 4
-                         ? "bg-green-600 text-white"
-                         : c.val == 6
-                         ? "bg-purple-600 text-white"
-                         : "bg-gray-800 text-gray-400 border border-gray-700"
-                     }`}>
-                      {c.val}
+                      className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-sm shadow-lg border-2 ${
+                        event.isWicket
+                          ? "bg-red-600 border-red-400 text-white"
+                          : event.val == "6"
+                          ? "bg-purple-600 border-purple-400 text-white"
+                          : event.val == "4"
+                          ? "bg-green-600 border-green-400 text-white"
+                          : event.extrasType
+                          ? "bg-yellow-600 border-yellow-400 text-white"
+                          : "bg-gray-800 border-gray-700 text-gray-400"
+                      }`}>
+                      {event.val}
                     </div>
                   </div>
                   <div className="flex-1">
-                    <div className="flex justify-between items-start">
-                      <p
-                        className={`text-sm leading-relaxed ${
-                          c.isAI ? "text-cyan-100" : "text-gray-300"
-                        }`}>
-                        {c.text}
-                      </p>
-                      {c.isAI && (
+                    <div className="flex justify-between items-start mb-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-gray-200 text-sm">
+                          {event.bowler} to {event.batter}
+                        </span>
+                        {event.isWicket && (
+                          <span className="text-[9px] bg-red-900/50 text-red-300 px-1.5 py-0.5 rounded border border-red-800 font-bold uppercase">
+                            WICKET
+                          </span>
+                        )}
+                        {event.extrasType && (
+                          <span className="text-[9px] bg-yellow-900/50 text-yellow-300 px-1.5 py-0.5 rounded border border-yellow-800 font-bold uppercase">
+                            {event.extrasType}
+                          </span>
+                        )}
+                      </div>
+                      {event.isAI && (
                         <span
-                          className="text-[10px] text-cyan-500 ml-2"
-                          title="AI Generated">
-                          ✨
+                          className="text-[10px] text-cyan-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Generated by AI">
+                          ✨ AI
                         </span>
                       )}
                     </div>
+                    <p
+                      className={`text-sm leading-relaxed ${
+                        event.isAI ? "text-cyan-100/90" : "text-gray-400"
+                      }`}>
+                      {event.text}
+                    </p>
                   </div>
                 </div>
               );
