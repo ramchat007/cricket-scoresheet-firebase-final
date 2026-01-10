@@ -6,9 +6,10 @@ import {
   listTournamentTeams,
   listGlobalPlayers,
   addTournament,
-  createMatch, // ✅ New architecture
+  createMatch,
 } from "../utils/firestore.js";
 
+// --- 1. PLAYER PICKER MODAL (Full Original Logic, Updated UI) ---
 const PlayerPickerModal = ({ isOpen, onClose, onSelect, title }) => {
   const [players, setPlayers] = useState([]);
   const [search, setSearch] = useState("");
@@ -37,54 +38,62 @@ const PlayerPickerModal = ({ isOpen, onClose, onSelect, title }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-      <div className="bg-gray-900 border border-gray-700 w-full max-w-md rounded-xl shadow-2xl flex flex-col max-h-[80vh]">
-        <div className="p-4 border-b border-gray-800 flex justify-between items-center">
-          <h3 className="font-bold text-white">{title}</h3>
-          <button onClick={onClose} className="text-gray-400">
-            ✕
-          </button>
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/90 p-0 sm:p-4 backdrop-blur-md">
+      <div className="bg-gray-900 border-t sm:border border-white/10 w-full max-w-md rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl flex flex-col max-h-[85vh] animate-in slide-in-from-bottom duration-300">
+        
+        {/* Header */}
+        <div className="p-6 border-b border-white/5 flex justify-between items-center">
+          <div>
+             <h3 className="font-black text-white uppercase tracking-tighter text-lg italic">{title}</h3>
+             <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Select members from database</p>
+          </div>
+          <button onClick={onClose} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white">✕</button>
         </div>
-        <div className="p-2 border-b border-gray-800">
+
+        {/* Search */}
+        <div className="p-4 border-b border-white/5 bg-black/20">
           <input
-            className="w-full bg-gray-800 text-white p-2 rounded outline-none"
-            placeholder="Search players..."
+            className="w-full bg-black border border-white/10 text-white p-4 rounded-2xl outline-none focus:border-cyan-500 transition-all font-bold"
+            placeholder="Search by name..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             autoFocus
           />
         </div>
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+
+        {/* List */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
           {filtered.map((p) => {
             const isSel = selected.find((s) => s.id === p.id);
             return (
               <div
                 key={p.id}
                 onClick={() => toggle(p)}
-                className={`flex items-center justify-between p-2 rounded cursor-pointer ${
+                className={`flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all active:scale-95 ${
                   isSel
-                    ? "bg-cyan-900/40 border border-cyan-500/50"
-                    : "hover:bg-gray-800"
+                    ? "bg-cyan-500 text-black shadow-lg shadow-cyan-500/20"
+                    : "bg-white/5 border border-white/5 text-gray-400"
                 }`}>
-                <div className="text-sm font-bold text-gray-200">{p.name}</div>
-                {isSel && <div className="text-cyan-400">✓</div>}
+                <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black ${isSel ? 'bg-black text-white' : 'bg-white/10 text-gray-500'}`}>
+                        {p.name.charAt(0)}
+                    </div>
+                    <div className="text-sm font-black uppercase tracking-tight">{p.name}</div>
+                </div>
+                {isSel && <div className="font-black">✓</div>}
               </div>
             );
           })}
         </div>
-        <div className="p-3 border-t border-gray-800 flex justify-end gap-2">
+
+        {/* Footer Actions */}
+        <div className="p-6 border-t border-white/5 bg-black/40 flex gap-3">
+          <button onClick={onClose} className="flex-1 py-4 text-gray-400 font-black uppercase tracking-widest text-xs border border-white/10 rounded-2xl">Cancel</button>
           <button
-            onClick={onClose}
-            className="px-4 py-2 text-gray-400 font-bold text-sm">
-            Cancel
-          </button>
-          <button
-            onClick={() => {
-              onSelect(selected);
-              onClose();
-            }}
-            className="px-4 py-2 bg-cyan-600 text-white font-bold rounded text-sm">
-            Add {selected.length} Players
+            onClick={() => { onSelect(selected); onClose(); }}
+            disabled={selected.length === 0}
+            className="flex-[2] py-4 bg-cyan-600 text-white font-black uppercase tracking-widest text-xs rounded-2xl shadow-xl shadow-cyan-900/20 disabled:opacity-20 transition-all">
+            Confirm {selected.length} Selected
           </button>
         </div>
       </div>
@@ -92,6 +101,7 @@ const PlayerPickerModal = ({ isOpen, onClose, onSelect, title }) => {
   );
 };
 
+// --- 2. MAIN COMPONENT ---
 export default function MatchSetup({ allTeams = [], initialTournament }) {
   const { user } = useAuth();
 
@@ -99,13 +109,11 @@ export default function MatchSetup({ allTeams = [], initialTournament }) {
   const [teams, setTeams] = useState(allTeams);
   const [availableTournaments, setAvailableTournaments] = useState([]);
   const [tournament, setTournament] = useState(initialTournament || "");
-  const [tournamentDate, setTournamentDate] = useState(
-    new Date().toISOString().slice(0, 10)
-  );
+  const [tournamentDate, setTournamentDate] = useState(new Date().toISOString().slice(0, 10));
   const [tournamentFormat, setTournamentFormat] = useState("T20");
   const [overs, setOvers] = useState(4);
 
-  // Single Match
+  // Single Match States
   const [teamA, setTeamA] = useState("");
   const [teamB, setTeamB] = useState("");
   const [teamARoster, setTeamARoster] = useState([]);
@@ -113,25 +121,20 @@ export default function MatchSetup({ allTeams = [], initialTournament }) {
   const [batsmenText, setBatsmenText] = useState("");
   const [bowlersText, setBowlersText] = useState("");
 
-  // Modal
+  // Modal States
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTarget, setModalTarget] = useState("A");
 
-  // Auto Schedule
+  // Auto Schedule States
   const [selectedTeams, setSelectedTeams] = useState(new Set());
 
-  // Fetch tournaments
   useEffect(() => {
     const unsub = subscribeTournaments(setAvailableTournaments);
     return () => unsub && unsub();
   }, []);
 
-  // Load teams for selected tournament
   useEffect(() => {
-    if (!tournament) {
-      setTeams(allTeams);
-      return;
-    }
+    if (!tournament) { setTeams(allTeams); return; }
     listTournamentTeams(tournament).then((t) => {
       setTeams(t.length ? t : allTeams);
     });
@@ -169,75 +172,37 @@ export default function MatchSetup({ allTeams = [], initialTournament }) {
 
     if (modalTarget === "A") {
       setTeamARoster((prev) => [...prev, ...newRoster]);
-      setBatsmenText((prev) =>
-        prev
-          ? prev + ", " + newRoster.map((p) => p.name).join(",")
-          : newRoster.map((p) => p.name).join(",")
-      );
+      setBatsmenText((prev) => prev ? prev + ", " + newRoster.map((p) => p.name).join(",") : newRoster.map((p) => p.name).join(","));
     } else {
       setTeamBRoster((prev) => [...prev, ...newRoster]);
-      setBowlersText((prev) =>
-        prev
-          ? prev + ", " + newRoster.map((p) => p.name).join(",")
-          : newRoster.map((p) => p.name).join(",")
-      );
+      setBowlersText((prev) => prev ? prev + ", " + newRoster.map((p) => p.name).join(",") : newRoster.map((p) => p.name).join(","));
     }
   };
 
   const getSmartSquad = (textInput, roster) => {
-    const names = textInput
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const names = textInput.split(",").map((s) => s.trim()).filter(Boolean);
     return names.map((name) => {
-      const existing = roster.find(
-        (p) => p.name.toLowerCase() === name.toLowerCase()
-      );
+      const existing = roster.find((p) => p.name.toLowerCase() === name.toLowerCase());
       if (existing) return existing;
-      return {
-        id: crypto.randomUUID(),
-        name,
-        role: "Unknown",
-        isOwner: false,
-        isIcon: false,
-        soldPrice: 0,
-        originalId: "",
-      };
+      return { id: crypto.randomUUID(), name, role: "Unknown", isOwner: false, isIcon: false, soldPrice: 0, originalId: "" };
     });
   };
 
-  // --- Submit Single Match ---
   const handleSubmitSingle = async () => {
-    if (!user || !tournament || !teamA || !teamB)
-      return alert("Missing fields");
-
+    if (!user || !tournament || !teamA || !teamB) return alert("Missing fields");
     if (!availableTournaments.find((t) => t.id === tournament)) {
-      await addTournament(tournament, {
-        name: tournament,
-        createdAt: new Date().toISOString(),
-        status: "upcoming",
-      });
+      await addTournament(tournament, { name: tournament, createdAt: new Date().toISOString(), status: "upcoming" });
     }
-
     const squadA = getSmartSquad(batsmenText, teamARoster);
     const squadB = getSmartSquad(bowlersText, teamBRoster);
-
     const matchId = `match_${Date.now()}`;
     await createMatch(tournament, matchId, {
-      meta: {
-        teamAName: teamA,
-        teamBName: teamB,
-        overs: Number(overs),
-        date: tournamentDate,
-        format: tournamentFormat,
-      },
+      meta: { teamAName: teamA, teamBName: teamB, overs: Number(overs), date: tournamentDate, format: tournamentFormat },
       squads: { teamA: squadA, teamB: squadB },
     });
-
-    alert("Match created!");
+    alert("Match created successfully!");
   };
 
-  // --- Auto Schedule ---
   const toggleTeamSelection = (teamId) => {
     setSelectedTeams((prev) => {
       const copy = new Set(prev);
@@ -248,272 +213,147 @@ export default function MatchSetup({ allTeams = [], initialTournament }) {
   };
 
   const handleAutoScheduleSubmit = async () => {
-    if (selectedTeams.size < 2 || !tournament)
-      return alert("Select at least 2 teams");
-
+    if (selectedTeams.size < 2 || !tournament) return alert("Select at least 2 teams");
     if (!availableTournaments.find((t) => t.id === tournament)) {
-      await addTournament(tournament, {
-        name: tournament,
-        createdAt: new Date().toISOString(),
-        status: "upcoming",
-      });
+      await addTournament(tournament, { name: tournament, createdAt: new Date().toISOString(), status: "upcoming" });
     }
-
     const selectedTeamObjs = teams.filter((t) => selectedTeams.has(t.id));
-
     for (let i = 0; i < selectedTeamObjs.length; i++) {
       for (let j = i + 1; j < selectedTeamObjs.length; j++) {
-        const team1 = selectedTeamObjs[i];
-        const team2 = selectedTeamObjs[j];
+        const t1 = selectedTeamObjs[i];
+        const t2 = selectedTeamObjs[j];
         const matchId = `match_${Date.now()}_${Math.random()}`;
         await createMatch(tournament, matchId, {
-          meta: {
-            teamAName: team1.name,
-            teamBName: team2.name,
-            overs: Number(overs),
-            date: tournamentDate,
-            format: tournamentFormat,
-          },
-          squads: { teamA: team1.roster || [], teamB: team2.roster || [] },
+          meta: { teamAName: t1.name, teamBName: t2.name, overs: Number(overs), date: tournamentDate, format: tournamentFormat },
+          squads: { teamA: t1.roster || [], teamB: t2.roster || [] },
         });
       }
     }
-
-    alert(
-      `${(selectedTeams.size * (selectedTeams.size - 1)) / 2} matches created!`
-    );
+    alert(`${(selectedTeams.size * (selectedTeams.size - 1)) / 2} matches generated!`);
     setSelectedTeams(new Set());
   };
 
   // --- Styles ---
-  const inputClass =
-    "w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-3 focus:outline-none focus:border-cyan-500 transition-all";
-  const labelClass =
-    "block text-gray-400 text-sm font-bold mb-1 uppercase tracking-wider";
+  const inputClass = "w-full bg-black text-white border border-white/10 rounded-2xl px-4 py-4 focus:outline-none focus:border-cyan-500 transition-all font-bold placeholder:text-gray-700";
+  const labelClass = "block text-gray-500 text-[10px] font-black uppercase tracking-[0.2em] mb-2 ml-1";
 
   return (
-    <div className="max-w-4xl mx-auto mb-10">
-      <PlayerPickerModal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onSelect={handlePlayersPicked}
-        title={`Add Players to Team ${modalTarget}`}
-      />
+    <div className="w-full pb-20">
+      <PlayerPickerModal isOpen={modalOpen} onClose={() => setModalOpen(false)} onSelect={handlePlayersPicked} title={`SQUAD BUILDER`} />
 
-      <div className="bg-gray-900 border border-gray-800 rounded-xl shadow-2xl relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-600 to-transparent"></div>
-
-        {/* HEADER */}
-        <div className="bg-gray-950 p-1 flex border-b border-gray-800">
-          <button
-            onClick={() => setActiveTab("single")}
-            className={`flex-1 py-3 text-sm font-bold uppercase ${
-              activeTab === "single"
-                ? "bg-gray-800 text-white"
-                : "text-gray-500"
-            }`}>
-            Single Match
-          </button>
-          <button
-            onClick={() => setActiveTab("auto")}
-            className={`flex-1 py-3 text-sm font-bold uppercase ${
-              activeTab === "auto"
-                ? "bg-cyan-900/20 text-cyan-400"
-                : "text-gray-500"
-            }`}>
-            Auto Schedule
-          </button>
+      <div className="bg-gray-900 border border-white/5 rounded-[2.5rem] shadow-2xl overflow-hidden backdrop-blur-md">
+        
+        {/* TAB NAVIGATION */}
+        <div className="bg-black/40 p-2 flex gap-2 border-b border-white/5">
+          {["single", "auto"].map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                activeTab === tab ? "bg-cyan-500 text-black shadow-lg" : "text-gray-500 hover:text-white"
+              }`}>
+              {tab === "single" ? "Single Encounter" : "Auto Round Robin"}
+            </button>
+          ))}
         </div>
 
-        <div className="p-6">
-          {/* SETTINGS */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div>
+        <div className="p-6 md:p-10">
+          {/* COMMON SETTINGS GRID */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+            <div className="md:col-span-1">
               <label className={labelClass}>Tournament</label>
-              <input
-                value={tournament}
-                onChange={(e) => setTournament(e.target.value)}
-                className={inputClass}
-                placeholder="Select/Type Name"
-                list="tList"
-              />
+              <input value={tournament} onChange={(e) => setTournament(e.target.value)} className={inputClass} placeholder="League Name" list="tList" />
               <datalist id="tList">
-                {availableTournaments.map((t) => (
-                  <option key={t.id} value={t.id} />
-                ))}
+                {availableTournaments.map((t) => <option key={t.id} value={t.id} />)}
               </datalist>
             </div>
             <div>
-              <label className={labelClass}>Date</label>
-              <input
-                type="date"
-                value={tournamentDate}
-                onChange={(e) => setTournamentDate(e.target.value)}
-                className={inputClass}
-              />
+              <label className={labelClass}>Match Date</label>
+              <input type="date" value={tournamentDate} onChange={(e) => setTournamentDate(e.target.value)} className={inputClass} />
             </div>
             <div>
-              <label className={labelClass}>Overs</label>
-              <input
-                type="number"
-                value={overs}
-                onChange={(e) => setOvers(e.target.value)}
-                className={inputClass}
-              />
+              <label className={labelClass}>Max Overs</label>
+              <input type="number" value={overs} onChange={(e) => setOvers(e.target.value)} className={inputClass} />
             </div>
           </div>
 
-          {/* SINGLE MATCH */}
+          {/* SINGLE MATCH VIEW */}
           {activeTab === "single" && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in">
-              <div>
-                <label className={`${labelClass} text-cyan-400`}>
-                  Team A Name
-                </label>
-                <input
-                  value={teamA}
-                  onChange={(e) =>
-                    handleTeamChange(
-                      e,
-                      setTeamA,
-                      setBatsmenText,
-                      setTeamARoster
-                    )
-                  }
-                  className={inputClass}
-                  list="teamList"
-                  placeholder="Team A"
-                />
-                <datalist id="teamList">
-                  {teams.map((t) => (
-                    <option key={t.id} value={t.name} />
-                  ))}
-                </datalist>
-
-                <div className="flex justify-between items-center mt-3 mb-1">
-                  <label className={labelClass}>Squad</label>
-                  <button
-                    onClick={() => openPicker("A")}
-                    className="text-xs bg-gray-800 px-2 py-1 rounded text-cyan-400 hover:text-white border border-gray-700">
-                    🌍 Pick Players
-                  </button>
+            <div className="space-y-10 animate-in fade-in slide-in-from-bottom-2">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Team A */}
+                <div className="space-y-4">
+                  <label className={`${labelClass} text-cyan-500`}>Primary Team (Home)</label>
+                  <input value={teamA} onChange={(e) => handleTeamChange(e, setTeamA, setBatsmenText, setTeamARoster)} className={inputClass} placeholder="Team A" list="teamList" />
+                  
+                  <div className="flex justify-between items-center px-1">
+                    <label className={labelClass}>Current Roster</label>
+                    <button onClick={() => openPicker("A")} className="text-[9px] font-black text-cyan-400 uppercase tracking-widest bg-cyan-400/10 px-3 py-1 rounded-full border border-cyan-400/20">Build Squad</button>
+                  </div>
+                  <textarea value={batsmenText} onChange={(e) => setBatsmenText(e.target.value)} className={`${inputClass} h-32 text-xs leading-relaxed no-scrollbar`} placeholder="Comma-separated player names..." />
                 </div>
-                <textarea
-                  value={batsmenText}
-                  onChange={(e) => setBatsmenText(e.target.value)}
-                  className={`${inputClass} h-24 text-sm font-mono`}
-                  placeholder="Type names or pick..."
-                />
-              </div>
 
-              <div>
-                <label className={`${labelClass} text-green-400`}>
-                  Team B Name
-                </label>
-                <input
-                  value={teamB}
-                  onChange={(e) =>
-                    handleTeamChange(
-                      e,
-                      setTeamB,
-                      setBowlersText,
-                      setTeamBRoster
-                    )
-                  }
-                  className={inputClass}
-                  list="teamList"
-                  placeholder="Team B"
-                />
-                <div className="flex justify-between items-center mt-3 mb-1">
-                  <label className={labelClass}>Squad</label>
-                  <button
-                    onClick={() => openPicker("B")}
-                    className="text-xs bg-gray-800 px-2 py-1 rounded text-green-400 hover:text-white border border-gray-700">
-                    🌍 Pick Players
-                  </button>
+                {/* Team B */}
+                <div className="space-y-4">
+                  <label className={`${labelClass} text-green-500`}>Opposing Team (Away)</label>
+                  <input value={teamB} onChange={(e) => handleTeamChange(e, setTeamB, setBowlersText, setTeamBRoster)} className={inputClass} placeholder="Team B" list="teamList" />
+                  
+                  <div className="flex justify-between items-center px-1">
+                    <label className={labelClass}>Current Roster</label>
+                    <button onClick={() => openPicker("B")} className="text-[9px] font-black text-green-400 uppercase tracking-widest bg-green-400/10 px-3 py-1 rounded-full border border-green-400/20">Build Squad</button>
+                  </div>
+                  <textarea value={bowlersText} onChange={(e) => setBowlersText(e.target.value)} className={`${inputClass} h-32 text-xs leading-relaxed no-scrollbar`} placeholder="Comma-separated player names..." />
                 </div>
-                <textarea
-                  value={bowlersText}
-                  onChange={(e) => setBowlersText(e.target.value)}
-                  className={`${inputClass} h-24 text-sm font-mono`}
-                  placeholder="Type names or pick..."
-                />
               </div>
-
-              <button
-                onClick={handleSubmitSingle}
-                disabled={!teamA || !teamB}
-                className="col-span-1 md:col-span-2 py-4 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold rounded-lg shadow-lg hover:shadow-cyan-500/20 transition-all uppercase tracking-widest mt-4 disabled:opacity-50">
-                + Create Match
+              
+              <button onClick={handleSubmitSingle} disabled={!teamA || !teamB} 
+                      className="w-full py-5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-black uppercase tracking-widest text-xs rounded-2xl shadow-2xl shadow-cyan-900/40 active:scale-[0.98] transition-all disabled:opacity-20">
+                Finalize Encounter
               </button>
             </div>
           )}
 
-          {/* AUTO SCHEDULE */}
+          {/* AUTO SCHEDULE VIEW */}
           {activeTab === "auto" && (
-            <div className="animate-in fade-in">
-              <p className="text-gray-400 mb-4">
-                Select teams to auto-generate matches (round-robin):
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-80 overflow-y-auto mb-4 border-t border-gray-800 pt-2">
-                {teams.map((team) => (
-                  <label
-                    key={team.id}
-                    className="flex items-center gap-2 p-2 bg-gray-800 rounded hover:bg-gray-700 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedTeams.has(team.id)}
-                      onChange={() => toggleTeamSelection(team.id)}
-                      className="accent-cyan-500"
-                    />
-                    <span className="text-white">{team.name}</span>
-                  </label>
-                ))}
+            <div className="animate-in fade-in slide-in-from-bottom-2 space-y-8">
+              <div className="p-6 bg-black/40 rounded-3xl border border-white/5">
+                  <h4 className="text-white font-black text-xs uppercase tracking-widest mb-4 italic">Available Pool</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto no-scrollbar pr-2">
+                    {teams.map((team) => (
+                      <div key={team.id} onClick={() => toggleTeamSelection(team.id)} 
+                           className={`flex items-center gap-3 p-4 rounded-2xl cursor-pointer transition-all border ${selectedTeams.has(team.id) ? 'bg-cyan-500 border-cyan-400 text-black shadow-lg shadow-cyan-500/20' : 'bg-white/5 border-white/5 text-gray-400 hover:border-white/10'}`}>
+                        <div className={`w-3 h-3 rounded-full border-2 ${selectedTeams.has(team.id) ? 'bg-black border-black' : 'border-gray-700'}`}></div>
+                        <span className="text-xs font-black uppercase tracking-tight">{team.name}</span>
+                      </div>
+                    ))}
+                  </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                <div>
-                  <label className={labelClass}>Date</label>
-                  <input
-                    type="date"
-                    value={tournamentDate}
-                    onChange={(e) => setTournamentDate(e.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Overs</label>
-                  <input
-                    type="number"
-                    value={overs}
-                    onChange={(e) => setOvers(e.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Format</label>
-                  <select
-                    value={tournamentFormat}
-                    onChange={(e) => setTournamentFormat(e.target.value)}
-                    className={inputClass}>
-                    <option value="T20">T20</option>
-                    <option value="T10">T10</option>
-                    <option value="ODI">ODI</option>
-                  </select>
-                </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div>
+                    <label className={labelClass}>Format Preset</label>
+                    <select value={tournamentFormat} onChange={(e) => setTournamentFormat(e.target.value)} className={inputClass}>
+                      <option value="T20">T20 International</option>
+                      <option value="T10">T10 Sprint</option>
+                      <option value="ODI">One Day Intl</option>
+                    </select>
+                 </div>
+                 <div className="flex flex-col justify-end">
+                    <button onClick={handleAutoScheduleSubmit} disabled={selectedTeams.size < 2} 
+                            className="w-full py-5 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-black uppercase tracking-widest text-xs rounded-2xl shadow-xl shadow-purple-900/20 active:scale-[0.98] transition-all disabled:opacity-20">
+                        Generate { (selectedTeams.size * (selectedTeams.size - 1)) / 2 } Fixtures
+                    </button>
+                 </div>
               </div>
-
-              <button
-                onClick={handleAutoScheduleSubmit}
-                disabled={selectedTeams.size < 2}
-                className="py-4 w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold rounded-lg shadow-lg hover:shadow-cyan-500/20 transition-all uppercase tracking-widest disabled:opacity-50">
-                Generate {(selectedTeams.size * (selectedTeams.size - 1)) / 2}{" "}
-                Matches
-              </button>
             </div>
           )}
         </div>
       </div>
+      
+      {/* Hidden Datalist for shared team lookup */}
+      <datalist id="teamList">
+        {teams.map((t) => <option key={t.id} value={t.name} />)}
+      </datalist>
     </div>
   );
 }

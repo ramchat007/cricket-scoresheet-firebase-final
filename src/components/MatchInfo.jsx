@@ -1,4 +1,3 @@
-// src/components/MatchInfo.jsx
 import React from "react";
 
 export default function MatchInfo({ match }) {
@@ -18,28 +17,30 @@ export default function MatchInfo({ match }) {
   };
 
   const InfoRow = ({ label, value, icon }) => (
-    <div className="flex items-center justify-between p-4 bg-gray-800/50 rounded-lg border border-gray-700/50 hover:bg-gray-800 transition-colors">
+    <div className="flex items-center justify-between p-4 bg-[#161920] rounded-xl border border-white/5 hover:bg-white/5 transition-colors group">
       <div className="flex items-center gap-3">
-        <span className="text-xl opacity-80">{icon}</span>
-        <span className="text-sm font-bold text-gray-400 uppercase tracking-wide">
+        <span className="text-xl opacity-60 group-hover:opacity-100 transition-opacity grayscale group-hover:grayscale-0">{icon}</span>
+        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest group-hover:text-slate-300 transition-colors">
           {label}
         </span>
       </div>
-      <div className="text-white font-medium text-right font-mono">
+      <div className="text-slate-200 font-medium text-right font-mono text-sm">
         {value || "N/A"}
       </div>
     </div>
   );
 
   return (
-    <div className="flex flex-col gap-6 max-w-3xl mx-auto">
-      {/* MATCH DETAILS CARD */}
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-xl">
-        <h3 className="text-lg font-bold text-white mb-6 border-b border-gray-800 pb-4 flex items-center gap-2">
-          ℹ️ Match Information
-        </h3>
+    <div className="flex flex-col gap-6 max-w-3xl mx-auto pb-10">
+      
+      {/* 1. MATCH DETAILS CARD */}
+      <div className="bg-[#1C2128] border border-white/5 rounded-2xl p-6 shadow-xl">
+        <div className="flex items-center gap-2 mb-6 border-b border-white/5 pb-4">
+            <span className="text-lg">ℹ️</span>
+            <h3 className="text-lg font-bold text-slate-100">Match Information</h3>
+        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <InfoRow
             label="Tournament"
             value={meta.tournament || "Friendly Match"}
@@ -77,53 +78,46 @@ export default function MatchInfo({ match }) {
         </div>
       </div>
 
-      {/* SQUADS CARD (Optional but useful) */}
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-xl">
-        <h3 className="text-lg font-bold text-white mb-6 border-b border-gray-800 pb-4 flex items-center gap-2">
-          👥 Squads
-        </h3>
+      {/* 2. SQUADS CARD */}
+      <div className="bg-[#1C2128] border border-white/5 rounded-2xl p-6 shadow-xl">
+        <div className="flex items-center gap-2 mb-6 border-b border-white/5 pb-4">
+            <span className="text-lg">👥</span>
+            <h3 className="text-lg font-bold text-slate-100">Playing Squads</h3>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {/* Team A */}
-          <div>
-            <div className="text-cyan-400 font-bold uppercase tracking-wider mb-3 border-l-4 border-cyan-500 pl-3">
-              {meta.teamA}
+          <div className="bg-[#0F1115] p-4 rounded-xl border border-white/5">
+            <div className="text-teal-400 font-black uppercase tracking-widest text-xs mb-4 border-l-4 border-teal-500 pl-3 py-1">
+              {meta.teamA || "Team A"}
             </div>
             <ul className="space-y-2">
               {(match.teamASquad || []).map((p, i) => (
-                <li
-                  key={i}
-                  className="text-gray-300 text-sm flex items-center gap-2">
-                  <span className="text-gray-600 text-xs w-4">{i + 1}.</span>
-                  {typeof p === "object" ? p.name : p}
+                <li key={i} className="text-slate-300 text-sm flex items-center gap-3 hover:bg-white/5 p-1.5 rounded transition-colors">
+                  <span className="text-slate-600 text-[10px] font-mono w-4 text-right">{i + 1}.</span>
+                  <span className="font-medium">{typeof p === "object" ? p.name : p}</span>
                 </li>
               ))}
               {(!match.teamASquad || match.teamASquad.length === 0) && (
-                <li className="text-gray-600 italic text-sm">
-                  No squad listed
-                </li>
+                <li className="text-slate-600 italic text-sm p-2">No squad listed</li>
               )}
             </ul>
           </div>
 
           {/* Team B */}
-          <div>
-            <div className="text-purple-400 font-bold uppercase tracking-wider mb-3 border-l-4 border-purple-500 pl-3">
-              {meta.teamB}
+          <div className="bg-[#0F1115] p-4 rounded-xl border border-white/5">
+            <div className="text-indigo-400 font-black uppercase tracking-widest text-xs mb-4 border-l-4 border-indigo-500 pl-3 py-1">
+              {meta.teamB || "Team B"}
             </div>
             <ul className="space-y-2">
               {(match.teamBSquad || []).map((p, i) => (
-                <li
-                  key={i}
-                  className="text-gray-300 text-sm flex items-center gap-2">
-                  <span className="text-gray-600 text-xs w-4">{i + 1}.</span>
-                  {typeof p === "object" ? p.name : p}
+                <li key={i} className="text-slate-300 text-sm flex items-center gap-3 hover:bg-white/5 p-1.5 rounded transition-colors">
+                  <span className="text-slate-600 text-[10px] font-mono w-4 text-right">{i + 1}.</span>
+                  <span className="font-medium">{typeof p === "object" ? p.name : p}</span>
                 </li>
               ))}
               {(!match.teamBSquad || match.teamBSquad.length === 0) && (
-                <li className="text-gray-600 italic text-sm">
-                  No squad listed
-                </li>
+                <li className="text-slate-600 italic text-sm p-2">No squad listed</li>
               )}
             </ul>
           </div>

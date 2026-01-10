@@ -6,11 +6,12 @@ export default function TournamentSelector({
   availableTournaments = [],
 }) {
   return (
-    <div className="mb-4">
-      <label className="block text-gray-500 text-sm font-bold mb-2 uppercase tracking-wider flex justify-between">
-        <span>Select Tournament</span>
-        <span className="text-[10px] bg-gray-800 px-2 py-0.5 rounded text-gray-400 border border-gray-700">
-          {availableTournaments.length} available
+    <div className="mb-4 group">
+      {/* Label with Stats Badge */}
+      <label className="block text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-2 px-1 flex justify-between items-center">
+        <span>Tournament Context</span>
+        <span className="bg-cyan-500/10 text-cyan-500 px-2 py-0.5 rounded-full border border-cyan-500/20 font-bold">
+          {availableTournaments.length} Slots
         </span>
       </label>
 
@@ -20,15 +21,15 @@ export default function TournamentSelector({
           onChange={(e) => setTournamentId(e.target.value)}
           disabled={availableTournaments.length === 0}
           className={`
-            w-full appearance-none rounded-lg px-4 py-3 text-sm font-bold transition-all border
-            focus:outline-none focus:ring-1 focus:ring-cyan-500
+            w-full appearance-none rounded-2xl px-5 py-4 text-sm font-black transition-all border
+            outline-none ring-0
             ${
               availableTournaments.length === 0
-                ? "bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed"
-                : "bg-gray-800 border-gray-700 text-white hover:border-gray-600 cursor-pointer focus:border-cyan-500"
+                ? "bg-gray-900/50 border-gray-800 text-gray-600 cursor-not-allowed italic"
+                : "bg-black border-white/10 text-white hover:border-cyan-500/50 cursor-pointer focus:border-cyan-500 focus:shadow-[0_0_15px_rgba(6,182,212,0.15)]"
             }
           `}>
-          <option value="" className="text-gray-500">
+          <option value="" className="text-gray-500 bg-gray-900">
             {availableTournaments.length === 0
               ? "No tournaments found"
               : "-- Select a Tournament --"}
@@ -38,40 +39,47 @@ export default function TournamentSelector({
             <option
               key={t.id}
               value={t.id}
-              className="bg-gray-900 text-white py-2">
-              {t.name || t.id} {/* ✅ Displays Name now */}
+              className="bg-gray-900 text-white py-4 font-bold">
+              {t.name || t.id}
             </option>
           ))}
         </select>
 
-        {/* Custom Dropdown Arrow */}
-        <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none">
-          <svg
-            className={`w-4 h-4 ${
-              availableTournaments.length === 0
-                ? "text-gray-700"
-                : "text-cyan-500"
-            }`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M19 9l-7 7-7-7"
-            />
-          </svg>
+        {/* Premium Neon Dropdown Arrow */}
+        <div className="absolute inset-y-0 right-0 flex items-center px-5 pointer-events-none">
+          <div className={`p-1.5 rounded-lg transition-colors ${
+              availableTournaments.length === 0 ? "bg-gray-800" : "bg-cyan-500/10"
+          }`}>
+            <svg
+              className={`w-3.5 h-3.5 ${
+                availableTournaments.length === 0
+                  ? "text-gray-700"
+                  : "text-cyan-400"
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="3"
+                d="M19 9l-7 7-7-7"
+              />
+            </svg>
+          </div>
         </div>
       </div>
 
-      {/* Help Text for Empty State */}
+      {/* Help Text for Empty State - Styling preserved but updated to match neon theme */}
       {availableTournaments.length === 0 && (
-        <p className="text-[10px] text-gray-500 mt-2 italic">
-          You haven't created or been assigned to any tournaments yet. Use the{" "}
-          <strong>Match Selector</strong> to create a "New Match" and start a
-          tournament.
-        </p>
+        <div className="mt-3 p-3 bg-red-500/5 border border-red-500/10 rounded-xl">
+          <p className="text-[10px] text-gray-500 leading-relaxed">
+            <span className="text-red-400 font-bold uppercase mr-1">Notice:</span>
+            You haven't created or been assigned to any tournaments yet. Use the{" "}
+            <strong className="text-gray-400">Match Selector</strong> to create a "New Match" and start a
+            tournament.
+          </p>
+        </div>
       )}
     </div>
   );

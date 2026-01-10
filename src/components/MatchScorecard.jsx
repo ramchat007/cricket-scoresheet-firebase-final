@@ -1,11 +1,10 @@
-// src/pages/MatchScorecard.jsx
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { getMatch } from "../utils/firestore";
 import ScoreSummary from "../components/ScoreSummary";
 import ScoreTable from "../components/ScoreTable";
 import MatchCommentary from "../components/MatchCommentary";
-import MatchInfo from "../components/MatchInfo"; // ✅ NEW
+import MatchInfo from "../components/MatchInfo";
 
 export default function MatchScorecard() {
   const { tournamentId, matchId } = useParams();
@@ -32,13 +31,13 @@ export default function MatchScorecard() {
 
   if (loading)
     return (
-      <div className="flex justify-center items-center min-h-screen bg-[#0f172a] text-cyan-500 font-bold uppercase tracking-widest">
-        Loading...
+      <div className="flex justify-center items-center min-h-screen bg-[#0F1115] text-teal-500 font-bold uppercase tracking-widest text-sm">
+        <span className="animate-pulse">Loading Match Data...</span>
       </div>
     );
   if (error)
     return (
-      <div className="flex justify-center items-center min-h-screen bg-[#0f172a] text-red-500 font-bold">
+      <div className="flex justify-center items-center min-h-screen bg-[#0F1115] text-red-400 font-bold">
         {error}
       </div>
     );
@@ -49,36 +48,38 @@ export default function MatchScorecard() {
     : "Match Details";
 
   return (
-    <div className="min-h-screen bg-[#0f172a] text-gray-100 font-sans pb-20">
-      {/* HEADER */}
-      <div className="bg-gray-900/80 backdrop-blur-md border-b border-gray-800 sticky top-0 z-50">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div className="min-h-screen bg-[#0F1115] text-slate-300 font-sans pb-20">
+      
+      {/* 1. GLASS HEADER */}
+      <div className="bg-[#161920]/80 backdrop-blur-lg border-b border-white/5 sticky top-0 z-50">
+        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
           <Link
             to={`/tournaments/${tournamentId}`}
-            className="text-gray-400 hover:text-white text-sm font-bold flex items-center gap-2">
-            ← Back
+            className="text-slate-400 hover:text-white text-sm font-bold flex items-center gap-2 transition-colors">
+            <span className="text-xl">←</span> Back
           </Link>
-          <div className="text-sm font-bold text-white uppercase tracking-wide truncate max-w-[60%]">
+          <div className="text-sm font-black text-slate-200 uppercase tracking-widest truncate max-w-[60%]">
             {matchTitle}
           </div>
-          <div className="w-8"></div>
+          <div className="w-12"></div> {/* Spacer for balance */}
         </div>
       </div>
 
       <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-6">
-        {/* SUMMARY */}
+        
+        {/* 2. MATCH SUMMARY CARD */}
         <ScoreSummary match={match} />
 
-        {/* TABS */}
-        <div className="bg-gray-900 border border-gray-800 p-1 rounded-xl flex gap-1 shadow-sm mx-auto">
+        {/* 3. NAVIGATION TABS */}
+        <div className="bg-[#1C2128] border border-white/5 p-1.5 rounded-2xl flex gap-1 shadow-lg max-w-md mx-auto">
           {["scorecard", "commentary", "info"].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`flex-1 py-2.5 rounded-lg text-sm font-bold uppercase tracking-wider transition-all ${
+              className={`flex-1 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all duration-300 ${
                 activeTab === tab
-                  ? "bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg"
-                  : "text-gray-400 hover:text-white hover:bg-gray-800"
+                  ? "bg-gradient-to-br from-teal-600 to-teal-800 text-white shadow-md transform scale-100"
+                  : "text-slate-500 hover:text-slate-200 hover:bg-white/5"
               }`}>
               {tab === "info"
                 ? "ℹ️ Info"
@@ -89,8 +90,8 @@ export default function MatchScorecard() {
           ))}
         </div>
 
-        {/* CONTENT */}
-        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+        {/* 4. TAB CONTENT AREA */}
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 min-h-[400px]">
           {activeTab === "scorecard" && <ScoreTable match={match} />}
           {activeTab === "commentary" && (
             <div className="max-w-3xl mx-auto">

@@ -23,9 +23,7 @@ import {
   createMatchAuto,
   listMatches,
   listTournaments,
-  listMyEditableTournaments, // Kept import if needed later for specific filtering
   listAllTeams,
-  deleteMatch,
 } from "./utils/firestore.js";
 import { useAuth } from "./hooks/useAuth.jsx";
 import MigrationTool from "./components/MigrationTool.jsx";
@@ -40,30 +38,21 @@ export default function MainApp() {
   const [tournamentId, setTournamentId] = useState("");
   const [matchId, setMatchId] = useState(null);
   const [availableTournaments, setAvailableTournaments] = useState([]);
-  const [allMatches, setAllMatches] = useState([]); // Needed for the dropdown only
+  const [allMatches, setAllMatches] = useState([]); 
   const [allTeams, setAllTeams] = useState([]);
 
-  const isMatchesPage =
-    location.pathname === "/" || location.pathname === "/scoreboard";
+  const isMatchesPage = location.pathname === "/" || location.pathname === "/scoreboard";
 
   const navigateToScoring = (tid, mid) => {
     navigate(`/live/${tid}/${mid}`);
   };
 
-  // 1. Initial Data Loading (Updated to fetch ALL tournaments)
   useEffect(() => {
     async function loadInitialData() {
-      // Load Teams
       listAllTeams().then(setAllTeams);
-
-      // Load Tournaments
       try {
-        // FIX: Previously this used listMyEditableTournaments(user.uid) which hid other tournaments.
-        // Now using listTournaments() to ensure 'generic' and others show up.
         const allTournaments = await listTournaments();
         setAvailableTournaments(allTournaments);
-
-        // Auto-select the first one if nothing is selected yet
         if (allTournaments.length > 0 && !tournamentId) {
           setTournamentId(allTournaments[0].id);
         }
@@ -72,9 +61,8 @@ export default function MainApp() {
       }
     }
     loadInitialData();
-  }, [user]); // Re-run if user auth state changes, though logic is now unified
+  }, [user]);
 
-  // 2. Fetch Matches (ONLY for the Dropdown Selector)
   useEffect(() => {
     if (!tournamentId) {
       setAllMatches([]);
@@ -83,7 +71,6 @@ export default function MainApp() {
     const fetchData = async () => {
       try {
         const matches = await listMatches(tournamentId);
-        // Sort: Most recent / Live matches first for the dropdown
         matches.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
         setAllMatches(matches);
       } catch (err) {
@@ -94,23 +81,15 @@ export default function MainApp() {
   }, [tournamentId]);
 
   async function handleCreate({ payload, tournament }) {
-    if (!user) {
-      alert("Login required.");
-      return;
-    }
+    if (!user) { alert("Login required."); return; }
     const tid = tournament || tournamentId;
-    if (!tid) {
-      alert("Tournament required.");
-      return;
-    }
+    if (!tid) { alert("Tournament required."); return; }
     try {
       const newMatchId = await createMatchAuto(tid, payload);
       navigateToScoring(tid, newMatchId);
     } catch (err) {
       console.error(err);
-      alert(
-        "Failed to create match. You might not have permission for this tournament."
-      );
+      alert("Failed to create match. Check permissions.");
     }
   }
 
@@ -119,64 +98,69 @@ export default function MainApp() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f172a] text-gray-200 font-sans">
+    <div className="min-h-screen bg-black text-gray-200 font-sans selection:bg-cyan-500/30">
       <Navigation />
-      <div className="container mx-auto px-4 pb-10">
-        {/* --- ADMIN COMMAND CENTER --- */}
+      
+      <div className="container mx-auto px-4 pb-24 md:pb-10 pt-4">
+        {/* --- MOBILE-OPTIMIZED ADMIN COMMAND CENTER --- */}
         {isMatchesPage && user && (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6 shadow-xl animate-in fade-in slide-in-from-top-4 duration-500">
-            <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-              <span className="text-cyan-500">⚡</span> Admin Command Center
-            </h2>
-
-            {/* 1. Selectors (To jump to an existing match) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-              <TournamentSelector
-                tournamentId={tournamentId}
-                setTournamentId={setTournamentId}
-                availableTournaments={availableTournaments}
-              />
-              <MatchSelector
-                matchId={matchId}
-                setMatchId={(id) => {
-                  setMatchId(id);
-                  if (id && id !== "new") navigateToScoring(tournamentId, id);
-                }}
-                tournamentId={tournamentId}
-              />
+          <div className="bg-gray-900/50 border border-white/5 rounded-3xl p-5 mb-8 shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-4 duration-500">
+            <div className="flex items-center justify-between mb-6">
+               <h2 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-2">
+                 <span className="flex h-2 w-2 rounded-full bg-cyan-500 animate-pulse"></span>
+                 Admin Console
+               </h2>
+               <span className="text-[10px] text-gray-500 font-bold bg-white/5 px-2 py-1 rounded-full uppercase">Live Sync</span>
             </div>
 
-            {/* 2. Quick Actions */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Card A: Create New Match */}
+            {/* Selectors Section */}
+            <div className="grid grid-cols-1 gap-3 mb-6">
+              <div className="bg-black/40 p-1 rounded-2xl border border-white/5">
+                <TournamentSelector
+                  tournamentId={tournamentId}
+                  setTournamentId={setTournamentId}
+                  availableTournaments={availableTournaments}
+                />
+              </div>
+              <div className="bg-black/40 p-1 rounded-2xl border border-white/5">
+                <MatchSelector
+                  matchId={matchId}
+                  setMatchId={(id) => {
+                    setMatchId(id);
+                    if (id && id !== "new") navigateToScoring(tournamentId, id);
+                  }}
+                  tournamentId={tournamentId}
+                />
+              </div>
+            </div>
+
+            {/* Quick Action Cards - Horizontal Scroll on Mobile */}
+            <div className="flex md:grid md:grid-cols-2 gap-4 overflow-x-auto pb-2 no-scrollbar">
               <button
                 onClick={() => setMatchId("new")}
-                className="flex flex-col items-center justify-center p-8 bg-gradient-to-br from-cyan-900/40 to-gray-900 border border-cyan-500/30 rounded-xl hover:border-cyan-400 hover:shadow-lg hover:shadow-cyan-900/20 transition-all group">
-                <div className="bg-cyan-500/20 p-4 rounded-full mb-3 group-hover:scale-110 transition-transform">
-                  <span className="text-3xl">🏏</span>
+                className="flex-shrink-0 w-[80%] md:w-full flex items-center gap-4 p-5 bg-gradient-to-br from-cyan-600/20 to-cyan-900/10 border border-cyan-500/20 rounded-2xl hover:border-cyan-400 transition-all active:scale-95 group">
+                <div className="bg-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.5)] w-12 h-12 rounded-xl flex items-center justify-center text-2xl group-hover:rotate-12 transition-transform">
+                  🏏
                 </div>
-                <h3 className="text-lg font-bold text-white mb-1">New Match</h3>
-                <p className="text-sm text-gray-400 text-center">
-                  Schedule or start a game immediately
-                </p>
+                <div className="text-left">
+                   <h3 className="text-white font-black text-sm uppercase tracking-tight">New Match</h3>
+                   <p className="text-[10px] text-cyan-400/70 font-bold uppercase">Quick Setup</p>
+                </div>
               </button>
 
-              {/* Card B: View Full Dashboard */}
               <button
                 onClick={() => {
                   if (tournamentId) navigate(`/tournaments/${tournamentId}`);
-                  else alert("Please select a tournament first.");
+                  else alert("Select a tournament first.");
                 }}
-                className="flex flex-col items-center justify-center p-8 bg-gradient-to-br from-purple-900/40 to-gray-900 border border-purple-500/30 rounded-xl hover:border-purple-400 hover:shadow-lg hover:shadow-purple-900/20 transition-all group">
-                <div className="bg-purple-500/20 p-4 rounded-full mb-3 group-hover:scale-110 transition-transform">
-                  <span className="text-3xl">📊</span>
+                className="flex-shrink-0 w-[80%] md:w-full flex items-center gap-4 p-5 bg-gradient-to-br from-purple-600/20 to-purple-900/10 border border-purple-500/20 rounded-2xl hover:border-purple-400 transition-all active:scale-95 group">
+                <div className="bg-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.5)] w-12 h-12 rounded-xl flex items-center justify-center text-2xl group-hover:rotate-12 transition-transform">
+                  📊
                 </div>
-                <h3 className="text-lg font-bold text-white mb-1">
-                  View Full Dashboard
-                </h3>
-                <p className="text-sm text-gray-400 text-center">
-                  See Standings, Stats & Match Lists
-                </p>
+                <div className="text-left">
+                   <h3 className="text-white font-black text-sm uppercase tracking-tight">Analytics</h3>
+                   <p className="text-[10px] text-purple-400/70 font-bold uppercase">View Dashboard</p>
+                </div>
               </button>
             </div>
           </div>
@@ -189,31 +173,36 @@ export default function MainApp() {
               path="/"
               element={
                 matchId === "new" ? (
-                  // Show Setup UI only when "New Match" is active
-                  <div className="animate-in fade-in zoom-in duration-300">
-                    <div className="flex justify-between items-center mb-4">
-                      <h2 className="text-2xl font-bold text-white">
-                        Match Setup
-                      </h2>
+                  <div className="animate-in fade-in zoom-in duration-300 max-w-2xl mx-auto">
+                    <div className="flex justify-between items-end mb-6 px-2">
+                      <div>
+                        <h2 className="text-3xl font-black text-white uppercase tracking-tighter italic">Match Setup</h2>
+                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Configuration Phase</p>
+                      </div>
                       <button
                         onClick={() => setMatchId(null)}
-                        className="text-gray-400 hover:text-white underline text-sm">
+                        className="bg-white/5 hover:bg-white/10 text-white px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest border border-white/10 transition-all">
                         Cancel
                       </button>
                     </div>
-                    <MatchSetup
-                      onCreate={handleCreate}
-                      tournamentId={tournamentId}
-                      allTeams={allTeams}
-                      availableTournaments={availableTournaments}
-                    />
+                    <div className="bg-gray-900/40 border border-white/5 rounded-[2.5rem] p-2">
+                      <MatchSetup
+                        onCreate={handleCreate}
+                        tournamentId={tournamentId}
+                        allTeams={allTeams}
+                        availableTournaments={availableTournaments}
+                      />
+                    </div>
                   </div>
                 ) : (
-                  // Default Welcome State
-                  <div className="flex flex-col items-center justify-center min-h-[30vh] text-center space-y-4 opacity-50">
-                    <p className="text-sm text-gray-500">
-                      Select an action above to begin.
-                    </p>
+                  <div className="flex flex-col items-center justify-center min-h-[40vh] text-center space-y-6">
+                    <div className="w-20 h-20 bg-gray-900 rounded-3xl border border-white/5 flex items-center justify-center text-3xl animate-bounce shadow-2xl">
+                       🚀
+                    </div>
+                    <div>
+                      <h3 className="text-white font-black uppercase tracking-tighter text-lg">System Ready</h3>
+                      <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">Select an action above to start scoring</p>
+                    </div>
                   </div>
                 )
               }
@@ -222,26 +211,15 @@ export default function MainApp() {
             <Route path="/" element={<Dashboard />} />
           )}
 
-          <Route
-            path="/live/:tournamentId/:matchId"
-            element={<LiveScoring />}
-          />
+          <Route path="/live/:tournamentId/:matchId" element={<LiveScoring />} />
           <Route path="/scoreboard" element={<Scoreboard />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/create-tournament" element={<CreateTournament />} />
           <Route path="/tournaments/:id/auction" element={<AuctionDashboard />} />
-
           <Route
             path="/matches"
-            element={
-              <MatchesPage
-                availableTournaments={availableTournaments}
-                onSelect={handleMatchesPageSelect}
-                readOnly={!user}
-              />
-            }
+            element={<MatchesPage availableTournaments={availableTournaments} onSelect={handleMatchesPageSelect} readOnly={!user} />}
           />
-
           <Route path="/players" element={<GlobalPlayersView />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/login" element={<Login />} />
@@ -249,10 +227,7 @@ export default function MainApp() {
           <Route path="/register-player" element={<GlobalPlayerRegistration />} />
           <Route path="/migrate" element={<MigrationTool />} />
           <Route path="/tournaments/:id" element={<TournamentDetails />} />
-          <Route
-            path="/tournaments/:tournamentId/scorecard/:matchId"
-            element={<MatchScorecard />}
-          />
+          <Route path="/tournaments/:tournamentId/scorecard/:matchId" element={<MatchScorecard />} />
           <Route path="/teams" element={<TeamsManager />} />
         </Routes>
       </div>

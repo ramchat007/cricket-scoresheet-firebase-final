@@ -1,4 +1,3 @@
-// src/components/Navigation.jsx
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
@@ -10,267 +9,180 @@ export default function Navigation() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-
-  // --- NEW STATE: Local Profile Data ---
   const [profileData, setProfileData] = useState(null);
 
-  // --- NEW EFFECT: Fetch Real-time Profile Data ---
+  // --- Fetch Profile Logic (Preserved) ---
   useEffect(() => {
     async function fetchProfileData() {
       if (user?.uid) {
         try {
-          const ref = doc(db, "users", user.uid);
-          const snap = await getDoc(ref);
-          if (snap.exists()) {
-            setProfileData(snap.data());
-          }
-        } catch (e) {
-          console.error("Error fetching nav profile:", e);
-        }
-      } else {
-        setProfileData(null);
-      }
+          const snap = await getDoc(doc(db, "users", user.uid));
+          if (snap.exists()) setProfileData(snap.data());
+        } catch (e) { console.error(e); }
+      } else { setProfileData(null); }
     }
     fetchProfileData();
   }, [user]);
 
-  // Determine which image to show: Firestore > Auth > Default
+  // Block body scroll when menu is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+    } else {
+      document.body.style.overflow = 'unset';
+      document.body.style.touchAction = 'auto';
+    }
+    return () => { 
+        document.body.style.overflow = 'unset';
+        document.body.style.touchAction = 'auto';
+    };
+  }, [isOpen]);
+
   const displayImage = profileData?.photoURL || user?.photoURL || null;
 
-  // --- LOGIC: Get Tournament ID from URL ---
+  // --- Dynamic Links Logic (Preserved & Fixed Segments) ---
   const pathSegments = location.pathname.split("/");
-  const tournamentIndex = pathSegments.indexOf("tournament");
-  const tournamentId =
-    tournamentIndex !== -1 && pathSegments.length > tournamentIndex + 1
-      ? pathSegments[tournamentIndex + 1]
-      : null;
+  const tournamentIndex = pathSegments.indexOf("tournaments");
+  const tournamentId = tournamentIndex !== -1 && pathSegments.length > tournamentIndex + 1 ? pathSegments[tournamentIndex + 1] : null;
 
-  // --- LOGIC: Build Dynamic Links Array ---
-  const links = [];
-
-  // 1. Global Public Links
-  links.push(
+  const links = [
     { name: "Home", path: "/" },
-    { name: "📈 Players Stats", path: "/players" }
-  );
+    { name: "Global Stats", path: "/players" }
+  ];
 
-  // 2. Tournament Context Links
-  if (tournamentId) {
-    links.push({
-      name: "🏏 Matches",
-      path: `/tournament/${tournamentId}/matches`,
-    });
-    links.push({
-      name: "👥 Teams",
-      path: `/tournament/${tournamentId}/teams`,
-    });
-    links.push({
-      name: "📊 Points",
-      path: `/tournament/${tournamentId}/points`,
-    });
+  if (tournamentId && tournamentId !== 'auction') {
+    links.push({ name: "Tournament", path: `/tournaments/${tournamentId}` });
+    links.push({ name: "Auction Room", path: `/tournaments/${tournamentId}/auction` });
   }
 
-  // 3. Admin Dashboard (Only if logged in)
-  if (user) {
-    links.push({ name: "🏆 Dashboard", path: "/dashboard" });
-  }
+  if (user) links.push({ name: "Dashboard", path: "/dashboard" });
 
   const isActive = (path) => location.pathname === path;
 
+  // --- Logout Logic (Restored) ---
   const handleLogout = async () => {
     await auth.signOut();
     navigate("/login");
     setIsOpen(false);
   };
 
-  return (
-    <nav className="bg-gray-900 border-b border-gray-800 sticky top-0 z-50 shadow-lg backdrop-blur-md bg-opacity-90 mb-6">
-      <div className="container mx-auto px-4">
-        <div className="flex justify-between items-center h-16">
-          {/* --- 1. LOGO --- */}
-          <Link
-            to="/"
-            className="text-2xl font-black text-white tracking-tighter flex items-center gap-2 z-50"
-            onClick={() => setIsOpen(false)}>
-            <span className="text-cyan-500">⚡</span> CRIC
-            <span className="text-cyan-500">SCORE</span>
-          </Link>
-
-          {/* --- 2. DESKTOP MENU --- */}
-          <div className="hidden md:flex items-center gap-6">
-            {/* Render Links */}
-            {links.map((link) => (
-              <Link
-                key={link.path}
-                to={link.path}
-                className={`text-sm font-bold transition-colors ${
-                  isActive(link.path)
-                    ? "text-cyan-400 border-b-2 border-cyan-400 pb-1"
-                    : "text-gray-300 hover:text-white"
-                }`}>
-                {link.name}
-              </Link>
-            ))}
-
-            {/* --- PLAYER REGISTRATION LINK (PUBLIC) --- */}
-            {!user && (
-              <>
-                <Link
-                  to="/register-player"
-                  className="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition-all shadow-lg shadow-cyan-900/20 flex items-center gap-2">
-                  <span>📝</span> Register as Player
-                </Link>
-                
-                  <Link
-                    to="/login"
-                    onClick={() => setIsOpen(false)}
-                    className="block px-3 py-3 rounded-lg text-base font-bold bg-gradient-to-r from-cyan-900/50 to-blue-900/50 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-900/70">
-                    Login
-                  </Link>
-              </>
-            )}
-
-            {/* Render Auth Buttons (Only show User Profile/Logout if logged in) */}
-            {user ? (
-              <div className="flex items-center gap-4 ml-4 pl-4 border-l border-gray-700">
-                <Link
-                  to="/profile"
-                  className="group flex items-center gap-2 text-sm font-bold text-gray-300 hover:text-white">
-                  {displayImage ? (
-                    <img
-                      src={displayImage}
-                      alt="Profile"
-                      className="w-8 h-8 rounded-full border border-gray-600 shadow-sm object-cover group-hover:border-cyan-400 transition-all"
-                      onError={(e) => (e.target.style.display = "none")}
-                    />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-sm font-bold text-white shadow-lg border border-white/20 group-hover:from-cyan-400 group-hover:to-blue-500">
-                      {user.email?.charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                  <span>My Profile</span>
-                </Link>
-                <button
-                  onClick={handleLogout}
-                  className="text-sm font-bold text-red-400 hover:text-red-300 transition-colors">
-                  Logout
-                </button>
-              </div>
-            ) : // HIDDEN: Login/Signup links are commented out per requirement
-            // You can uncomment these later when you want to enable public signups again
-            /*
-              <div className="flex items-center gap-4 border-l border-gray-700 pl-4 ml-2">
-                <Link to="/login" className="...">Login</Link>
-                <Link to="/register" className="...">Sign Up</Link>
-              </div>
-              */
-            null}
-          </div>
-
-          {/* --- 3. MOBILE HAMBURGER BUTTON --- */}
-          <div className="md:hidden flex items-center gap-3">
-            {/* Show Register button on mobile header too if space allows, or put in menu */}
-
-            <button
-              onClick={() => setIsOpen(!isOpen)}
-              className="text-gray-300 hover:text-white focus:outline-none p-2 rounded-md hover:bg-gray-800 transition-colors">
-              {isOpen ? (
-                <svg
-                  className="w-6 h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              ) : (
-                <svg
-                  className="w-6 h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 6h16M4 12h16M4 18h16"
-                  />
-                </svg>
-              )}
-            </button>
-          </div>
-        </div>
+  const Logo = () => (
+    <Link to="/" className="group flex items-center gap-2" onClick={() => setIsOpen(false)}>
+      <div className="bg-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.4)] w-8 h-8 rounded-lg flex items-center justify-center group-hover:rotate-12 transition-transform">
+        <span className="text-white text-lg font-bold">⚡</span>
       </div>
+      <div className="flex flex-col leading-none">
+        <span className="text-white font-black text-xl tracking-tighter uppercase">CRIC</span>
+        <span className="text-cyan-500 font-black text-[10px] tracking-[0.3em] uppercase ml-0.5">SCORE</span>
+      </div>
+    </Link>
+  );
 
-      {/* --- 4. MOBILE MENU DROPDOWN --- */}
-      {isOpen && (
-        <div className="md:hidden bg-gray-900 border-b border-gray-800 animate-in slide-in-from-top-2 absolute w-full left-0 top-16 z-40 shadow-2xl">
-          <div className="px-4 py-4 space-y-3">
-            {/* Mobile Links */}
+  return (
+    <>
+      {/* 1. MAIN NAVBAR CONTAINER */}
+      <nav className="bg-black/90 border-b border-white/5 sticky top-0 z-[100] backdrop-blur-xl h-16 flex items-center shadow-2xl">
+        <div className="container mx-auto px-5 flex justify-between items-center">
+          <Logo />
+          
+          {/* DESKTOP MENU (With restored Logout) */}
+          <div className="hidden md:flex items-center gap-8">
             {links.map((link) => (
-              <Link
-                key={link.path}
-                to={link.path}
-                onClick={() => setIsOpen(false)}
-                className={`block px-3 py-3 rounded-lg text-base font-bold ${
-                  isActive(link.path)
-                    ? "bg-cyan-900/30 text-cyan-400 border-l-4 border-cyan-500"
-                    : "text-gray-300 hover:bg-gray-800 hover:text-white"
-                }`}>
+              <Link key={link.path} to={link.path} className={`text-[11px] font-black uppercase tracking-widest transition-all ${isActive(link.path) ? "text-cyan-400" : "text-gray-500 hover:text-white"}`}>
                 {link.name}
               </Link>
             ))}
 
-            {/* Mobile Register Link */}
-            {!user && (
-              <>
-                <Link
-                  to="/register-player"
-                  onClick={() => setIsOpen(false)}
-                  className="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition-all shadow-lg shadow-cyan-900/20 flex items-center gap-2">
-                  📝 Register as Player
-                </Link>                
-                <Link
-                  to="/login"
-                  onClick={() => setIsOpen(false)}
-                  className="block px-3 py-3 rounded-lg text-base font-bold bg-gradient-to-r from-cyan-900/50 to-blue-900/50 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-900/70">
-                  Login
+            {user ? (
+              <div className="flex items-center gap-5 border-l border-white/10 pl-5">
+                <Link to="/profile" className="w-9 h-9 rounded-full border border-white/10 overflow-hidden hover:border-cyan-500 transition-all shadow-lg">
+                  {displayImage ? <img src={displayImage} alt="profile" className="w-full h-full object-cover" /> : <div className="bg-gray-800 w-full h-full flex items-center justify-center font-bold text-cyan-500">{user.email?.charAt(0).toUpperCase()}</div>}
                 </Link>
-              </>
-            )}
-
-            {/* Mobile Auth Section */}
-            {user && (
-              <div className="border-t border-gray-800 pt-4 mt-2">
-                <Link
-                  to="/profile"
-                  onClick={() => setIsOpen(false)}
-                  className="flex items-center gap-3 px-3 py-3 rounded-lg text-base font-bold text-gray-300 hover:bg-gray-800 hover:text-white mb-2">
-                  {displayImage ? (
-                    <img
-                      src={displayImage}
-                      alt="Profile"
-                      className="w-8 h-8 rounded-full border border-gray-600 object-cover"
-                    />
-                  ) : (
-                    <span className="text-xl">👤</span>
-                  )}
-                  My Profile
-                </Link>
-                <button
-                  onClick={handleLogout}
-                  className="w-full text-left px-3 py-3 rounded-lg text-base font-bold text-red-400 hover:bg-red-900/20">
-                  Logout
+                {/* RESTORED DESKTOP LOGOUT BUTTON */}
+                <button onClick={handleLogout} className="text-[10px] font-black uppercase text-red-500 hover:text-red-400 transition-colors tracking-widest">
+                   Logout
                 </button>
               </div>
+            ) : (
+              <div className="flex items-center gap-4">
+                <Link to="/register-player" className="text-[10px] font-black uppercase text-gray-400 hover:text-white transition-colors">Register Player</Link>
+                <Link to="/login" className="bg-white text-black text-[11px] font-black uppercase px-6 py-2 rounded-full hover:bg-cyan-500 hover:text-white transition-all">Login</Link>
+              </div>
             )}
+          </div>
+
+          {/* MOBILE TOGGLE */}
+          <button onClick={() => setIsOpen(true)} className="md:hidden w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white active:scale-90 transition-transform">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+          </button>
+        </div>
+      </nav>
+
+      {/* 2. FULL SCREEN DRAWER (RESTORED INTERFACE) */}
+      {isOpen && (
+        <div className="fixed inset-0 z-[9999] isolate">
+          {/* Blur Backdrop */}
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-2xl animate-in fade-in duration-300" onClick={() => setIsOpen(false)} />
+
+          {/* Drawer Body */}
+          <div className="absolute inset-y-0 right-0 w-full bg-black border-l border-white/10 shadow-2xl flex flex-col animate-in slide-in-from-right duration-500">
+            
+            {/* Drawer Top Header */}
+            <div className="flex justify-between items-center px-6 h-20 border-b border-white/5 bg-black">
+              <Logo />
+              <button onClick={() => setIsOpen(false)} className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white transition-all active:scale-90">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            {/* Links Area */}
+            <div className="flex-1 overflow-y-auto p-6 flex flex-col">
+              <label className="text-[10px] font-black text-gray-600 uppercase tracking-[0.4em] mb-8 block">Tournament Navigation</label>
+              
+              <div className="space-y-3">
+                {links.map((link) => (
+                  <Link
+                    key={link.path}
+                    to={link.path}
+                    onClick={() => setIsOpen(false)}
+                    className={`flex items-center justify-between p-6 rounded-[2rem] text-xl font-black uppercase tracking-tighter transition-all active:scale-95 ${
+                      isActive(link.path)
+                        ? "bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-xl shadow-cyan-500/20"
+                        : "bg-white/5 border border-white/5 text-gray-400"
+                    }`}
+                  >
+                    {link.name}
+                    {isActive(link.path) && <div className="w-2 h-2 bg-white rounded-full animate-pulse shadow-[0_0_10px_white]"></div>}
+                  </Link>
+                ))}
+              </div>
+
+              {/* Bottom Auth Actions (RESTORED LOGOUT) */}
+              <div className="mt-auto pt-10 pb-8 flex flex-col gap-4">
+                {!user ? (
+                  <div className="grid grid-cols-1 gap-4">
+                    <Link to="/register-player" onClick={() => setIsOpen(false)} className="w-full py-5 rounded-[2rem] bg-white/5 border border-white/10 text-white text-center font-black uppercase tracking-widest text-xs">Register Player</Link>
+                    <Link to="/login" onClick={() => setIsOpen(false)} className="w-full py-5 rounded-[2rem] bg-white text-black text-center font-black uppercase tracking-widest text-sm shadow-xl">Login</Link>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-4">
+                    <Link to="/profile" onClick={() => setIsOpen(false)} className="flex flex-col items-center justify-center gap-2 p-6 rounded-[2.5rem] bg-white/5 border border-white/10 transition-colors active:bg-white/10">
+                      <span className="text-2xl">👤</span>
+                      <span className="text-[10px] font-black text-gray-500 uppercase">Profile</span>
+                    </Link>
+                    {/* RESTORED MOBILE LOGOUT BUTTON */}
+                    <button onClick={handleLogout} className="flex flex-col items-center justify-center gap-2 p-6 rounded-[2.5rem] bg-red-500/10 border border-red-500/20 transition-all active:bg-red-500/20">
+                      <span className="text-2xl">🚪</span>
+                      <span className="text-[10px] font-black text-red-500 uppercase">Logout</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}
-    </nav>
+    </>
   );
 }
