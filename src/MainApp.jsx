@@ -29,8 +29,8 @@ import {
 } from "./utils/firestore.js";
 import { useAuth } from "./hooks/useAuth.jsx";
 import MigrationTool from "./components/MigrationTool.jsx";
-import AuctionDashboard from "./pages/AuctionDashboard.jsx";
-import GlobalPlayerRegistration from "./pages/GlobalPlayerRegistration.jsx";
+import AuctionDashboard from "./components/AuctionDashboard.jsx";
+import GlobalPlayerRegistration from "./components/GlobalPlayerRegistration.jsx";
 
 export default function MainApp() {
   const navigate = useNavigate();

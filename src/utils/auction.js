@@ -12,20 +12,40 @@ import {
   deleteDoc,
   writeBatch,
   getDocs,
-  arrayUnion, // ✅ Added for safe roster updates
+  arrayUnion,
+  addDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
 // --- HELPERS ---
-const getNextBidAmount = (currentBid) => {
+export const getNextBidAmount = (currentBid) => {
   if (currentBid < 1000) return currentBid + 100;
   if (currentBid < 5000) return currentBid + 200;
   return currentBid + 500;
 };
 
+/**
+ * MANDATORY RULE: Purse Reserve (Section 1 & 5)
+ * Checks if a team can afford the bid while ensuring they can still afford 
+ * enough players to reach the MIN_SQUAD_SIZE at the MIN_BASE_PRICE.
+ */
+export const canAffordBid = (team, bidAmount, tournamentConfig) => {
+  const minSquadSize = parseInt(tournamentConfig?.minSquadSize || 11);
+  const minBasePrice = parseInt(tournamentConfig?.minBasePrice || 100);
+  
+  const currentSquadSize = team.roster?.length || 0;
+  const purse = parseInt(team.purse || 0);
+  const spent = parseInt(team.spent || 0);
+  const remainingPurse = purse - spent;
+
+  const playersNeededToReachMin = Math.max(0, minSquadSize - (currentSquadSize + 1));
+  const reserveNeeded = playersNeededToReachMin * minBasePrice;
+
+  return (remainingPurse - bidAmount) >= reserveNeeded;
+};
+
 // --- SUBSCRIPTIONS ---
 
-// 1. Listen to the "Room State"
 export function subscribeAuctionState(tournamentId, callback) {
   const ref = doc(db, "tournaments", tournamentId, "auction", "state");
   return onSnapshot(ref, (snap) => {
@@ -33,7 +53,6 @@ export function subscribeAuctionState(tournamentId, callback) {
   });
 }
 
-// 2. Listen to Available Players (Only Unsold)
 export function subscribeUnsoldPlayers(tournamentId, callback) {
   const q = query(
     collection(db, "tournaments", tournamentId, "auctionPlayers"),
@@ -56,13 +75,8 @@ export function subscribePassedPlayers(tournamentId, callback) {
   });
 }
 
-// 2. Action: Move player back to "UNSOLD" (The Queue)
-export async function requeuePlayer(tournamentId, playerId) {
-  const ref = doc(db, "tournaments", tournamentId, "auctionPlayers", playerId);
-  await updateDoc(ref, { status: "UNSOLD" });
-}
+// --- INITIALIZATION & SLOTS ---
 
-// --- INITIALIZATION ---
 export async function initializeAuction(tournamentId) {
   const ref = doc(db, "tournaments", tournamentId, "auction", "state");
   await setDoc(ref, {
@@ -70,78 +84,80 @@ export async function initializeAuction(tournamentId) {
     currentBid: 0,
     currentPlayer: null,
     highestBidderId: null,
-    highestBidderName: null, // Fixed typo from history
-    history: [], // Keep history array if needed
+    highestBidderName: null,
+    activeSlotId: null, // ✅ NEW: Track the round being auctioned
+    history: [],
     updatedAt: serverTimestamp(),
   });
 }
 
-// --- NEW: RESET / DELETE AUCTION ---
+export const createAuctionSlot = async (tournamentId, slotData) => {
+  const slotsRef = collection(db, "tournaments", tournamentId, "auction_slots");
+  return await addDoc(slotsRef, {
+    ...slotData,
+    status: 'pending', // pending, live, completed
+    createdAt: Date.now()
+  });
+};
+
+export const assignPlayerToSlot = async (tournamentId, playerId, slotId) => {
+  const playerRef = doc(db, "tournaments", tournamentId, "auctionPlayers", playerId);
+  return await updateDoc(playerRef, { auctionSlotId: slotId });
+};
+
+// --- ACTIONS ---
+
+export async function requeuePlayer(tournamentId, playerId) {
+  const ref = doc(db, "tournaments", tournamentId, "auctionPlayers", playerId);
+  await updateDoc(ref, { status: "UNSOLD" });
+}
+
 export async function resetAuction(tournamentId) {
   const batch = writeBatch(db);
-
-  // 1. Delete the "State" document
-  const stateRef = doc(db, "tournaments", tournamentId, "auction", "state");
-  batch.delete(stateRef);
-
-  // 2. Delete all players in the 'auctionPlayers' pool
-  const playersRef = collection(
-    db,
-    "tournaments",
-    tournamentId,
-    "auctionPlayers"
-  );
+  batch.delete(doc(db, "tournaments", tournamentId, "auction", "state"));
+  const playersRef = collection(db, "tournaments", tournamentId, "auctionPlayers");
   const playerSnap = await getDocs(playersRef);
-  playerSnap.docs.forEach((doc) => {
-    batch.delete(doc.ref);
-  });
-
-  // 3. (Optional) Reset Team Purses? - Usually handled in Admin Panel logic
+  playerSnap.docs.forEach((doc) => batch.delete(doc.ref));
+  
+  // ✅ Also clear rounds/slots on reset
+  const slotsRef = collection(db, "tournaments", tournamentId, "auction_slots");
+  const slotSnap = await getDocs(slotsRef);
+  slotSnap.docs.forEach((doc) => batch.delete(doc.ref));
 
   await batch.commit();
 }
 
-// --- ACTIONS ---
-
-// 1. ADMIN: Bring a player to the "Bidding Table"
 export const startBidding = async (tournamentId, player) => {
   const auctionRef = doc(db, "tournaments", tournamentId, "auction", "state");
 
-  // ✅ CRITICAL: Preserve Original ID & Photo for Sync
   const playerPayload = {
     id: player.id,
-    originalId: player.originalPlayerId || player.originalId || null, // Global ID link
+    originalId: player.originalPlayerId || player.originalId || null,
     name: player.name,
     role: player.role || "All-Rounder",
     basePrice: parseInt(player.basePrice || 0),
     isIcon: !!player.isIcon,
     isOwner: !!player.isOwner,
-    photoURL: player.photoURL || "", // Ensure photo passes through
+    photoURL: player.photoURL || "",
+    auctionSlotId: player.auctionSlotId || null, // ✅ Sync slot data
+  };
+
+  const updateData = {
+    status: "LIVE",
+    currentBid: playerPayload.basePrice,
+    highestBidderId: null,
+    highestBidderName: null,
+    currentPlayer: playerPayload,
+    updatedAt: serverTimestamp(),
   };
 
   try {
-    await updateDoc(auctionRef, {
-      status: "LIVE",
-      currentBid: playerPayload.basePrice,
-      highestBidderId: null,
-      highestBidderName: null,
-      currentPlayer: playerPayload,
-      updatedAt: new Date().toISOString(),
-    });
+    await updateDoc(auctionRef, updateData);
   } catch (error) {
-    // Fallback if doc doesn't exist
-    await setDoc(auctionRef, {
-      status: "LIVE",
-      currentBid: playerPayload.basePrice,
-      highestBidderId: null,
-      highestBidderName: null,
-      currentPlayer: playerPayload,
-      updatedAt: new Date().toISOString(),
-    });
+    await setDoc(auctionRef, updateData);
   }
 };
 
-// 2. TEAM: Place a Bid (Transaction Safe)
 export async function placeBid(tournamentId, teamId, teamName, amount) {
   const auctionRef = doc(db, "tournaments", tournamentId, "auction", "state");
 
@@ -151,15 +167,9 @@ export async function placeBid(tournamentId, teamId, teamName, amount) {
       if (!aucSnap.exists()) throw new Error("Auction not initialized");
 
       const auction = aucSnap.data();
-
-      // Validation
       if (auction.status !== "LIVE") throw new Error("Bidding is closed");
-      if (amount <= auction.currentBid) throw new Error("Bid must be higher");
+      if (amount <= (auction.currentBid || 0)) throw new Error("Bid must be higher");
 
-      // Note: Purse check is usually done client-side or needs team read here.
-      // Assuming UI prevents invalid bids for simplicity/speed in transaction.
-
-      // Update Auction State
       tx.update(auctionRef, {
         currentBid: amount,
         highestBidderId: teamId,
@@ -173,43 +183,29 @@ export async function placeBid(tournamentId, teamId, teamName, amount) {
   }
 }
 
-// 3. ADMIN: Sold! (Close the round)
 export const markSold = async (tournamentId) => {
   const auctionRef = doc(db, "tournaments", tournamentId, "auction", "state");
 
   await runTransaction(db, async (tx) => {
-    // A. Get Auction State
     const aucSnap = await tx.get(auctionRef);
     if (!aucSnap.exists()) throw new Error("Auction state missing");
 
     const auction = aucSnap.data();
     const { currentPlayer, highestBidderId, currentBid } = auction;
 
-    if (!highestBidderId)
-      throw new Error("No bidder found. Use Mark Unsold instead.");
+    if (!highestBidderId) throw new Error("No bidder found.");
     if (!currentPlayer) throw new Error("No current player active.");
 
-    // B. Get Team Data
-    const teamRef = doc(
-      db,
-      "tournaments",
-      tournamentId,
-      "teams",
-      highestBidderId
-    );
+    const teamRef = doc(db, "tournaments", tournamentId, "teams", highestBidderId);
     const teamSnap = await tx.get(teamRef);
     if (!teamSnap.exists()) throw new Error("Winning team not found");
 
     const team = teamSnap.data();
-
-    // Safety checks for numbers
-    const currentSpent = Number(team.spent) || 0;
     const finalPrice = Number(currentBid) || 0;
 
-    // ✅ CRITICAL: Construct Full Roster Object for Sync
     const rosterItem = {
-      id: currentPlayer.id, // Tournament Player ID
-      originalId: currentPlayer.originalId, // Global ID (Vital for Stats Sync)
+      id: currentPlayer.id,
+      originalId: currentPlayer.originalId,
       name: currentPlayer.name || "Unknown",
       role: currentPlayer.role || "Player",
       soldPrice: finalPrice,
@@ -218,28 +214,22 @@ export const markSold = async (tournamentId) => {
       photoURL: currentPlayer.photoURL || "",
     };
 
-    // C. Update Team (Wallet + Roster)
+    // Update Team (Wallet + Roster)
     tx.update(teamRef, {
-      spent: currentSpent + finalPrice,
+      spent: (Number(team.spent) || 0) + finalPrice,
       roster: arrayUnion(rosterItem),
-      players: arrayUnion(currentPlayer.name), // Keep legacy array for compatibility
+      players: arrayUnion(currentPlayer.name), 
     });
 
-    // D. Update Player in Auction Pool
-    const playerRef = doc(
-      db,
-      "tournaments",
-      tournamentId,
-      "auctionPlayers",
-      currentPlayer.id
-    );
+    // Update Player Status
+    const playerRef = doc(db, "tournaments", tournamentId, "auctionPlayers", currentPlayer.id);
     tx.update(playerRef, {
       status: "SOLD",
       teamId: highestBidderId,
       soldPrice: finalPrice,
     });
 
-    // E. Reset Auction State
+    // Reset State
     tx.update(auctionRef, {
       status: "PENDING",
       currentPlayer: null,
@@ -250,20 +240,12 @@ export const markSold = async (tournamentId) => {
   });
 };
 
-// 4. ADMIN: Pass / Unsold
 export async function markUnsold(tournamentId, playerId) {
   const auctionRef = doc(db, "tournaments", tournamentId, "auction", "state");
-  const playerRef = doc(
-    db,
-    "tournaments",
-    tournamentId,
-    "auctionPlayers",
-    playerId
-  );
+  const playerRef = doc(db, "tournaments", tournamentId, "auctionPlayers", playerId);
 
   await runTransaction(db, async (transaction) => {
     transaction.update(playerRef, { status: "UNSOLD_PASSED" });
-
     transaction.update(auctionRef, {
       status: "PENDING",
       currentPlayer: null,
@@ -273,3 +255,10 @@ export async function markUnsold(tournamentId, playerId) {
     });
   });
 }
+
+/**
+ * TRANSACTION-SAFE BIDDING (Consolidated with existing placeBid logic)
+ */
+export const placeSafeBid = async (tournamentId, matchId, teamId, teamName, amount) => {
+  return await placeBid(tournamentId, teamId, teamName, amount);
+};

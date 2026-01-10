@@ -1,7 +1,7 @@
 // src/components/CreateTournament.jsx
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { addTournament } from "../utils/firestore"; // Ensure you updated this function in previous step!
+import { addTournament } from "../utils/firestore"; 
 import { useAuth } from "../hooks/useAuth";
 
 export default function CreateTournament() {
@@ -12,6 +12,12 @@ export default function CreateTournament() {
   const [organizer, setOrganizer] = useState("");
   const [location, setLocation] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // ✅ NEW: Auction Constraint States
+  const [minSquadSize, setMinSquadSize] = useState(11);
+  const [maxSquadSize, setMaxSquadSize] = useState(15);
+  const [minBasePrice, setMinBasePrice] = useState(500);
+  const [bidIncrement, setBidIncrement] = useState(100);
 
   // Redirect if not logged in
   if (!user) {
@@ -34,14 +40,13 @@ export default function CreateTournament() {
     setLoading(true);
 
     try {
-      // Generate a clean ID from the name (e.g., "my-tournament-2025")
       const slug = name
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/(^-|-$)+/g, "");
-      const newId = `${slug}`; //-${Date.now().toString().slice(-4)}
+      const newId = `${slug}`; 
 
-      // Create with Owner ID
+      // Create with Owner ID and ✅ NEW Auction Constraints
       await addTournament(
         newId,
         {
@@ -49,11 +54,15 @@ export default function CreateTournament() {
           organizer,
           location,
           status: "upcoming",
+          // ✅ Mandatory Rule Fields
+          minSquadSize: Number(minSquadSize),
+          maxSquadSize: Number(maxSquadSize),
+          minBasePrice: Number(minBasePrice),
+          bidIncrement: Number(bidIncrement),
         },
         user.uid
       );
 
-      // Redirect to the new tournament's dashboard
       navigate(`/tournaments/${newId}`);
     } catch (err) {
       console.error(err);
@@ -66,49 +75,100 @@ export default function CreateTournament() {
   const inputClass =
     "w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-4 py-3 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-colors";
 
+  const labelClass = "block text-sm font-bold text-gray-500 uppercase mb-2";
+
   return (
-    <div className="max-w-2xl mx-auto mt-10">
+    <div className="max-w-2xl mx-auto mt-10 mb-20">
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 shadow-2xl">
         <h2 className="text-2xl font-black text-white mb-6 uppercase flex items-center gap-2">
           <span className="text-cyan-500 text-3xl">+</span> Create Tournament
         </h2>
 
         <form onSubmit={handleCreate} className="space-y-6">
-          <div>
-            <label className="block text-sm font-bold text-gray-500 uppercase mb-2">
-              Tournament Name
-            </label>
-            <input
-              className={inputClass}
-              placeholder="e.g. Winter T20 League 2026"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* TOURNAMENT INFO */}
+          <div className="space-y-4">
+            <h3 className="text-cyan-400 font-black uppercase tracking-widest text-xs border-b border-gray-800 pb-2">Basic Information</h3>
             <div>
-              <label className="block text-sm font-bold text-gray-500 uppercase mb-2">
-                Organizer Name
-              </label>
+              <label className={labelClass}>Tournament Name</label>
               <input
                 className={inputClass}
-                placeholder="e.g. City Cricket Club"
-                value={organizer}
-                onChange={(e) => setOrganizer(e.target.value)}
+                placeholder="e.g. Winter T20 League 2026"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
               />
             </div>
-            <div>
-              <label className="block text-sm font-bold text-gray-500 uppercase mb-2">
-                Location / City
-              </label>
-              <input
-                className={inputClass}
-                placeholder="e.g. Mumbai"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-              />
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className={labelClass}>Organizer Name</label>
+                <input
+                  className={inputClass}
+                  placeholder="e.g. City Cricket Club"
+                  value={organizer}
+                  onChange={(e) => setOrganizer(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Location / City</label>
+                <input
+                  className={inputClass}
+                  placeholder="e.g. Mumbai"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* ✅ NEW: AUCTION CONSTRAINTS SECTION */}
+          <div className="space-y-4 pt-4">
+            <h3 className="text-cyan-400 font-black uppercase tracking-widest text-xs border-b border-gray-800 pb-2">Auction & Squad Rules</h3>
+            
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label className={labelClass}>Min Squad Size</label>
+                <input
+                  type="number"
+                  className={inputClass}
+                  value={minSquadSize}
+                  onChange={(e) => setMinSquadSize(e.target.value)}
+                />
+                <p className="text-[10px] text-gray-500 mt-1 italic">Teams must buy at least this many.</p>
+              </div>
+              <div>
+                <label className={labelClass}>Max Squad Size</label>
+                <input
+                  type="number"
+                  className={inputClass}
+                  value={maxSquadSize}
+                  onChange={(e) => setMaxSquadSize(e.target.value)}
+                />
+                <p className="text-[10px] text-gray-500 mt-1 italic">Hard limit for teams.</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label className={labelClass}>Base Price Slab (Min)</label>
+                <input
+                  type="number"
+                  className={inputClass}
+                  value={minBasePrice}
+                  onChange={(e) => setMinBasePrice(e.target.value)}
+                />
+                <p className="text-[10px] text-gray-500 mt-1 italic">Used for purse reserve calculation.</p>
+              </div>
+              <div>
+                <label className={labelClass}>Bid Increment</label>
+                <input
+                  type="number"
+                  className={inputClass}
+                  value={bidIncrement}
+                  onChange={(e) => setBidIncrement(e.target.value)}
+                />
+                <p className="text-[10px] text-gray-500 mt-1 italic">Default price jump per bid.</p>
+              </div>
             </div>
           </div>
 
