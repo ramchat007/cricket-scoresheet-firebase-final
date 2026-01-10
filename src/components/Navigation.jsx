@@ -11,7 +11,7 @@ export default function Navigation() {
   const location = useLocation();
   const [profileData, setProfileData] = useState(null);
 
-  // --- Fetch Profile Logic (Preserved) ---
+  // --- Fetch Profile Logic ---
   useEffect(() => {
     async function fetchProfileData() {
       if (user?.uid) {
@@ -41,27 +41,35 @@ export default function Navigation() {
 
   const displayImage = profileData?.photoURL || user?.photoURL || null;
 
-  // --- Dynamic Links Logic (Preserved & Fixed Segments) ---
+  // --- Dynamic Links Logic ---
   const pathSegments = location.pathname.split("/");
   const tournamentIndex = pathSegments.indexOf("tournaments");
   const tournamentId = tournamentIndex !== -1 && pathSegments.length > tournamentIndex + 1 ? pathSegments[tournamentIndex + 1] : null;
 
+  // 1. Base Public Links
   const links = [
-    { name: "Home", path: "/" },
-    { name: "Global Stats", path: "/players" },
-    { name: "Register Player", path: "/register-player" }
+    { name: "Home", path: "/" },  
+    { name: "Global Stats", path: "/players" }
   ];
 
+  // 2. Contextual Links (Only if inside a tournament)
   if (tournamentId && tournamentId !== 'auction') {
+    // Public tournament view
     links.push({ name: "Tournament", path: `/tournaments/${tournamentId}` });
-    links.push({ name: "Auction Room", path: `/tournaments/${tournamentId}/auction` });
+    
+    // ✅ Protected: Only show Auction Room if logged in
+    if (user) {
+      links.push({ name: "Auction Room", path: `/tournaments/${tournamentId}/auction` });
+    }
   }
 
-  if (user) links.push({ name: "Dashboard", path: "/dashboard" });
+  // 3. Authenticated User Links
+  if (user) {
+    links.push({ name: "Dashboard", path: "/dashboard" });
+  }
 
   const isActive = (path) => location.pathname === path;
 
-  // --- Logout Logic (Restored) ---
   const handleLogout = async () => {
     await auth.signOut();
     navigate("/login");
@@ -75,7 +83,7 @@ export default function Navigation() {
       </div>
       <div className="flex flex-col leading-none">
         <span className="text-white font-black text-xl tracking-tighter uppercase">CRIC</span>
-        <span className="text-cyan-500 font-black text-[10px] tracking-[0.3em] uppercase ml-0.5">SCORE</span>
+        <span className="text-cyan-500 font-black text-[10px] tracking-[0.3em] uppercase ml-0.5">SYNC</span>
       </div>
     </Link>
   );
@@ -87,7 +95,6 @@ export default function Navigation() {
         <div className="container mx-auto px-5 flex justify-between items-center">
           <Logo />
           
-          {/* DESKTOP MENU (With restored Logout) */}
           <div className="hidden md:flex items-center gap-8">
             {links.map((link) => (
               <Link key={link.path} to={link.path} className={`text-[11px] font-black uppercase tracking-widest transition-all ${isActive(link.path) ? "text-cyan-400" : "text-gray-500 hover:text-white"}`}>
@@ -100,7 +107,6 @@ export default function Navigation() {
                 <Link to="/profile" className="w-9 h-9 rounded-full border border-white/10 overflow-hidden hover:border-cyan-500 transition-all shadow-lg">
                   {displayImage ? <img src={displayImage} alt="profile" className="w-full h-full object-cover" /> : <div className="bg-gray-800 w-full h-full flex items-center justify-center font-bold text-cyan-500">{user.email?.charAt(0).toUpperCase()}</div>}
                 </Link>
-                {/* RESTORED DESKTOP LOGOUT BUTTON */}
                 <button onClick={handleLogout} className="text-[10px] font-black uppercase text-red-500 hover:text-red-400 transition-colors tracking-widest">
                    Logout
                 </button>
@@ -113,23 +119,18 @@ export default function Navigation() {
             )}
           </div>
 
-          {/* MOBILE TOGGLE */}
           <button onClick={() => setIsOpen(true)} className="md:hidden w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white active:scale-90 transition-transform">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
         </div>
       </nav>
 
-      {/* 2. FULL SCREEN DRAWER (RESTORED INTERFACE) */}
+      {/* 2. FULL SCREEN DRAWER */}
       {isOpen && (
         <div className="fixed inset-0 z-[9999] isolate">
-          {/* Blur Backdrop */}
           <div className="absolute inset-0 bg-black/80 backdrop-blur-2xl animate-in fade-in duration-300" onClick={() => setIsOpen(false)} />
 
-          {/* Drawer Body */}
           <div className="absolute inset-y-0 right-0 w-full bg-black border-l border-white/10 shadow-2xl flex flex-col animate-in slide-in-from-right duration-500">
-            
-            {/* Drawer Top Header */}
             <div className="flex justify-between items-center px-6 h-20 border-b border-white/5 bg-black">
               <Logo />
               <button onClick={() => setIsOpen(false)} className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white transition-all active:scale-90">
@@ -137,9 +138,8 @@ export default function Navigation() {
               </button>
             </div>
 
-            {/* Links Area */}
             <div className="flex-1 overflow-y-auto p-6 flex flex-col">
-              <label className="text-[10px] font-black text-gray-600 uppercase tracking-[0.4em] mb-8 block">Tournament Navigation</label>
+              <label className="text-[10px] font-black text-gray-600 uppercase tracking-[0.4em] mb-8 block">Navigation</label>
               
               <div className="space-y-3">
                 {links.map((link) => (
@@ -159,7 +159,6 @@ export default function Navigation() {
                 ))}
               </div>
 
-              {/* Bottom Auth Actions (RESTORED LOGOUT) */}
               <div className="mt-auto pt-10 pb-8 flex flex-col gap-4">
                 {!user ? (
                   <div className="grid grid-cols-1 gap-4">
@@ -172,7 +171,6 @@ export default function Navigation() {
                       <span className="text-2xl">👤</span>
                       <span className="text-[10px] font-black text-gray-500 uppercase">Profile</span>
                     </Link>
-                    {/* RESTORED MOBILE LOGOUT BUTTON */}
                     <button onClick={handleLogout} className="flex flex-col items-center justify-center gap-2 p-6 rounded-[2.5rem] bg-red-500/10 border border-red-500/20 transition-all active:bg-red-500/20">
                       <span className="text-2xl">🚪</span>
                       <span className="text-[10px] font-black text-red-500 uppercase">Logout</span>

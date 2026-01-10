@@ -355,7 +355,7 @@ export default function GlobalPlayersView() {
           <div className="text-center md:text-left">
             <h1 className="text-2xl font-black uppercase tracking-tighter italic flex items-center gap-2 justify-center md:justify-start">
               <span className="bg-teal-500/10 text-teal-500 p-2 rounded-xl">🌍</span>
-              <span>Global Database</span>
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-indigo-500 uppercase">Global Database</span>
             </h1>
             <p className="text-slate-500 text-xs mt-2 font-bold uppercase tracking-widest flex items-center gap-2 justify-center md:justify-start">
               {processedPlayers.length} players found
