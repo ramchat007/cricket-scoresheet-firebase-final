@@ -146,26 +146,29 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
     }
   };
 
+  const labelClass = "block text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2 ml-1";
+  const inputClass = "w-full bg-[#0F1115] text-slate-200 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-teal-500/50 transition-all font-bold placeholder:text-slate-600";
+
   return (
-    <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 shadow-2xl relative animate-in slide-in-from-top-5 mt-6 mb-8">
+    <div className="bg-[#1C2128] border border-white/5 rounded-[2rem] p-6 shadow-2xl relative animate-in slide-in-from-top-5 mt-6 mb-8 backdrop-blur-md">
       {/* Header / Tabs */}
-      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
-        <div className="flex bg-gray-900 border border-gray-700 rounded-lg p-1">
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-8">
+        <div className="flex bg-[#161920] border border-white/5 rounded-xl p-1.5 shadow-inner">
           <button
             onClick={() => setMode("single")}
-            className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${
+            className={`px-6 py-2.5 text-xs font-black uppercase tracking-widest rounded-lg transition-all ${
               mode === "single"
-                ? "bg-gray-700 text-white shadow"
-                : "text-gray-500 hover:text-gray-300"
+                ? "bg-[#0F1115] text-white shadow-md border border-white/5"
+                : "text-slate-500 hover:text-slate-300"
             }`}>
             Single Match
           </button>
           <button
             onClick={() => setMode("auto")}
-            className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${
+            className={`px-6 py-2.5 text-xs font-black uppercase tracking-widest rounded-lg transition-all ${
               mode === "auto"
-                ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow"
-                : "text-gray-500 hover:text-gray-300"
+                ? "bg-gradient-to-r from-teal-600 to-indigo-600 text-white shadow-md"
+                : "text-slate-500 hover:text-slate-300"
             }`}>
             ⚡ Auto Scheduler
           </button>
@@ -174,7 +177,7 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
         {onCancel && (
           <button
             onClick={onCancel}
-            className="text-gray-400 hover:text-white text-sm">
+            className="text-slate-500 hover:text-white text-xs font-bold uppercase tracking-wider transition-colors px-4 py-2 border border-transparent hover:border-white/10 rounded-lg">
             Cancel
           </button>
         )}
@@ -182,58 +185,56 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
 
       {/* Content */}
       {mode === "single" ? (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="text-xs font-bold text-cyan-400 uppercase mb-1 block">
-                Home Team
-              </label>
-              <select
-                className="w-full bg-black border border-gray-600 rounded-lg px-3 py-3 text-white focus:border-cyan-500 outline-none"
-                value={teamAId}
-                onChange={(e) => setTeamAId(e.target.value)}>
-                <option value="">-- Select Team A --</option>
-                {teams.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
+              <label className={`${labelClass} text-teal-500`}>Home Team</label>
+              <div className="relative group">
+                <select
+                  className={`${inputClass} appearance-none cursor-pointer`}
+                  value={teamAId}
+                  onChange={(e) => setTeamAId(e.target.value)}>
+                  <option value="">-- Select Team A --</option>
+                  {teams.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-slate-500 group-hover:text-slate-300">▼</div>
+              </div>
             </div>
             <div>
-              <label className="text-xs font-bold text-green-400 uppercase mb-1 block">
-                Away Team
-              </label>
-              <select
-                className="w-full bg-black border border-gray-600 rounded-lg px-3 py-3 text-white focus:border-green-500 outline-none"
-                value={teamBId}
-                onChange={(e) => setTeamBId(e.target.value)}>
-                <option value="">-- Select Team B --</option>
-                {teams.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
+              <label className={`${labelClass} text-indigo-400`}>Away Team</label>
+              <div className="relative group">
+                <select
+                  className={`${inputClass} appearance-none cursor-pointer`}
+                  value={teamBId}
+                  onChange={(e) => setTeamBId(e.target.value)}>
+                  <option value="">-- Select Team B --</option>
+                  {teams.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-slate-500 group-hover:text-slate-300">▼</div>
+              </div>
             </div>
             <div>
-              <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">
-                Date
-              </label>
+              <label className={labelClass}>Date</label>
               <input
                 type="date"
-                className="w-full bg-black border border-gray-600 rounded-lg px-3 py-3 text-white focus:border-gray-500 outline-none"
+                className={inputClass}
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
               />
             </div>
             <div>
-              <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">
-                Overs
-              </label>
+              <label className={labelClass}>Overs</label>
               <input
                 type="number"
-                className="w-full bg-black border border-gray-600 rounded-lg px-3 py-3 text-white focus:border-gray-500 outline-none"
+                className={inputClass}
                 value={overs}
                 onChange={(e) => setOvers(e.target.value)}
               />
@@ -242,46 +243,39 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
           <button
             onClick={handleCreateMatch}
             disabled={creating || !teamAId || !teamBId}
-            className="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-lg shadow-lg transition-all disabled:opacity-50">
+            className="w-full bg-gradient-to-r from-teal-600 to-teal-800 text-white font-black text-sm uppercase tracking-[0.15em] py-4 rounded-xl shadow-xl hover:shadow-teal-900/30 transition-all disabled:opacity-50 active:scale-[0.98]">
             {creating ? "Scheduling..." : "Create Match"}
           </button>
         </div>
       ) : (
-        <div className="space-y-4">
-          <p className="text-gray-400 text-xs mb-4">
-            Generates a round-robin schedule (every team plays every other team
-            once).
+        <div className="space-y-6">
+          <p className="text-slate-500 text-xs font-medium italic border-l-2 border-teal-500 pl-3 py-1">
+            Generates a round-robin schedule where every team plays every other team once.
           </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
-              <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">
-                Start Date
-              </label>
+              <label className={labelClass}>Start Date</label>
               <input
                 type="date"
-                className="w-full bg-black border border-gray-600 rounded-lg px-3 py-3 text-white focus:border-blue-500 outline-none"
+                className={inputClass}
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
               />
             </div>
             <div>
-              <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">
-                Matches / Day
-              </label>
+              <label className={labelClass}>Matches / Day</label>
               <input
                 type="number"
-                className="w-full bg-black border border-gray-600 rounded-lg px-3 py-3 text-white focus:border-blue-500 outline-none"
+                className={inputClass}
                 value={matchesPerDay}
                 onChange={(e) => setMatchesPerDay(e.target.value)}
               />
             </div>
             <div>
-              <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">
-                Overs
-              </label>
+              <label className={labelClass}>Overs</label>
               <input
                 type="number"
-                className="w-full bg-black border border-gray-600 rounded-lg px-3 py-3 text-white focus:border-blue-500 outline-none"
+                className={inputClass}
                 value={autoOvers}
                 onChange={(e) => setAutoOvers(e.target.value)}
               />
@@ -290,7 +284,7 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
           <button
             onClick={handleAutoSchedule}
             disabled={creating || teams.length < 2}
-            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-3 rounded-lg shadow-lg transition-all disabled:opacity-50">
+            className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-black text-sm uppercase tracking-[0.15em] py-4 rounded-xl shadow-xl hover:shadow-indigo-900/30 transition-all disabled:opacity-50 active:scale-[0.98]">
             {creating ? "Generating..." : "Generate Schedule"}
           </button>
         </div>

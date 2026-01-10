@@ -11,14 +11,14 @@ import {
   getDocs,
   runTransaction,
   addDoc,
-  getDoc, // ✅ Added for fetching tournament config
+  getDoc,
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { listGlobalPlayers } from "../utils/firestore";
 import AuctionOwnersAdmin from "./AuctionOwnersAdmin";
-import MatchScheduler from "./MatchScheduler"; // ✅ Import reused component
+import MatchScheduler from "./MatchScheduler"; 
 
-// --- 1. GLOBAL PLAYER SEARCH MODAL (FULL ORIGINAL CODE RESTORED) ---
+// --- 1. GLOBAL PLAYER SEARCH MODAL ---
 const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
   const [players, setPlayers] = useState([]);
   const [search, setSearch] = useState("");
@@ -54,24 +54,33 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
   );
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm">
-      <div className="bg-gray-900 border border-gray-700 w-full max-w-lg rounded-2xl flex flex-col max-h-[80vh]">
-        <div className="p-4 border-b border-gray-800 flex justify-between items-center">
-          <h3 className="text-white font-bold uppercase tracking-tight">Select Players from Global DB</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">✕</button>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#0F1115]/90 p-4 backdrop-blur-md animate-in fade-in">
+      <div className="bg-[#1C2128] border border-white/10 w-full max-w-lg rounded-3xl flex flex-col max-h-[80vh] shadow-2xl">
+        
+        {/* Header */}
+        <div className="p-6 border-b border-white/5 flex justify-between items-center bg-[#1C2128]">
+          <div>
+             <h3 className="text-slate-100 font-black uppercase tracking-tight text-lg italic">Global Database</h3>
+             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Select players to import</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors">✕</button>
         </div>
-        <div className="p-4 border-b border-gray-800">
+
+        {/* Search */}
+        <div className="p-4 border-b border-white/5 bg-[#161920]">
           <input
-            className="w-full bg-gray-950 border border-gray-700 rounded-lg px-4 py-2 text-white focus:border-cyan-500 outline-none"
+            className="w-full bg-[#0F1115] border border-white/10 rounded-xl px-4 py-3 text-slate-200 focus:border-teal-500/50 outline-none transition-all font-bold placeholder:text-slate-600"
             placeholder="Search name..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             autoFocus
           />
         </div>
-        <div className="flex-1 overflow-y-auto p-2">
+
+        {/* List */}
+        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-2">
           {loading ? (
-            <div className="text-center py-10 text-cyan-500 animate-pulse">Loading Database...</div>
+            <div className="text-center py-10 text-teal-500 animate-pulse font-black text-xs uppercase tracking-widest">Loading Database...</div>
           ) : (
             filtered.map((p) => {
               const isSel = selected.find((s) => s.id === p.id);
@@ -79,27 +88,35 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
                 <div
                   key={p.id}
                   onClick={() => toggleSelect(p)}
-                  className={`flex items-center justify-between p-3 rounded-lg cursor-pointer mb-1 transition-all ${
-                    isSel ? "bg-cyan-900/30 border border-cyan-500/50" : "hover:bg-gray-800 border border-transparent"
+                  className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all border ${
+                    isSel ? "bg-teal-500/10 border-teal-500/50" : "bg-[#0F1115] border-white/5 hover:border-white/20"
                   }`}>
-                  <div className="text-white font-bold text-sm">
-                    {p.name}{" "}<span className="text-gray-500 font-normal text-xs ml-2">({p.role})</span>
+                  <div className="flex items-center gap-3">
+                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black ${isSel ? 'bg-teal-500 text-black' : 'bg-white/5 text-slate-500'}`}>
+                        {p.name.charAt(0)}
+                     </div>
+                     <div>
+                        <div className={`text-sm font-bold ${isSel ? 'text-teal-400' : 'text-slate-200'}`}>{p.name}</div>
+                        <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{p.role}</div>
+                     </div>
                   </div>
-                  {isSel && <div className="text-cyan-400">✓</div>}
+                  {isSel && <div className="text-teal-400 font-black text-lg">✓</div>}
                 </div>
               );
             })
           )}
           {!loading && filtered.length === 0 && (
-            <div className="text-center py-8 text-gray-500 text-sm italic">No available players found.</div>
+            <div className="text-center py-8 text-slate-600 text-sm italic">No available players found.</div>
           )}
         </div>
-        <div className="p-4 border-t border-gray-800 flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-gray-400 text-sm font-bold">Cancel</button>
+
+        {/* Footer */}
+        <div className="p-6 border-t border-white/5 flex justify-end gap-3 bg-[#161920] rounded-b-3xl">
+          <button onClick={onClose} className="px-6 py-3 text-slate-500 text-xs font-black uppercase tracking-widest border border-transparent hover:border-white/10 rounded-xl transition-all">Cancel</button>
           <button
             onClick={() => onImport(selected)}
             disabled={selected.length === 0}
-            className="bg-cyan-600 hover:bg-cyan-500 text-white px-6 py-2 rounded-lg font-bold text-sm disabled:opacity-50 transition-all">
+            className="bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 text-white px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest disabled:opacity-20 transition-all shadow-lg shadow-teal-900/20 active:scale-95">
             Import {selected.length} Players
           </button>
         </div>
@@ -118,7 +135,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
   const [slots, setSlots] = useState([]); 
   const [newSlotName, setNewSlotName] = useState(""); 
   
-  // ✅ NEW: Tournament Config State
+  // Tournament Config State
   const [config, setConfig] = useState({
     minSquadSize: 11,
     maxSquadSize: 15,
@@ -132,14 +149,12 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
 
   // --- REAL-TIME DATA FETCHING ---
   useEffect(() => {
-    // 1. Players
     const pRef = collection(db, "tournaments", tournamentId, "auctionPlayers");
     const qPool = query(pRef, orderBy("name"));
     const unsubPool = onSnapshot(qPool, (snap) => {
       setAuctionPlayers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
 
-    // 2. Teams
     const tRef = collection(db, "tournaments", tournamentId, "teams");
     const unsubTeams = onSnapshot(tRef, (snap) => {
       const tList = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -149,14 +164,12 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
       setTeamsMap(map);
     });
 
-    // 3. Auction Slots Sync ✅
     const sRef = collection(db, "tournaments", tournamentId, "auction_slots");
     const qSlots = query(sRef, orderBy("order"));
     const unsubSlots = onSnapshot(qSlots, (snap) => {
       setSlots(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    // 4. Config Fetch ✅
     const fetchConfig = async () => {
       const snap = await getDoc(doc(db, "tournaments", tournamentId));
       if (snap.exists()) setConfig(snap.data());
@@ -171,8 +184,6 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
   }, [tournamentId]);
 
   // --- ACTIONS ---
-
-  // ✅ NEW: Update Auction Config Action
   const handleUpdateConfig = async () => {
     try {
       await updateDoc(doc(db, "tournaments", tournamentId), {
@@ -296,7 +307,6 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
     if (!window.confirm("⚠ DANGER: DELETE ALL Auction Data & Teams? Cannot be undone.")) return;
     setIsResetting(true);
     try {
-      const batchSize = 500;
       let batch = writeBatch(db);
       let opCount = 0;
       const poolSnap = await getDocs(collection(db, "tournaments", tournamentId, "auctionPlayers"));
@@ -320,63 +330,57 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
     return p.status === "PENDING";
   });
 
-  const navBtnClass = (tId) => `flex-1 min-w-[100px] py-4 text-xs font-black uppercase tracking-wider transition-all duration-200 ${
-    tab === tId ? "text-cyan-400 border-b-2 border-cyan-400 bg-cyan-500/5" : "text-gray-500 hover:text-white"
+  const navBtnClass = (tId) => `flex-1 min-w-[90px] py-4 text-[10px] font-black uppercase tracking-wider transition-all duration-200 border-b-2 ${
+    tab === tId ? "text-teal-400 border-teal-400 bg-teal-500/5" : "text-slate-500 border-transparent hover:text-white"
   }`;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/95 flex flex-col overflow-hidden animate-in slide-in-from-bottom-10">
+    <div className="fixed inset-0 z-50 bg-[#0F1115] flex flex-col overflow-hidden animate-in slide-in-from-bottom-10">
       <GlobalPlayerPicker isOpen={showPicker} onClose={() => setShowPicker(false)} onImport={handleImport} existingIds={auctionPlayers.map((p) => p.originalPlayerId)} />
 
-      <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-900 shadow-xl">
-        <h2 className="text-xl font-black text-white flex items-center gap-2 uppercase tracking-tighter italic">
-          <span className="bg-cyan-600 p-1 rounded-md">⚙️</span> Auction Setup
+      <div className="p-4 border-b border-white/5 flex justify-between items-center bg-[#1C2128] shadow-xl">
+        <h2 className="text-lg font-black text-slate-100 flex items-center gap-3 uppercase tracking-tighter italic">
+          <span className="bg-teal-600 p-1.5 rounded-lg text-sm">⚙️</span> Auction Setup
         </h2>
-        <button onClick={onClose} className="bg-gray-800 hover:bg-gray-700 text-white px-5 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all">Close</button>
+        <button onClick={onClose} className="bg-white/5 hover:bg-white/10 text-slate-300 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border border-white/10 transition-all">Close</button>
       </div>
 
-      <div className="flex border-b border-gray-800 bg-gray-900 overflow-x-auto no-scrollbar">
+      <div className="flex border-b border-white/5 bg-[#161920] overflow-x-auto no-scrollbar">
         <button onClick={() => setTab("pool")} className={navBtnClass("pool")}>Players</button>
         <button onClick={() => setTab("slots")} className={navBtnClass("slots")}>Slots</button>
-        <button onClick={() => setTab("config")} className={navBtnClass("config")}>Rules ✅</button>
+        <button onClick={() => setTab("config")} className={navBtnClass("config")}>Rules</button>
         <button onClick={() => setTab("teams")} className={navBtnClass("teams")}>Wallets</button>
         <button onClick={() => setTab("owners")} className={navBtnClass("owners")}>Owners</button>
         <button onClick={() => setTab("matches")} className={navBtnClass("matches")}>Matches</button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 max-w-6xl mx-auto w-full">
+      <div className="flex-1 overflow-y-auto p-4 md:p-8 max-w-7xl mx-auto w-full">
         
-        {/* --- ✅ TAB: CONFIG / RULES --- */}
+        {/* --- TAB: CONFIG / RULES --- */}
         {tab === "config" && (
           <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
-             <div className="bg-gray-900 border border-gray-800 p-8 rounded-3xl shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-1 h-full bg-cyan-500"></div>
-                <h3 className="text-white font-black uppercase tracking-widest text-sm mb-8 border-b border-gray-800 pb-4">Auction Logic Configuration</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-black text-gray-500 uppercase block ml-1">Minimum Players Per Team</label>
-                        <input type="number" className="w-full bg-black border border-gray-700 rounded-2xl p-4 text-white focus:border-cyan-500 outline-none transition-all font-bold" 
-                               value={config.minSquadSize} onChange={e => setConfig({...config, minSquadSize: e.target.value})} />
-                        <p className="text-[10px] text-gray-600 italic px-1">teams must fill this count to finish.</p>
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-black text-gray-500 uppercase block ml-1">Maximum Players Per Team</label>
-                        <input type="number" className="w-full bg-black border border-gray-700 rounded-2xl p-4 text-white focus:border-cyan-500 outline-none transition-all font-bold" 
-                               value={config.maxSquadSize} onChange={e => setConfig({...config, maxSquadSize: e.target.value})} />
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-black text-gray-500 uppercase block ml-1">Base Price Slab (Purse Reserve)</label>
-                        <input type="number" className="w-full bg-black border border-gray-700 rounded-2xl p-4 text-white focus:border-cyan-500 outline-none transition-all font-bold" 
-                               value={config.minBasePrice} onChange={e => setConfig({...config, minBasePrice: e.target.value})} />
-                        <p className="text-[10px] text-gray-600 italic px-1">system blocks bids that risk this reserve.</p>
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-black text-gray-500 uppercase block ml-1">Default Bid Increment</label>
-                        <input type="number" className="w-full bg-black border border-gray-700 rounded-2xl p-4 text-white focus:border-cyan-500 outline-none transition-all font-bold" 
-                               value={config.bidIncrement} onChange={e => setConfig({...config, bidIncrement: e.target.value})} />
-                    </div>
+             <div className="bg-[#1C2128] border border-white/5 p-8 rounded-[2rem] shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-1.5 h-full bg-teal-500"></div>
+                <h3 className="text-slate-100 font-black uppercase tracking-widest text-xs mb-8 border-b border-white/5 pb-4">Auction Logic Configuration</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {[
+                        { label: "Minimum Players Per Team", val: config.minSquadSize, key: "minSquadSize", hint: "Teams must fill this count to finish." },
+                        { label: "Maximum Players Per Team", val: config.maxSquadSize, key: "maxSquadSize" },
+                        { label: "Base Price Slab", val: config.minBasePrice, key: "minBasePrice", hint: "System blocks bids limiting reserve." },
+                        { label: "Default Bid Increment", val: config.bidIncrement, key: "bidIncrement" }
+                    ].map((item, idx) => (
+                        <div key={idx} className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-500 uppercase block ml-1 tracking-widest">{item.label}</label>
+                            <input type="number" 
+                                className="w-full bg-[#0F1115] border border-white/10 rounded-xl p-4 text-slate-200 focus:border-teal-500/50 outline-none transition-all font-bold" 
+                                value={item.val} 
+                                onChange={e => setConfig({...config, [item.key]: e.target.value})} 
+                            />
+                            {item.hint && <p className="text-[10px] text-slate-600 italic px-1">{item.hint}</p>}
+                        </div>
+                    ))}
                 </div>
-                <button onClick={handleUpdateConfig} className="mt-12 w-full bg-cyan-600 hover:bg-cyan-500 text-white font-black uppercase tracking-widest py-5 rounded-2xl shadow-lg transition-all transform active:scale-95">Update Mandatory Rules</button>
+                <button onClick={handleUpdateConfig} className="mt-12 w-full bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 text-white font-black uppercase tracking-widest py-5 rounded-xl shadow-lg transition-all transform active:scale-[0.99] text-xs">Update Mandatory Rules</button>
              </div>
           </div>
         )}
@@ -384,24 +388,24 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
         {/* --- TAB: AUCTION SLOTS --- */}
         {tab === "slots" && (
           <div className="space-y-6 animate-in fade-in duration-300">
-             <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl shadow-lg">
-                <h3 className="text-white font-bold mb-4 uppercase text-xs tracking-widest">Create New Auction Round</h3>
-                <div className="flex gap-2">
-                    <input className="flex-1 bg-black border border-gray-700 rounded-xl px-4 py-2 text-white outline-none focus:border-orange-500" 
+             <div className="bg-[#1C2128] border border-white/5 p-6 rounded-[2rem] shadow-lg">
+                <h3 className="text-slate-300 font-black mb-4 uppercase text-xs tracking-widest">Create New Auction Round</h3>
+                <div className="flex gap-3">
+                    <input className="flex-1 bg-[#0F1115] border border-white/10 rounded-xl px-5 py-3 text-slate-200 outline-none focus:border-orange-500/50 font-bold placeholder:text-slate-600" 
                            placeholder="e.g. Round 1 - Icon Players" 
                            value={newSlotName} 
                            onChange={e => setNewSlotName(e.target.value)} />
-                    <button onClick={handleCreateSlot} className="bg-orange-600 hover:bg-orange-500 text-white px-8 py-2 rounded-xl font-bold transition-colors">Add Round</button>
+                    <button onClick={handleCreateSlot} className="bg-orange-600 hover:bg-orange-500 text-white px-8 py-2 rounded-xl font-black uppercase tracking-wider text-xs transition-colors shadow-lg shadow-orange-900/20">Add Round</button>
                 </div>
              </div>
              <div className="grid gap-3">
                 {slots.map(s => (
-                    <div key={s.id} className="bg-gray-900 border border-gray-800 p-4 rounded-2xl flex justify-between items-center group hover:border-gray-600 transition-all">
+                    <div key={s.id} className="bg-[#1C2128] border border-white/5 p-4 rounded-xl flex justify-between items-center group hover:border-white/10 transition-all">
                         <div className="flex items-center">
-                           <span className="text-gray-500 font-mono mr-4 text-xs">{s.order}.</span>
-                           <span className="text-white font-black tracking-tight">{s.name}</span>
+                           <span className="text-slate-600 font-mono mr-4 text-xs font-bold">{s.order}.</span>
+                           <span className="text-slate-200 font-bold text-sm tracking-tight">{s.name}</span>
                         </div>
-                        <button onClick={() => handleDeleteSlot(s.id)} className="text-gray-600 hover:text-red-500 transition-colors">🗑</button>
+                        <button onClick={() => handleDeleteSlot(s.id)} className="text-slate-600 hover:text-red-500 transition-colors p-2 bg-[#0F1115] rounded-lg">🗑</button>
                     </div>
                 ))}
              </div>
@@ -411,14 +415,14 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
         {/* --- TAB: PLAYER POOL --- */}
         {tab === "pool" && (
           <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="flex justify-between items-center">
-              <div className="flex bg-gray-800 rounded-xl p-1 border border-gray-700">
+            <div className="flex justify-between items-center gap-4">
+              <div className="flex bg-[#161920] rounded-xl p-1 border border-white/5 overflow-x-auto no-scrollbar">
                 {["PENDING", "SOLD", "UNSOLD"].map((filter) => (
                   <button
                     key={filter}
                     onClick={() => setPoolFilter(filter)}
-                    className={`px-5 py-2 rounded-lg text-[10px] font-black transition-all uppercase ${
-                      poolFilter === filter ? "bg-gray-700 text-white shadow-xl" : "text-gray-500 hover:text-gray-300"
+                    className={`px-5 py-2.5 rounded-lg text-[10px] font-black transition-all uppercase whitespace-nowrap ${
+                      poolFilter === filter ? "bg-[#0F1115] text-white shadow-md border border-white/10" : "text-slate-500 hover:text-slate-300"
                     }`}>
                     {filter}
                   </button>
@@ -426,30 +430,30 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
               </div>
               <button
                 onClick={() => setShowPicker(true)}
-                className="bg-cyan-900/30 border border-cyan-500/40 text-cyan-400 px-5 py-2 rounded-xl font-black text-xs uppercase hover:bg-cyan-900/50 transition-all active:scale-95">
+                className="bg-teal-900/10 border border-teal-500/20 text-teal-400 px-6 py-3 rounded-xl font-black text-xs uppercase hover:bg-teal-900/20 hover:border-teal-500/40 transition-all active:scale-95 whitespace-nowrap">
                 + Add Players
               </button>
             </div>
 
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden overflow-x-auto shadow-2xl">
-              <table className="w-full text-left text-sm text-gray-400 min-w-[700px]">
-                <thead className="bg-gray-950 text-[10px] uppercase font-black text-gray-500 tracking-widest border-b border-gray-800">
+            <div className="bg-[#1C2128] border border-white/5 rounded-2xl overflow-hidden overflow-x-auto shadow-2xl">
+              <table className="w-full text-left text-sm text-slate-400 min-w-[800px]">
+                <thead className="bg-[#0F1115] text-[10px] uppercase font-black text-slate-500 tracking-[0.2em] border-b border-white/5">
                   <tr><th className="p-5">Name</th><th className="p-5">Role</th><th className="p-5">Assign Slot</th><th className="p-5">{poolFilter === "SOLD" ? "Final Price" : "Base Price"}</th><th className="p-5 text-right">Action</th></tr>
                 </thead>
-                <tbody className="divide-y divide-gray-800/50">
+                <tbody className="divide-y divide-white/5">
                   {displayList.map((p) => (
-                    <tr key={p.id} className="hover:bg-gray-800/40 transition-colors">
-                      <td className="p-5 font-bold text-white whitespace-nowrap">
+                    <tr key={p.id} className="hover:bg-[#0F1115]/50 transition-colors group">
+                      <td className="p-5 font-bold text-slate-200 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           {p.name}
-                          {p.isOwner && <span className="text-[8px] bg-purple-900 text-purple-200 px-2 py-0.5 rounded uppercase font-black">Owner</span>}
-                          {p.isIcon && <span className="text-[8px] bg-yellow-600/30 text-yellow-400 border border-yellow-600/50 px-2 py-0.5 rounded uppercase font-black">Icon</span>}
+                          {p.isOwner && <span className="text-[8px] bg-purple-900/40 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded uppercase font-black tracking-wider">Owner</span>}
+                          {p.isIcon && <span className="text-[8px] bg-amber-900/30 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded uppercase font-black tracking-wider">Icon</span>}
                         </div>
                       </td>
-                      <td className="p-5 text-xs text-gray-500 font-medium">{p.role}</td>
+                      <td className="p-5 text-xs text-slate-500 font-bold uppercase tracking-wider">{p.role}</td>
                       <td className="p-5">
                         <select 
-                            className="bg-black border border-gray-700 rounded-lg p-1.5 text-[10px] text-gray-400 focus:border-orange-500 outline-none w-full max-w-[160px] font-bold"
+                            className="bg-[#0F1115] border border-white/10 rounded-lg p-2 text-[10px] text-slate-300 focus:border-orange-500/50 outline-none w-full max-w-[160px] font-bold cursor-pointer"
                             value={p.auctionSlotId || ""}
                             onChange={(e) => handleAssignToSlot(p.id, e.target.value)}
                         >
@@ -459,27 +463,27 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                       </td>
                       <td className="p-5 font-mono">
                         {poolFilter === "SOLD" ? (
-                          <span className="text-green-400 font-bold text-base">₹{p.soldPrice?.toLocaleString()}</span>
+                          <span className="text-green-400 font-bold text-sm">₹{p.soldPrice?.toLocaleString()}</span>
                         ) : (
                           <div className="flex items-center gap-2 text-xs">
-                             <span className="text-gray-600">₹</span>
-                             <input type="number" className="bg-black border border-gray-700 rounded-lg px-2 py-1.5 w-24 text-white focus:border-cyan-500 outline-none" 
+                             <span className="text-slate-600">₹</span>
+                             <input type="number" className="bg-[#0F1115] border border-white/10 rounded-lg px-2 py-1.5 w-24 text-slate-200 focus:border-teal-500/50 outline-none font-bold" 
                                     value={p.basePrice} onChange={(e) => updateBasePrice(p.id, e.target.value)} />
                           </div>
                         )}
                       </td>
                       <td className="p-5 text-right flex justify-end gap-3 items-center">
-                        <button onClick={() => toggleIconStatus(p.id, p.isIcon)} className={`text-lg transition-all transform active:scale-125 ${p.isIcon ? "text-yellow-400" : "text-gray-700"}`}>★</button>
+                        <button onClick={() => toggleIconStatus(p.id, p.isIcon)} className={`text-lg transition-all transform active:scale-110 hover:scale-110 ${p.isIcon ? "text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.5)]" : "text-slate-700 hover:text-slate-500"}`}>★</button>
                         {(poolFilter === "UNSOLD" || poolFilter === "SOLD") && (
-                          <button onClick={() => reAddPlayer(p.id)} className="bg-cyan-900/40 text-cyan-400 hover:bg-cyan-600 hover:text-white px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all">↺ Reset</button>
+                          <button onClick={() => reAddPlayer(p.id)} className="bg-teal-900/20 text-teal-400 border border-teal-500/20 hover:bg-teal-500 hover:text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all tracking-widest">↺ Reset</button>
                         )}
-                        <button onClick={() => deletePlayer(p.id)} className="text-red-900/60 hover:text-red-500 transition-colors p-2">🗑</button>
+                        <button onClick={() => deletePlayer(p.id)} className="text-slate-700 hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-red-900/10">🗑</button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              {displayList.length === 0 && <div className="p-20 text-center text-gray-600 italic text-sm">No players found in {poolFilter} list.</div>}
+              {displayList.length === 0 && <div className="p-20 text-center text-slate-600 italic text-sm font-medium">No players found in {poolFilter} list.</div>}
             </div>
           </div>
         )}
@@ -493,26 +497,26 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
               const remaining = purse - spent;
               const percentUsed = purse > 0 ? (spent / purse) * 100 : 0;
               return (
-                <div key={t.id} className="bg-gray-900 border border-gray-800 p-6 rounded-3xl flex flex-col gap-5 shadow-xl hover:border-gray-600 transition-all">
+                <div key={t.id} className="bg-[#1C2128] border border-white/5 p-6 rounded-[2rem] flex flex-col gap-5 shadow-xl hover:border-white/10 transition-all group">
                   <div className="flex justify-between items-start">
                     <div>
-                      <div className="font-black text-white text-xl tracking-tight uppercase italic">{t.name}</div>
-                      <div className="text-[10px] text-gray-500 mt-1 font-bold uppercase tracking-widest">Squad: {t.roster?.length || 0} Members</div>
+                      <div className="font-black text-slate-100 text-xl tracking-tighter uppercase italic group-hover:text-teal-400 transition-colors">{t.name}</div>
+                      <div className="text-[10px] text-slate-500 mt-1 font-black uppercase tracking-[0.2em]">Squad: {t.roster?.length || 0} Members</div>
                     </div>
                     <div className="text-right">
-                      <label className="text-[9px] text-gray-600 font-black uppercase block tracking-widest">Remaining</label>
+                      <label className="text-[9px] text-slate-600 font-black uppercase block tracking-widest mb-1">Remaining</label>
                       <div className={`text-2xl font-mono font-black ${remaining < 1000 ? "text-red-400" : "text-white"}`}>₹{remaining.toLocaleString()}</div>
                     </div>
                   </div>
-                  <div className="h-2 w-full bg-gray-800 rounded-full overflow-hidden border border-gray-950">
-                    <div className={`h-full rounded-full transition-all duration-1000 ${remaining < (config.minSquadSize * config.minBasePrice) ? "bg-red-500" : "bg-cyan-500"}`}
+                  <div className="h-3 w-full bg-[#0F1115] rounded-full overflow-hidden border border-white/5">
+                    <div className={`h-full rounded-full transition-all duration-1000 ${remaining < (config.minSquadSize * config.minBasePrice) ? "bg-red-500" : "bg-teal-500"}`}
                          style={{ width: `${Math.min(percentUsed, 100)}%` }}></div>
                   </div>
-                  <div className="flex justify-between items-center pt-3 border-t border-gray-800">
-                    <div className="text-[10px] text-gray-500 font-bold uppercase">Total Purse: <span className="text-cyan-500">₹{purse.toLocaleString()}</span></div>
+                  <div className="flex justify-between items-center pt-3 border-t border-white/5">
+                    <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">Total Purse: <span className="text-teal-500">₹{purse.toLocaleString()}</span></div>
                     <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-gray-600 font-black uppercase">Edit</span>
-                        <input type="number" className="bg-black border border-gray-700 rounded-xl px-3 py-2 w-28 text-white text-right text-xs focus:border-green-500 outline-none font-bold"
+                        <span className="text-[9px] text-slate-600 font-black uppercase tracking-widest">Edit</span>
+                        <input type="number" className="bg-[#0F1115] border border-white/10 rounded-lg px-3 py-1.5 w-24 text-slate-200 text-right text-xs focus:border-teal-500/50 outline-none font-bold"
                                value={t.purse || 0} onChange={(e) => updateTeamPurse(t.id, e.target.value)} />
                     </div>
                   </div>
@@ -533,19 +537,21 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
         )}
 
         {/* --- DANGER ZONE --- */}
-        <div className="mt-20 border-t border-red-900/50 pt-10 mb-10">
-          <div className="bg-red-950/10 border border-red-900/40 rounded-3xl p-8 flex flex-col md:flex-row justify-between items-center gap-8 shadow-2xl">
+        <div className="mt-20 border-t border-red-500/10 pt-10 mb-10">
+          <div className="bg-red-900/5 border border-red-500/20 rounded-[2rem] p-8 flex flex-col md:flex-row justify-between items-center gap-8 shadow-inner">
             <div className="text-center md:text-left">
-              <h4 className="text-red-500 font-black uppercase text-base italic tracking-tighter">Emergency Data Wipe</h4>
-              <p className="text-red-400/60 text-[11px] mt-2 max-w-md leading-relaxed">
-                This will purge **ALL** tournament metadata including auction rounds, player slot assignments, the live auction room state, and all team squads. This action is irreversible.
+              <h4 className="text-red-500 font-black uppercase text-xs italic tracking-widest mb-2 flex items-center justify-center md:justify-start gap-2">
+                  <span>⚠</span> Emergency Data Wipe
+              </h4>
+              <p className="text-red-400/50 text-[11px] max-w-md leading-relaxed font-medium">
+                This will purge <strong className="text-red-400">ALL</strong> tournament metadata including auction rounds, player slot assignments, the live auction room state, and all team squads. This action is irreversible.
               </p>
             </div>
             <button
               onClick={handleReset}
               disabled={isResetting}
-              className="bg-red-600 hover:bg-red-500 text-white font-black py-4 px-10 rounded-2xl shadow-xl whitespace-nowrap transition-all transform hover:scale-105 active:scale-95 disabled:opacity-50 uppercase tracking-widest text-xs">
-              {isResetting ? "Purging Files..." : "⚠ Destroy Auction Data"}
+              className="bg-red-600 hover:bg-red-500 text-white font-black py-4 px-8 rounded-xl shadow-xl whitespace-nowrap transition-all transform hover:scale-105 active:scale-95 disabled:opacity-50 uppercase tracking-widest text-[10px] border border-red-400/20">
+              {isResetting ? "Purging Files..." : "Destroy Auction Data"}
             </button>
           </div>
         </div>

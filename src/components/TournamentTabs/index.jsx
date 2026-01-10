@@ -4,10 +4,10 @@ import TournamentAccessManager from "../TournamentAccessManager";
 import TeamManager from "../TeamManager";
 import { useNavigate } from "react-router-dom";
 
-// Helper components for tabs
+// Helper components
 import MatchesTab from "./MatchesTab";
 import TeamsTab from "./TeamsTab";
-import PointsTab from "./PointsTab"; // Note: Filename was PointsTab in your snippet
+import PointsTab from "./PointsTab";
 import PlayerStatsTab from "./PlayerStatsTab";
 
 export default function TournamentTabs({
@@ -24,7 +24,7 @@ export default function TournamentTabs({
   const navigate = useNavigate();
 
   // --- STATS STATE ---
-  const [statsTab, setStatsTab] = useState("bat"); // 'bat' | 'bowl' | 'mvp'
+  const [statsTab, setStatsTab] = useState("bat");
   const [teamFilter, setTeamFilter] = useState("all");
   const [sortStyle, setSortStyle] = useState("most_runs");
   const [expandedPlayer, setExpandedPlayer] = useState(null);
@@ -84,11 +84,11 @@ export default function TournamentTabs({
     });
   }, [matches, tournamentTeams]);
 
-  // --- 3. DETAILED PLAYER STATS (Fix Applied Here) ---
+  // --- 3. DETAILED PLAYER STATS ---
   const { detailedStats, orangeCap, purpleCap, distinctTeams } = useMemo(() => {
     const players = {};
 
-    // A. Init players from rosters
+    // A. Init players
     tournamentTeams.forEach((team) => {
       const teamName = team.name || "Unknown Team";
       const memberNames = team.roster?.map((r) => r.name) || team.players || [];
@@ -99,18 +99,8 @@ export default function TournamentTabs({
             players[playerName] = {
             name: playerName,
             team: teamName,
-            runs: 0,
-            balls: 0,
-            fours: 0,
-            sixes: 0,
-            innings: 0,
-            notOuts: 0,
-            hs: 0,
-            wickets: 0,
-            runsConceded: 0,
-            ballsBowled: 0,
-            history: [],
-            mvp: 0,
+            runs: 0, balls: 0, fours: 0, sixes: 0, innings: 0, notOuts: 0, hs: 0,
+            wickets: 0, runsConceded: 0, ballsBowled: 0, history: [], mvp: 0,
             };
         }
       });
@@ -119,20 +109,8 @@ export default function TournamentTabs({
     const initPlayer = (name, team) => {
       if (!players[name]) {
         players[name] = {
-          name,
-          team,
-          runs: 0,
-          balls: 0,
-          fours: 0,
-          sixes: 0,
-          innings: 0,
-          notOuts: 0,
-          hs: 0,
-          wickets: 0,
-          runsConceded: 0,
-          ballsBowled: 0,
-          history: [],
-          mvp: 0,
+          name, team, runs: 0, balls: 0, fours: 0, sixes: 0, innings: 0, notOuts: 0, hs: 0,
+          wickets: 0, runsConceded: 0, ballsBowled: 0, history: [], mvp: 0,
         };
       }
       return players[name];
@@ -140,20 +118,16 @@ export default function TournamentTabs({
 
     // B. Process Matches
     matches.forEach((m) => {
-      // ✅ FIX: Ensure innList is always an array
       let innList = [];
-      if (Array.isArray(m.innings)) {
-        innList = m.innings;
-      } else if (m.innings && typeof m.innings === 'object') {
-        innList = Object.values(m.innings);
-      }
+      if (Array.isArray(m.innings)) innList = m.innings;
+      else if (m.innings && typeof m.innings === 'object') innList = Object.values(m.innings);
 
       innList.forEach((inn) => {
         if (!inn) return;
         const batTeam = inn.battingTeam;
         const bowlTeam = inn.bowlingTeam;
 
-        // Batting Stats
+        // Batting
         if (inn.batsmenStats) {
           Object.entries(inn.batsmenStats).forEach(([name, s]) => {
             const p = initPlayer(name, batTeam);
@@ -163,28 +137,18 @@ export default function TournamentTabs({
               const f = parseInt(s.fours || 0);
               const x = parseInt(s.sixes || 0);
               
-              p.runs += r;
-              p.balls += b;
-              p.fours += f;
-              p.sixes += x;
+              p.runs += r; p.balls += b; p.fours += f; p.sixes += x;
               p.innings += 1;
               if (!s.out) p.notOuts += 1;
               if (r > p.hs) p.hs = r;
               p.mvp += r + f + x * 2;
               
-              p.history.push({
-                type: "bat",
-                matchId: m.id,
-                date: m.date,
-                opponent: bowlTeam,
-                runs: r,
-                balls: b,
-              });
+              p.history.push({ type: "bat", matchId: m.id, date: m.date, opponent: bowlTeam, runs: r, balls: b });
             }
           });
         }
 
-        // Bowling Stats
+        // Bowling
         if (inn.bowlerStats) {
           Object.entries(inn.bowlerStats).forEach(([name, s]) => {
             const p = initPlayer(name, bowlTeam);
@@ -193,20 +157,8 @@ export default function TournamentTabs({
               const r = parseInt(s.runs || 0);
               const b = parseInt(s.balls || 0);
 
-              p.wickets += w;
-              p.runsConceded += r;
-              p.ballsBowled += b;
-              p.mvp += w * 20;
-
-              p.history.push({
-                type: "bowl",
-                matchId: m.id,
-                date: m.date,
-                opponent: batTeam,
-                wickets: w,
-                runs: r,
-                overs: `${Math.floor(b / 6)}.${b % 6}`,
-              });
+              p.wickets += w; p.runsConceded += r; p.ballsBowled += b; p.mvp += w * 20;
+              p.history.push({ type: "bowl", matchId: m.id, date: m.date, opponent: batTeam, wickets: w, runs: r, overs: `${Math.floor(b / 6)}.${b % 6}` });
             }
           });
         }
@@ -214,17 +166,11 @@ export default function TournamentTabs({
     });
 
     const statsArray = Object.values(players).map((p) => {
-      const batAvg =
-        p.innings - p.notOuts > 0
-          ? (p.runs / (p.innings - p.notOuts)).toFixed(2)
-          : p.runs.toFixed(2);
-      const batSR =
-        p.balls > 0 ? ((p.runs / p.balls) * 100).toFixed(2) : "0.00";
+      const batAvg = p.innings - p.notOuts > 0 ? (p.runs / (p.innings - p.notOuts)).toFixed(2) : p.runs.toFixed(2);
+      const batSR = p.balls > 0 ? ((p.runs / p.balls) * 100).toFixed(2) : "0.00";
       const overs = p.ballsBowled / 6;
-      const bowlEco =
-        overs > 0 ? (p.runsConceded / overs).toFixed(2) : "0.00";
-      const bowlAvg =
-        p.wickets > 0 ? (p.runsConceded / p.wickets).toFixed(2) : "0.00";
+      const bowlEco = overs > 0 ? (p.runsConceded / overs).toFixed(2) : "0.00";
+      const bowlAvg = p.wickets > 0 ? (p.runsConceded / p.wickets).toFixed(2) : "0.00";
       return { ...p, batAvg, batSR, bowlEco, bowlAvg };
     });
 
@@ -232,19 +178,13 @@ export default function TournamentTabs({
     const purple = [...statsArray].sort((a, b) => b.wickets - a.wickets)[0];
     const teams = [...new Set(statsArray.map((p) => p.team).filter(Boolean))];
 
-    return {
-        detailedStats: statsArray,
-        orangeCap: orange,
-        purpleCap: purple,
-        distinctTeams: teams,
-    };
+    return { detailedStats: statsArray, orangeCap: orange, purpleCap: purple, distinctTeams: teams };
   }, [matches, tournamentTeams]);
 
   // --- 4. FILTERED STATS ---
   const filteredStats = useMemo(() => {
     let data = detailedStats;
-    if (teamFilter !== "all")
-      data = data.filter((p) => p.team === teamFilter);
+    if (teamFilter !== "all") data = data.filter((p) => p.team === teamFilter);
 
     return data.sort((a, b) => {
       if (statsTab === "bat") {
@@ -255,131 +195,132 @@ export default function TournamentTabs({
       } else if (statsTab === "bowl") {
         if (sortStyle === "most_wickets") return b.wickets - a.wickets;
         if (sortStyle === "best_economy") return parseFloat(a.bowlEco) - parseFloat(b.bowlEco);
-      } else if (statsTab === "mvp") {
-        return b.mvp - a.mvp;
-      }
+      } else if (statsTab === "mvp") return b.mvp - a.mvp;
       return 0;
     });
   }, [detailedStats, teamFilter, statsTab, sortStyle]);
 
   // --- RENDER CONTENT ---
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 min-h-screen">
       
-      {/* TABS NAVIGATION */}
-      <div className="bg-gray-900/80 backdrop-blur-md border border-gray-800 p-1.5 rounded-2xl flex overflow-x-auto shadow-2xl mb-8 no-scrollbar">
-        {[
-          { id: "matches", label: "Matches", icon: "🏟️" },
-          { id: "teams", label: "Teams", icon: "👥" },
-          { id: "points", label: "Points Table", icon: "📊" },
-          { id: "players", label: "Player Stats", icon: "📈" },
-          { id: "admin", label: "Settings", icon: "⚙️" },
-        ]
-          .filter((tab) => tab.id !== "admin" || (canEdit || isOwner))
-          .map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 min-w-[120px] px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${
-                activeTab === tab.id
-                  ? "bg-gray-800 text-white shadow-md border border-gray-700"
-                  : "text-gray-500 hover:text-gray-300 hover:bg-white/5"
-              }`}
-            >
-              <span className="text-base">{tab.icon}</span>
-              {tab.label}
-            </button>
-          ))}
+      {/* MOBILE-OPTIMIZED TABS NAVIGATION */}
+      <div className="sticky top-2 z-40 mb-6 mx-[-16px] px-4 md:mx-0 md:px-0">
+        <div className="bg-[#1C2128]/90 backdrop-blur-xl border border-white/10 p-1.5 rounded-2xl flex overflow-x-auto shadow-2xl custom-scrollbar snap-x snap-mandatory">
+          {[
+            { id: "matches", label: "Matches", icon: "🏟️" },
+            { id: "teams", label: "Teams", icon: "👥" },
+            { id: "points", label: "Points", icon: "📊" },
+            { id: "players", label: "Stats", icon: "📈" },
+            { id: "admin", label: "Admin", icon: "⚙️" },
+          ]
+            .filter((tab) => tab.id !== "admin" || (canEdit || isOwner))
+            .map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  // Optional: smooth scroll to top when tab changes
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className={`flex-shrink-0 flex-1 min-w-[90px] md:min-w-[120px] px-3 py-3 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider transition-all flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 snap-center ${
+                  activeTab === tab.id
+                    ? "bg-[#0F1115] text-white shadow-lg border border-white/10 scale-95 md:scale-100"
+                    : "text-slate-500 hover:text-slate-300 hover:bg-white/5 border border-transparent"
+                }`}
+              >
+                <span className="text-sm md:text-base">{tab.icon}</span>
+                <span>{tab.label}</span>
+              </button>
+            ))}
+        </div>
       </div>
 
-      {/* MATCHES TAB */}
-      {activeTab === "matches" && (
-        <MatchesTab 
-            liveMatches={liveMatches}
-            upcomingMatches={upcomingMatches}
-            finishedMatches={finishedMatches}
-            tournamentId={tournamentId}
-            canEdit={canEdit} 
-        />
-      )}
+      {/* CONTENT AREA - with extra padding for bottom navigation on mobile if needed */}
+      <div className="pb-20 md:pb-0">
+        {activeTab === "matches" && (
+          <MatchesTab 
+              liveMatches={liveMatches}
+              upcomingMatches={upcomingMatches}
+              finishedMatches={finishedMatches}
+              tournamentId={tournamentId}
+              canEdit={canEdit} 
+          />
+        )}
 
-      {/* TEAMS TAB */}
-      {activeTab === "teams" && (
-        <TeamsTab tournamentTeams={tournamentTeams} isAuctionEnabled={isAuctionEnabled} />
-      )}
+        {activeTab === "teams" && (
+          <TeamsTab tournamentTeams={tournamentTeams} isAuctionEnabled={isAuctionEnabled} />
+        )}
 
-      {/* POINTS TABLE TAB */}
-      {activeTab === "points" && (
-        <PointsTab pointsTable={pointsTable} />
-      )}
+        {activeTab === "points" && (
+          <PointsTab pointsTable={pointsTable} />
+        )}
 
-      {/* PLAYERS STATS TAB */}
-      {activeTab === "players" && (
-        <PlayerStatsTab
-          statsTab={statsTab}
-          setStatsTab={setStatsTab}
-          sortStyle={sortStyle}
-          setSortStyle={setSortStyle}
-          teamFilter={teamFilter}
-          setTeamFilter={setTeamFilter}
-          filteredStats={filteredStats}
-          expandedPlayer={expandedPlayer}
-          setExpandedPlayer={setExpandedPlayer}
-          orangeCap={orangeCap}
-          purpleCap={purpleCap}
-          distinctTeams={distinctTeams}
-          id={tournamentId}
-        />
-      )}
+        {activeTab === "players" && (
+          <PlayerStatsTab
+            statsTab={statsTab} setStatsTab={setStatsTab}
+            sortStyle={sortStyle} setSortStyle={setSortStyle}
+            teamFilter={teamFilter} setTeamFilter={setTeamFilter}
+            filteredStats={filteredStats}
+            expandedPlayer={expandedPlayer} setExpandedPlayer={setExpandedPlayer}
+            orangeCap={orangeCap} purpleCap={purpleCap}
+            distinctTeams={distinctTeams} id={tournamentId}
+          />
+        )}
 
-      {/* ADMIN TAB */}
-      {activeTab === "admin" && (canEdit || isOwner) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in zoom-in-95">
-          {/* Team Management / Auction */}
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-xl relative overflow-hidden group">
-            <h3 className="text-white font-bold text-lg mb-4">Team Management</h3>
-            {isAuctionEnabled ? (
-              <div className="bg-gray-950 border border-gray-800 rounded-xl p-8 text-center">
-                <div className="text-4xl mb-4">🔒</div>
-                <h4 className="text-white font-bold mb-2">Rosters Locked</h4>
-                <p className="text-gray-500 text-sm mb-6">
-                  This is an Auction Tournament. Teams are managed in the Auction Console.
-                </p>
-                <button
-                  onClick={() => navigate(`/tournaments/${tournamentId}/auction`)}
-                  className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3 px-6 rounded-lg transition-all"
-                >
-                  Go to Auction Console
-                </button>
+        {activeTab === "admin" && (canEdit || isOwner) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in zoom-in-95">
+            
+            {/* Team Management / Auction */}
+            <div className="bg-[#1C2128] border border-white/5 rounded-2xl p-6 shadow-xl relative overflow-hidden group">
+              <h3 className="text-slate-100 font-bold text-lg mb-6 flex items-center gap-2">
+                  <span className="text-cyan-500">🛡️</span> Team Management
+              </h3>
+              {isAuctionEnabled ? (
+                <div className="bg-[#0F1115] border border-white/5 rounded-xl p-8 text-center">
+                  <div className="text-4xl mb-4">🔒</div>
+                  <h4 className="text-slate-200 font-bold mb-2">Rosters Locked</h4>
+                  <p className="text-slate-500 text-sm mb-6">
+                    This is an Auction Tournament. Teams are managed in the Auction Console.
+                  </p>
+                  <button
+                    onClick={() => navigate(`/tournaments/${tournamentId}/auction`)}
+                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-lg shadow-purple-900/20"
+                  >
+                    Go to Auction Console
+                  </button>
+                </div>
+              ) : (
+                <TeamManager tournamentId={tournamentId} />
+              )}
+            </div>
+
+            {/* Owner Zone */}
+            {isOwner && (
+              <div className="space-y-6">
+                <div className="bg-[#1C2128] border border-white/5 rounded-2xl p-6 shadow-xl">
+                  <h3 className="text-slate-100 font-bold text-lg mb-4 flex items-center gap-2">
+                      <span className="text-yellow-500">🔑</span> Access Control
+                  </h3>
+                  <TournamentAccessManager tournament={tournamentData} />
+                </div>
+                <div className="bg-red-900/10 border border-red-500/20 rounded-2xl p-6">
+                  <h4 className="text-red-400 font-bold mb-2 uppercase text-xs tracking-widest">Danger Zone</h4>
+                  <p className="text-red-400/50 text-xs mb-4">This action cannot be undone.</p>
+                  <button
+                    className="bg-red-600/10 text-red-400 border border-red-500/50 hover:bg-red-600 hover:text-white px-4 py-3 rounded-xl font-bold w-full transition-all"
+                    onClick={() => {
+                        if(window.confirm("Delete Tournament?")) alert("Feature Pending: Delete");
+                    }}
+                  >
+                    Delete Tournament
+                  </button>
+                </div>
               </div>
-            ) : (
-              <TeamManager tournamentId={tournamentId} />
             )}
           </div>
-
-          {/* Owner Zone */}
-          {isOwner && (
-            <div className="space-y-6">
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-xl">
-                <h3 className="text-white font-bold text-lg mb-4">Access Control</h3>
-                <TournamentAccessManager tournament={tournamentData} />
-              </div>
-              <div className="bg-red-950/10 border border-red-900/30 rounded-2xl p-6">
-                <h4 className="text-red-500 font-bold mb-2">Danger Zone</h4>
-                <p className="text-red-400/50 text-xs mb-4">This action cannot be undone.</p>
-                <button
-                  className="bg-red-600 hover:bg-red-500 text-white px-4 py-3 rounded-xl font-bold w-full transition-colors shadow-lg shadow-red-900/20"
-                  onClick={() => {
-                     if(window.confirm("Delete Tournament?")) alert("Feature Pending: Delete");
-                  }}
-                >
-                  Delete Tournament
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

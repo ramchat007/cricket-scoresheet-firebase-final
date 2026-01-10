@@ -13,9 +13,6 @@ export default function TournamentAccessManager({ tournament }) {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
 
-  // ✅ FIX: Removed the internal blocking check.
-  // We trust the parent component (TournamentDetails/Tabs) to only render this for valid Admins.
-
   const handleAddUser = async (e) => {
     e.preventDefault();
     if (!email) return;
@@ -65,21 +62,22 @@ export default function TournamentAccessManager({ tournament }) {
   };
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 border-l-4 border-l-cyan-500 shadow-lg">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+    <div className="bg-[#1C2128] border border-white/5 rounded-2xl p-6 shadow-xl">
+      <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
+        <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
           <span className="text-xl">🔑</span> Access Control
         </h3>
-        <span className="text-sm font-mono text-gray-500 uppercase tracking-widest">
+        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest bg-[#0F1115] px-2 py-1 rounded border border-white/5">
           Owner Only
         </span>
       </div>
+
       <form
         onSubmit={handleAddUser}
-        className="flex flex-col sm:flex-row gap-3 mb-6 bg-gray-950 p-4 rounded-lg border border-gray-800">
+        className="flex flex-col sm:flex-row gap-3 mb-6 bg-[#0F1115] p-4 rounded-xl border border-white/5">
         <input
           type="email"
-          className="flex-1 bg-gray-800 text-white border border-gray-700 rounded px-4 py-2 focus:border-cyan-500 focus:outline-none"
+          className="flex-1 bg-[#161920] text-slate-200 border border-white/10 rounded-xl px-4 py-3 focus:border-teal-500/50 focus:outline-none transition-all placeholder:text-slate-600 text-sm font-bold"
           placeholder="Enter user email..."
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -88,47 +86,53 @@ export default function TournamentAccessManager({ tournament }) {
         <select
           value={role}
           onChange={(e) => setRole(e.target.value)}
-          className="bg-gray-800 text-white border border-gray-700 rounded px-4 py-2 cursor-pointer">
+          className="bg-[#161920] text-slate-200 border border-white/10 rounded-xl px-4 py-3 cursor-pointer outline-none focus:border-teal-500/50 text-sm font-bold">
           <option value="scorer">Scorer (Can Edit)</option>
           <option value="viewer">Viewer (Read Only)</option>
         </select>
         <button
           disabled={loading}
-          className="bg-cyan-600 hover:bg-cyan-500 text-white font-bold px-6 py-2 rounded shadow-lg disabled:opacity-50">
+          className="bg-teal-600 hover:bg-teal-500 text-white font-black uppercase tracking-wider text-xs px-6 py-3 rounded-xl shadow-lg disabled:opacity-50 transition-all">
           {loading ? "Adding..." : "Add"}
         </button>
       </form>
+
       {msg && (
         <div
-          className={`text-sm mb-4 font-bold ${
-            msg.includes("❌") ? "text-red-400" : "text-green-400"
+          className={`text-sm mb-4 font-bold p-3 rounded-lg border ${
+            msg.includes("❌")
+              ? "bg-red-900/20 text-red-400 border-red-500/30"
+              : msg.includes("⚠️")
+              ? "bg-amber-900/20 text-amber-400 border-amber-500/30"
+              : "bg-teal-900/20 text-teal-400 border-teal-500/30"
           }`}>
           {msg}
         </div>
       )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* SCORERS LIST */}
-        <div>
-          <h4 className="text-sm font-bold text-gray-400 uppercase mb-2">
-            Scorers
+        <div className="bg-[#0F1115] p-4 rounded-xl border border-white/5">
+          <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3 border-b border-white/5 pb-2">
+            Scorers (Edit Access)
           </h4>
-          <div className="space-y-2">
+          <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-1">
             {(tournament.scorers || []).length === 0 && (
-              <span className="text-xs text-gray-600">No scorers added</span>
+              <span className="text-xs text-slate-600 italic p-2 block text-center">No scorers added</span>
             )}
             {tournament.scorers?.map((uid) => (
               <div
                 key={uid}
-                className="flex justify-between items-center bg-gray-800/30 p-2 rounded text-sm text-gray-300">
-                <span className="font-mono text-sm">
+                className="flex justify-between items-center bg-[#161920] p-2.5 rounded-lg border border-white/5 hover:border-white/10 transition-colors group">
+                <span className="font-mono text-xs text-slate-300">
                   {uid === tournament.ownerId
                     ? "Owner (Creator)"
-                    : uid.slice(0, 8) + "..."}
+                    : uid.slice(0, 12) + "..."}
                 </span>
                 {uid !== tournament.ownerId && (
                   <button
                     onClick={() => handleRemove(uid, "scorer")}
-                    className="text-red-500 hover:text-red-400 text-xs uppercase font-bold">
+                    className="text-slate-600 hover:text-red-400 text-[10px] uppercase font-black px-2 py-1 rounded hover:bg-red-900/20 transition-all">
                     Remove
                   </button>
                 )}
@@ -138,24 +142,24 @@ export default function TournamentAccessManager({ tournament }) {
         </div>
 
         {/* VIEWERS LIST */}
-        <div>
-          <h4 className="text-sm font-bold text-gray-400 uppercase mb-2">
-            Viewers
+        <div className="bg-[#0F1115] p-4 rounded-xl border border-white/5">
+          <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3 border-b border-white/5 pb-2">
+            Viewers (Read Only)
           </h4>
-          <div className="space-y-2">
+          <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-1">
             {(tournament.viewers || []).length === 0 && (
-              <span className="text-xs text-gray-600">No viewers added</span>
+              <span className="text-xs text-slate-600 italic p-2 block text-center">No viewers added</span>
             )}
             {tournament.viewers?.map((uid) => (
               <div
                 key={uid}
-                className="flex justify-between items-center bg-gray-800/30 p-2 rounded text-sm text-gray-300">
-                <span className="font-mono text-sm">
-                  {uid.slice(0, 8) + "..."}
+                className="flex justify-between items-center bg-[#161920] p-2.5 rounded-lg border border-white/5 hover:border-white/10 transition-colors group">
+                <span className="font-mono text-xs text-slate-300">
+                  {uid.slice(0, 12) + "..."}
                 </span>
                 <button
                   onClick={() => handleRemove(uid, "viewer")}
-                  className="text-red-500 hover:text-red-400 text-xs uppercase font-bold">
+                  className="text-slate-600 hover:text-red-400 text-[10px] uppercase font-black px-2 py-1 rounded hover:bg-red-900/20 transition-all">
                   Remove
                 </button>
               </div>

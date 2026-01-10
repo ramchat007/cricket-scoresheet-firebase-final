@@ -36,7 +36,7 @@ export default function TournamentDetails() {
 
   /* --------------------------------------------
      Load tournament + permissions
-  --------------------------------------------- */
+   --------------------------------------------- */
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -97,7 +97,7 @@ export default function TournamentDetails() {
 
   /* --------------------------------------------
      Load teams
-  --------------------------------------------- */
+   --------------------------------------------- */
   useEffect(() => {
     if (!id) return;
     const loadTeams = async () => {
@@ -113,7 +113,7 @@ export default function TournamentDetails() {
 
   /* --------------------------------------------
      Load matches
-  --------------------------------------------- */
+   --------------------------------------------- */
   useEffect(() => {
     if (!id) return;
     const loadMatches = async () => {
@@ -131,7 +131,7 @@ export default function TournamentDetails() {
 
   /* --------------------------------------------
      Toggle Auction Mode
-  --------------------------------------------- */
+   --------------------------------------------- */
   const isAuctionEnabled = !!tournamentData?.isAuction;
   const auctionInitialized = tournamentTeams.some(
     (t) => Array.isArray(t.roster) && t.roster.length > 0
@@ -206,35 +206,38 @@ export default function TournamentDetails() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center min-h-screen bg-[#0f172a] text-cyan-500 animate-pulse font-bold tracking-widest text-lg">
+      <div className="flex justify-center items-center min-h-screen bg-[#0F1115] text-teal-500 animate-pulse font-bold tracking-widest text-lg">
         LOADING...
       </div>
     );
   }
 
   return (
-    <div className="w-full min-h-screen bg-[#0f172a] text-gray-200 font-sans pb-20">
+    <div className="w-full min-h-screen bg-[#0F1115] text-slate-200 font-sans pb-20">
+      
       {/* HERO SECTION */}
-      <div className="relative bg-gradient-to-br from-gray-900 via-[#1e293b] to-gray-900 border-b border-gray-800 pt-8 pb-20 px-4 overflow-hidden">
-        <div className="max-w-7xl mx-auto relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="relative bg-[#161920] border-b border-white/5 pt-10 pb-20 px-4 overflow-hidden shadow-2xl">
+        <div className="max-w-7xl mx-auto relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div>
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-2">
               {isOwner && (
-                <span className="bg-red-900/50 text-red-300 text-[10px] px-2 py-0.5 rounded border border-red-800">
-                  ADMIN ACCESS
+                <span className="bg-red-900/30 text-red-400 text-[9px] font-black px-2 py-0.5 rounded-md border border-red-500/30 uppercase tracking-widest">
+                  Admin Access
                 </span>
               )}
               {canEdit && !isOwner && (
-                <span className="bg-blue-900/50 text-blue-300 text-[10px] px-2 py-0.5 rounded border border-blue-800">
-                  SCORER ACCESS
+                <span className="bg-indigo-900/30 text-indigo-400 text-[9px] font-black px-2 py-0.5 rounded-md border border-indigo-500/30 uppercase tracking-widest">
+                  Scorer Access
                 </span>
               )}
             </div>
-            <h1 className="text-3xl font-black text-white">
+            <h1 className="text-3xl md:text-4xl font-black text-slate-100 uppercase tracking-tighter italic">
               {tournamentData?.name}
             </h1>
-            <div className="text-sm text-gray-500 mt-2">
-              {tournamentTeams.length} Teams · {matches.length} Matches
+            <div className="text-sm font-bold text-slate-500 mt-2 flex items-center gap-2 uppercase tracking-wide">
+              <span>{tournamentTeams.length} Teams</span>
+              <span className="w-1 h-1 bg-slate-600 rounded-full"></span>
+              <span>{matches.length} Matches</span>
             </div>
           </div>
 
@@ -243,8 +246,8 @@ export default function TournamentDetails() {
               {/* 1. ADD MATCH BUTTON (Always Visible) */}
               <button
                 onClick={() => setShowScheduler(!showScheduler)}
-                className="bg-cyan-600 hover:bg-cyan-500 text-white font-bold px-5 py-3 rounded-xl shadow-lg flex items-center gap-2">
-                <span>➕</span> {showScheduler ? "Hide Scheduler" : "Add Match"}
+                className="bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 font-bold px-5 py-3 rounded-xl shadow-lg flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest">
+                <span>{showScheduler ? "✕" : "➕"}</span> {showScheduler ? "Hide Scheduler" : "Add Match"}
               </button>
 
               {/* 2. MODE SPECIFIC ACTIONS */}
@@ -253,19 +256,19 @@ export default function TournamentDetails() {
                   {!auctionInitialized ? (
                     <button
                       onClick={handleInitializeTournament}
-                      className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold px-5 py-3 rounded-xl shadow-lg flex items-center gap-2">
-                      <span>🔨</span> Initialize Auction
+                      className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold px-5 py-3 rounded-xl shadow-lg shadow-purple-900/20 flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest">
+                      <span>🔨</span> Init Auction
                     </button>
                   ) : (
                     <button
                       onClick={() => navigate(`/tournaments/${id}/auction`)}
-                      className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold px-5 py-3 rounded-xl shadow-lg flex items-center gap-2">
-                      <span>🔨</span> Enter Console
+                      className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold px-5 py-3 rounded-xl shadow-lg shadow-purple-900/20 flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest">
+                      <span>🔨</span> Auction Console
                     </button>
                   )}
                   <button
                     onClick={toggleAuctionMode}
-                    className="bg-red-900/30 text-red-400 border border-red-800 hover:bg-red-900/50 font-bold px-4 py-3 rounded-xl transition-all text-xs">
+                    className="bg-red-900/20 text-red-400 border border-red-500/20 hover:bg-red-900/40 font-bold px-4 py-3 rounded-xl transition-all text-xs uppercase tracking-widest">
                     Disable Auction
                   </button>
                 </>
@@ -275,14 +278,14 @@ export default function TournamentDetails() {
                   {matches.length === 0 && (
                     <button
                       onClick={handleInitializeTournament}
-                      className="bg-green-600 hover:bg-green-500 text-white font-bold px-5 py-3 rounded-xl shadow-lg flex items-center gap-2">
-                      <span>📅</span> Create Fixtures
+                      className="bg-gradient-to-r from-teal-600 to-emerald-600 text-white font-bold px-5 py-3 rounded-xl shadow-lg shadow-teal-900/20 flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest">
+                      <span>📅</span> Auto Fixtures
                     </button>
                   )}
 
                   <button
                     onClick={toggleAuctionMode}
-                    className="bg-gray-800 text-gray-300 border border-gray-600 hover:bg-gray-700 font-bold px-4 py-3 rounded-xl transition-all text-xs flex items-center gap-2">
+                    className="bg-[#0F1115] text-slate-400 border border-white/10 hover:border-white/20 hover:text-white font-bold px-4 py-3 rounded-xl transition-all text-xs uppercase tracking-widest flex items-center gap-2">
                     <span>⚙️</span> Enable Auction
                   </button>
                 </>
@@ -293,20 +296,22 @@ export default function TournamentDetails() {
       </div>
 
       {/* SCHEDULER SECTION */}
-      <div className="max-w-7xl mx-auto px-4 -mt-12 relative z-30">
+      <div className="max-w-7xl mx-auto px-4 -mt-12 relative z-30 animate-in fade-in slide-in-from-top-4 duration-500">
         {showScheduler && (
-          <MatchScheduler
-            tournamentId={id}
-            teams={tournamentTeams}
-            onCancel={() => setShowScheduler(false)}
-          />
+          <div className="bg-[#1C2128] border border-white/10 rounded-[2rem] shadow-2xl p-2">
+             <MatchScheduler
+                tournamentId={id}
+                teams={tournamentTeams}
+                onCancel={() => setShowScheduler(false)}
+             />
+          </div>
         )}
       </div>
 
       {/* TABS CONTAINER */}
       <div
         className={`max-w-7xl mx-auto px-4 relative z-20 ${
-          showScheduler ? "mt-4" : "-mt-12"
+          showScheduler ? "mt-8" : "-mt-10"
         }`}>
         <TournamentTabs
           activeTab={activeTab}

@@ -135,16 +135,17 @@ export default function MainApp() {
             </div>
 
             {/* Quick Action Cards - Horizontal Scroll on Mobile */}
-            <div className="flex md:grid md:grid-cols-2 gap-4 overflow-x-auto pb-2 no-scrollbar">
+            <div className="grid grid-cols-2 gap-3">
               <button
                 onClick={() => setMatchId("new")}
-                className="flex-shrink-0 w-[80%] md:w-full flex items-center gap-4 p-5 bg-gradient-to-br from-cyan-600/20 to-cyan-900/10 border border-cyan-500/20 rounded-2xl hover:border-cyan-400 transition-all active:scale-95 group">
-                <div className="bg-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.5)] w-12 h-12 rounded-xl flex items-center justify-center text-2xl group-hover:rotate-12 transition-transform">
+                className="flex items-center gap-3 p-4 bg-gradient-to-br from-teal-900/20 to-teal-900/10 border border-teal-500/20 rounded-2xl hover:border-teal-400 transition-all active:scale-95 group shadow-lg"
+              >
+                <div className="bg-teal-600 shadow-[0_0_15px_rgba(20,184,166,0.4)] w-10 h-10 rounded-xl flex items-center justify-center text-xl group-hover:rotate-12 transition-transform">
                   🏏
                 </div>
-                <div className="text-left">
-                   <h3 className="text-white font-black text-sm uppercase tracking-tight">New Match</h3>
-                   <p className="text-[10px] text-cyan-400/70 font-bold uppercase">Quick Setup</p>
+                <div className="text-left overflow-hidden">
+                   <h3 className="text-white font-black text-xs uppercase tracking-tight truncate">New Match</h3>
+                   <p className="text-[9px] text-teal-400 font-bold uppercase tracking-wider truncate">Quick Setup</p>
                 </div>
               </button>
 
@@ -153,13 +154,14 @@ export default function MainApp() {
                   if (tournamentId) navigate(`/tournaments/${tournamentId}`);
                   else alert("Select a tournament first.");
                 }}
-                className="flex-shrink-0 w-[80%] md:w-full flex items-center gap-4 p-5 bg-gradient-to-br from-purple-600/20 to-purple-900/10 border border-purple-500/20 rounded-2xl hover:border-purple-400 transition-all active:scale-95 group">
-                <div className="bg-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.5)] w-12 h-12 rounded-xl flex items-center justify-center text-2xl group-hover:rotate-12 transition-transform">
+                className="flex items-center gap-3 p-4 bg-gradient-to-br from-indigo-900/20 to-indigo-900/10 border border-indigo-500/20 rounded-2xl hover:border-indigo-400 transition-all active:scale-95 group shadow-lg"
+              >
+                <div className="bg-indigo-600 shadow-[0_0_15px_rgba(99,102,241,0.4)] w-10 h-10 rounded-xl flex items-center justify-center text-xl group-hover:rotate-12 transition-transform">
                   📊
                 </div>
-                <div className="text-left">
-                   <h3 className="text-white font-black text-sm uppercase tracking-tight">Analytics</h3>
-                   <p className="text-[10px] text-purple-400/70 font-bold uppercase">View Dashboard</p>
+                <div className="text-left overflow-hidden">
+                   <h3 className="text-white font-black text-xs uppercase tracking-tight truncate">Analytics</h3>
+                   <p className="text-[9px] text-indigo-400 font-bold uppercase tracking-wider truncate">View Dashboard</p>
                 </div>
               </button>
             </div>

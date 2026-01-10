@@ -1,5 +1,5 @@
 import React from "react";
-import MatchCard from "./MatchCard"; // Adjust path if MatchCard is in src/components/
+import MatchCard from "./MatchCard"; 
 
 export default function MatchesTab({
   liveMatches = [],
@@ -9,17 +9,20 @@ export default function MatchesTab({
   canEdit,
 }) {
   return (
-    <div className="space-y-12">
+    <div className="space-y-16 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      
       {/* LIVE MATCHES */}
       {liveMatches.length > 0 && (
-        <div>
-          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+        <section>
+          <div className="flex items-center gap-3 mb-6">
             <span className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-600"></span>
             </span>
-            Live Now
-          </h3>
+            <h3 className="text-sm font-black text-white uppercase tracking-[0.2em]">
+              Live Action
+            </h3>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {liveMatches.map((m) => (
               <MatchCard
@@ -30,18 +33,19 @@ export default function MatchesTab({
               />
             ))}
           </div>
-        </div>
+        </section>
       )}
 
       {/* UPCOMING MATCHES */}
-      <div>
-        <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-          <span className="w-2 h-6 bg-blue-500 rounded-full"></span>
-          Upcoming Matches
-        </h3>
+      <section>
+        <div className="flex items-center gap-3 mb-6 border-l-4 border-teal-500 pl-3">
+          <h3 className="text-sm font-black text-slate-200 uppercase tracking-[0.2em]">
+            Upcoming Fixtures
+          </h3>
+        </div>
 
         {upcomingMatches.length === 0 ? (
-          <div className="text-gray-600 bg-gray-900/50 border border-dashed border-gray-800 rounded-xl p-8 text-center italic">
+          <div className="text-slate-600 bg-[#161920] border border-dashed border-white/5 rounded-2xl p-12 text-center italic text-sm">
             No upcoming matches scheduled.
           </div>
         ) : (
@@ -56,15 +60,16 @@ export default function MatchesTab({
             ))}
           </div>
         )}
-      </div>
+      </section>
 
       {/* FINISHED MATCHES */}
       {finishedMatches.length > 0 && (
-        <div>
-          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-            <span className="w-2 h-6 bg-gray-700 rounded-full"></span>
-            Results
-          </h3>
+        <section>
+          <div className="flex items-center gap-3 mb-6 border-l-4 border-slate-700 pl-3">
+            <h3 className="text-sm font-black text-slate-400 uppercase tracking-[0.2em]">
+              Recent Results
+            </h3>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {finishedMatches.map((m) => (
               <MatchCard
@@ -75,7 +80,7 @@ export default function MatchesTab({
               />
             ))}
           </div>
-        </div>
+        </section>
       )}
     </div>
   );
