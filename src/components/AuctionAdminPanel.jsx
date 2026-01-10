@@ -15,8 +15,9 @@ import {
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { listGlobalPlayers } from "../utils/firestore";
+import { useAuth } from "../hooks/useAuth"; // ✅ Added Auth Hook
 import AuctionOwnersAdmin from "./AuctionOwnersAdmin";
-import MatchScheduler from "./MatchScheduler"; 
+import MatchScheduler from "./MatchScheduler";
 
 // --- 1. GLOBAL PLAYER SEARCH MODAL ---
 const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
@@ -54,10 +55,8 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
   );
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#0F1115]/90 p-4 backdrop-blur-md animate-in fade-in">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#0F1115]/95 p-4 backdrop-blur-md animate-in fade-in">
       <div className="bg-[#1C2128] border border-white/10 w-full max-w-lg rounded-3xl flex flex-col max-h-[80vh] shadow-2xl">
-        
-        {/* Header */}
         <div className="p-6 border-b border-white/5 flex justify-between items-center bg-[#1C2128]">
           <div>
              <h3 className="text-slate-100 font-black uppercase tracking-tight text-lg italic">Global Database</h3>
@@ -65,8 +64,6 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors">✕</button>
         </div>
-
-        {/* Search */}
         <div className="p-4 border-b border-white/5 bg-[#161920]">
           <input
             className="w-full bg-[#0F1115] border border-white/10 rounded-xl px-4 py-3 text-slate-200 focus:border-teal-500/50 outline-none transition-all font-bold placeholder:text-slate-600"
@@ -76,8 +73,6 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
             autoFocus
           />
         </div>
-
-        {/* List */}
         <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-2">
           {loading ? (
             <div className="text-center py-10 text-teal-500 animate-pulse font-black text-xs uppercase tracking-widest">Loading Database...</div>
@@ -109,8 +104,6 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
             <div className="text-center py-8 text-slate-600 text-sm italic">No available players found.</div>
           )}
         </div>
-
-        {/* Footer */}
         <div className="p-6 border-t border-white/5 flex justify-end gap-3 bg-[#161920] rounded-b-3xl">
           <button onClick={onClose} className="px-6 py-3 text-slate-500 text-xs font-black uppercase tracking-widest border border-transparent hover:border-white/10 rounded-xl transition-all">Cancel</button>
           <button
@@ -127,6 +120,8 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
 
 // --- 3. MAIN SETUP PANEL ---
 export default function AuctionAdminPanel({ tournamentId, onClose }) {
+  const { user } = useAuth(); // ✅ Hook for current user
+  
   const [tab, setTab] = useState("pool");
   const [poolFilter, setPoolFilter] = useState("PENDING");
 
@@ -134,21 +129,55 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
   const [teams, setTeams] = useState([]);
   const [slots, setSlots] = useState([]); 
   const [newSlotName, setNewSlotName] = useState(""); 
-  
-  // Tournament Config State
   const [config, setConfig] = useState({
-    minSquadSize: 11,
-    maxSquadSize: 15,
-    minBasePrice: 500,
-    bidIncrement: 100
+    minSquadSize: 11, maxSquadSize: 15, minBasePrice: 500, bidIncrement: 100
   });
 
-  const [teamsMap, setTeamsMap] = useState({});
   const [showPicker, setShowPicker] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  
+  // ✅ NEW: Access Control State
+  const [hasAccess, setHasAccess] = useState(false);
+  const [checkingAccess, setCheckingAccess] = useState(true);
 
-  // --- REAL-TIME DATA FETCHING ---
+  // --- 1. VERIFY PERMISSIONS ---
   useEffect(() => {
+    async function checkPermission() {
+      if (!user) {
+        setHasAccess(false);
+        setCheckingAccess(false);
+        return;
+      }
+      try {
+        const docRef = doc(db, "tournaments", tournamentId);
+        const docSnap = await getDoc(docRef);
+        
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          // Check Owner OR Admin list
+          const isOwner = data.ownerId === user.uid || data.createdBy === user.uid;
+          const isAdmin = Array.isArray(data.admins) && data.admins.includes(user.uid);
+          
+          if (isOwner || isAdmin) {
+            setHasAccess(true);
+          } else {
+            setHasAccess(false);
+          }
+        }
+      } catch (e) {
+        console.error("Access check failed", e);
+        setHasAccess(false);
+      } finally {
+        setCheckingAccess(false);
+      }
+    }
+    checkPermission();
+  }, [user, tournamentId]);
+
+  // --- 2. REAL-TIME DATA FETCHING (Only if Access Granted) ---
+  useEffect(() => {
+    if (!hasAccess) return; // 🔒 Stop listening if no access
+
     const pRef = collection(db, "tournaments", tournamentId, "auctionPlayers");
     const qPool = query(pRef, orderBy("name"));
     const unsubPool = onSnapshot(qPool, (snap) => {
@@ -157,11 +186,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
 
     const tRef = collection(db, "tournaments", tournamentId, "teams");
     const unsubTeams = onSnapshot(tRef, (snap) => {
-      const tList = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setTeams(tList);
-      const map = {};
-      tList.forEach((t) => (map[t.id] = t.name));
-      setTeamsMap(map);
+      setTeams(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
 
     const sRef = collection(db, "tournaments", tournamentId, "auction_slots");
@@ -181,10 +206,11 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
       unsubTeams();
       unsubSlots();
     };
-  }, [tournamentId]);
+  }, [tournamentId, hasAccess]);
 
   // --- ACTIONS ---
   const handleUpdateConfig = async () => {
+    if(!hasAccess) return;
     try {
       await updateDoc(doc(db, "tournaments", tournamentId), {
         minSquadSize: Number(config.minSquadSize),
@@ -199,55 +225,37 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
   };
 
   const handleCreateSlot = async () => {
-    if (!newSlotName || !tournamentId) return;
+    if (!newSlotName || !tournamentId || !hasAccess) return;
     try {
       const slotsColRef = collection(db, "tournaments", tournamentId, "auction_slots");
-      await addDoc(slotsColRef, {
-        name: newSlotName.trim(),
-        order: slots.length + 1,
-        status: 'pending',
-        createdAt: Date.now()
-      });
+      await addDoc(slotsColRef, { name: newSlotName.trim(), order: slots.length + 1, status: 'pending', createdAt: Date.now() });
       setNewSlotName("");
-    } catch (e) {
-      console.error("Permission Error:", e);
-      alert("Error creating slot: " + e.message); 
-    }
+    } catch (e) { alert("Error creating slot: " + e.message); }
   };
 
   const handleDeleteSlot = async (slotId) => {
-    if (!window.confirm("Delete this slot? Players in this slot will be unassigned.")) return;
+    if (!hasAccess) return;
+    if (!window.confirm("Delete this slot?")) return;
     await deleteDoc(doc(db, "tournaments", tournamentId, "auction_slots", slotId));
   };
 
   const handleAssignToSlot = async (playerId, slotId) => {
+    if (!hasAccess) return;
     const ref = doc(db, "tournaments", tournamentId, "auctionPlayers", playerId);
     await updateDoc(ref, { auctionSlotId: slotId });
   };
 
   const handleImport = async (selectedGlobalPlayers) => {
+    if (!hasAccess) return;
     const batch = writeBatch(db);
     const colRef = collection(db, "tournaments", tournamentId, "auctionPlayers");
     selectedGlobalPlayers.forEach((p) => {
       const newRef = doc(colRef);
       batch.set(newRef, {
-        originalPlayerId: p.id,
-        name: p.name,
-        role: p.role || "All-Rounder",
-        mobile: p.mobile || "",
-        photoURL: p.photoURL || "",
-        basePrice: 500,
-        status: "PENDING",
-        soldPrice: 0,
-        teamId: null,
-        isOwner: false,
-        isIcon: false,
-        auctionSlotId: null,
-        statsSnapshot: {
-          runs: p.stats?.runs || 0,
-          wickets: p.stats?.wickets || 0,
-          matches: p.stats?.matches || 0,
-        },
+        originalPlayerId: p.id, name: p.name, role: p.role || "All-Rounder",
+        mobile: p.mobile || "", photoURL: p.photoURL || "", basePrice: 500,
+        status: "PENDING", soldPrice: 0, teamId: null, isOwner: false, isIcon: false, auctionSlotId: null,
+        statsSnapshot: { runs: p.stats?.runs || 0, wickets: p.stats?.wickets || 0, matches: p.stats?.matches || 0 },
       });
     });
     await batch.commit();
@@ -255,23 +263,27 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
   };
 
   const updateBasePrice = async (playerId, newPrice) => {
+    if (!hasAccess) return;
     const ref = doc(db, "tournaments", tournamentId, "auctionPlayers", playerId);
     const price = parseInt(newPrice);
     await updateDoc(ref, { basePrice: isNaN(price) ? 0 : price });
   };
 
   const toggleIconStatus = async (playerId, currentStatus) => {
+    if (!hasAccess) return;
     const ref = doc(db, "tournaments", tournamentId, "auctionPlayers", playerId);
     await updateDoc(ref, { isIcon: !currentStatus });
   };
 
   const deletePlayer = async (playerId) => {
-    if (!window.confirm("Remove player? This cannot be undone.")) return;
+    if (!hasAccess) return;
+    if (!window.confirm("Remove player?")) return;
     await deleteDoc(doc(db, "tournaments", tournamentId, "auctionPlayers", playerId));
   };
 
   const reAddPlayer = async (playerId) => {
-    if (!window.confirm("Reset to PENDING? Refunds purse & updates squad.")) return;
+    if (!hasAccess) return;
+    if (!window.confirm("Reset to PENDING?")) return;
     try {
       await runTransaction(db, async (transaction) => {
         const playerRef = doc(db, "tournaments", tournamentId, "auctionPlayers", playerId);
@@ -298,12 +310,14 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
   };
 
   const updateTeamPurse = async (teamId, newPurse) => {
+    if (!hasAccess) return;
     const ref = doc(db, "tournaments", tournamentId, "teams", teamId);
     const purseVal = parseInt(newPurse);
     await updateDoc(ref, { purse: isNaN(purseVal) ? 0 : purseVal });
   };
 
   const handleReset = async () => {
+    if (!hasAccess) return;
     if (!window.confirm("⚠ DANGER: DELETE ALL Auction Data & Teams? Cannot be undone.")) return;
     setIsResetting(true);
     try {
@@ -334,9 +348,25 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
     tab === tId ? "text-teal-400 border-teal-400 bg-teal-500/5" : "text-slate-500 border-transparent hover:text-white"
   }`;
 
+  // --- ACCESS DENIED UI ---
+  if (checkingAccess) return <div className="fixed inset-0 z-50 bg-[#0F1115] flex items-center justify-center text-teal-500 font-bold animate-pulse">Verifying Access...</div>;
+  
+  if (!hasAccess) return (
+    <div className="fixed inset-0 z-50 bg-[#0F1115]/95 backdrop-blur-xl flex items-center justify-center p-6">
+       <div className="bg-[#1C2128] border border-red-500/20 p-8 rounded-3xl text-center max-w-sm w-full shadow-2xl">
+          <div className="text-4xl mb-4">🚫</div>
+          <h2 className="text-slate-100 font-black uppercase tracking-wider mb-2">Access Denied</h2>
+          <p className="text-slate-500 text-xs font-medium mb-6 leading-relaxed">
+             You do not have permission to access the Auction Admin settings for this tournament.
+          </p>
+          <button onClick={onClose} className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-xl transition-all uppercase text-xs tracking-widest">Close Panel</button>
+       </div>
+    </div>
+  );
+
   return (
-    <div className="fixed inset-0 z-50 bg-[#0F1115] flex flex-col overflow-hidden animate-in slide-in-from-bottom-10">
-      <GlobalPlayerPicker isOpen={showPicker} onClose={() => setShowPicker(false)} onImport={handleImport} existingIds={auctionPlayers.map((p) => p.originalPlayerId)} />
+    <div className="fixed inset-0 z-[100] bg-[#0F1115] flex flex-col overflow-hidden animate-in slide-in-from-bottom-10">
+        <GlobalPlayerPicker isOpen={showPicker} onClose={() => setShowPicker(false)} onImport={handleImport} existingIds={auctionPlayers.map((p) => p.originalPlayerId)} />
 
       <div className="p-4 border-b border-white/5 flex justify-between items-center bg-[#1C2128] shadow-xl">
         <h2 className="text-lg font-black text-slate-100 flex items-center gap-3 uppercase tracking-tighter italic">
@@ -355,7 +385,6 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8 max-w-7xl mx-auto w-full">
-        
         {/* --- TAB: CONFIG / RULES --- */}
         {tab === "config" && (
           <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
@@ -544,7 +573,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   <span>⚠</span> Emergency Data Wipe
               </h4>
               <p className="text-red-400/50 text-[11px] max-w-md leading-relaxed font-medium">
-                This will purge <strong className="text-red-400">ALL</strong> tournament metadata including auction rounds, player slot assignments, the live auction room state, and all team squads. This action is irreversible.
+                This will purge <strong className="text-red-400">ALL</strong> tournament metadata. This action is irreversible.
               </p>
             </div>
             <button

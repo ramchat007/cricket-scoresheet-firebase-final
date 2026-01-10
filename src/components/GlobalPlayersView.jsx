@@ -17,10 +17,13 @@ export default function GlobalPlayersView() {
 
   // --- STATE ---
   const [players, setPlayers] = useState([]);
-  const [allMatches, setAllMatches] = useState([]); // Stores every match from every tournament
+  const [allMatches, setAllMatches] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedPlayerId, setExpandedPlayerId] = useState(null);
+
+  // ✅ NEW: State for Image Lightbox
+  const [previewImage, setPreviewImage] = useState(null);
 
   const [sortConfig, setSortConfig] = useState({
     key: "runs",
@@ -30,6 +33,7 @@ export default function GlobalPlayersView() {
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [processingImage, setProcessingImage] = useState(false);
+  
   const [formData, setFormData] = useState({
     id: "",
     name: "",
@@ -40,24 +44,20 @@ export default function GlobalPlayersView() {
     photoURL: "",
   });
 
-  // --- 1. DATA FETCHING (AUTO LOAD EVERYTHING) ---
+  // --- 1. DATA FETCHING ---
   useEffect(() => {
     const loadRealTimeData = async () => {
       setLoading(true);
       try {
-        // A. Load Players
         const playersList = await listGlobalPlayers();
         setPlayers(playersList);
 
-        // B. Load ALL Matches from ALL Tournaments
         const tournaments = await listTournaments();
         let collectedMatches = [];
 
-        // Run in parallel for speed
         await Promise.all(
           tournaments.map(async (t) => {
             const matches = await listMatchesForTournament(t.id);
-            // Tag match with tournament ID for linking
             const tagged = matches.map((m) => ({ ...m, tournamentId: t.id }));
             collectedMatches = [...collectedMatches, ...tagged];
           })
@@ -79,134 +79,77 @@ export default function GlobalPlayersView() {
     if (players.length === 0)
       return { processedPlayers: [], orangeCap: null, purpleCap: null };
 
-    // A. Map: PlayerID -> Stats Object
     const statsMap = {};
     players.forEach((p) => {
       statsMap[p.id] = {
         ...p,
-        calculatedStats: {
-          matches: 0,
-          runs: 0,
-          wickets: 0,
-          highestScore: 0,
-          history: [],
-        },
+        calculatedStats: { matches: 0, runs: 0, wickets: 0, highestScore: 0, history: [] },
       };
     });
 
-    // B. Map: Name/OriginalID -> GlobalID (For matching match data to global players)
     const identityMap = {};
     players.forEach((p) => {
-      // Clean name for fuzzy match
       identityMap[p.name.trim().toLowerCase()] = p.id;
-      // Also map by ID if available
       identityMap[p.id] = p.id;
     });
 
-    // C. Process Every Match
     allMatches.forEach((match) => {
-      // Only count finished/live matches
       const status = (match.status || match.meta?.status || "").toLowerCase();
-      if (!["finished", "completed", "ongoing", "live"].includes(status))
-        return;
+      if (!["finished", "completed", "ongoing", "live"].includes(status)) return;
 
-      // Extract Innings
-      let inningsArray = [];
-      if (Array.isArray(match.innings)) {
-        inningsArray = match.innings;
-      } else if (match.innings && typeof match.innings === "object") {
-        inningsArray = Object.values(match.innings);
-      }
-
+      let inningsArray = Array.isArray(match.innings) ? match.innings : Object.values(match.innings || {});
       if (inningsArray.length === 0) return;
 
-      // Helper: Find Global Player ID from Match Player Data
       const findGlobalId = (name, originalId) => {
         const lowerName = (name || "").trim().toLowerCase();
-        // 1. Try Bridge ID (if stored in squad)
-        if (originalId && identityMap[originalId])
-          return identityMap[originalId];
-        // 2. Try Fuzzy Name
+        if (originalId && identityMap[originalId]) return identityMap[originalId];
         return identityMap[lowerName];
       };
 
       inningsArray.forEach((inn) => {
-        // Batting Stats
         if (inn.batsmenStats) {
           Object.entries(inn.batsmenStats).forEach(([pName, s]) => {
-            const gid = findGlobalId(pName, null); // We don't have originalID easily here, rely on name
+            const gid = findGlobalId(pName, null);
             if (gid && statsMap[gid]) {
               const p = statsMap[gid];
               const r = Number(s.runs) || 0;
-
-              // Only add if they actually played
               if (s.balls > 0 || s.out) {
-                // Check if we already added this match to history (to avoid double counting if bad data)
-                const alreadyProcessed = p.calculatedStats.history.some(
-                  (h) => h.matchId === match.id
-                );
-
+                const alreadyProcessed = p.calculatedStats.history.some((h) => h.matchId === match.id);
                 if (!alreadyProcessed) {
                   p.calculatedStats.matches += 1;
                   p.calculatedStats.history.push({
-                    matchId: match.id,
-                    tournamentId: match.tournamentId,
-                    date: match.date,
-                    opponent:
-                      inn.battingTeam === match.meta?.teamA
-                        ? match.meta?.teamB
-                        : match.meta?.teamA,
-                    runs: r,
-                    wickets: 0, // Will update below
+                    matchId: match.id, tournamentId: match.tournamentId, date: match.date,
+                    opponent: inn.battingTeam === match.meta?.teamA ? match.meta?.teamB : match.meta?.teamA,
+                    runs: r, wickets: 0,
                   });
                 } else {
-                  // Update existing entry (rare edge case)
-                  const entry = p.calculatedStats.history.find(
-                    (h) => h.matchId === match.id
-                  );
+                  const entry = p.calculatedStats.history.find((h) => h.matchId === match.id);
                   entry.runs += r;
                 }
-
                 p.calculatedStats.runs += r;
-                if (r > p.calculatedStats.highestScore)
-                  p.calculatedStats.highestScore = r;
+                if (r > p.calculatedStats.highestScore) p.calculatedStats.highestScore = r;
               }
             }
           });
         }
-
-        // Bowling Stats
         if (inn.bowlerStats) {
           Object.entries(inn.bowlerStats).forEach(([pName, s]) => {
             const gid = findGlobalId(pName, null);
             if (gid && statsMap[gid]) {
               const p = statsMap[gid];
               const w = Number(s.wickets) || 0;
-
               if (s.balls > 0) {
-                const alreadyProcessed = p.calculatedStats.history.some(
-                  (h) => h.matchId === match.id
-                );
-
+                const alreadyProcessed = p.calculatedStats.history.some((h) => h.matchId === match.id);
                 if (!alreadyProcessed) {
-                  // Played as bowler only
                   p.calculatedStats.matches += 1;
                   p.calculatedStats.history.push({
-                    matchId: match.id,
-                    tournamentId: match.tournamentId,
-                    date: match.date,
-                    opponent: inn.battingTeam || "Opponent",
-                    runs: 0,
-                    wickets: w,
+                    matchId: match.id, tournamentId: match.tournamentId, date: match.date,
+                    opponent: inn.battingTeam || "Opponent", runs: 0, wickets: w,
                   });
                 } else {
-                  // Played as all-rounder (already added in batting)
-                  const entry = p.calculatedStats.history.find(
-                    (h) => h.matchId === match.id
-                  );
+                  const entry = p.calculatedStats.history.find((h) => h.matchId === match.id);
                   entry.wickets += w;
                 }
-
                 p.calculatedStats.wickets += w;
               }
             }
@@ -215,17 +158,11 @@ export default function GlobalPlayersView() {
       });
     });
 
-    // D. Sort & Filter for Display
     let result = Object.values(statsMap);
-
-    // Apply Search Filter
     if (searchTerm) {
-      result = result.filter((p) =>
-        p.name.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+      result = result.filter((p) => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
     }
 
-    // Apply Sort
     result.sort((a, b) => {
       let valA, valB;
       if (["name", "role"].includes(sortConfig.key)) {
@@ -235,29 +172,18 @@ export default function GlobalPlayersView() {
         valA = a.calculatedStats[sortConfig.key] || 0;
         valB = b.calculatedStats[sortConfig.key] || 0;
       }
-
       if (typeof valA === "string") valA = valA.toLowerCase();
       if (typeof valB === "string") valB = valB.toLowerCase();
-
       if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
       if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
       return 0;
     });
 
-    // E. Calculate Caps (Orange/Purple)
     const allStats = Object.values(statsMap);
-    const orange = [...allStats].sort(
-      (a, b) => b.calculatedStats.runs - a.calculatedStats.runs
-    )[0];
-    const purple = [...allStats].sort(
-      (a, b) => b.calculatedStats.wickets - a.calculatedStats.wickets
-    )[0];
+    const orange = [...allStats].sort((a, b) => b.calculatedStats.runs - a.calculatedStats.runs)[0];
+    const purple = [...allStats].sort((a, b) => b.calculatedStats.wickets - a.calculatedStats.wickets)[0];
 
-    return {
-      processedPlayers: result,
-      orangeCap: orange?.calculatedStats.runs > 0 ? orange : null,
-      purpleCap: purple?.calculatedStats.wickets > 0 ? purple : null,
-    };
+    return { processedPlayers: result, orangeCap: orange?.calculatedStats.runs > 0 ? orange : null, purpleCap: purple?.calculatedStats.wickets > 0 ? purple : null };
   }, [players, allMatches, searchTerm, sortConfig]);
 
   // --- ACTIONS ---
@@ -266,7 +192,6 @@ export default function GlobalPlayersView() {
     if (!window.confirm("⚠ Permanently delete this player?")) return;
     try {
       await deleteGlobalPlayer(playerId);
-      // Optimistic update
       setPlayers((prev) => prev.filter((p) => p.id !== playerId));
     } catch (error) {
       alert("Failed to delete player.");
@@ -287,7 +212,6 @@ export default function GlobalPlayersView() {
     setSortConfig({ key, direction });
   };
 
-  // --- COMPRESSION ---
   const compressImage = (file, maxWidth = 400) => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -338,8 +262,7 @@ export default function GlobalPlayersView() {
 
   const openEditModal = (player, e) => {
     e.stopPropagation();
-    const sanitizeStyle = (val, defaultVal) =>
-      !val || val === "Unknown" ? defaultVal : val;
+    const sanitizeStyle = (val, defaultVal) => !val || val === "Unknown" ? defaultVal : val;
     setFormData({
       id: player.id,
       name: player.name,
@@ -377,7 +300,6 @@ export default function GlobalPlayersView() {
         alert("Player Created!");
       }
       setShowModal(false);
-      // Reload players to reflect changes (matches remain same)
       const data = await listGlobalPlayers();
       setPlayers(data);
     } catch (error) {
@@ -390,227 +312,118 @@ export default function GlobalPlayersView() {
   };
 
   const SortIcon = ({ colKey }) => (
-    <span
-      className={
-        sortConfig.key === colKey
-          ? "text-cyan-400 ml-1"
-          : "text-gray-600 ml-1 opacity-0 group-hover:opacity-50"
-      }>
-      {sortConfig.key === colKey
-        ? sortConfig.direction === "asc"
-          ? "↑"
-          : "↓"
-        : "⇅"}
+    <span className={sortConfig.key === colKey ? "text-teal-400 ml-1" : "text-slate-600 ml-1 opacity-0 group-hover:opacity-50"}>
+      {sortConfig.key === colKey ? (sortConfig.direction === "asc" ? "↑" : "↓") : "⇅"}
     </span>
   );
 
   const DetailItem = ({ label, value, isMono = false }) => (
-    <div className="flex flex-col p-2 bg-gray-900/50 rounded border border-gray-800">
-      <span className="text-[9px] uppercase font-bold text-gray-500 mb-1">
-        {label}
-      </span>
-      <span
-        className={`text-sm text-white break-words ${
-          isMono ? "font-mono text-cyan-400" : ""
-        }`}>
-        {value || "N/A"}
-      </span>
+    <div className="flex flex-col p-3 bg-[#161920] rounded-xl border border-white/5">
+      <span className="text-[9px] uppercase font-black text-slate-500 mb-1 tracking-wider">{label}</span>
+      <span className={`text-sm text-slate-200 break-words font-bold ${isMono ? "font-mono text-teal-400" : ""}`}>{value || "N/A"}</span>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-[#0f172a] text-white p-2 md:p-4 pb-20">
+    <div className="min-h-screen bg-[#0F1115] text-slate-200 p-2 md:p-4 pb-20 font-sans">
       <div className="max-w-[1400px] mx-auto">
         {/* HEADER */}
-        <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
           <div className="text-center md:text-left">
-            <h1 className="text-2xl font-black uppercase tracking-tighter">
-              <span className="text-cyan-500">🌍</span>{" "}
+            <h1 className="text-2xl font-black uppercase tracking-tighter italic flex items-center gap-2 justify-center md:justify-start">
+              <span className="bg-teal-500/10 text-teal-500 p-2 rounded-xl">🌍</span>
               <span>Global Database</span>
             </h1>
-            <p className="text-gray-400 text-xs mt-1 flex items-center gap-2">
-              {processedPlayers.length} players found.
-              {/* No more Sync button needed, it's live */}
+            <p className="text-slate-500 text-xs mt-2 font-bold uppercase tracking-widest flex items-center gap-2 justify-center md:justify-start">
+              {processedPlayers.length} players found
             </p>
           </div>
-          <div className="flex flex-wrap gap-2 w-full md:w-auto justify-center md:justify-end">
+          <div className="flex flex-wrap gap-3 w-full md:w-auto justify-center md:justify-end">
             <input
               type="text"
-              placeholder="🔍 Search name..."
-              className="bg-gray-800 border border-gray-700 text-white rounded-lg px-4 py-2 w-full md:w-64 focus:border-cyan-500 outline-none text-sm"
+              placeholder="Search name..."
+              className="bg-[#1C2128] border border-white/10 text-slate-200 rounded-xl px-5 py-3 w-full md:w-64 focus:border-teal-500/50 outline-none text-sm font-bold placeholder:text-slate-600"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
             {user && (
               <button
                 onClick={openAddModal}
-                className="bg-cyan-600 hover:bg-cyan-500 px-4 py-2 rounded-lg font-bold text-sm shadow-lg whitespace-nowrap transition-colors">
+                className="bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg whitespace-nowrap transition-all active:scale-95 text-white">
                 + Add
               </button>
             )}
           </div>
         </div>
 
-        {/* ✅ ORANGE & PURPLE CAPS SECTION */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+        {/* CAPS SECTION */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
           {orangeCap && (
-            <div className="bg-gradient-to-br from-orange-900/20 to-gray-900 border border-orange-500/20 p-5 rounded-2xl flex items-center gap-5 shadow-lg relative overflow-hidden">
-              <div className="bg-orange-500/10 p-3 rounded-full text-3xl">
-                🏏
-              </div>
+            <div className="bg-gradient-to-br from-orange-900/30 to-[#161920] border border-orange-500/20 p-5 rounded-[2rem] flex items-center gap-5 shadow-xl relative overflow-hidden group">
+              <div className="bg-orange-500/10 p-4 rounded-full text-3xl border border-orange-500/20 group-hover:scale-110 transition-transform">🏏</div>
               <div>
-                <div className="text-[10px] font-black uppercase tracking-widest text-orange-500 mb-1">
-                  Global Orange Cap
-                </div>
-                <div className="text-xl font-bold text-white">
-                  {orangeCap.name}
-                </div>
-                <div className="text-sm text-gray-400 font-mono">
-                  {orangeCap.calculatedStats.runs} Runs
-                </div>
+                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-500 mb-1">Global Orange Cap</div>
+                <div className="text-xl font-black text-slate-100 italic">{orangeCap.name}</div>
+                <div className="text-sm text-slate-400 font-mono font-bold mt-1">{orangeCap.calculatedStats.runs} Runs</div>
               </div>
             </div>
           )}
           {purpleCap && (
-            <div className="bg-gradient-to-br from-purple-900/20 to-gray-900 border border-purple-500/20 p-5 rounded-2xl flex items-center gap-5 shadow-lg relative overflow-hidden">
-              <div className="bg-purple-500/10 p-3 rounded-full text-3xl">
-                🥎
-              </div>
+            <div className="bg-gradient-to-br from-purple-900/30 to-[#161920] border border-purple-500/20 p-5 rounded-[2rem] flex items-center gap-5 shadow-xl relative overflow-hidden group">
+              <div className="bg-purple-500/10 p-4 rounded-full text-3xl border border-purple-500/20 group-hover:scale-110 transition-transform">🥎</div>
               <div>
-                <div className="text-[10px] font-black uppercase tracking-widest text-purple-500 mb-1">
-                  Global Purple Cap
-                </div>
-                <div className="text-xl font-bold text-white">
-                  {purpleCap.name}
-                </div>
-                <div className="text-sm text-gray-400 font-mono">
-                  {purpleCap.calculatedStats.wickets} Wickets
-                </div>
+                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-purple-500 mb-1">Global Purple Cap</div>
+                <div className="text-xl font-black text-slate-100 italic">{purpleCap.name}</div>
+                <div className="text-sm text-slate-400 font-mono font-bold mt-1">{purpleCap.calculatedStats.wickets} Wickets</div>
               </div>
             </div>
           )}
         </div>
 
         {/* TABLE */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden shadow-2xl">
+        <div className="bg-[#1C2128] border border-white/5 rounded-[2rem] overflow-hidden shadow-2xl">
           {loading ? (
-            <div className="p-12 text-center text-cyan-500 animate-pulse text-sm font-mono">
-              Fetching all tournament data...
-            </div>
+            <div className="p-12 text-center text-teal-500 animate-pulse text-xs font-black uppercase tracking-widest">Fetching all tournament data...</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left border-collapse">
-                <thead className="bg-gray-950 text-gray-400 text-[10px] uppercase font-bold tracking-wider">
+                <thead className="bg-[#0F1115] text-slate-500 text-[10px] uppercase font-black tracking-[0.2em] border-b border-white/5">
                   <tr>
-                    <th
-                      className="px-4 py-3 cursor-pointer hover:text-white group w-[40%] md:w-[30%]"
-                      onClick={() => handleSort("name")}>
-                      Player Details <SortIcon colKey="name" />
-                    </th>
-                    <th
-                      className="px-2 py-3 text-center cursor-pointer hover:text-white group"
-                      onClick={() => handleSort("matches")}>
-                      Mat <SortIcon colKey="matches" />
-                    </th>
-                    <th
-                      className="px-2 py-3 text-center cursor-pointer hover:text-white group"
-                      onClick={() => handleSort("runs")}>
-                      Runs <SortIcon colKey="runs" />
-                    </th>
-                    <th
-                      className="px-2 py-3 text-center cursor-pointer hover:text-white group hidden md:table-cell"
-                      onClick={() => handleSort("highestScore")}>
-                      HS <SortIcon colKey="highestScore" />
-                    </th>
-                    <th
-                      className="px-2 py-3 text-center cursor-pointer hover:text-white group"
-                      onClick={() => handleSort("wickets")}>
-                      Wkts <SortIcon colKey="wickets" />
-                    </th>
-                    <th className="px-4 py-3 text-right">Action</th>
+                    <th className="px-6 py-4 cursor-pointer hover:text-slate-300 group w-[40%] md:w-[30%] transition-colors" onClick={() => handleSort("name")}>Player Details <SortIcon colKey="name" /></th>
+                    <th className="px-4 py-4 text-center cursor-pointer hover:text-slate-300 group transition-colors" onClick={() => handleSort("matches")}>Mat <SortIcon colKey="matches" /></th>
+                    <th className="px-4 py-4 text-center cursor-pointer hover:text-slate-300 group transition-colors" onClick={() => handleSort("runs")}>Runs <SortIcon colKey="runs" /></th>
+                    <th className="px-4 py-4 text-center cursor-pointer hover:text-slate-300 group hidden md:table-cell transition-colors" onClick={() => handleSort("highestScore")}>HS <SortIcon colKey="highestScore" /></th>
+                    <th className="px-4 py-4 text-center cursor-pointer hover:text-slate-300 group transition-colors" onClick={() => handleSort("wickets")}>Wkts <SortIcon colKey="wickets" /></th>
+                    <th className="px-6 py-4 text-right">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-800">
+                <tbody className="divide-y divide-white/5">
                   {processedPlayers.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={8}
-                        className="text-center py-8 text-gray-500">
-                        No players found.
-                      </td>
-                    </tr>
+                    <tr><td colSpan={8} className="text-center py-16 text-slate-600 italic text-sm">No players found.</td></tr>
                   ) : (
                     processedPlayers.map((player) => (
                       <React.Fragment key={player.id}>
-                        <tr
-                          onClick={() => toggleRowExpansion(player.id)}
-                          className={`hover:bg-gray-800/50 transition-colors cursor-pointer ${
-                            expandedPlayerId === player.id
-                              ? "bg-gray-800/30"
-                              : ""
-                          }`}>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-3">
-                              <img
-                                src={
-                                  player.photoURL ||
-                                  "https://cdn-icons-png.flaticon.com/512/847/847969.png"
-                                }
-                                alt=""
-                                className="w-10 h-10 rounded-full object-cover bg-gray-700 border border-gray-600 flex-shrink-0"
-                                onError={(e) => {
-                                  e.target.src =
-                                    "https://cdn-icons-png.flaticon.com/512/847/847969.png";
-                                }}
-                              />
+                        <tr onClick={() => toggleRowExpansion(player.id)} className={`hover:bg-white/5 transition-colors cursor-pointer group ${expandedPlayerId === player.id ? "bg-white/5" : ""}`}>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-4">
+                              <img src={player.photoURL || "https://cdn-icons-png.flaticon.com/512/847/847969.png"} alt="" className="w-12 h-12 rounded-xl object-cover bg-[#0F1115] border border-white/10 flex-shrink-0 shadow-sm" onError={(e) => { e.target.src = "https://cdn-icons-png.flaticon.com/512/847/847969.png"; }} />
                               <div className="flex flex-col overflow-hidden">
-                                <span className="font-bold text-white text-sm leading-tight truncate max-w-[120px] md:max-w-none">
-                                  {player.name}
-                                </span>
-                                <div className="flex flex-wrap gap-1 mt-1">
-                                  <span className="text-[9px] bg-gray-800 text-gray-300 px-1.5 rounded border border-gray-700 truncate">
-                                    {player.role}
-                                  </span>
-                                </div>
+                                <span className="font-bold text-slate-200 text-sm leading-tight truncate max-w-[120px] md:max-w-none group-hover:text-white transition-colors">{player.name}</span>
+                                <div className="flex flex-wrap gap-1 mt-1.5"><span className="text-[9px] bg-[#0F1115] text-slate-500 px-2 py-0.5 rounded border border-white/10 truncate uppercase font-bold tracking-wider">{player.role}</span></div>
                               </div>
                             </div>
                           </td>
-                          <td className="px-2 py-3 text-center text-white font-mono">
-                            {player.calculatedStats.matches}
-                          </td>
-                          <td className="px-2 py-3 text-center font-bold text-cyan-400">
-                            {player.calculatedStats.runs}
-                          </td>
-                          <td className="px-2 py-3 text-center text-gray-400 hidden md:table-cell">
-                            {player.calculatedStats.highestScore}
-                          </td>
-                          <td className="px-2 py-3 text-center font-bold text-green-400">
-                            {player.calculatedStats.wickets}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <div className="flex justify-end gap-2 items-center">
-                              <span
-                                className="text-gray-500 mr-2 text-xs transition-transform duration-200 transform"
-                                style={{
-                                  transform:
-                                    expandedPlayerId === player.id
-                                      ? "rotate(180deg)"
-                                      : "rotate(0deg)",
-                                }}>
-                                ▼
-                              </span>
+                          <td className="px-4 py-4 text-center text-slate-400 font-mono font-bold">{player.calculatedStats.matches}</td>
+                          <td className="px-4 py-4 text-center font-bold text-teal-400 font-mono text-base">{player.calculatedStats.runs}</td>
+                          <td className="px-4 py-4 text-center text-slate-500 font-mono font-bold hidden md:table-cell">{player.calculatedStats.highestScore}</td>
+                          <td className="px-4 py-4 text-center font-bold text-green-400 font-mono text-base">{player.calculatedStats.wickets}</td>
+                          <td className="px-6 py-4 text-right">
+                            <div className="flex justify-end gap-3 items-center">
+                              <span className="text-slate-600 mr-2 text-xs transition-transform duration-200 transform group-hover:text-slate-400" style={{ transform: expandedPlayerId === player.id ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>
                               {user && (
                                 <>
-                                  <button
-                                    onClick={(e) => openEditModal(player, e)}
-                                    className="text-gray-400 hover:text-white p-1.5 rounded hover:bg-gray-700 transition-all">
-                                    ✎
-                                  </button>
-                                  <button
-                                    onClick={(e) => handleDelete(player.id, e)}
-                                    className="text-red-500 hover:text-red-400 p-1.5 rounded hover:bg-red-900/20 transition-all">
-                                    🗑
-                                  </button>
+                                  <button onClick={(e) => openEditModal(player, e)} className="text-slate-500 hover:text-white p-2 rounded-lg hover:bg-white/10 transition-all">✎</button>
+                                  <button onClick={(e) => handleDelete(player.id, e)} className="text-slate-500 hover:text-red-400 p-2 rounded-lg hover:bg-red-900/20 transition-all">🗑</button>
                                 </>
                               )}
                             </div>
@@ -618,120 +431,60 @@ export default function GlobalPlayersView() {
                         </tr>
 
                         {expandedPlayerId === player.id && (
-                          <tr className="bg-gray-950/80 border-t border-b border-gray-800 animate-in slide-in-from-top-1">
-                            <td colSpan={8} className="p-4 md:p-6">
-                              <div className="flex flex-col md:flex-row gap-6 items-start">
+                          <tr className="bg-[#0F1115] border-t border-b border-white/5 animate-in slide-in-from-top-1">
+                            <td colSpan={8} className="p-6">
+                              <div className="flex flex-col md:flex-row gap-8 items-start">
                                 <div className="flex-shrink-0">
-                                  <img
-                                    src={
-                                      player.photoURL ||
-                                      "https://cdn-icons-png.flaticon.com/512/847/847969.png"
-                                    }
-                                    alt={player.name}
-                                    className="w-32 h-32 md:w-40 md:h-40 rounded-2xl object-cover border-2 border-cyan-500/50 shadow-lg shadow-cyan-900/20 bg-gray-800"
-                                    onError={(e) => {
-                                      e.target.src =
-                                        "https://cdn-icons-png.flaticon.com/512/847/847969.png";
-                                    }}
-                                  />
+                                  <img src={player.photoURL || "https://cdn-icons-png.flaticon.com/512/847/847969.png"} alt={player.name} className="w-32 h-32 md:w-40 md:h-40 rounded-2xl object-cover border-2 border-teal-500/30 shadow-2xl shadow-teal-900/20 bg-[#161920]" onError={(e) => { e.target.src = "https://cdn-icons-png.flaticon.com/512/847/847969.png"; }} />
                                 </div>
                                 <div className="flex-grow w-full">
-                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-                                    <DetailItem
-                                      label="Full Name"
-                                      value={player.name}
-                                    />
-                                    <DetailItem
-                                      label="Role"
-                                      value={player.role}
-                                    />
-                                    <DetailItem
-                                      label="Batting"
-                                      value={player.battingStyle}
-                                    />
-                                    <DetailItem
-                                      label="Bowling"
-                                      value={player.bowlingStyle}
-                                    />
-                                    <DetailItem
-                                      label="Mobile"
-                                      value={player.mobile}
-                                      isMono={true}
-                                    />
-                                    <DetailItem
-                                      label="Registered"
-                                      value={
-                                        player.createdAt
-                                          ? new Date(
-                                              player.createdAt
-                                            ).toLocaleDateString()
-                                          : "N/A"
-                                      }
-                                    />
+                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                                    <DetailItem label="Full Name" value={player.name} />
+                                    <DetailItem label="Role" value={player.role} />
+                                    <DetailItem label="Batting" value={player.battingStyle} />
+                                    <DetailItem label="Bowling" value={player.bowlingStyle} />
+                                    <DetailItem label="Mobile" value={player.mobile} isMono={true} />
+                                    <DetailItem label="Registered" value={player.createdAt ? new Date(player.createdAt).toLocaleDateString() : "N/A"} />
                                   </div>
 
-                                  {/* ✅ UNIFIED MATCH HISTORY UI */}
-                                  <div className="pt-4 border-t border-gray-800">
-                                    <h4 className="text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2">
-                                      <span>📜</span> Match History (
-                                      {player.calculatedStats.history.length})
-                                    </h4>
-                                    {player.calculatedStats.history.length >
-                                    0 ? (
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                        {player.calculatedStats.history
-                                          .slice(0, 10)
-                                          .map((match, idx) => (
-                                            <div
-                                              key={idx}
-                                              onClick={() =>
-                                                goToMatch(
-                                                  match.tournamentId,
-                                                  match.matchId
-                                                )
-                                              }
-                                              className="bg-gray-800 border border-gray-700 p-3 rounded-lg cursor-pointer hover:border-cyan-500/50 hover:bg-gray-750 transition-all flex justify-between items-center group">
-                                              <div>
-                                                <div className="text-[10px] text-gray-500 mb-0.5">
-                                                  {new Date(
-                                                    match.date
-                                                  ).toLocaleDateString() ||
-                                                    "Date"}
-                                                </div>
-                                                <div className="font-bold text-sm text-gray-200">
-                                                  vs{" "}
-                                                  {match.opponent || "Opponent"}
-                                                </div>
-                                              </div>
+                                  {/* ✅ UPDATED: Fixed Payment Screenshot Preview with Lightbox */}
+                                  {user && player.paymentScreenshotURL && (
+                                    <div className="mb-8 pt-6 border-t border-white/5">
+                                        <h4 className="text-xs font-black text-slate-500 uppercase mb-4 tracking-widest">Receipt / Proof</h4>
+                                        <div 
+                                          className="relative group w-full md:w-64 cursor-pointer" 
+                                          onClick={() => setPreviewImage(player.paymentScreenshotURL)}
+                                        >
+                                            <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-xl">
+                                                <span className="text-white font-bold text-xs uppercase tracking-widest">Click to Enlarge</span>
+                                            </div>
+                                            <img src={player.paymentScreenshotURL} alt="Payment" className="w-full h-32 object-cover rounded-xl border border-white/10" />
+                                        </div>
+                                    </div>
+                                  )}
 
-                                              {/* ✅ Shows Both Stats in One Card */}
+                                  <div className="pt-6 border-t border-white/5">
+                                    <h4 className="text-xs font-black text-slate-500 uppercase mb-4 flex items-center gap-2 tracking-widest"><span>📜</span> Match History ({player.calculatedStats.history.length})</h4>
+                                    {player.calculatedStats.history.length > 0 ? (
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                        {player.calculatedStats.history.slice(0, 10).map((match, idx) => (
+                                            <div key={idx} onClick={() => goToMatch(match.tournamentId, match.matchId)} className="bg-[#161920] border border-white/5 p-4 rounded-xl cursor-pointer hover:border-teal-500/40 hover:bg-[#1C2128] transition-all flex justify-between items-center group/card">
+                                              <div>
+                                                <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-1">{new Date(match.date).toLocaleDateString() || "Date"}</div>
+                                                <div className="font-bold text-sm text-slate-200 group-hover/card:text-teal-400 transition-colors">vs {match.opponent || "Opponent"}</div>
+                                              </div>
                                               <div className="text-right flex flex-col items-end">
-                                                <div className="flex gap-2 text-xs">
-                                                  {match.runs > 0 && (
-                                                    <span className="text-cyan-400 font-bold">
-                                                      🏏 {match.runs}
-                                                    </span>
-                                                  )}
-                                                  {match.wickets > 0 && (
-                                                    <span className="text-green-400 font-bold">
-                                                      🥎 {match.wickets}
-                                                    </span>
-                                                  )}
-                                                  {match.runs === 0 &&
-                                                    match.wickets === 0 && (
-                                                      <span className="text-gray-500">
-                                                        -
-                                                      </span>
-                                                    )}
+                                                <div className="flex gap-3 text-xs">
+                                                  {match.runs > 0 && <span className="text-teal-400 font-bold font-mono">🏏 {match.runs}</span>}
+                                                  {match.wickets > 0 && <span className="text-green-400 font-bold font-mono">🥎 {match.wickets}</span>}
+                                                  {match.runs === 0 && match.wickets === 0 && <span className="text-slate-600 font-bold">-</span>}
                                                 </div>
                                               </div>
                                             </div>
                                           ))}
                                       </div>
                                     ) : (
-                                      <div className="text-sm text-gray-600 italic p-3 border border-dashed border-gray-800 rounded bg-gray-900/50">
-                                        No match history recorded.
-                                      </div>
+                                      <div className="text-xs text-slate-600 italic p-6 border border-dashed border-white/5 rounded-xl bg-[#161920] text-center font-medium">No match history recorded.</div>
                                     )}
                                   </div>
                                 </div>
@@ -748,158 +501,61 @@ export default function GlobalPlayersView() {
           )}
         </div>
 
-        {/* MODAL (UNCHANGED) */}
+        {/* ✅ NEW: Image Lightbox Modal */}
+        {previewImage && (
+          <div 
+            className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+            onClick={() => setPreviewImage(null)}
+          >
+            <div className="relative max-w-4xl max-h-[90vh]">
+              <img 
+                src={previewImage} 
+                alt="Payment Proof" 
+                className="max-w-full max-h-[85vh] rounded-xl shadow-2xl border border-white/10"
+                onClick={(e) => e.stopPropagation()} // Prevent close when clicking image
+              />
+              <button 
+                className="absolute -top-12 right-0 text-white hover:text-red-400 font-bold text-sm uppercase tracking-widest transition-colors flex items-center gap-2"
+                onClick={() => setPreviewImage(null)}
+              >
+                Close ✕
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* EDIT/CREATE MODAL */}
         {showModal && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
-            <div className="bg-gray-900 border border-gray-700 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-              <div className="p-4 border-b border-gray-800 bg-gray-950 flex justify-between items-center sticky top-0 z-10">
-                <h3 className="text-lg font-bold text-white">
-                  {isEditing ? "Edit Player Profile" : "Create New Player"}
-                </h3>
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="text-gray-400 hover:text-white">
-                  ✕
-                </button>
+          <div className="fixed inset-0 bg-[#0F1115]/90 backdrop-blur-md z-[60] flex items-center justify-center p-4 animate-in fade-in">
+            <div className="bg-[#1C2128] border border-white/10 w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+              <div className="p-6 border-b border-white/5 bg-[#1C2128] flex justify-between items-center sticky top-0 z-10">
+                <h3 className="text-lg font-black text-slate-100 uppercase tracking-tight italic">{isEditing ? "Edit Player Profile" : "Create New Player"}</h3>
+                <button onClick={() => setShowModal(false)} className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors">✕</button>
               </div>
-              <div className="overflow-y-auto p-6">
-                <form onSubmit={handleSubmit} className="space-y-5">
+              <div className="overflow-y-auto p-8 custom-scrollbar">
+                <form onSubmit={handleSubmit} className="space-y-6">
                   <div className="flex flex-col items-center">
-                    <div
-                      className="relative group cursor-pointer"
-                      onClick={() => fileInputRef.current.click()}>
-                      <div
-                        className={`w-28 h-28 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl ${
-                          formData.photoURL
-                            ? "border-cyan-500"
-                            : "border-dashed border-gray-600 hover:border-gray-400"
-                        }`}>
-                        {formData.photoURL ? (
-                          <img
-                            src={formData.photoURL}
-                            alt="Preview"
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="text-center">
-                            <span className="text-3xl">📷</span>
-                            <p className="text-[10px] text-gray-400 uppercase mt-1 font-bold">
-                              Photo
-                            </p>
-                          </div>
-                        )}
+                    <div className="relative group cursor-pointer" onClick={() => fileInputRef.current.click()}>
+                      <div className={`w-32 h-32 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl bg-[#0F1115] ${formData.photoURL ? "border-teal-500 shadow-teal-500/20" : "border-dashed border-white/10 hover:border-white/30"}`}>
+                        {formData.photoURL ? <img src={formData.photoURL} alt="Preview" className="w-full h-full object-cover" /> : <div className="text-center"><span className="text-3xl opacity-50 grayscale">📷</span><p className="text-[9px] text-slate-500 uppercase mt-2 font-black tracking-widest">Photo</p></div>}
                       </div>
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={handleImageUpload}
-                        className="hidden"
-                        accept="image/*"
-                      />
+                      <input type="file" ref={fileInputRef} onChange={handleImageUpload} className="hidden" accept="image/*" />
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                      Full Name
-                    </label>
-                    <input
-                      className="w-full bg-black border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500 outline-none"
-                      value={formData.name}
-                      onChange={(e) =>
-                        setFormData({ ...formData, name: e.target.value })
-                      }
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                      Mobile
-                    </label>
-                    <input
-                      type="tel"
-                      className="w-full bg-black border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500 outline-none"
-                      value={formData.mobile}
-                      onChange={(e) =>
-                        setFormData({ ...formData, mobile: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                      Role
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {[
-                        "Batsman",
-                        "Bowler",
-                        "All-Rounder",
-                        "Wicket Keeper",
-                      ].map((role) => (
-                        <button
-                          key={role}
-                          type="button"
-                          onClick={() => setFormData({ ...formData, role })}
-                          className={`py-3 px-2 rounded-lg text-xs font-bold border transition-all ${
-                            formData.role === role
-                              ? "bg-cyan-900/40 border-cyan-500 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.2)]"
-                              : "bg-gray-800 border-gray-800 text-gray-400 hover:bg-gray-700"
-                          }`}>
-                          {role}
-                        </button>
-                      ))}
+                  <div className="space-y-4">
+                    <input className="w-full bg-[#0F1115] border border-white/10 rounded-xl px-4 py-3 text-slate-200 outline-none focus:border-teal-500/50 transition-all font-bold placeholder:text-slate-600" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required placeholder="Full Name" />
+                    <input className="w-full bg-[#0F1115] border border-white/10 rounded-xl px-4 py-3 text-slate-200 outline-none focus:border-teal-500/50 transition-all font-bold placeholder:text-slate-600" value={formData.mobile} onChange={(e) => setFormData({ ...formData, mobile: e.target.value })} placeholder="Mobile Number" />
+                    <div className="grid grid-cols-2 gap-3">
+                        {["Batsman", "Bowler", "All-Rounder", "Wicket Keeper"].map((role) => (
+                            <button key={role} type="button" onClick={() => setFormData({ ...formData, role })} className={`py-3 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all ${formData.role === role ? "bg-teal-500/10 border-teal-500/50 text-teal-400 shadow-lg" : "bg-[#0F1115] border-white/5 text-slate-500 hover:text-slate-300"}`}>{role}</button>
+                        ))}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <select className="w-full bg-[#0F1115] border border-white/10 rounded-xl px-4 py-3 text-xs font-bold text-slate-300 outline-none focus:border-teal-500/50" value={formData.battingStyle} onChange={(e) => setFormData({ ...formData, battingStyle: e.target.value })}><option>Right Hand Bat</option><option>Left Hand Bat</option></select>
+                        <select className="w-full bg-[#0F1115] border border-white/10 rounded-xl px-4 py-3 text-xs font-bold text-slate-300 outline-none focus:border-teal-500/50" value={formData.bowlingStyle} onChange={(e) => setFormData({ ...formData, bowlingStyle: e.target.value })}><option>Right Arm Medium</option><option>Right Arm Fast</option><option>Right Arm Spin</option><option>Left Arm Medium</option><option>Left Arm Fast</option><option>Left Arm Spin</option><option>None</option></select>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                        Batting
-                      </label>
-                      <select
-                        className="w-full bg-black border border-gray-700 rounded-xl px-3 py-3 text-sm text-white outline-none focus:border-cyan-500"
-                        value={formData.battingStyle}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            battingStyle: e.target.value,
-                          })
-                        }>
-                        <option>Right Hand Bat</option>
-                        <option>Left Hand Bat</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                        Bowling
-                      </label>
-                      <select
-                        className="w-full bg-black border border-gray-700 rounded-xl px-3 py-3 text-sm text-white outline-none focus:border-cyan-500"
-                        value={formData.bowlingStyle}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            bowlingStyle: e.target.value,
-                          })
-                        }>
-                        <option>Right Arm Medium</option>
-                        <option>Right Arm Fast</option>
-                        <option>Right Arm Spin</option>
-                        <option>Left Arm Medium</option>
-                        <option>Left Arm Fast</option>
-                        <option>Left Arm Spin</option>
-                        <option>None</option>
-                      </select>
-                    </div>
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={processingImage}
-                    className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-4 rounded-xl shadow-lg transition-all disabled:opacity-50">
-                    {processingImage
-                      ? "Processing..."
-                      : isEditing
-                      ? "Update Player"
-                      : "Create Player"}
-                  </button>
+                  <button type="submit" disabled={processingImage} className="w-full bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 text-white font-black uppercase tracking-widest text-xs py-4 rounded-xl shadow-lg shadow-teal-900/20 transition-all disabled:opacity-50 active:scale-[0.98]">{processingImage ? "Processing..." : isEditing ? "Update Player" : "Create Player"}</button>
                 </form>
               </div>
             </div>

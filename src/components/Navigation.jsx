@@ -48,7 +48,8 @@ export default function Navigation() {
 
   const links = [
     { name: "Home", path: "/" },
-    { name: "Global Stats", path: "/players" }
+    { name: "Global Stats", path: "/players" },
+    { name: "Register Player", path: "/register-player" }
   ];
 
   if (tournamentId && tournamentId !== 'auction') {
