@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { collection, query, where, getDocs, addDoc } from "firebase/firestore";
+import { collection, query, where, getDocs, addDoc, updateDoc, doc } from "firebase/firestore"; // Added updateDoc, doc
 import { db } from "../utils/firebase"; 
 
 export default function GlobalPlayerRegistration() {
@@ -14,9 +14,13 @@ export default function GlobalPlayerRegistration() {
 
   const [photoBase64, setPhotoBase64] = useState("");
   const [paymentBase64, setPaymentBase64] = useState("");
+  
+  // ✅ New State for Edit Mode
+  const [existingPlayerId, setExistingPlayerId] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
 
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState("idle"); // idle, checking, exists, success, error
+  const [status, setStatus] = useState("idle"); // idle, checking, exists, success, error, updated
   const [errorMessage, setErrorMessage] = useState("");
 
   const compressImage = (file, maxWidth = 300) => {
@@ -55,6 +59,22 @@ export default function GlobalPlayerRegistration() {
     }
   };
 
+  // ✅ New Function: Load Existing Player Data
+  const loadExistingPlayer = (playerData, docId) => {
+      setFormData({
+          name: playerData.name,
+          mobile: playerData.mobile,
+          role: playerData.role,
+          battingStyle: playerData.battingStyle || "Right Hand Bat",
+          bowlingStyle: playerData.bowlingStyle || "Right Arm Medium",
+      });
+      setPhotoBase64(playerData.photoURL || "");
+      setPaymentBase64(playerData.paymentScreenshotURL || "");
+      setExistingPlayerId(docId);
+      setIsEditing(true);
+      setStatus("idle"); // Reset status to allow editing
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -85,36 +105,59 @@ export default function GlobalPlayerRegistration() {
     }
 
     try {
-      // --- 1. DUPLICATE CHECK ---
-      // Query Firestore for existing mobile number
-      const playersRef = collection(db, "players"); // Or "globalPlayers" depending on your schema
-      const q = query(playersRef, where("mobile", "==", cleanMobile));
-      const querySnapshot = await getDocs(q);
-
-      if (!querySnapshot.empty) {
-        setStatus("exists");
-        setLoading(false);
-        return; // Stop execution
-      }
-
-      // --- 2. SAVE DATA ---
+      const playersRef = collection(db, "players");
       const isoDate = new Date().toISOString();
 
-      await addDoc(collection(db, "players"), {
-        name: formData.name.trim(),
-        mobile: cleanMobile,
-        role: formData.role,
-        battingStyle: formData.battingStyle,
-        bowlingStyle: formData.bowlingStyle,
-        photoURL: photoBase64,
-        paymentScreenshotURL: paymentBase64, 
-        stats: { matches: 0, runs: 0, wickets: 0 },
-        isVerified: false, // Admin can toggle this later
-        createdAt: isoDate,
-        updatedAt: isoDate,
-      });
+      if (isEditing && existingPlayerId) {
+          // --- UPDATE EXISTING PLAYER ---
+          const playerDocRef = doc(db, "players", existingPlayerId);
+          await updateDoc(playerDocRef, {
+            name: formData.name.trim(),
+            role: formData.role,
+            battingStyle: formData.battingStyle,
+            bowlingStyle: formData.bowlingStyle,
+            photoURL: photoBase64,
+            paymentScreenshotURL: paymentBase64,
+            updatedAt: isoDate,
+            // We don't update createdAt or stats
+          });
+          setStatus("updated");
+      } else {
+          // --- CREATE NEW PLAYER ---
+          // 1. Duplicate Check
+          const q = query(playersRef, where("mobile", "==", cleanMobile));
+          const querySnapshot = await getDocs(q);
 
-      setStatus("success");
+          if (!querySnapshot.empty) {
+            // Found duplicate -> Ask user if they want to edit
+            const docSnap = querySnapshot.docs[0];
+            if(window.confirm("⚠️ This mobile number is already registered.\n\nDo you want to edit your existing profile?")) {
+                loadExistingPlayer(docSnap.data(), docSnap.id);
+                setLoading(false);
+                return;
+            } else {
+                setStatus("exists");
+                setLoading(false);
+                return;
+            }
+          }
+
+          // 2. Add Doc
+          await addDoc(playersRef, {
+            name: formData.name.trim(),
+            mobile: cleanMobile,
+            role: formData.role,
+            battingStyle: formData.battingStyle,
+            bowlingStyle: formData.bowlingStyle,
+            photoURL: photoBase64,
+            paymentScreenshotURL: paymentBase64, 
+            stats: { matches: 0, runs: 0, wickets: 0 },
+            isVerified: false,
+            createdAt: isoDate,
+            updatedAt: isoDate,
+          });
+          setStatus("success");
+      }
     } catch (error) {
       console.error("Error registering:", error);
       setStatus("error");
@@ -124,7 +167,7 @@ export default function GlobalPlayerRegistration() {
     }
   };
 
-  if (status === "success") {
+  if (status === "success" || status === "updated") {
     return (
       <div className="min-h-screen bg-[#0F1115] flex items-center justify-center p-4 font-sans">
         <div className="bg-[#1C2128] border border-green-500/30 p-8 rounded-3xl max-w-md w-full text-center shadow-2xl animate-in zoom-in-95">
@@ -132,15 +175,15 @@ export default function GlobalPlayerRegistration() {
             ✓
           </div>
           <h2 className="text-2xl font-black text-slate-100 mb-2 uppercase tracking-tight italic">
-            Registration Complete!
+            {status === "updated" ? "Profile Updated!" : "Registration Complete!"}
           </h2>
           <p className="text-slate-500 mb-8 text-sm font-medium">
-            Your profile has been submitted for review.
+            Your profile has been {status === "updated" ? "updated" : "submitted"} for review.
           </p>
           <button
             onClick={() => window.location.reload()}
             className="block w-full bg-[#2D3339] hover:bg-[#363D45] text-white font-bold py-4 rounded-xl transition-all mb-4 text-xs uppercase tracking-widest">
-            Register Another Player
+            Back to Form
           </button>
           <Link
             to="/"
@@ -158,11 +201,11 @@ export default function GlobalPlayerRegistration() {
         <div className="text-center mb-10">
           <h1 className="text-4xl font-black italic tracking-tighter mb-2">
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-indigo-500 uppercase">
-              Player Registration
+              {isEditing ? "Update Profile" : "Player Registration"}
             </span>
           </h1>
           <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">
-            Join the league • Create your profile
+            {isEditing ? "Modify your details below" : "Join the league • Create your profile"}
           </p>
         </div>
 
@@ -235,7 +278,9 @@ export default function GlobalPlayerRegistration() {
                 type="tel"
                 placeholder="Mobile Number *"
                 maxLength={10}
-                className="w-full bg-[#0F1115] border border-white/10 rounded-xl px-5 py-4 text-slate-200 outline-none focus:border-teal-500/50 transition-all placeholder:text-slate-600 font-bold"
+                // Lock mobile number if editing to prevent changing identity
+                disabled={isEditing} 
+                className={`w-full bg-[#0F1115] border border-white/10 rounded-xl px-5 py-4 text-slate-200 outline-none focus:border-teal-500/50 transition-all placeholder:text-slate-600 font-bold ${isEditing ? "opacity-50 cursor-not-allowed" : ""}`}
                 value={formData.mobile}
                 onChange={(e) =>
                   setFormData({ ...formData, mobile: e.target.value })
@@ -323,8 +368,20 @@ export default function GlobalPlayerRegistration() {
               disabled={loading}
               type="submit"
               className="w-full bg-gradient-to-r from-teal-600 to-indigo-600 hover:from-teal-500 hover:to-indigo-500 text-white font-black uppercase tracking-widest text-xs py-5 rounded-2xl shadow-xl shadow-teal-900/20 transition-all disabled:opacity-50 active:scale-[0.98]">
-              {loading ? (status === "checking" ? "Checking Availability..." : "Registering...") : "Submit Registration"}
+              {loading 
+                ? (status === "checking" ? "Checking..." : isEditing ? "Updating..." : "Registering...") 
+                : (isEditing ? "Update Profile" : "Submit Registration")}
             </button>
+            
+            {isEditing && (
+                <button
+                    type="button"
+                    onClick={() => window.location.reload()}
+                    className="w-full text-slate-500 text-xs font-bold uppercase tracking-widest hover:text-white transition-colors"
+                >
+                    Cancel Edit
+                </button>
+            )}
           </form>
         </div>
       </div>

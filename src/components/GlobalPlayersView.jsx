@@ -13,7 +13,10 @@ import { useNavigate } from "react-router-dom";
 export default function GlobalPlayersView() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const fileInputRef = useRef(null);
+  
+  // Refs for file inputs
+  const fileInputRef = useRef(null);       // Profile Photo
+  const paymentInputRef = useRef(null);    // Payment Screenshot
 
   // --- STATE ---
   const [players, setPlayers] = useState([]);
@@ -22,7 +25,7 @@ export default function GlobalPlayersView() {
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedPlayerId, setExpandedPlayerId] = useState(null);
 
-  // ✅ NEW: State for Image Lightbox
+  // Lightbox State
   const [previewImage, setPreviewImage] = useState(null);
 
   const [sortConfig, setSortConfig] = useState({
@@ -42,6 +45,7 @@ export default function GlobalPlayersView() {
     bowlingStyle: "Right Arm Medium",
     mobile: "",
     photoURL: "",
+    paymentScreenshotURL: "", // ✅ Added payment field
   });
 
   // --- 1. DATA FETCHING ---
@@ -232,6 +236,7 @@ export default function GlobalPlayersView() {
     });
   };
 
+  // Handler for Profile Photo
   const handleImageUpload = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -246,6 +251,21 @@ export default function GlobalPlayersView() {
     }
   };
 
+  // ✅ Handler for Payment Screenshot
+  const handlePaymentImageUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    setProcessingImage(true);
+    try {
+      const compressedBase64 = await compressImage(file, 500); // Slightly larger for readability
+      setFormData((prev) => ({ ...prev, paymentScreenshotURL: compressedBase64 }));
+    } catch (error) {
+      alert("Failed to process payment image.");
+    } finally {
+      setProcessingImage(false);
+    }
+  };
+
   const openAddModal = () => {
     setFormData({
       id: "",
@@ -255,6 +275,7 @@ export default function GlobalPlayersView() {
       bowlingStyle: "Right Arm Medium",
       mobile: "",
       photoURL: "",
+      paymentScreenshotURL: "",
     });
     setIsEditing(false);
     setShowModal(true);
@@ -271,6 +292,7 @@ export default function GlobalPlayersView() {
       bowlingStyle: sanitizeStyle(player.bowlingStyle, "Right Arm Medium"),
       mobile: player.mobile || "",
       photoURL: player.photoURL || "",
+      paymentScreenshotURL: player.paymentScreenshotURL || "", // ✅ Load existing payment image
     });
     setIsEditing(true);
     setShowModal(true);
@@ -289,6 +311,7 @@ export default function GlobalPlayersView() {
           bowlingStyle: formData.bowlingStyle,
           mobile: formData.mobile,
           photoURL: formData.photoURL,
+          paymentScreenshotURL: formData.paymentScreenshotURL, // ✅ Save payment URL
         });
         alert("Player Updated!");
       } else {
@@ -447,7 +470,6 @@ export default function GlobalPlayersView() {
                                     <DetailItem label="Registered" value={player.createdAt ? new Date(player.createdAt).toLocaleDateString() : "N/A"} />
                                   </div>
 
-                                  {/* ✅ UPDATED: Fixed Payment Screenshot Preview with Lightbox */}
                                   {user && player.paymentScreenshotURL && (
                                     <div className="mb-8 pt-6 border-t border-white/5">
                                         <h4 className="text-xs font-black text-slate-500 uppercase mb-4 tracking-widest">Receipt / Proof</h4>
@@ -501,7 +523,7 @@ export default function GlobalPlayersView() {
           )}
         </div>
 
-        {/* ✅ NEW: Image Lightbox Modal */}
+        {/* IMAGE LIGHTBOX */}
         {previewImage && (
           <div 
             className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
@@ -512,7 +534,7 @@ export default function GlobalPlayersView() {
                 src={previewImage} 
                 alt="Payment Proof" 
                 className="max-w-full max-h-[85vh] rounded-xl shadow-2xl border border-white/10"
-                onClick={(e) => e.stopPropagation()} // Prevent close when clicking image
+                onClick={(e) => e.stopPropagation()} 
               />
               <button 
                 className="absolute -top-12 right-0 text-white hover:text-red-400 font-bold text-sm uppercase tracking-widest transition-colors flex items-center gap-2"
@@ -534,14 +556,32 @@ export default function GlobalPlayersView() {
               </div>
               <div className="overflow-y-auto p-8 custom-scrollbar">
                 <form onSubmit={handleSubmit} className="space-y-6">
-                  <div className="flex flex-col items-center">
-                    <div className="relative group cursor-pointer" onClick={() => fileInputRef.current.click()}>
-                      <div className={`w-32 h-32 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl bg-[#0F1115] ${formData.photoURL ? "border-teal-500 shadow-teal-500/20" : "border-dashed border-white/10 hover:border-white/30"}`}>
-                        {formData.photoURL ? <img src={formData.photoURL} alt="Preview" className="w-full h-full object-cover" /> : <div className="text-center"><span className="text-3xl opacity-50 grayscale">📷</span><p className="text-[9px] text-slate-500 uppercase mt-2 font-black tracking-widest">Photo</p></div>}
-                      </div>
-                      <input type="file" ref={fileInputRef} onChange={handleImageUpload} className="hidden" accept="image/*" />
+                  
+                  {/* TWO IMAGE UPLOADS */}
+                  <div className="flex gap-4 justify-center">
+                    {/* 1. Profile Photo */}
+                    <div className="flex flex-col items-center">
+                        <div className="relative group cursor-pointer" onClick={() => fileInputRef.current.click()}>
+                        <div className={`w-24 h-24 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl bg-[#0F1115] ${formData.photoURL ? "border-teal-500 shadow-teal-500/20" : "border-dashed border-white/10 hover:border-white/30"}`}>
+                            {formData.photoURL ? <img src={formData.photoURL} alt="Preview" className="w-full h-full object-cover" /> : <div className="text-center"><span className="text-2xl opacity-50 grayscale">📷</span></div>}
+                        </div>
+                        <input type="file" ref={fileInputRef} onChange={handleImageUpload} className="hidden" accept="image/*" />
+                        <p className="text-[9px] text-slate-500 uppercase mt-2 font-black tracking-widest text-center">Profile</p>
+                        </div>
+                    </div>
+
+                    {/* 2. Payment Proof */}
+                    <div className="flex flex-col items-center">
+                        <div className="relative group cursor-pointer" onClick={() => paymentInputRef.current.click()}>
+                        <div className={`w-24 h-24 rounded-xl border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl bg-[#0F1115] ${formData.paymentScreenshotURL ? "border-amber-500 shadow-amber-500/20" : "border-dashed border-white/10 hover:border-white/30"}`}>
+                            {formData.paymentScreenshotURL ? <img src={formData.paymentScreenshotURL} alt="Proof" className="w-full h-full object-cover" /> : <div className="text-center"><span className="text-2xl opacity-50 grayscale">🧾</span></div>}
+                        </div>
+                        <input type="file" ref={paymentInputRef} onChange={handlePaymentImageUpload} className="hidden" accept="image/*" />
+                        <p className="text-[9px] text-slate-500 uppercase mt-2 font-black tracking-widest text-center">Payment Proof</p>
+                        </div>
                     </div>
                   </div>
+
                   <div className="space-y-4">
                     <input className="w-full bg-[#0F1115] border border-white/10 rounded-xl px-4 py-3 text-slate-200 outline-none focus:border-teal-500/50 transition-all font-bold placeholder:text-slate-600" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required placeholder="Full Name" />
                     <input className="w-full bg-[#0F1115] border border-white/10 rounded-xl px-4 py-3 text-slate-200 outline-none focus:border-teal-500/50 transition-all font-bold placeholder:text-slate-600" value={formData.mobile} onChange={(e) => setFormData({ ...formData, mobile: e.target.value })} placeholder="Mobile Number" />
