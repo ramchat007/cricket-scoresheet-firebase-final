@@ -1,4 +1,3 @@
-// src/components/CreateTournament.jsx
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { addTournament } from "../utils/firestore"; 
@@ -11,9 +10,10 @@ export default function CreateTournament() {
   const [name, setName] = useState("");
   const [organizer, setOrganizer] = useState("");
   const [location, setLocation] = useState("");
+  const [date, setDate] = useState(""); // ✅ Added Date state
   const [loading, setLoading] = useState(false);
 
-  // ✅ NEW: Auction Constraint States
+  // Auction Constraint States
   const [minSquadSize, setMinSquadSize] = useState(11);
   const [maxSquadSize, setMaxSquadSize] = useState(15);
   const [minBasePrice, setMinBasePrice] = useState(500);
@@ -46,19 +46,19 @@ export default function CreateTournament() {
         .replace(/(^-|-$)+/g, "");
       const newId = `${slug}`; 
 
-      // Create with Owner ID and ✅ NEW Auction Constraints
       await addTournament(
         newId,
         {
           name,
           organizer,
           location,
+          date, // ✅ Save Date to Firestore
           status: "upcoming",
-          // ✅ Mandatory Rule Fields
           minSquadSize: Number(minSquadSize),
           maxSquadSize: Number(maxSquadSize),
           minBasePrice: Number(minBasePrice),
           bidIncrement: Number(bidIncrement),
+          createdAt: Date.now(),
         },
         user.uid
       );
@@ -78,7 +78,7 @@ export default function CreateTournament() {
   const labelClass = "block text-sm font-bold text-gray-500 uppercase mb-2";
 
   return (
-    <div className="max-w-2xl mx-auto mt-10 mb-20">
+    <div className="max-w-2xl mx-auto mt-10 mb-20 px-4">
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 shadow-2xl">
         <h2 className="text-2xl font-black text-white mb-6 uppercase flex items-center gap-2">
           <span className="text-cyan-500 text-3xl">+</span> Create Tournament
@@ -109,19 +109,33 @@ export default function CreateTournament() {
                   onChange={(e) => setOrganizer(e.target.value)}
                 />
               </div>
+              {/* ✅ NEW: Tournament Date Field */}
               <div>
-                <label className={labelClass}>Location / City</label>
+                <label className={labelClass}>Start Date</label>
                 <input
+                  type="date"
                   className={inputClass}
-                  placeholder="e.g. Mumbai"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
+                  style={{ colorScheme: 'dark' }}
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  required
                 />
               </div>
             </div>
+
+            <div>
+              <label className={labelClass}>Location / City</label>
+              <input
+                className={inputClass}
+                placeholder="e.g. Dombivali, Mumbai"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                required
+              />
+            </div>
           </div>
 
-          {/* ✅ NEW: AUCTION CONSTRAINTS SECTION */}
+          {/* AUCTION CONSTRAINTS SECTION */}
           <div className="space-y-4 pt-4">
             <h3 className="text-cyan-400 font-black uppercase tracking-widest text-xs border-b border-gray-800 pb-2">Auction & Squad Rules</h3>
             
@@ -174,7 +188,7 @@ export default function CreateTournament() {
 
           <button
             disabled={loading}
-            className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-4 rounded-lg shadow-lg shadow-cyan-900/20 transition-all transform hover:-translate-y-1 mt-4">
+            className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-4 rounded-lg shadow-lg shadow-cyan-900/20 transition-all transform active:scale-95 mt-4">
             {loading ? "Creating..." : "Create Tournament 🚀"}
           </button>
         </form>

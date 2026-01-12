@@ -29,6 +29,7 @@ import { useAuth } from "./hooks/useAuth.jsx";
 import MigrationTool from "./components/MigrationTool.jsx";
 import AuctionDashboard from "./components/AuctionDashboard.jsx";
 import GlobalPlayerRegistration from "./components/GlobalPlayerRegistration.jsx";
+import PastLeague from "./components/PastLeague.jsx";
 
 export default function MainApp() {
   const navigate = useNavigate();
@@ -231,6 +232,7 @@ export default function MainApp() {
           <Route path="/tournaments/:id" element={<TournamentDetails />} />
           <Route path="/tournaments/:tournamentId/scorecard/:matchId" element={<MatchScorecard />} />
           <Route path="/teams" element={<TeamsManager />} />
+          <Route path="/past-leagues" element={<PastLeague />} />
         </Routes>
       </div>
     </div>

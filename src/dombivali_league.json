@@ -1,0 +1,547 @@
+{
+    "tournament_name": "Dombivali Friends League",
+    "season": "2025",
+    "teams": [
+        {
+            "name": "Shivshakti Fighters",
+            "players": [
+                "Akshay Chavan",
+                "Roshan Ghatge",
+                "Vikram Mule",
+                "Omkar",
+                "Rupesh Mestry",
+                "Vishal Sawant",
+                "Pradeep Sadigale",
+                "Tushar Ghatge",
+                "Vishal Shinde"
+            ]
+        },
+        {
+            "name": "Zingaat Annas IX",
+            "players": [
+                "Durvesh Parab",
+                "Om Parte",
+                "Samrat Patil",
+                "Gaurav Nake",
+                "Pradeep Nair",
+                "Shivraj P Swami",
+                "Harshad Panchal",
+                "Rohan Ghatge",
+                "Shrikant"
+            ]
+        },
+        {
+            "name": "Samarth IX",
+            "players": [
+                "Balya",
+                "Gaurav Indulkar",
+                "Manoj Dhuri",
+                "Bhaskar Nalawade",
+                "Kalpesh Mestry",
+                "Pradeep Panchal",
+                "Dayanand Patil",
+                "Kavya Mane",
+                "Yash"
+            ]
+        },
+        {
+            "name": "Elite Strikers",
+            "players": [
+                "Amol Patil Bhatchawl",
+                "Krishna Ghatge",
+                "Pratik Gadkari",
+                "Ganesh Swami",
+                "Kunal Sawant",
+                "Ramchandra Sawant",
+                "Hrutik",
+                "Mayank Patil",
+                "Santosh Ghatge"
+            ]
+        },
+        {
+            "name": "Navratna Warriors",
+            "players": [
+                "Abhishek DHL",
+                "Omkar Mer",
+                "Sanskar Patade",
+                "Atul Gujar",
+                "Prathmesh Panchal",
+                "Sarthak Bhurke",
+                "Nayan",
+                "Sandesh Gawade",
+                "Suraj Nagwekar"
+            ]
+        }
+    ],
+    "matches": [
+        {
+            "id": 18588567,
+            "type": "Final",
+            "date": "03-Aug-25",
+            "t1": "Shivshakti Fighters",
+            "t2": "Samarth IX",
+            "t1_score": "17/4 (3.0)",
+            "t2_score": "19/1 (2.2)",
+            "res": "Samarth IX won by 4 wickets",
+            "scorecard_url": "https://cricheroes.com/scorecard/18588567/dombivali-friends-league-/shivshakti-fighters-vs-samarth-ix/scorecard",
+            "innings": [
+                {
+                    "team": "Shivshakti Fighters",
+                    "score": "17/4 (3.0)",
+                    "batting": [
+                        {
+                            "name": "Akshay Chavan",
+                            "res": "b Bhaskar Nalawade",
+                            "r": 7,
+                            "b": 6,
+                            "f": 1,
+                            "s": 0,
+                            "sr": "116.67"
+                        },
+                        {
+                            "name": "Omkar",
+                            "res": "b Manoj Dhuri",
+                            "r": 0,
+                            "b": 2,
+                            "f": 0,
+                            "s": 0,
+                            "sr": "0.00"
+                        },
+                        {
+                            "name": "Vikram Mule",
+                            "res": "b Bhaskar Nalawade",
+                            "r": 0,
+                            "b": 2,
+                            "f": 0,
+                            "s": 0,
+                            "sr": "0.00"
+                        },
+                        {
+                            "name": "Vishal Sawant",
+                            "res": "not out",
+                            "r": 4,
+                            "b": 5,
+                            "f": 0,
+                            "s": 0,
+                            "sr": "80.00"
+                        },
+                        {
+                            "name": "Tushar Ghatge",
+                            "res": "b Pradeep Panchal",
+                            "r": 1,
+                            "b": 2,
+                            "f": 0,
+                            "s": 0,
+                            "sr": "50.00"
+                        },
+                        {
+                            "name": "Rupesh Mestry",
+                            "res": "not out",
+                            "r": 2,
+                            "b": 2,
+                            "f": 0,
+                            "s": 0,
+                            "sr": "100.00"
+                        }
+                    ],
+                    "bowling": [
+                        {
+                            "name": "Manoj Dhuri",
+                            "o": "1.0",
+                            "r": 7,
+                            "w": 1,
+                            "eco": "7.00"
+                        },
+                        {
+                            "name": "Bhaskar Nalawade",
+                            "o": "1.0",
+                            "r": 4,
+                            "w": 2,
+                            "eco": "4.00"
+                        },
+                        {
+                            "name": "Pradeep Panchal",
+                            "o": "1.0",
+                            "r": 6,
+                            "w": 1,
+                            "eco": "6.00"
+                        }
+                    ],
+                    "fow": "1-1 (Omkar, 0.3 ov), 8-2 (Vikram Mule, 1.2 ov), 9-3 (Akshay Chavan, 1.4 ov), 12-4 (Tushar Ghatge, 2.3 ov)"
+                },
+                {
+                    "team": "Samarth IX",
+                    "score": "19/1 (2.2)",
+                    "batting": [
+                        {
+                            "name": "Balya",
+                            "res": "b Rupesh Mestry",
+                            "r": 6,
+                            "b": 4,
+                            "f": 0,
+                            "s": 1,
+                            "sr": "150.00"
+                        },
+                        {
+                            "name": "Gaurav Indulkar",
+                            "res": "not out",
+                            "r": 3,
+                            "b": 4,
+                            "f": 0,
+                            "s": 0,
+                            "sr": "75.00"
+                        },
+                        {
+                            "name": "Manoj Dhuri",
+                            "res": "not out",
+                            "r": 10,
+                            "b": 6,
+                            "f": 0,
+                            "s": 1,
+                            "sr": "166.67"
+                        }
+                    ],
+                    "bowling": [
+                        {
+                            "name": "Rupesh Mestry",
+                            "o": "1.0",
+                            "r": 7,
+                            "w": 1,
+                            "eco": "7.00"
+                        },
+                        {
+                            "name": "Tushar Ghatge",
+                            "o": "1.0",
+                            "r": 5,
+                            "w": 0,
+                            "eco": "5.00"
+                        },
+                        {
+                            "name": "Omkar",
+                            "o": "0.2",
+                            "r": 7,
+                            "w": 0,
+                            "eco": "21.00"
+                        }
+                    ],
+                    "fow": "6-1 (Balya, 0.4 ov)"
+                }
+            ]
+        },
+        {
+            "id": 18588567,
+            "type": "Final",
+            "date": "03-Aug-25",
+            "t1": "Shivshakti Fighters",
+            "t2": "Samarth IX",
+            "t1_score": "17/4 (3.0)",
+            "t2_score": "19/1 (2.2)",
+            "res": "Samarth IX won by 4 wickets",
+            "scorecard_url": "https://cricheroes.com/scorecard/18588567/dombivali-friends-league-/shivshakti-fighters-vs-samarth-ix/scorecard"
+        },
+        {
+            "id": 18581002,
+            "type": "Eliminator",
+            "date": "03-Aug-25",
+            "t1": "Navratna Warriors",
+            "t2": "Samarth IX",
+            "t1_score": "38/5",
+            "t2_score": "41/4",
+            "res": "Samarth IX won by 6 wickets",
+            "scorecard_url": "https://cricheroes.com/scorecard/18581002/dombivali-friends-league-/navratna-warriors-vs-samarth-ix/scorecard"
+        },
+        {
+            "id": 18581060,
+            "type": "Semi Final",
+            "date": "03-Aug-25",
+            "t1": "Elite Strikers",
+            "t2": "Samarth IX",
+            "t1_score": "40/6",
+            "t2_score": "41/3",
+            "res": "Samarth IX won by 7 wickets",
+            "scorecard_url": "https://cricheroes.com/scorecard/18581060/dombivali-friends-league-/elite-strikers-vs-samarth-ix/scorecard"
+        },
+        {
+            "id": 18573199,
+            "type": "Qualifier 1",
+            "date": "03-Aug-25",
+            "t1": "Shivshakti Fighters",
+            "t2": "Elite Strikers",
+            "t1_score": "72/3",
+            "t2_score": "38/4",
+            "res": "Shivshakti Fighters won by 34 runs",
+            "scorecard_url": "https://cricheroes.com/scorecard/18573199/dombivali-friends-league-/shivshakti-fighters-vs-elite-strikers/scorecard"
+        },
+        {
+            "id": 18567246,
+            "type": "League Match",
+            "date": "03-Aug-25",
+            "t1": "Shivshakti Fighters",
+            "t2": "Zingaat Annas IX",
+            "t1_score": "58/2",
+            "t2_score": "32/6",
+            "res": "Shivshakti Fighters won by 26 runs",
+            "scorecard_url": "https://cricheroes.com/scorecard/18567246/dombivali-friends-league-/shivshakti-fighters-vs-zingaat-annas-ix/scorecard"
+        },
+        {
+            "id": 18568600,
+            "type": "League Match",
+            "date": "03-Aug-25",
+            "t1": "Samarth IX",
+            "t2": "Navratna Warriors",
+            "t1_score": "68/2",
+            "t2_score": "44/5",
+            "res": "Samarth IX won by 24 runs",
+            "scorecard_url": "https://cricheroes.com/scorecard/18568600/dombivali-friends-league-/samarth-ix-vs-navratna-warriors/scorecard"
+        },
+        {
+            "id": 18569838,
+            "type": "League Match",
+            "date": "03-Aug-25",
+            "t1": "Elite Strikers",
+            "t2": "Zingaat Annas IX",
+            "t1_score": "44/5",
+            "t2_score": "43/6",
+            "res": "Elite Strikers won by 1 run",
+            "scorecard_url": "https://cricheroes.com/scorecard/18569838/dombivali-friends-league-/elite-strikers-vs-zingaat-annas-ix/scorecard"
+        },
+        {
+            "id": 18570881,
+            "type": "League Match",
+            "date": "03-Aug-25",
+            "t1": "Shivshakti Fighters",
+            "t2": "Samarth IX",
+            "t1_score": "45/5",
+            "t2_score": "46/5",
+            "res": "Samarth IX won by 5 wickets",
+            "scorecard_url": "https://cricheroes.com/scorecard/18570881/dombivali-friends-league-/shivshakti-fighters-vs-samarth-ix/scorecard"
+        },
+        {
+            "id": 18572111,
+            "type": "League Match",
+            "date": "03-Aug-25",
+            "t1": "Navratna Warriors",
+            "t2": "Elite Strikers",
+            "t1_score": "52/4",
+            "t2_score": "42/5",
+            "res": "Navratna Warriors won by 10 runs",
+            "scorecard_url": "https://cricheroes.com/scorecard/18572111/dombivali-friends-league-/navratna-warriors-vs-elite-strikers/scorecard"
+        },
+        {
+            "id": 18574447,
+            "type": "League Match",
+            "date": "03-Aug-25",
+            "t1": "Zingaat Annas IX",
+            "t2": "Navratna Warriors",
+            "t1_score": "39/4",
+            "t2_score": "40/5",
+            "res": "Navratna Warriors won by 5 wickets",
+            "scorecard_url": "https://cricheroes.com/scorecard/18574447/dombivali-friends-league-/zingaat-annas-ix-vs-navratna-warriors/scorecard"
+        },
+        {
+            "id": 18575298,
+            "type": "League Match",
+            "date": "03-Aug-25",
+            "t1": "Samarth IX",
+            "t2": "Elite Strikers",
+            "t1_score": "48/4",
+            "t2_score": "49/7",
+            "res": "Elite Strikers won by 3 wickets",
+            "scorecard_url": "https://cricheroes.com/scorecard/18575298/dombivali-friends-league-/samarth-ix-vs-elite-strikers/scorecard"
+        }
+    ],
+    "top_performers": [
+        {
+            "rank": 1,
+            "name": "Omkar",
+            "team": "Shivshakti Fighters",
+            "matches": 7,
+            "innings": 6,
+            "runs": 104,
+            "hs": 49,
+            "avg": "20.8",
+            "not_out": 1,
+            "sr": "226.09",
+            "balls": 46,
+            "fours": 2,
+            "sixes": 13,
+            "wickets": 0
+        },
+        {
+            "rank": 2,
+            "name": "Balya",
+            "team": "Samarth IX",
+            "matches": 8,
+            "innings": 7,
+            "runs": 81,
+            "hs": 24,
+            "avg": "11.57",
+            "not_out": 0,
+            "sr": "152.83",
+            "balls": 53,
+            "fours": 3,
+            "sixes": 8,
+            "wickets": 1
+        },
+        {
+            "rank": 3,
+            "name": "Gaurav Indulkar",
+            "team": "Samarth IX",
+            "matches": 8,
+            "innings": 7,
+            "runs": 79,
+            "hs": 30,
+            "avg": "79",
+            "not_out": 6,
+            "sr": "158",
+            "balls": 50,
+            "fours": 3,
+            "sixes": 7,
+            "wickets": 2
+        },
+        {
+            "rank": 4,
+            "name": "Durvesh Parab",
+            "team": "Zingaat Annas IX",
+            "matches": 4,
+            "innings": 4,
+            "runs": 67,
+            "hs": 38,
+            "avg": "33.5",
+            "not_out": 2,
+            "sr": "142.55",
+            "balls": 47,
+            "fours": 1,
+            "sixes": 5,
+            "wickets": 2
+        },
+        {
+            "rank": 5,
+            "name": "Akshay Chavan",
+            "team": "Shivshakti Fighters",
+            "matches": 7,
+            "innings": 6,
+            "runs": 65,
+            "hs": 32,
+            "avg": "10.83",
+            "not_out": 0,
+            "sr": "135.42",
+            "balls": 48,
+            "fours": 5,
+            "sixes": 4,
+            "wickets": 2
+        },
+        {
+            "rank": 6,
+            "name": "Pratik Gadkari",
+            "team": "Elite Strikers",
+            "matches": 6,
+            "innings": 5,
+            "runs": 63,
+            "hs": 30,
+            "avg": "12.6",
+            "not_out": 0,
+            "sr": "165.79",
+            "balls": 38,
+            "fours": 3,
+            "sixes": 6,
+            "wickets": 0
+        },
+        {
+            "rank": 7,
+            "name": "Santosh Ghatge",
+            "team": "Elite Strikers",
+            "matches": 6,
+            "innings": 6,
+            "runs": 58,
+            "hs": 26,
+            "avg": "19.33",
+            "not_out": 3,
+            "sr": "148.72",
+            "balls": 39,
+            "fours": 2,
+            "sixes": 5,
+            "wickets": 1
+        },
+        {
+            "rank": 8,
+            "name": "Hrutik",
+            "team": "Elite Strikers",
+            "matches": 6,
+            "innings": 5,
+            "runs": 54,
+            "hs": 28,
+            "avg": "13.5",
+            "not_out": 1,
+            "sr": "142.11",
+            "balls": 38,
+            "fours": 1,
+            "sixes": 6,
+            "wickets": 3
+        },
+        {
+            "rank": 9,
+            "name": "Manoj Dhuri",
+            "team": "Samarth IX",
+            "matches": 8,
+            "innings": 4,
+            "runs": 52,
+            "hs": 26,
+            "avg": "52",
+            "not_out": 3,
+            "sr": "247.62",
+            "balls": 21,
+            "fours": 1,
+            "sixes": 6,
+            "wickets": 7
+        },
+        {
+            "rank": 10,
+            "name": "Om Parte",
+            "team": "Zingaat Annas IX",
+            "matches": 4,
+            "innings": 3,
+            "runs": 49,
+            "hs": 30,
+            "avg": "24.5",
+            "not_out": 1,
+            "sr": "181.48",
+            "balls": 27,
+            "fours": 1,
+            "sixes": 5,
+            "wickets": 2
+        },
+        {
+            "rank": 11,
+            "name": "Pradeep Nair",
+            "team": "Zingaat Annas IX",
+            "matches": 4,
+            "innings": 4,
+            "runs": 46,
+            "hs": 37,
+            "avg": "23",
+            "not_out": 2,
+            "sr": "219.05",
+            "balls": 21,
+            "fours": 1,
+            "sixes": 6,
+            "wickets": 0
+        },
+        {
+            "rank": 12,
+            "name": "Bhaskar Nalawade",
+            "team": "Samarth IX",
+            "matches": 8,
+            "innings": 1,
+            "runs": 1,
+            "hs": 1,
+            "avg": "1",
+            "not_out": 0,
+            "sr": "50",
+            "balls": 2,
+            "fours": 0,
+            "sixes": 0,
+            "wickets": 9
+        }
+    ]
+}
