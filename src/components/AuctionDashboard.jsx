@@ -287,7 +287,7 @@ export default function AuctionDashboard() {
               <div className="flex flex-wrap gap-4 justify-center">
                 <button
                   onClick={() => markUnsold(tournamentId, currentPlayer.id)}
-                  className="bg-[#0F1115] hover:bg-white/5 text-slate-400 px-6 py-4 rounded-xl font-black text-xs uppercase border border-white/10">
+                  className="bg-[#0F1115] hover:bg-white/5 text-slate-400 px-8 py-4 rounded-xl font-black text-xs uppercase border border-white/10">
                   Pass
                 </button>
                 <button
@@ -427,20 +427,27 @@ export default function AuctionDashboard() {
 
             const isHighest = team.id === auctionState?.highestBidderId;
             const isNoBidsYet = !auctionState.highestBidderId;
+
+            // ✅ RULE 3: Handling First Bid Logic
             const bidAmountToPlace = isNoBidsYet
-              ? currentPlayer.basePrice
+              ? currentPlayer?.basePrice || 0
               : nextBidAmount;
 
+            // ✅ RULE 4: BUDGET SAFETY CALCULATION
+            // 1. Calculate squad count if they win this bid
             const squadIfWin = isHighest
               ? currentSquadCount
               : currentSquadCount + 1;
+            // 2. How many more players needed to reach minimum after this?
             const extraNeeded = Math.max(0, minSquad - squadIfWin);
+            // 3. Reserve amount = needed players * minimum possible price.
             const mandatoryReserve = extraNeeded * minBase;
+            // 4. Maximum allowable bid = current purse - that safety reserve.
             const maxSafeBid = remainingPurse - mandatoryReserve;
 
             const canAfford = maxSafeBid >= bidAmountToPlace;
 
-            // ✅ BLOCK BIDS IF PAUSED OR LIVE
+            // ✅ BLOCK BIDS IF PAUSED OR LIVE OR SAFETY FAIL
             let isDisabled = !isLive || isHighest;
             let errorReason = "";
 
@@ -450,7 +457,7 @@ export default function AuctionDashboard() {
                 errorReason = "Squad Full";
               } else if (!canAfford) {
                 isDisabled = true;
-                errorReason = "Reserve Warning";
+                errorReason = "Reserve Warning"; // Safety Rule 4
               } else if (
                 tournamentConfig?.maxBidPerPlayer > 0 &&
                 bidAmountToPlace > tournamentConfig.maxBidPerPlayer
