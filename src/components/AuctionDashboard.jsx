@@ -7,6 +7,7 @@ import {
   doc,
   getDoc,
   updateDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { useAuth } from "../hooks/useAuth";
@@ -16,6 +17,7 @@ import {
   placeBid,
   markSold,
   markUnsold,
+  undoLastBid,
 } from "../utils/auction";
 import AuctionAdminPanel from "./AuctionAdminPanel";
 
@@ -34,6 +36,7 @@ export default function AuctionDashboard() {
   const [filterRole, setFilterRole] = useState("All");
   const [queueTab, setQueueTab] = useState("upcoming");
   const [showAdmin, setShowAdmin] = useState(false);
+  const [ruleOverride, setRuleOverride] = useState(false);
 
   useEffect(() => {
     if (!user || !tournamentConfig) {
@@ -135,25 +138,41 @@ export default function AuctionDashboard() {
     return current + inc;
   };
 
-  // ✅ RULE 9: ADMIN REVERSE BID
-  const reverseLastBid = async () => {
-    if (
-      !window.confirm(
-        "⚠️ Undo last bid? The previous bidder will become the leader."
-      )
-    )
-      return;
-    const aucRef = doc(db, "tournaments", tournamentId, "auction", "state");
-    // Standard reverse: Reset to base price
-    await updateDoc(aucRef, {
-      currentBid: auctionState.currentPlayer.basePrice,
-      highestBidderId: null,
-      highestBidderName: null,
-      lastAction: "REVERSED_BY_ADMIN",
-    });
-  };
+const reverseLastBid = async () => {
+  if (!window.confirm("⚠️ Undo last bid? The previous bidder will become the leader.")) return;
 
-  // ✅ RULE 9: PAUSE / RESUME
+  const aucRef = doc(db, "tournaments", tournamentId, "auction", "state");
+  const history = auctionState.bidHistory || [];
+
+  try {
+    if (history.length > 0) {
+      const previousState = history[history.length - 1];
+      const newHistory = history.slice(0, -1);
+
+      await updateDoc(aucRef, {
+        currentBid: previousState.bid,
+        highestBidderId: previousState.bidderId,
+        highestBidderName: previousState.bidderName,
+        bidHistory: newHistory,
+        lastAction: "UNDO_PERFORMED",
+        updatedAt: serverTimestamp() // This requires the import above
+      });
+    } else {
+      await updateDoc(aucRef, {
+        currentBid: auctionState.currentPlayer.basePrice,
+        highestBidderId: null,
+        highestBidderName: null,
+        bidHistory: [],
+        lastAction: "RESET_TO_BASE",
+        updatedAt: serverTimestamp()
+      });
+    }
+  } catch (error) {
+    console.error("Undo failed:", error);
+    alert("Undo failed: Check console for details.");
+  }
+};
+
   const toggleAuctionPause = async () => {
     const aucRef = doc(db, "tournaments", tournamentId, "auction", "state");
     const isPaused = auctionState?.status === "PAUSED";
@@ -407,145 +426,128 @@ export default function AuctionDashboard() {
     );
   };
 
-  const renderBidders = () => {
-    return (
-      <div className="mt-8 pb-20">
-        <h3 className="text-slate-100 font-black text-lg mb-6 flex items-center gap-3 uppercase tracking-tighter italic">
+const renderBidders = () => {
+  return (
+    <div className="mt-8 pb-20">
+      <div className="flex justify-between items-center mb-6">
+        <h3 className="text-slate-100 font-black text-xl uppercase tracking-tighter italic">
           Bidding Console{" "}
-          <span className="text-[9px] bg-[#1C2128] text-teal-500 px-3 py-1 rounded-lg font-black border border-teal-500/20 uppercase">
+          <span className="text-xs bg-[#1C2128] text-teal-500 px-3 py-1 rounded-lg font-black border border-teal-500/20 uppercase not-italic">
             Smart Rules Active
           </span>
         </h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {teams.map((team) => {
-            const minSquad = parseInt(tournamentConfig?.minSquadSize || 11);
-            const maxSquad = parseInt(tournamentConfig?.maxSquadSize || 15);
-            const minBase = parseInt(tournamentConfig?.minBasePrice || 100);
-            const currentSquadCount = team.roster?.length || 0;
-            const remainingPurse =
-              parseInt(team.purse || 0) - parseInt(team.spent || 0);
-
-            const isHighest = team.id === auctionState?.highestBidderId;
-            const isNoBidsYet = !auctionState.highestBidderId;
-
-            // ✅ RULE 3: Handling First Bid Logic
-            const bidAmountToPlace = isNoBidsYet
-              ? currentPlayer?.basePrice || 0
-              : nextBidAmount;
-
-            // ✅ RULE 4: BUDGET SAFETY CALCULATION
-            // 1. Calculate squad count if they win this bid
-            const squadIfWin = isHighest
-              ? currentSquadCount
-              : currentSquadCount + 1;
-            // 2. How many more players needed to reach minimum after this?
-            const extraNeeded = Math.max(0, minSquad - squadIfWin);
-            // 3. Reserve amount = needed players * minimum possible price.
-            const mandatoryReserve = extraNeeded * minBase;
-            // 4. Maximum allowable bid = current purse - that safety reserve.
-            const maxSafeBid = remainingPurse - mandatoryReserve;
-
-            const canAfford = maxSafeBid >= bidAmountToPlace;
-
-            // ✅ BLOCK BIDS IF PAUSED OR LIVE OR SAFETY FAIL
-            let isDisabled = !isLive || isHighest;
-            let errorReason = "";
-
-            if (!isDisabled) {
-              if (currentSquadCount >= maxSquad) {
-                isDisabled = true;
-                errorReason = "Squad Full";
-              } else if (!canAfford) {
-                isDisabled = true;
-                errorReason = "Reserve Warning"; // Safety Rule 4
-              } else if (
-                tournamentConfig?.maxBidPerPlayer > 0 &&
-                bidAmountToPlace > tournamentConfig.maxBidPerPlayer
-              ) {
-                isDisabled = true;
-                errorReason = "Price Cap";
-              } else if (
-                currentPlayer?.isIcon &&
-                (team.roster || []).filter((p) => p.isIcon).length >=
-                  (tournamentConfig?.maxIconsPerTeam || 2)
-              ) {
-                isDisabled = true;
-                errorReason = "Icons Full";
-              }
-            }
-
-            return (
-              <div
-                key={team.id}
-                className={`p-5 rounded-2xl border relative transition-all duration-300 group ${
-                  isHighest
-                    ? "bg-teal-900/10 border-teal-500 shadow-xl shadow-teal-900/20"
-                    : "bg-[#1C2128] border-white/5 hover:border-white/10"
-                } ${isDisabled && !isHighest ? "opacity-50 grayscale" : ""}`}>
-                {isHighest && (
-                  <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-teal-500 text-black text-[9px] px-3 py-1 rounded-full font-black uppercase tracking-widest shadow-lg">
-                    Leading
-                  </div>
-                )}
-                <div className="text-center mb-4 mt-2">
-                  <div className="font-black text-slate-100 truncate text-sm uppercase italic">
-                    {team.name}
-                  </div>
-                  <div
-                    className={`text-[9px] mt-1 font-bold uppercase tracking-wider ${
-                      errorReason ? "text-red-400" : "text-slate-500"
-                    }`}>
-                    {errorReason ||
-                      `Max Bid: ₹${Math.max(0, maxSafeBid).toLocaleString()}`}
-                  </div>
-                  <div
-                    className={`text-xs font-mono font-bold mt-1 ${
-                      remainingPurse < (minSquad - currentSquadCount) * minBase
-                        ? "text-red-400"
-                        : "text-teal-400"
-                    }`}>
-                    ₹{remainingPurse.toLocaleString()}
-                  </div>
-                </div>
-                {canEdit ? (
-                  <button
-                    disabled={isDisabled}
-                    onClick={() =>
-                      placeBid(
-                        tournamentId,
-                        team.id,
-                        team.name,
-                        bidAmountToPlace
-                      )
-                    }
-                    className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                      isDisabled
-                        ? "bg-[#0F1115] text-slate-600 cursor-not-allowed"
-                        : "bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 text-white shadow-lg shadow-teal-900/20"
-                    }`}>
-                    {isHighest
-                      ? "Leading"
-                      : `Bid ₹${bidAmountToPlace.toLocaleString()}`}
-                  </button>
-                ) : (
-                  <div className="text-center">
-                    <span
-                      className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg border ${
-                        isHighest
-                          ? "bg-teal-500/10 border-teal-500/20 text-teal-400"
-                          : "bg-[#0F1115] border-white/5 text-slate-600"
-                      }`}>
-                      {isHighest ? "Leader" : "Waiting"}
-                    </span>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+        {canEdit && (
+          <button 
+            onClick={() => setRuleOverride(!ruleOverride)}
+            className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase transition-all border ${ruleOverride ? 'bg-red-600 text-white border-red-500 shadow-lg shadow-red-900/20' : 'bg-white/5 text-slate-500 border-white/10'}`}
+          >
+            {ruleOverride ? "⚠️ Rule Override: ON" : "Rule Override: OFF"}
+          </button>
+        )}
       </div>
-    );
-  };
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {teams.map((team) => {
+          const minSquadGoal = parseInt(tournamentConfig?.minSquadSize) || 11;
+          const minBasePrice = parseInt(tournamentConfig?.minBasePrice) || 100;
+          
+          const remainingPurse = (parseInt(team?.purse) || 0) - (parseInt(team?.spent) || 0);
+
+          const isHighest = auctionState?.highestBidderId === team.id;
+          const isNoBidsYet = !auctionState?.highestBidderId;
+
+          const playingSquad = (team?.roster || []).filter(p => p.isOwner !== true);
+          const currentPlayingCount = playingSquad.length;
+          
+          const bidAmountToPlace = isNoBidsYet 
+            ? (auctionState?.currentBid === currentPlayer?.basePrice ? calculateNextBid(auctionState?.currentBid) : (currentPlayer?.basePrice || 0))
+            : (nextBidAmount || 0);
+
+          const playingIfWin = isHighest ? currentPlayingCount : currentPlayingCount + 1;
+          const playersStillNeeded = Math.max(0, minSquadGoal - playingIfWin);
+          const mandatoryReserve = playersStillNeeded * minBasePrice;
+          const maxPossibleBid = remainingPurse - mandatoryReserve;
+
+          let isDisabled = !isLive || isHighest || !currentPlayer;
+          let errorReason = "";
+
+          if (!isDisabled && currentPlayer && !ruleOverride) {
+            if (currentPlayingCount >= (parseInt(tournamentConfig?.maxSquadSize) || 100)) {
+              isDisabled = true;
+              errorReason = "Squad Full";
+            } else if (bidAmountToPlace > maxPossibleBid) {
+              isDisabled = true;
+              errorReason = "Low Budget"; 
+            }
+          }
+
+          return (
+            <div
+              key={team.id}
+              className={`p-6 rounded-2xl border-2 relative transition-all duration-300 group ${
+                isHighest
+                  ? "bg-teal-900/20 border-teal-500 shadow-lg scale-[1.02]"
+                  : "bg-[#1C2128] border-white/5"
+              } ${isDisabled && !isHighest ? "opacity-50 grayscale" : ""}`}
+            >
+              {isHighest && (
+                <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-teal-500 text-black text-xs px-4 py-1 rounded-full font-black uppercase tracking-widest shadow-lg z-20">
+                  Leading
+                </div>
+              )}
+              
+              <div className="text-center mb-4 mt-2">
+                {/* Increased team name to base size */}
+                <div className={`font-black truncate text-base uppercase italic mb-1 ${isHighest ? 'text-teal-400' : 'text-slate-100'}`}>
+                  {team.name}
+                </div>
+                
+                {/* Max Bid label increased */}
+                <div className={`text-xs mt-1 font-bold uppercase tracking-wider ${errorReason ? "text-red-400" : "text-slate-400"}`}>
+                  {errorReason || `Max Bid: ₹${(maxPossibleBid || 0).toLocaleString()}`}
+                </div>
+
+                {/* Reserve info increased */}
+                <div className="text-[10px] text-slate-500 uppercase font-bold tracking-tight mt-1">
+                  {playersStillNeeded > 0 
+                    ? `Reserve ₹${(mandatoryReserve || 0).toLocaleString()} for ${playersStillNeeded} slots`
+                    : `Squad Goal Met!`}
+                </div>
+
+                {/* Purse amount increased */}
+                <div className={`text-sm font-mono font-black mt-3 ${isHighest ? 'text-white' : 'text-teal-500'}`}>
+                  Purse: ₹{(remainingPurse || 0).toLocaleString()}
+                </div>
+              </div>
+
+              {canEdit ? (
+                <button
+                  disabled={isDisabled}
+                  onClick={() => placeBid(tournamentId, team.id, team.name, bidAmountToPlace)}
+                  className={`w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+                    isHighest
+                      ? "bg-teal-500 text-black shadow-lg"
+                      : isDisabled
+                      ? "bg-[#0F1115] text-slate-600 cursor-not-allowed"
+                      : "bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 text-white shadow-lg"
+                  }`}
+                >
+                  {isHighest ? "Leading" : !currentPlayer ? "Standby" : `Bid ₹${(bidAmountToPlace || 0).toLocaleString()}`}
+                </button>
+              ) : (
+                <div className="text-center">
+                  <span className={`text-xs font-bold uppercase tracking-wider px-4 py-2 rounded-lg border ${isHighest ? "bg-teal-500 text-black border-teal-500" : "bg-[#0F1115] border-white/5 text-slate-600"}`}>
+                    {isHighest ? "Leader" : "Waiting"}
+                  </span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
 
   if (!auctionState)
     return (

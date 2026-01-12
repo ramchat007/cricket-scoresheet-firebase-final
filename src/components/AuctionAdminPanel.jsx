@@ -145,7 +145,7 @@ const PlayerRow = ({
   );
 };
 
-// --- 2. GLOBAL PLAYER SEARCH MODAL (Preserved) ---
+// --- 2. GLOBAL PLAYER SEARCH MODAL ---
 const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
   const [players, setPlayers] = useState([]);
   const [search, setSearch] = useState("");
@@ -283,15 +283,19 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
   const [teams, setTeams] = useState([]);
   const [slots, setSlots] = useState([]);
   const [newSlotName, setNewSlotName] = useState("");
-  const [config, setConfig] = useState({
+
+  // System Defaults for Safety Reset
+  const systemDefaults = {
     minSquadSize: 11,
     maxSquadSize: 15,
-    minBasePrice: 500,
+    minBasePrice: 100,
     bidIncrement: 100,
     maxBidPerPlayer: 0,
     maxIconsPerTeam: 2,
     bidSlabs: [],
-  });
+  };
+
+  const [config, setConfig] = useState(systemDefaults);
 
   const [showPicker, setShowPicker] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
@@ -382,6 +386,18 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
     alert("Updated Successfully!");
   };
 
+  // ✅ ADDED: RESET TO SYSTEM DEFAULTS
+  const handleResetRules = async () => {
+    if (!window.confirm("⚠️ Reset all tournament rules to safe system defaults?")) return;
+    try {
+      await updateDoc(doc(db, "tournaments", tournamentId), systemDefaults);
+      setConfig(systemDefaults);
+      alert("Rules Reset Successfully!");
+    } catch (e) {
+      alert("Reset failed: " + e.message);
+    }
+  };
+
   const forceAuctionReady = async () => {
     await setDoc(doc(db, "tournaments", tournamentId, "auction", "state"), {
       status: "READY",
@@ -450,7 +466,8 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
           playerId
         );
         const tRef = doc(db, "tournaments", tournamentId, "teams", teamId);
-        const pData = (await transaction.get(pRef)).data();
+        const pSnap = await transaction.get(pRef);
+        const pData = pSnap.data();
         transaction.update(tRef, {
           spent: increment(Number(price)),
           roster: arrayUnion({
@@ -605,8 +622,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
               </button>
             </div>
 
-            <div className="bg-[#1C2128] border border-white/5 p-8 rounded-[2rem] shadow-2xl">
-              {/* Dynamic Slabs */}
+            <div className="bg-[#1C2128] border border-white/5 p-8 rounded-[2rem] shadow-2xl relative overflow-hidden">
               <div className="mb-10">
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-slate-100 font-black uppercase text-xs">
@@ -659,7 +675,6 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 </div>
               </div>
 
-              {/* CLEAN MANUAL INPUTS */}
               <h3 className="text-slate-100 font-black uppercase text-xs mb-8 border-b border-white/5 pb-4">
                 Auction Logic Configuration
               </h3>
@@ -743,11 +758,18 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   />
                 </div>
               </div>
-              <button
-                onClick={handleUpdateConfig}
-                className="mt-12 w-full bg-teal-600 text-white font-black py-5 rounded-xl uppercase">
-                Update Mandatory Rules
-              </button>
+              <div className="flex gap-4 mt-12">
+                <button
+                  onClick={handleResetRules}
+                  className="flex-1 bg-red-900/20 text-red-500 border border-red-500/20 font-black py-5 rounded-xl uppercase text-xs">
+                  Reset Rules
+                </button>
+                <button
+                  onClick={handleUpdateConfig}
+                  className="flex-[2] bg-teal-600 text-white font-black py-5 rounded-xl uppercase text-xs shadow-lg">
+                  Update Rules
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -761,9 +783,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                     key={f}
                     onClick={() => setPoolFilter(f)}
                     className={`px-5 py-2.5 rounded-lg text-[10px] font-black uppercase ${
-                      poolFilter === f
-                        ? "bg-[#0F1115] text-white"
-                        : "text-slate-500"
+                      poolFilter === f ? "bg-[#0F1115] text-white" : "text-slate-500"
                     }`}>
                     {f}
                   </button>
@@ -771,7 +791,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
               </div>
               <button
                 onClick={() => setShowPicker(true)}
-                className="bg-teal-900/10 border border-teal-500/20 text-teal-400 px-6 py-3 rounded-xl font-black text-xs uppercase hover:bg-teal-900/20 hover:border-teal-500/40 transition-all active:scale-95 whitespace-nowrap">
+                className="bg-teal-900/10 border border-teal-500/20 text-teal-400 px-6 py-3 rounded-xl font-black text-xs uppercase hover:bg-teal-900/20 active:scale-95 transition-all">
                 + Add Players
               </button>
             </div>
@@ -854,7 +874,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 />
                 <button
                   onClick={handleCreateSlot}
-                  className="bg-orange-600 hover:bg-orange-500 text-white px-8 py-2 rounded-xl font-black uppercase tracking-wider text-xs transition-colors shadow-lg shadow-orange-900/20">
+                  className="bg-orange-600 hover:bg-orange-500 text-white px-8 py-2 rounded-xl font-black uppercase tracking-wider text-xs transition-colors shadow-lg">
                   Add Round
                 </button>
               </div>

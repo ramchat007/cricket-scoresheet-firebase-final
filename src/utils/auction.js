@@ -162,6 +162,7 @@ export const startBidding = async (tournamentId, player) => {
     highestBidderId: null,
     highestBidderName: null,
     currentPlayer: playerPayload,
+    bidHistory: [],
     updatedAt: serverTimestamp(),
   };
 
@@ -184,10 +185,20 @@ export async function placeBid(tournamentId, teamId, teamName, amount) {
       const auction = aucSnap.data();
 
       if (auction.status !== "LIVE") throw new Error("Bidding is closed");
-      if (amount <= (auction.currentBid || 0))
+      
+      // ✅ VALIDATION LOGIC
+      // If there is NO highestBidderId, this is the opening bid.
+      // We check if amount is at least basePrice.
+      // If there IS a bidder, amount must be higher than currentBid.
+      if (!auction.highestBidderId) {
+         if (amount < (auction.currentPlayer?.basePrice || 0)) {
+           throw new Error("Opening bid must be at least Base Price");
+         }
+      } else if (amount <= (auction.currentBid || 0)) {
         throw new Error("Bid must be higher");
+      }
 
-      // 2. [OPTIONAL] Get Team State to verify balance
+      // 2. Get Team State to verify balance
       const teamSnap = await tx.get(teamRef);
       if (!teamSnap.exists()) throw new Error("Team not found");
       const team = teamSnap.data();
@@ -195,19 +206,29 @@ export async function placeBid(tournamentId, teamId, teamName, amount) {
       const currentSpent = team.spent || 0;
       const purseLimit = team.purse || 0;
 
-      // Check if they have enough money
       if (purseLimit - currentSpent < amount) {
-        throw new Error(
-          `Team only has ${purseLimit - currentSpent} remaining.`
-        );
+        throw new Error(`Team only has ₹${purseLimit - currentSpent} remaining.`);
       }
 
-      // 3. Update Bid
+      // 3. CAPTURE PREVIOUS STATE FOR UNDO logic
+      // We only store the snapshot of the auction before this bid happened.
+      const currentEntry = {
+        bid: auction.currentBid || 0,
+        bidderId: auction.highestBidderId || null,
+        bidderName: auction.highestBidderName || null,
+      };
+
+      // Keep only the last 10 bids to keep the document size small
+      const existingHistory = auction.bidHistory || [];
+      const updatedHistory = [...existingHistory, currentEntry].slice(-10);
+
+      // 4. Update Bid
       tx.update(auctionRef, {
         currentBid: amount,
         highestBidderId: teamId,
         highestBidderName: teamName,
         lastBidAt: serverTimestamp(),
+        bidHistory: updatedHistory, // ✅ Save history here
       });
     });
   } catch (error) {
@@ -319,3 +340,47 @@ export const placeSafeBid = async (
 ) => {
   return await placeBid(tournamentId, teamId, teamName, amount);
 };
+
+export async function undoLastBid(tournamentId) {
+  const auctionRef = doc(db, "tournaments", tournamentId, "auction", "state");
+
+  try {
+    await runTransaction(db, async (tx) => {
+      const aucSnap = await tx.get(auctionRef);
+      if (!aucSnap.exists()) throw new Error("Auction state missing");
+
+      const auction = aucSnap.data();
+      const history = auction.bidHistory || [];
+
+      if (history.length === 0) {
+        // If no history, we revert to the starting state (Base Price, No Bidder)
+        tx.update(auctionRef, {
+          currentBid: auction.currentPlayer?.basePrice || 0,
+          highestBidderId: null,
+          highestBidderName: null,
+          bidHistory: [],
+          lastAction: "UNDO_RESET_TO_BASE",
+        });
+        return;
+      }
+
+      // 1. Get the last state from the history stack
+      const previousState = history[history.length - 1];
+
+      // 2. Remove that entry from the history array
+      const newHistory = history.slice(0, -1);
+
+      // 3. Revert the main state to the previous values
+      tx.update(auctionRef, {
+        currentBid: previousState.bid,
+        highestBidderId: previousState.bidderId,
+        highestBidderName: previousState.bidderName,
+        bidHistory: newHistory,
+        lastAction: "UNDO_PERFORMED",
+      });
+    });
+  } catch (error) {
+    console.error("Undo failed", error);
+    alert("Could not undo: " + error.message);
+  }
+}

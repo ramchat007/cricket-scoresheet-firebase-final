@@ -16,7 +16,7 @@ export default function CreateTournament() {
   // Auction Constraint States
   const [minSquadSize, setMinSquadSize] = useState(11);
   const [maxSquadSize, setMaxSquadSize] = useState(15);
-  const [minBasePrice, setMinBasePrice] = useState(500);
+  const [minBasePrice, setMinBasePrice] = useState(100);
   const [bidIncrement, setBidIncrement] = useState(100);
 
   // Redirect if not logged in
