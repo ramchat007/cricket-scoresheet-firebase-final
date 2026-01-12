@@ -12,7 +12,9 @@ import {
   runTransaction,
   addDoc,
   getDoc,
-  setDoc, // ✅ Added setDoc for repair function
+  setDoc,
+  arrayUnion,
+  increment,
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { listGlobalPlayers } from "../utils/firestore";
@@ -20,19 +22,141 @@ import { useAuth } from "../hooks/useAuth";
 import AuctionOwnersAdmin from "./AuctionOwnersAdmin";
 import MatchScheduler from "./MatchScheduler";
 
-// --- 1. GLOBAL PLAYER SEARCH MODAL ---
+// --- 1. SUB-COMPONENT FOR PLAYER ROW ---
+const PlayerRow = ({
+  p,
+  teams,
+  teamsMap,
+  poolFilter,
+  onAssign,
+  onUpdatePrice,
+  onToggleIcon,
+  onDelete,
+  onReset,
+  slots,
+  tournamentId,
+}) => {
+  const [tempTeam, setTempTeam] = useState("");
+  const [tempPrice, setTempPrice] = useState(p.basePrice || 100);
+
+  return (
+    <tr className="hover:bg-[#0F1115]/50 transition-colors group">
+      <td className="p-5 font-bold text-slate-200 whitespace-nowrap">
+        <div>
+          {p.name}
+          <div className="text-[9px] text-slate-500 uppercase mt-1">
+            {p.role}
+          </div>
+        </div>
+      </td>
+
+      <td className="p-5">
+        {p.status !== "SOLD" ? (
+          <div className="flex items-center gap-2">
+            <select
+              className="bg-[#0F1115] border border-teal-500/20 rounded-lg p-2 text-[10px] text-slate-300 outline-none w-32 font-bold"
+              value={tempTeam}
+              onChange={(e) => setTempTeam(e.target.value)}>
+              <option value="">Select Team</option>
+              {teams.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              className="bg-[#0F1115] border border-teal-500/20 rounded-lg p-2 text-[10px] text-teal-400 w-20 outline-none font-bold"
+              value={tempPrice}
+              onChange={(e) => setTempPrice(e.target.value)}
+            />
+            <button
+              onClick={() => onAssign(p.id, tempTeam, tempPrice)}
+              className="bg-teal-600 text-white px-3 py-2 rounded-lg text-[9px] font-black uppercase">
+              Assign
+            </button>
+          </div>
+        ) : (
+          <span className="text-[9px] text-teal-500 font-bold uppercase">
+            Sold to {teamsMap[p.teamId]}
+          </span>
+        )}
+      </td>
+
+      <td className="p-5">
+        <select
+          className="bg-[#0F1115] border border-white/10 rounded-lg p-2 text-[10px] text-slate-300 outline-none w-full max-w-[160px] font-bold cursor-pointer"
+          value={p.auctionSlotId || ""}
+          onChange={(e) =>
+            updateDoc(
+              doc(db, "tournaments", tournamentId, "auctionPlayers", p.id),
+              { auctionSlotId: e.target.value }
+            )
+          }>
+          <option value="">-- Unassigned --</option>
+          {slots.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+      </td>
+
+      <td className="p-5 font-mono">
+        {poolFilter === "SOLD" ? (
+          <span className="text-green-400 font-bold text-sm">
+            ₹{p.soldPrice?.toLocaleString()}
+          </span>
+        ) : (
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-slate-600">₹</span>
+            <input
+              type="number"
+              className="bg-[#0F1115] border border-white/10 rounded-lg px-2 py-1.5 w-24 text-slate-200 outline-none font-bold"
+              value={p.basePrice}
+              onChange={(e) => onUpdatePrice(p.id, e.target.value)}
+            />
+          </div>
+        )}
+      </td>
+
+      <td className="p-5 text-right flex justify-end gap-3 items-center">
+        <button
+          onClick={() => onToggleIcon(p.id, p.isIcon)}
+          className={`text-lg transition-all ${
+            p.isIcon ? "text-amber-400" : "text-slate-700"
+          }`}>
+          ★
+        </button>
+        {(poolFilter === "UNSOLD" || poolFilter === "SOLD") && (
+          <button
+            onClick={() => onReset(p.id)}
+            className="bg-teal-900/20 text-teal-400 border border-teal-500/20 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase">
+            ↺ Reset
+          </button>
+        )}
+        <button
+          onClick={() => onDelete(p.id)}
+          className="text-slate-700 hover:text-red-500 transition-colors p-2">
+          🗑
+        </button>
+      </td>
+    </tr>
+  );
+};
+
+// --- 2. GLOBAL PLAYER SEARCH MODAL (Preserved) ---
 const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
   const [players, setPlayers] = useState([]);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [isImporting, setIsImporting] = useState(false); // ✅ PREVENT DOUBLE CLICK
+  const [isImporting, setIsImporting] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setLoading(true);
       listGlobalPlayers().then((data) => {
-        // Filter out players already in the tournament
         const available = data.filter((p) => !existingIds.includes(p.id));
         setPlayers(available);
         setLoading(false);
@@ -66,7 +190,7 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
   );
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#0F1115]/95 p-4 backdrop-blur-md animate-in fade-in">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#0F1115]/95 p-4 backdrop-blur-md">
       <div className="bg-[#1C2128] border border-white/10 w-full max-w-lg rounded-3xl flex flex-col max-h-[80vh] shadow-2xl">
         <div className="p-6 border-b border-white/5 flex justify-between items-center bg-[#1C2128]">
           <div>
@@ -74,28 +198,27 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
               Global Database
             </h3>
             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
-              Select players to import
+              Import players
             </p>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors">
+            className="w-8 h-8 rounded-full bg-white/5 text-slate-400">
             ✕
           </button>
         </div>
-        <div className="p-4 border-b border-white/5 bg-[#161920]">
+        <div className="p-4 bg-[#161920]">
           <input
-            className="w-full bg-[#0F1115] border border-white/10 rounded-xl px-4 py-3 text-slate-200 focus:border-teal-500/50 outline-none transition-all font-bold placeholder:text-slate-600"
-            placeholder="Search name..."
+            className="w-full bg-[#0F1115] border border-white/10 rounded-xl px-4 py-3 text-slate-200 outline-none"
+            placeholder="Search..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            autoFocus
           />
         </div>
-        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-2">
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
           {loading ? (
-            <div className="text-center py-10 text-teal-500 animate-pulse font-black text-xs uppercase tracking-widest">
-              Loading Database...
+            <div className="text-center py-10 text-teal-500 animate-pulse">
+              Loading...
             </div>
           ) : (
             filtered.map((p) => {
@@ -104,10 +227,10 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
                 <div
                   key={p.id}
                   onClick={() => toggleSelect(p)}
-                  className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all border ${
+                  className={`flex items-center justify-between p-3 rounded-xl cursor-pointer border ${
                     isSel
                       ? "bg-teal-500/10 border-teal-500/50"
-                      : "bg-[#0F1115] border-white/5 hover:border-white/20"
+                      : "bg-[#0F1115] border-white/5"
                   }`}>
                   <div className="flex items-center gap-3">
                     <div
@@ -119,45 +242,31 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
                       {p.name.charAt(0)}
                     </div>
                     <div>
-                      <div
-                        className={`text-sm font-bold ${
-                          isSel ? "text-teal-400" : "text-slate-200"
-                        }`}>
+                      <div className="text-sm font-bold text-slate-200">
                         {p.name}
                       </div>
-                      <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                      <div className="text-[10px] text-slate-500 uppercase">
                         {p.role}
                       </div>
                     </div>
                   </div>
-                  {isSel && (
-                    <div className="text-teal-400 font-black text-lg">✓</div>
-                  )}
+                  {isSel && <div className="text-teal-400 font-black">✓</div>}
                 </div>
               );
             })
-          )}
-          {!loading && filtered.length === 0 && (
-            <div className="text-center py-8 text-slate-600 text-sm italic">
-              No available players found.
-            </div>
           )}
         </div>
         <div className="p-6 border-t border-white/5 flex justify-end gap-3 bg-[#161920] rounded-b-3xl">
           <button
             onClick={onClose}
-            className="px-6 py-3 text-slate-500 text-xs font-black uppercase tracking-widest border border-transparent hover:border-white/10 rounded-xl transition-all">
+            className="px-6 py-3 text-slate-500 text-xs font-black uppercase">
             Cancel
           </button>
           <button
             onClick={handleConfirmImport}
             disabled={selected.length === 0 || isImporting}
-            className="bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 text-white px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest disabled:opacity-20 transition-all shadow-lg shadow-teal-900/20 active:scale-95 flex items-center gap-2">
-            {isImporting ? (
-              <span className="animate-spin">⏳</span>
-            ) : (
-              `Import ${selected.length} Players`
-            )}
+            className="bg-teal-600 text-white px-6 py-3 rounded-xl font-black text-xs uppercase shadow-lg disabled:opacity-20">
+            {isImporting ? "Importing..." : `Import ${selected.length} Players`}
           </button>
         </div>
       </div>
@@ -167,11 +276,9 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
 
 // --- 3. MAIN SETUP PANEL ---
 export default function AuctionAdminPanel({ tournamentId, onClose }) {
-  const { user } = useAuth(); // ✅ Hook for current user
-
+  const { user } = useAuth();
   const [tab, setTab] = useState("pool");
   const [poolFilter, setPoolFilter] = useState("PENDING");
-
   const [auctionPlayers, setAuctionPlayers] = useState([]);
   const [teams, setTeams] = useState([]);
   const [slots, setSlots] = useState([]);
@@ -181,77 +288,63 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
     maxSquadSize: 15,
     minBasePrice: 500,
     bidIncrement: 100,
+    maxBidPerPlayer: 0,
+    maxIconsPerTeam: 2,
+    bidSlabs: [],
   });
 
   const [showPicker, setShowPicker] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
-
   const [hasAccess, setHasAccess] = useState(false);
   const [checkingAccess, setCheckingAccess] = useState(true);
 
-  // --- 1. VERIFY PERMISSIONS ---
   useEffect(() => {
     async function checkPermission() {
-      if (!user) {
-        setHasAccess(false);
-        setCheckingAccess(false);
-        return;
+      if (!user) return setHasAccess(false), setCheckingAccess(false);
+      const docSnap = await getDoc(doc(db, "tournaments", tournamentId));
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const isOwner =
+          data.ownerId === user.uid || data.createdBy === user.uid;
+        const isAdmin =
+          Array.isArray(data.admins) && data.admins.includes(user.uid);
+        const isSuperAdmin = user.email === "ramchat007@gmail.com";
+        setHasAccess(isOwner || isAdmin || isSuperAdmin);
       }
-      try {
-        const docRef = doc(db, "tournaments", tournamentId);
-        const docSnap = await getDoc(docRef);
-
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          // Check Owner OR Admin list
-          const isOwner =
-            data.ownerId === user.uid || data.createdBy === user.uid;
-          const isAdmin =
-            Array.isArray(data.admins) && data.admins.includes(user.uid);
-
-          if (isOwner || isAdmin) {
-            setHasAccess(true);
-          } else {
-            setHasAccess(false);
-          }
-        }
-      } catch (e) {
-        console.error("Access check failed", e);
-        setHasAccess(false);
-      } finally {
-        setCheckingAccess(false);
-      }
+      setCheckingAccess(false);
     }
     checkPermission();
   }, [user, tournamentId]);
 
-  // --- 2. REAL-TIME DATA FETCHING (Only if Access Granted) ---
   useEffect(() => {
-    if (!hasAccess) return; // 🔒 Stop listening if no access
-
-    const pRef = collection(db, "tournaments", tournamentId, "auctionPlayers");
-    const qPool = query(pRef, orderBy("name"));
-    const unsubPool = onSnapshot(qPool, (snap) => {
-      setAuctionPlayers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
-
-    const tRef = collection(db, "tournaments", tournamentId, "teams");
-    const unsubTeams = onSnapshot(tRef, (snap) => {
-      setTeams(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
-
-    const sRef = collection(db, "tournaments", tournamentId, "auction_slots");
-    const qSlots = query(sRef, orderBy("order"));
-    const unsubSlots = onSnapshot(qSlots, (snap) => {
-      setSlots(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
-
-    const fetchConfig = async () => {
-      const snap = await getDoc(doc(db, "tournaments", tournamentId));
-      if (snap.exists()) setConfig(snap.data());
-    };
-    fetchConfig();
-
+    if (!hasAccess) return;
+    const unsubPool = onSnapshot(
+      query(
+        collection(db, "tournaments", tournamentId, "auctionPlayers"),
+        orderBy("name")
+      ),
+      (snap) => {
+        setAuctionPlayers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      }
+    );
+    const unsubTeams = onSnapshot(
+      collection(db, "tournaments", tournamentId, "teams"),
+      (snap) => {
+        setTeams(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      }
+    );
+    const unsubSlots = onSnapshot(
+      query(
+        collection(db, "tournaments", tournamentId, "auction_slots"),
+        orderBy("order")
+      ),
+      (snap) => {
+        setSlots(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      }
+    );
+    getDoc(doc(db, "tournaments", tournamentId)).then(
+      (s) => s.exists() && setConfig((prev) => ({ ...prev, ...s.data() }))
+    );
     return () => {
       unsubPool();
       unsubTeams();
@@ -259,101 +352,65 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
     };
   }, [tournamentId, hasAccess]);
 
-  // --- ACTIONS ---
-
-  // ✅ NEW: Repair Signal Function
-  const forceAuctionReady = async () => {
-    if (!hasAccess) return;
-    try {
-      const stateRef = doc(db, "tournaments", tournamentId, "auction", "state");
-      await setDoc(stateRef, {
-        status: "READY",
-        currentPlayerId: null,
-        currentBid: 0,
-        currentBidderId: null,
-        lastUpdate: Date.now(),
-      });
-      alert("Auction State Repaired! You can now enter the console.");
-    } catch (e) {
-      alert("Repair failed: " + e.message);
-    }
+  const addSlab = () =>
+    setConfig({
+      ...config,
+      bidSlabs: [...(config.bidSlabs || []), { max: 1000, inc: 100 }],
+    });
+  const updateSlab = (index, field, value) => {
+    const newSlabs = [...(config.bidSlabs || [])];
+    newSlabs[index][field] = Number(value);
+    setConfig({ ...config, bidSlabs: newSlabs });
   };
+  const removeSlab = (index) =>
+    setConfig({
+      ...config,
+      bidSlabs: config.bidSlabs.filter((_, i) => i !== index),
+    });
 
   const handleUpdateConfig = async () => {
-    if (!hasAccess) return;
-    try {
-      await updateDoc(doc(db, "tournaments", tournamentId), {
-        isAuction: true, // ✅ Ensures flag is set
-        minSquadSize: Number(config.minSquadSize),
-        maxSquadSize: Number(config.maxSquadSize),
-        minBasePrice: Number(config.minBasePrice),
-        bidIncrement: Number(config.bidIncrement),
-      });
-      alert("Configuration updated successfully!");
-    } catch (e) {
-      alert("Error updating rules: " + e.message);
-    }
+    await updateDoc(doc(db, "tournaments", tournamentId), {
+      isAuction: true,
+      minSquadSize: Number(config.minSquadSize),
+      maxSquadSize: Number(config.maxSquadSize),
+      minBasePrice: Number(config.minBasePrice),
+      bidIncrement: Number(config.bidIncrement),
+      maxBidPerPlayer: Number(config.maxBidPerPlayer),
+      maxIconsPerTeam: Number(config.maxIconsPerTeam),
+      bidSlabs: config.bidSlabs || [],
+    });
+    alert("Updated Successfully!");
+  };
+
+  const forceAuctionReady = async () => {
+    await setDoc(doc(db, "tournaments", tournamentId, "auction", "state"), {
+      status: "READY",
+      currentPlayerId: null,
+      currentBid: 0,
+      currentBidderId: null,
+      lastUpdate: Date.now(),
+    });
+    alert("Auction Signal Repaired!");
   };
 
   const handleCreateSlot = async () => {
-    if (!newSlotName || !tournamentId || !hasAccess) return;
-    try {
-      const slotsColRef = collection(
-        db,
-        "tournaments",
-        tournamentId,
-        "auction_slots"
-      );
-      await addDoc(slotsColRef, {
-        name: newSlotName.trim(),
-        order: slots.length + 1,
-        status: "pending",
-        createdAt: Date.now(),
-      });
-      setNewSlotName("");
-    } catch (e) {
-      alert("Error creating slot: " + e.message);
-    }
+    if (!newSlotName) return;
+    await addDoc(collection(db, "tournaments", tournamentId, "auction_slots"), {
+      name: newSlotName.trim(),
+      order: slots.length + 1,
+      status: "pending",
+      createdAt: Date.now(),
+    });
+    setNewSlotName("");
   };
 
-  const handleDeleteSlot = async (slotId) => {
-    if (!hasAccess) return;
-    if (!window.confirm("Delete this slot?")) return;
-    await deleteDoc(
+  const handleDeleteSlot = async (slotId) =>
+    window.confirm("Delete?") &&
+    (await deleteDoc(
       doc(db, "tournaments", tournamentId, "auction_slots", slotId)
-    );
-  };
+    ));
 
-  const handleAssignToSlot = async (playerId, slotId) => {
-    if (!hasAccess) return;
-    const ref = doc(
-      db,
-      "tournaments",
-      tournamentId,
-      "auctionPlayers",
-      playerId
-    );
-    await updateDoc(ref, { auctionSlotId: slotId });
-  };
-
-  // ✅ PREVENT DUPLICATES: Updated Import Logic
-  const handleImport = async (selectedGlobalPlayers) => {
-    if (!hasAccess) return;
-
-    // 1. Get List of existing IDs currently in the pool
-    const currentIds = new Set(auctionPlayers.map((p) => p.originalPlayerId));
-
-    // 2. Filter selection to remove any duplicates
-    const uniqueSelection = selectedGlobalPlayers.filter(
-      (p) => !currentIds.has(p.id)
-    );
-
-    if (uniqueSelection.length === 0) {
-      // If all selected players are duplicates, just close picker
-      setShowPicker(false);
-      return;
-    }
-
+  const handleImport = async (uniqueSelection) => {
     const batch = writeBatch(db);
     const colRef = collection(
       db,
@@ -361,216 +418,141 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
       tournamentId,
       "auctionPlayers"
     );
-
     uniqueSelection.forEach((p) => {
       const newRef = doc(colRef);
       batch.set(newRef, {
         originalPlayerId: p.id,
         name: p.name,
         role: p.role || "All-Rounder",
-        mobile: p.mobile || "",
         photoURL: p.photoURL || "",
-        basePrice: 500,
+        basePrice: config.minBasePrice,
         status: "PENDING",
         soldPrice: 0,
         teamId: null,
-        isOwner: false,
         isIcon: false,
         auctionSlotId: null,
-        statsSnapshot: {
-          runs: p.stats?.runs || 0,
-          wickets: p.stats?.wickets || 0,
-          matches: p.stats?.matches || 0,
-        },
       });
     });
     await batch.commit();
     setShowPicker(false);
   };
 
-  const updateBasePrice = async (playerId, newPrice) => {
-    if (!hasAccess) return;
-    const ref = doc(
-      db,
-      "tournaments",
-      tournamentId,
-      "auctionPlayers",
-      playerId
-    );
-    const price = parseInt(newPrice);
-    await updateDoc(ref, { basePrice: isNaN(price) ? 0 : price });
-  };
-
-  const toggleIconStatus = async (playerId, currentStatus) => {
-    if (!hasAccess) return;
-    const ref = doc(
-      db,
-      "tournaments",
-      tournamentId,
-      "auctionPlayers",
-      playerId
-    );
-    await updateDoc(ref, { isIcon: !currentStatus });
-  };
-
-  const deletePlayer = async (playerId) => {
-    if (!hasAccess) return;
-    if (!window.confirm("Remove player?")) return;
-    await deleteDoc(
-      doc(db, "tournaments", tournamentId, "auctionPlayers", playerId)
-    );
-  };
-
-  const reAddPlayer = async (playerId) => {
-    if (!hasAccess) return;
-    if (!window.confirm("Reset to PENDING?")) return;
+  const forceAssignPlayer = async (playerId, teamId, price) => {
+    if (!teamId) return alert("Select team!");
+    if (!window.confirm("Confirm Force Assign?")) return;
     try {
       await runTransaction(db, async (transaction) => {
-        const playerRef = doc(
+        const pRef = doc(
           db,
           "tournaments",
           tournamentId,
           "auctionPlayers",
           playerId
         );
-        const playerSnap = await transaction.get(playerRef);
-        if (!playerSnap.exists()) throw new Error("Player not found!");
-        const playerData = playerSnap.data();
+        const tRef = doc(db, "tournaments", tournamentId, "teams", teamId);
+        const pData = (await transaction.get(pRef)).data();
+        transaction.update(tRef, {
+          spent: increment(Number(price)),
+          roster: arrayUnion({
+            id: playerId,
+            name: pData.name,
+            role: pData.role,
+            price: Number(price),
+            photoURL: pData.photoURL || "",
+          }),
+        });
+        transaction.update(pRef, {
+          status: "SOLD",
+          teamId: teamId,
+          soldPrice: Number(price),
+        });
+      });
+      alert("Player Assigned!");
+    } catch (e) {
+      alert(e.message);
+    }
+  };
 
-        if (playerData.status === "SOLD" && playerData.teamId) {
-          const teamRef = doc(
+  const reAddPlayer = async (playerId) => {
+    if (!window.confirm("Reset Player?")) return;
+    try {
+      await runTransaction(db, async (transaction) => {
+        const pRef = doc(
+          db,
+          "tournaments",
+          tournamentId,
+          "auctionPlayers",
+          playerId
+        );
+        const pData = (await transaction.get(pRef)).data();
+        if (pData.status === "SOLD" && pData.teamId) {
+          const tRef = doc(
             db,
             "tournaments",
             tournamentId,
             "teams",
-            playerData.teamId
+            pData.teamId
           );
-          const teamSnap = await transaction.get(teamRef);
-          if (teamSnap.exists()) {
-            const teamData = teamSnap.data();
-            const currentSpent = Number(teamData.spent) || 0;
-            const refundAmount = Number(playerData.soldPrice) || 0;
-            const newSpent = Math.max(0, currentSpent - refundAmount);
-            const currentRoster = Array.isArray(teamData.roster)
-              ? teamData.roster
-              : [];
-            const newRoster = currentRoster.filter((p) => p.id !== playerId);
-            transaction.update(teamRef, { spent: newSpent, roster: newRoster });
-          }
+          const tData = (await transaction.get(tRef)).data();
+          const newSpent = Math.max(
+            0,
+            (tData.spent || 0) - (pData.soldPrice || 0)
+          );
+          const newRoster = (tData.roster || []).filter(
+            (item) => item.id !== playerId
+          );
+          transaction.update(tRef, { spent: newSpent, roster: newRoster });
         }
-        transaction.update(playerRef, {
+        transaction.update(pRef, {
           status: "PENDING",
           soldPrice: 0,
           teamId: null,
         });
       });
     } catch (e) {
-      alert("Failed to reset player: " + e.message);
+      alert(e.message);
     }
-  };
-
-  const updateTeamPurse = async (teamId, newPurse) => {
-    if (!hasAccess) return;
-    const ref = doc(db, "tournaments", tournamentId, "teams", teamId);
-    const purseVal = parseInt(newPurse);
-    await updateDoc(ref, { purse: isNaN(purseVal) ? 0 : purseVal });
   };
 
   const handleReset = async () => {
-    if (!hasAccess) return;
-    if (
-      !window.confirm(
-        "⚠ DANGER: DELETE ALL Auction Data & Teams? Cannot be undone."
-      )
-    )
-      return;
+    if (!window.confirm("⚠ DANGER: DELETE EVERYTHING?")) return;
     setIsResetting(true);
-    try {
-      let batch = writeBatch(db);
-      let opCount = 0;
-      const poolSnap = await getDocs(
-        collection(db, "tournaments", tournamentId, "auctionPlayers")
+    const batch = writeBatch(db);
+    const collections = ["auctionPlayers", "auction_slots", "teams", "matches"];
+    for (const cName of collections) {
+      const snap = await getDocs(
+        collection(db, "tournaments", tournamentId, cName)
       );
-      poolSnap.docs.forEach((doc) => {
-        batch.delete(doc.ref);
-        opCount++;
-      });
-      const sSnap = await getDocs(
-        collection(db, "tournaments", tournamentId, "auction_slots")
-      );
-      sSnap.docs.forEach((doc) => {
-        batch.delete(doc.ref);
-        opCount++;
-      });
-      batch.delete(doc(db, "tournaments", tournamentId, "auction", "state"));
-      const teamSnap = await getDocs(
-        collection(db, "tournaments", tournamentId, "teams")
-      );
-      teamSnap.docs.forEach((doc) => {
-        batch.delete(doc.ref);
-        opCount++;
-      });
-      const matchSnap = await getDocs(
-        collection(db, "tournaments", tournamentId, "matches")
-      );
-      matchSnap.docs.forEach((doc) => {
-        batch.delete(doc.ref);
-        opCount++;
-      });
-      await batch.commit();
-      onClose();
-      window.location.reload();
-    } catch (e) {
-      alert("Error: " + e.message);
-    } finally {
-      setIsResetting(false);
+      snap.docs.forEach((d) => batch.delete(d.ref));
     }
+    batch.delete(doc(db, "tournaments", tournamentId, "auction", "state"));
+    await batch.commit();
+    window.location.reload();
   };
+
+  const teamsMap = Object.fromEntries(teams.map((t) => [t.id, t.name]));
 
   const displayList = auctionPlayers.filter((p) => {
     if (poolFilter === "SOLD") return p.status === "SOLD";
-    if (poolFilter === "UNSOLD")
-      return p.status === "UNSOLD" || p.status === "UNSOLD_PASSED";
+    if (poolFilter === "UNSOLD") return p.status.includes("UNSOLD");
     return p.status === "PENDING";
   });
 
-  const navBtnClass = (tId) =>
-    `flex-1 min-w-[90px] py-4 text-[10px] font-black uppercase tracking-wider transition-all duration-200 border-b-2 ${
-      tab === tId
-        ? "text-teal-400 border-teal-400 bg-teal-500/5"
-        : "text-slate-500 border-transparent hover:text-white"
-    }`;
-
   if (checkingAccess)
     return (
-      <div className="fixed inset-0 z-50 bg-[#0F1115] flex items-center justify-center text-teal-500 font-bold animate-pulse">
-        Verifying Access...
+      <div className="fixed inset-0 bg-[#0F1115] flex items-center justify-center text-teal-500 font-bold">
+        Checking Access...
       </div>
     );
-
   if (!hasAccess)
     return (
-      <div className="fixed inset-0 z-50 bg-[#0F1115]/95 backdrop-blur-xl flex items-center justify-center p-6">
-        <div className="bg-[#1C2128] border border-red-500/20 p-8 rounded-3xl text-center max-w-sm w-full shadow-2xl">
-          <div className="text-4xl mb-4">🚫</div>
-          <h2 className="text-slate-100 font-black uppercase tracking-wider mb-2">
-            Access Denied
-          </h2>
-          <p className="text-slate-500 text-xs font-medium mb-6 leading-relaxed">
-            You do not have permission to access the Auction Admin settings for
-            this tournament.
-          </p>
-          <button
-            onClick={onClose}
-            className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-xl transition-all uppercase text-xs tracking-widest">
-            Close Panel
-          </button>
-        </div>
+      <div className="fixed inset-0 bg-[#0F1115] flex items-center justify-center text-red-500 font-black uppercase">
+        Access Denied
       </div>
     );
 
   return (
-    <div className="fixed inset-0 z-[100] bg-[#0F1115] flex flex-col overflow-hidden animate-in slide-in-from-bottom-10">
+    <div className="fixed inset-0 z-[100] bg-[#0F1115] flex flex-col overflow-hidden">
       <GlobalPlayerPicker
         isOpen={showPicker}
         onClose={() => setShowPicker(false)}
@@ -578,141 +560,295 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
         existingIds={auctionPlayers.map((p) => p.originalPlayerId)}
       />
 
-      <div className="p-4 border-b border-white/5 flex justify-between items-center bg-[#1C2128] shadow-xl">
+      <div className="p-4 border-b border-white/5 flex justify-between items-center bg-[#1C2128]">
         <h2 className="text-lg font-black text-slate-100 flex items-center gap-3 uppercase tracking-tighter italic">
-          <span className="bg-teal-600 p-1.5 rounded-lg text-sm">⚙️</span>{" "}
-          Auction Setup
+          <span className="bg-teal-600 p-1.5 rounded-lg text-sm">⚙️</span> Auction Setup
         </h2>
         <button
           onClick={onClose}
-          className="bg-white/5 hover:bg-white/10 text-slate-300 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border border-white/10 transition-all">
+          className="bg-white/5 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase">
           Close
         </button>
       </div>
 
       <div className="flex border-b border-white/5 bg-[#161920] overflow-x-auto no-scrollbar">
-        <button onClick={() => setTab("pool")} className={navBtnClass("pool")}>
-          Players
-        </button>
-        <button
-          onClick={() => setTab("slots")}
-          className={navBtnClass("slots")}>
-          Slots
-        </button>
-        <button
-          onClick={() => setTab("config")}
-          className={navBtnClass("config")}>
-          Rules
-        </button>
-        <button
-          onClick={() => setTab("teams")}
-          className={navBtnClass("teams")}>
-          Wallets
-        </button>
-        <button
-          onClick={() => setTab("owners")}
-          className={navBtnClass("owners")}>
-          Owners
-        </button>
-        <button
-          onClick={() => setTab("matches")}
-          className={navBtnClass("matches")}>
-          Matches
-        </button>
+        {["pool", "slots", "config", "teams", "owners", "matches"].map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`flex-1 min-w-[90px] py-4 text-[10px] font-black uppercase tracking-wider transition-all border-b-2 ${
+              tab === t
+                ? "text-teal-400 border-teal-400 bg-teal-500/5"
+                : "text-slate-500 border-transparent"
+            }`}>
+            {t === "config" ? "Rules" : t}
+          </button>
+        ))}
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8 max-w-7xl mx-auto w-full">
-        {/* --- TAB: CONFIG / RULES --- */}
         {tab === "config" && (
-          <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
-            {/* ✅ NEW: Repair Connection Card */}
-            <div className="bg-teal-900/10 border border-teal-500/20 p-6 rounded-[2rem] flex justify-between items-center">
+          <div className="space-y-6">
+            <div className="bg-teal-900/10 border border-teal-500/20 p-6 rounded-2xl flex justify-between items-center">
               <div>
-                <h4 className="text-teal-400 font-black uppercase text-xs">
-                  Auction Connectivity
+                <h4 className="text-teal-400 font-black text-xs uppercase">
+                  Repair Auction Signal
                 </h4>
                 <p className="text-slate-500 text-[10px]">
-                  If the console is stuck on "Connecting", use this to reset the
-                  signal.
+                  Use if dashboard is stuck on 'Connecting'
                 </p>
               </div>
               <button
                 onClick={forceAuctionReady}
-                className="bg-teal-600 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-teal-500 transition-all">
-                Repair Signal
+                className="bg-teal-600 px-6 py-2 rounded-xl text-[10px] font-black uppercase">
+                Repair
               </button>
             </div>
 
-            <div className="bg-[#1C2128] border border-white/5 p-8 rounded-[2rem] shadow-2xl relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-1.5 h-full bg-teal-500"></div>
-              <h3 className="text-slate-100 font-black uppercase tracking-widest text-xs mb-8 border-b border-white/5 pb-4">
+            <div className="bg-[#1C2128] border border-white/5 p-8 rounded-[2rem] shadow-2xl">
+              {/* Dynamic Slabs */}
+              <div className="mb-10">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-slate-100 font-black uppercase text-xs">
+                    Dynamic Bidding Slabs
+                  </h3>
+                  <button
+                    onClick={addSlab}
+                    className="bg-teal-600 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-teal-500 transition-all">
+                    + Add Slab
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {(config.bidSlabs || []).map((slab, index) => (
+                    <div
+                      key={index}
+                      className="flex gap-4 items-center bg-[#0F1115] p-3 rounded-xl border border-white/5">
+                      <div className="flex-1">
+                        <label className="text-[8px] text-slate-500 block mb-1 uppercase font-black">
+                          Up to (₹)
+                        </label>
+                        <input
+                          type="number"
+                          className="bg-transparent text-white font-bold outline-none w-full"
+                          value={slab.max}
+                          onChange={(e) =>
+                            updateSlab(index, "max", e.target.value)
+                          }
+                        />
+                      </div>
+                      <div className="flex-1 border-l border-white/10 pl-4">
+                        <label className="text-[8px] text-teal-500 block mb-1 uppercase font-black">
+                          Inc (₹)
+                        </label>
+                        <input
+                          type="number"
+                          className="bg-transparent text-teal-400 font-bold outline-none w-full"
+                          value={slab.inc}
+                          onChange={(e) =>
+                            updateSlab(index, "inc", e.target.value)
+                          }
+                        />
+                      </div>
+                      <button
+                        onClick={() => removeSlab(index)}
+                        className="text-red-500 text-xl">
+                        &times;
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* CLEAN MANUAL INPUTS */}
+              <h3 className="text-slate-100 font-black uppercase text-xs mb-8 border-b border-white/5 pb-4">
                 Auction Logic Configuration
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {[
-                  {
-                    label: "Minimum Players Per Team",
-                    val: config.minSquadSize,
-                    key: "minSquadSize",
-                    hint: "Teams must fill this count to finish.",
-                  },
-                  {
-                    label: "Maximum Players Per Team",
-                    val: config.maxSquadSize,
-                    key: "maxSquadSize",
-                  },
-                  {
-                    label: "Base Price Slab",
-                    val: config.minBasePrice,
-                    key: "minBasePrice",
-                    hint: "System blocks bids limiting reserve.",
-                  },
-                  {
-                    label: "Default Bid Increment",
-                    val: config.bidIncrement,
-                    key: "bidIncrement",
-                  },
-                ].map((item, idx) => (
-                  <div key={idx} className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-500 uppercase block ml-1 tracking-widest">
-                      {item.label}
-                    </label>
-                    <input
-                      type="number"
-                      className="w-full bg-[#0F1115] border border-white/10 rounded-xl p-4 text-slate-200 focus:border-teal-500/50 outline-none transition-all font-bold"
-                      value={item.val}
-                      onChange={(e) =>
-                        setConfig({ ...config, [item.key]: e.target.value })
-                      }
-                    />
-                    {item.hint && (
-                      <p className="text-[10px] text-slate-600 italic px-1">
-                        {item.hint}
-                      </p>
-                    )}
-                  </div>
-                ))}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase">
+                    Min Squad Size
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full bg-[#0F1115] border border-white/10 rounded-xl p-4 text-slate-200"
+                    value={config.minSquadSize}
+                    onChange={(e) =>
+                      setConfig({ ...config, minSquadSize: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase">
+                    Max Squad Size
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full bg-[#0F1115] border border-white/10 rounded-xl p-4 text-slate-200"
+                    value={config.maxSquadSize}
+                    onChange={(e) =>
+                      setConfig({ ...config, maxSquadSize: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase">
+                    Min Base Price
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full bg-[#0F1115] border border-white/10 rounded-xl p-4 text-slate-200"
+                    value={config.minBasePrice}
+                    onChange={(e) =>
+                      setConfig({ ...config, minBasePrice: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase">
+                    Fallback Increment
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full bg-[#0F1115] border border-white/10 rounded-xl p-4 text-slate-200"
+                    value={config.bidIncrement}
+                    onChange={(e) =>
+                      setConfig({ ...config, bidIncrement: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-orange-400 uppercase">
+                    Max Bid Per Player
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full bg-[#0F1115] border border-orange-500/20 rounded-xl p-4 text-slate-200 focus:border-orange-500/50"
+                    value={config.maxBidPerPlayer}
+                    onChange={(e) =>
+                      setConfig({ ...config, maxBidPerPlayer: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-orange-400 uppercase">
+                    Max Icons Per Team
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full bg-[#0F1115] border border-orange-500/20 rounded-xl p-4 text-slate-200 focus:border-orange-500/50"
+                    value={config.maxIconsPerTeam}
+                    onChange={(e) =>
+                      setConfig({ ...config, maxIconsPerTeam: e.target.value })
+                    }
+                  />
+                </div>
               </div>
               <button
                 onClick={handleUpdateConfig}
-                className="mt-12 w-full bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 text-white font-black uppercase tracking-widest py-5 rounded-xl shadow-lg transition-all transform active:scale-[0.99] text-xs">
+                className="mt-12 w-full bg-teal-600 text-white font-black py-5 rounded-xl uppercase">
                 Update Mandatory Rules
               </button>
             </div>
           </div>
         )}
 
-        {/* --- TAB: AUCTION SLOTS --- */}
+        {tab === "pool" && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <div className="flex bg-[#161920] rounded-xl p-1">
+                {["PENDING", "SOLD", "UNSOLD"].map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setPoolFilter(f)}
+                    className={`px-5 py-2.5 rounded-lg text-[10px] font-black uppercase ${
+                      poolFilter === f
+                        ? "bg-[#0F1115] text-white"
+                        : "text-slate-500"
+                    }`}>
+                    {f}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setShowPicker(true)}
+                className="bg-teal-900/10 border border-teal-500/20 text-teal-400 px-6 py-3 rounded-xl font-black text-xs uppercase hover:bg-teal-900/20 hover:border-teal-500/40 transition-all active:scale-95 whitespace-nowrap">
+                + Add Players
+              </button>
+            </div>
+            <div className="bg-[#1C2128] border border-white/5 rounded-2xl overflow-hidden shadow-2xl overflow-x-auto">
+              <table className="w-full text-left text-sm text-slate-400 min-w-[1000px]">
+                <thead className="bg-[#0F1115] text-[10px] font-black text-slate-500 border-b border-white/5 uppercase tracking-widest">
+                  <tr>
+                    <th className="p-5">Name</th>
+                    <th className="p-5">Force Assign</th>
+                    <th className="p-5">Assign Slot</th>
+                    <th className="p-5">Base/Final Price</th>
+                    <th className="p-5 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {displayList.map((p) => (
+                    <PlayerRow
+                      key={p.id}
+                      p={p}
+                      teams={teams}
+                      teamsMap={teamsMap}
+                      poolFilter={poolFilter}
+                      slots={slots}
+                      tournamentId={tournamentId}
+                      onAssign={forceAssignPlayer}
+                      onUpdatePrice={(id, val) =>
+                        updateDoc(
+                          doc(
+                            db,
+                            "tournaments",
+                            tournamentId,
+                            "auctionPlayers",
+                            id
+                          ),
+                          { basePrice: Number(val) }
+                        )
+                      }
+                      onToggleIcon={(id, curr) =>
+                        updateDoc(
+                          doc(
+                            db,
+                            "tournaments",
+                            tournamentId,
+                            "auctionPlayers",
+                            id
+                          ),
+                          { isIcon: !curr }
+                        )
+                      }
+                      onDelete={(id) =>
+                        window.confirm("Remove?") &&
+                        deleteDoc(
+                          doc(
+                            db,
+                            "tournaments",
+                            tournamentId,
+                            "auctionPlayers",
+                            id
+                          )
+                        )
+                      }
+                      onReset={reAddPlayer}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {tab === "slots" && (
-          <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="bg-[#1C2128] border border-white/5 p-6 rounded-[2rem] shadow-lg">
-              <h3 className="text-slate-300 font-black mb-4 uppercase text-xs tracking-widest">
-                Create New Auction Round
-              </h3>
+          <div className="space-y-6">
+            <div className="bg-[#1C2128] border border-white/5 p-6 rounded-[2rem]">
               <div className="flex gap-3">
                 <input
-                  className="flex-1 bg-[#0F1115] border border-white/10 rounded-xl px-5 py-3 text-slate-200 outline-none focus:border-orange-500/50 font-bold placeholder:text-slate-600"
-                  placeholder="e.g. Round 1 - Icon Players"
+                  className="flex-1 bg-[#0F1115] border border-white/10 rounded-xl px-5 py-3 text-slate-200 outline-none"
+                  placeholder="Round Name"
                   value={newSlotName}
                   onChange={(e) => setNewSlotName(e.target.value)}
                 />
@@ -723,261 +859,78 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 </button>
               </div>
             </div>
-            <div className="grid gap-3">
-              {slots.map((s) => (
-                <div
-                  key={s.id}
-                  className="bg-[#1C2128] border border-white/5 p-4 rounded-xl flex justify-between items-center group hover:border-white/10 transition-all">
-                  <div className="flex items-center">
-                    <span className="text-slate-600 font-mono mr-4 text-xs font-bold">
-                      {s.order}.
-                    </span>
-                    <span className="text-slate-200 font-bold text-sm tracking-tight">
-                      {s.name}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => handleDeleteSlot(s.id)}
-                    className="text-slate-600 hover:text-red-500 transition-colors p-2 bg-[#0F1115] rounded-lg">
-                    🗑
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* --- TAB: PLAYER POOL --- */}
-        {tab === "pool" && (
-          <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="flex justify-between items-center gap-4">
-              <div className="flex bg-[#161920] rounded-xl p-1 border border-white/5 overflow-x-auto no-scrollbar">
-                {["PENDING", "SOLD", "UNSOLD"].map((filter) => (
-                  <button
-                    key={filter}
-                    onClick={() => setPoolFilter(filter)}
-                    className={`px-5 py-2.5 rounded-lg text-[10px] font-black transition-all uppercase whitespace-nowrap ${
-                      poolFilter === filter
-                        ? "bg-[#0F1115] text-white shadow-md border border-white/10"
-                        : "text-slate-500 hover:text-slate-300"
-                    }`}>
-                    {filter}
-                  </button>
-                ))}
+            {slots.map((s) => (
+              <div
+                key={s.id}
+                className="bg-[#1C2128] p-4 rounded-xl flex justify-between items-center mb-2 border border-white/5">
+                <span className="text-white font-bold">
+                  {s.order}. {s.name}
+                </span>
+                <button
+                  onClick={() => handleDeleteSlot(s.id)}
+                  className="text-slate-600 hover:text-red-500">
+                  🗑
+                </button>
               </div>
-              <button
-                onClick={() => setShowPicker(true)}
-                className="bg-teal-900/10 border border-teal-500/20 text-teal-400 px-6 py-3 rounded-xl font-black text-xs uppercase hover:bg-teal-900/20 hover:border-teal-500/40 transition-all active:scale-95 whitespace-nowrap">
-                + Add Players
-              </button>
-            </div>
-
-            <div className="bg-[#1C2128] border border-white/5 rounded-2xl overflow-hidden overflow-x-auto shadow-2xl">
-              <table className="w-full text-left text-sm text-slate-400 min-w-[800px]">
-                <thead className="bg-[#0F1115] text-[10px] uppercase font-black text-slate-500 tracking-[0.2em] border-b border-white/5">
-                  <tr>
-                    <th className="p-5">Name</th>
-                    <th className="p-5">Role</th>
-                    <th className="p-5">Assign Slot</th>
-                    <th className="p-5">
-                      {poolFilter === "SOLD" ? "Final Price" : "Base Price"}
-                    </th>
-                    <th className="p-5 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {displayList.map((p) => (
-                    <tr
-                      key={p.id}
-                      className="hover:bg-[#0F1115]/50 transition-colors group">
-                      <td className="p-5 font-bold text-slate-200 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          {p.name}
-                          {p.isOwner && (
-                            <span className="text-[8px] bg-purple-900/40 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded uppercase font-black tracking-wider">
-                              Owner
-                            </span>
-                          )}
-                          {p.isIcon && (
-                            <span className="text-[8px] bg-amber-900/30 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded uppercase font-black tracking-wider">
-                              Icon
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="p-5 text-xs text-slate-500 font-bold uppercase tracking-wider">
-                        {p.role}
-                      </td>
-                      <td className="p-5">
-                        <select
-                          className="bg-[#0F1115] border border-white/10 rounded-lg p-2 text-[10px] text-slate-300 focus:border-orange-500/50 outline-none w-full max-w-[160px] font-bold cursor-pointer"
-                          value={p.auctionSlotId || ""}
-                          onChange={(e) =>
-                            handleAssignToSlot(p.id, e.target.value)
-                          }>
-                          <option value="">-- Unassigned --</option>
-                          {slots.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="p-5 font-mono">
-                        {poolFilter === "SOLD" ? (
-                          <span className="text-green-400 font-bold text-sm">
-                            ₹{p.soldPrice?.toLocaleString()}
-                          </span>
-                        ) : (
-                          <div className="flex items-center gap-2 text-xs">
-                            <span className="text-slate-600">₹</span>
-                            <input
-                              type="number"
-                              className="bg-[#0F1115] border border-white/10 rounded-lg px-2 py-1.5 w-24 text-slate-200 focus:border-teal-500/50 outline-none font-bold"
-                              value={p.basePrice}
-                              onChange={(e) =>
-                                updateBasePrice(p.id, e.target.value)
-                              }
-                            />
-                          </div>
-                        )}
-                      </td>
-                      <td className="p-5 text-right flex justify-end gap-3 items-center">
-                        <button
-                          onClick={() => toggleIconStatus(p.id, p.isIcon)}
-                          className={`text-lg transition-all transform active:scale-110 hover:scale-110 ${
-                            p.isIcon
-                              ? "text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.5)]"
-                              : "text-slate-700 hover:text-slate-500"
-                          }`}>
-                          ★
-                        </button>
-                        {(poolFilter === "UNSOLD" || poolFilter === "SOLD") && (
-                          <button
-                            onClick={() => reAddPlayer(p.id)}
-                            className="bg-teal-900/20 text-teal-400 border border-teal-500/20 hover:bg-teal-500 hover:text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all tracking-widest">
-                            ↺ Reset
-                          </button>
-                        )}
-                        <button
-                          onClick={() => deletePlayer(p.id)}
-                          className="text-slate-700 hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-red-900/10">
-                          🗑
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {displayList.length === 0 && (
-                <div className="p-20 text-center text-slate-600 italic text-sm font-medium">
-                  No players found in {poolFilter} list.
-                </div>
-              )}
-            </div>
+            ))}
           </div>
         )}
 
-        {/* --- TAB: TEAM WALLETS --- */}
         {tab === "teams" && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
-            {teams.map((t) => {
-              const purse = Number(t.purse) || 0;
-              const spent = Number(t.spent) || 0;
-              const remaining = purse - spent;
-              const percentUsed = purse > 0 ? (spent / purse) * 100 : 0;
-              return (
-                <div
-                  key={t.id}
-                  className="bg-[#1C2128] border border-white/5 p-6 rounded-[2rem] flex flex-col gap-5 shadow-xl hover:border-white/10 transition-all group">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="font-black text-slate-100 text-xl tracking-tighter uppercase italic group-hover:text-teal-400 transition-colors">
-                        {t.name}
-                      </div>
-                      <div className="text-[10px] text-slate-500 mt-1 font-black uppercase tracking-[0.2em]">
-                        Squad: {t.roster?.length || 0} Members
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <label className="text-[9px] text-slate-600 font-black uppercase block tracking-widest mb-1">
-                        Remaining
-                      </label>
-                      <div
-                        className={`text-2xl font-mono font-black ${
-                          remaining < 1000 ? "text-red-400" : "text-white"
-                        }`}>
-                        ₹{remaining.toLocaleString()}
-                      </div>
-                    </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {teams.map((t) => (
+              <div
+                key={t.id}
+                className="bg-[#1C2128] p-6 rounded-[2rem] shadow-xl border border-white/5">
+                <div className="flex justify-between mb-4">
+                  <div className="font-black text-white text-lg uppercase italic">
+                    {t.name}
                   </div>
-                  <div className="h-3 w-full bg-[#0F1115] rounded-full overflow-hidden border border-white/5">
-                    <div
-                      className={`h-full rounded-full transition-all duration-1000 ${
-                        remaining < config.minSquadSize * config.minBasePrice
-                          ? "bg-red-500"
-                          : "bg-teal-500"
-                      }`}
-                      style={{
-                        width: `${Math.min(percentUsed, 100)}%`,
-                      }}></div>
-                  </div>
-                  <div className="flex justify-between items-center pt-3 border-t border-white/5">
-                    <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">
-                      Total Purse:{" "}
-                      <span className="text-teal-500">
-                        ₹{purse.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] text-slate-600 font-black uppercase tracking-widest">
-                        Edit
-                      </span>
-                      <input
-                        type="number"
-                        className="bg-[#0F1115] border border-white/10 rounded-lg px-3 py-1.5 w-24 text-slate-200 text-right text-xs focus:border-teal-500/50 outline-none font-bold"
-                        value={t.purse || 0}
-                        onChange={(e) => updateTeamPurse(t.id, e.target.value)}
-                      />
-                    </div>
+                  <div className="font-mono text-teal-400 font-bold text-xl">
+                    ₹{((t.purse || 0) - (t.spent || 0)).toLocaleString()}
                   </div>
                 </div>
-              );
-            })}
+                <div className="flex items-center gap-2 pt-4 border-t border-white/5">
+                  <span className="text-[10px] text-slate-500 uppercase font-black">
+                    Edit Total Purse
+                  </span>
+                  <input
+                    type="number"
+                    className="bg-[#0F1115] border border-white/10 rounded-lg px-3 py-1.5 w-32 text-white text-right outline-none font-bold"
+                    value={t.purse || 0}
+                    onChange={(e) =>
+                      updateDoc(
+                        doc(db, "tournaments", tournamentId, "teams", t.id),
+                        { purse: Number(e.target.value) }
+                      )
+                    }
+                  />
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
-        {/* --- TAB: OWNERS --- */}
-        {tab === "owners" && (
-          <div className="animate-in fade-in duration-300">
-            <AuctionOwnersAdmin tournamentId={tournamentId} />
-          </div>
-        )}
-
-        {/* --- TAB: MATCHES --- */}
+        {tab === "owners" && <AuctionOwnersAdmin tournamentId={tournamentId} />}
         {tab === "matches" && (
-          <div className="animate-in fade-in duration-300">
-            <MatchScheduler tournamentId={tournamentId} teams={teams} />
-          </div>
+          <MatchScheduler tournamentId={tournamentId} teams={teams} />
         )}
 
-        {/* --- DANGER ZONE --- */}
-        <div className="mt-20 border-t border-red-500/10 pt-10 mb-10">
-          <div className="bg-red-900/5 border border-red-500/20 rounded-[2rem] p-8 flex flex-col md:flex-row justify-between items-center gap-8 shadow-inner">
-            <div className="text-center md:text-left">
-              <h4 className="text-red-500 font-black uppercase text-xs italic tracking-widest mb-2 flex items-center justify-center md:justify-start gap-2">
-                <span>⚠</span> Emergency Data Wipe
+        <div className="mt-20 border-t border-red-500/10 pt-10">
+          <div className="bg-red-900/5 border border-red-500/20 p-8 rounded-[2rem] flex justify-between items-center">
+            <div>
+              <h4 className="text-red-500 font-black uppercase text-xs">
+                Emergency Reset
               </h4>
-              <p className="text-red-400/50 text-[11px] max-w-md leading-relaxed font-medium">
-                This will purge <strong className="text-red-400">ALL</strong>{" "}
-                tournament metadata. This action is irreversible.
+              <p className="text-red-400/50 text-[10px]">
+                Deletes all auction data and teams.
               </p>
             </div>
             <button
               onClick={handleReset}
               disabled={isResetting}
-              className="bg-red-600 hover:bg-red-500 text-white font-black py-4 px-8 rounded-xl shadow-xl whitespace-nowrap transition-all transform hover:scale-105 active:scale-95 disabled:opacity-50 uppercase tracking-widest text-[10px] border border-red-400/20">
-              {isResetting ? "Purging Files..." : "Destroy Auction Data"}
+              className="bg-red-600 text-white font-black py-4 px-8 rounded-xl text-xs uppercase">
+              {isResetting ? "Purging..." : "Destroy Data"}
             </button>
           </div>
         </div>

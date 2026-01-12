@@ -26,22 +26,25 @@ export const getNextBidAmount = (currentBid) => {
 
 /**
  * MANDATORY RULE: Purse Reserve (Section 1 & 5)
- * Checks if a team can afford the bid while ensuring they can still afford 
+ * Checks if a team can afford the bid while ensuring they can still afford
  * enough players to reach the MIN_SQUAD_SIZE at the MIN_BASE_PRICE.
  */
 export const canAffordBid = (team, bidAmount, tournamentConfig) => {
   const minSquadSize = parseInt(tournamentConfig?.minSquadSize || 11);
   const minBasePrice = parseInt(tournamentConfig?.minBasePrice || 100);
-  
+
   const currentSquadSize = team.roster?.length || 0;
   const purse = parseInt(team.purse || 0);
   const spent = parseInt(team.spent || 0);
   const remainingPurse = purse - spent;
 
-  const playersNeededToReachMin = Math.max(0, minSquadSize - (currentSquadSize + 1));
+  const playersNeededToReachMin = Math.max(
+    0,
+    minSquadSize - (currentSquadSize + 1)
+  );
   const reserveNeeded = playersNeededToReachMin * minBasePrice;
 
-  return (remainingPurse - bidAmount) >= reserveNeeded;
+  return remainingPurse - bidAmount >= reserveNeeded;
 };
 
 // --- SUBSCRIPTIONS ---
@@ -95,13 +98,19 @@ export const createAuctionSlot = async (tournamentId, slotData) => {
   const slotsRef = collection(db, "tournaments", tournamentId, "auction_slots");
   return await addDoc(slotsRef, {
     ...slotData,
-    status: 'pending', // pending, live, completed
-    createdAt: Date.now()
+    status: "pending", // pending, live, completed
+    createdAt: Date.now(),
   });
 };
 
 export const assignPlayerToSlot = async (tournamentId, playerId, slotId) => {
-  const playerRef = doc(db, "tournaments", tournamentId, "auctionPlayers", playerId);
+  const playerRef = doc(
+    db,
+    "tournaments",
+    tournamentId,
+    "auctionPlayers",
+    playerId
+  );
   return await updateDoc(playerRef, { auctionSlotId: slotId });
 };
 
@@ -115,10 +124,15 @@ export async function requeuePlayer(tournamentId, playerId) {
 export async function resetAuction(tournamentId) {
   const batch = writeBatch(db);
   batch.delete(doc(db, "tournaments", tournamentId, "auction", "state"));
-  const playersRef = collection(db, "tournaments", tournamentId, "auctionPlayers");
+  const playersRef = collection(
+    db,
+    "tournaments",
+    tournamentId,
+    "auctionPlayers"
+  );
   const playerSnap = await getDocs(playersRef);
   playerSnap.docs.forEach((doc) => batch.delete(doc.ref));
-  
+
   // ✅ Also clear rounds/slots on reset
   const slotsRef = collection(db, "tournaments", tournamentId, "auction_slots");
   const slotSnap = await getDocs(slotsRef);
@@ -160,16 +174,35 @@ export const startBidding = async (tournamentId, player) => {
 
 export async function placeBid(tournamentId, teamId, teamName, amount) {
   const auctionRef = doc(db, "tournaments", tournamentId, "auction", "state");
+  const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
 
   try {
     await runTransaction(db, async (tx) => {
+      // 1. Get Auction State
       const aucSnap = await tx.get(auctionRef);
       if (!aucSnap.exists()) throw new Error("Auction not initialized");
-
       const auction = aucSnap.data();
-      if (auction.status !== "LIVE") throw new Error("Bidding is closed");
-      if (amount <= (auction.currentBid || 0)) throw new Error("Bid must be higher");
 
+      if (auction.status !== "LIVE") throw new Error("Bidding is closed");
+      if (amount <= (auction.currentBid || 0))
+        throw new Error("Bid must be higher");
+
+      // 2. [OPTIONAL] Get Team State to verify balance
+      const teamSnap = await tx.get(teamRef);
+      if (!teamSnap.exists()) throw new Error("Team not found");
+      const team = teamSnap.data();
+
+      const currentSpent = team.spent || 0;
+      const purseLimit = team.purse || 0;
+
+      // Check if they have enough money
+      if (purseLimit - currentSpent < amount) {
+        throw new Error(
+          `Team only has ${purseLimit - currentSpent} remaining.`
+        );
+      }
+
+      // 3. Update Bid
       tx.update(auctionRef, {
         currentBid: amount,
         highestBidderId: teamId,
@@ -196,7 +229,13 @@ export const markSold = async (tournamentId) => {
     if (!highestBidderId) throw new Error("No bidder found.");
     if (!currentPlayer) throw new Error("No current player active.");
 
-    const teamRef = doc(db, "tournaments", tournamentId, "teams", highestBidderId);
+    const teamRef = doc(
+      db,
+      "tournaments",
+      tournamentId,
+      "teams",
+      highestBidderId
+    );
     const teamSnap = await tx.get(teamRef);
     if (!teamSnap.exists()) throw new Error("Winning team not found");
 
@@ -218,11 +257,17 @@ export const markSold = async (tournamentId) => {
     tx.update(teamRef, {
       spent: (Number(team.spent) || 0) + finalPrice,
       roster: arrayUnion(rosterItem),
-      players: arrayUnion(currentPlayer.name), 
+      players: arrayUnion(currentPlayer.name),
     });
 
     // Update Player Status
-    const playerRef = doc(db, "tournaments", tournamentId, "auctionPlayers", currentPlayer.id);
+    const playerRef = doc(
+      db,
+      "tournaments",
+      tournamentId,
+      "auctionPlayers",
+      currentPlayer.id
+    );
     tx.update(playerRef, {
       status: "SOLD",
       teamId: highestBidderId,
@@ -242,7 +287,13 @@ export const markSold = async (tournamentId) => {
 
 export async function markUnsold(tournamentId, playerId) {
   const auctionRef = doc(db, "tournaments", tournamentId, "auction", "state");
-  const playerRef = doc(db, "tournaments", tournamentId, "auctionPlayers", playerId);
+  const playerRef = doc(
+    db,
+    "tournaments",
+    tournamentId,
+    "auctionPlayers",
+    playerId
+  );
 
   await runTransaction(db, async (transaction) => {
     transaction.update(playerRef, { status: "UNSOLD_PASSED" });
@@ -259,6 +310,12 @@ export async function markUnsold(tournamentId, playerId) {
 /**
  * TRANSACTION-SAFE BIDDING (Consolidated with existing placeBid logic)
  */
-export const placeSafeBid = async (tournamentId, matchId, teamId, teamName, amount) => {
+export const placeSafeBid = async (
+  tournamentId,
+  matchId,
+  teamId,
+  teamName,
+  amount
+) => {
   return await placeBid(tournamentId, teamId, teamName, amount);
 };

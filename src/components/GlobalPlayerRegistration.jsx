@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react"; // ✅ Fixed: Added useEffect
+import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import {
   collection,
@@ -8,13 +8,13 @@ import {
   addDoc,
   updateDoc,
   doc,
-  getDoc, // ✅ Added getDoc
+  getDoc,
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
-import { useAuth } from "../hooks/useAuth"; // ✅ Added Auth for admin check
+import { useAuth } from "../hooks/useAuth";
 
 export default function GlobalPlayerRegistration() {
-  const { user } = useAuth(); // ✅ Get logged in user
+  const { user } = useAuth();
 
   const [formData, setFormData] = useState({
     name: "",
@@ -34,33 +34,8 @@ export default function GlobalPlayerRegistration() {
   const [status, setStatus] = useState("idle");
   const [errorMessage, setErrorMessage] = useState("");
 
-  const [contacts, setContacts] = useState([]);
-
-  // Fetch official contacts from the tournament document
-  useEffect(() => {
-    const fetchScorers = async () => {
-      try {
-        const docRef = doc(db, "tournaments", "generic");
-        const docSnap = await getDoc(docRef);
-
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          const list = [];
-          if (data.ownerEmail)
-            list.push({ name: "Admin", email: data.ownerEmail });
-          if (data.scorerEmails) {
-            data.scorerEmails.forEach((email) =>
-              list.push({ name: "Scorer", email })
-            );
-          }
-          setContacts(list);
-        }
-      } catch (err) {
-        console.error("Error fetching contacts:", err);
-      }
-    };
-    fetchScorers();
-  }, []);
+  // NO LONGER FETCHING SCORER EMAILS DYNAMICALLY
+  // Removed scorers state and useEffect logic for scorers
 
   const compressImage = (file, maxWidth = 300) => {
     return new Promise((resolve) => {
@@ -140,7 +115,6 @@ export default function GlobalPlayerRegistration() {
       const isoDate = new Date().toISOString();
 
       if (isEditing && existingPlayerId) {
-        // --- UPDATE EXISTING PLAYER (Admin only via rules) ---
         const playerDocRef = doc(db, "players", existingPlayerId);
         await updateDoc(playerDocRef, {
           name: formData.name.trim(),
@@ -153,14 +127,11 @@ export default function GlobalPlayerRegistration() {
         });
         setStatus("updated");
       } else {
-        // --- CREATE NEW PLAYER ---
         const q = query(playersRef, where("mobile", "==", cleanMobile));
         const querySnapshot = await getDocs(q);
 
         if (!querySnapshot.empty) {
           const docSnap = querySnapshot.docs[0];
-
-          // ✅ Admin Logic: Only allow editing if the user is the Admin email
           const isUserAdmin = user && user.email === "ramchat007@gmail.com";
 
           if (isUserAdmin) {
@@ -174,14 +145,12 @@ export default function GlobalPlayerRegistration() {
               return;
             }
           } else {
-            // ❌ Normal User: Stop and show contact alert
             setStatus("exists");
             setLoading(false);
             return;
           }
         }
 
-        // Add New Doc
         await addDoc(playersRef, {
           name: formData.name.trim(),
           mobile: cleanMobile,
@@ -254,6 +223,7 @@ export default function GlobalPlayerRegistration() {
         </div>
 
         <div className="bg-[#1C2128] border border-white/5 rounded-[2.5rem] p-8 shadow-2xl backdrop-blur-md">
+          {/* ✅ SIMPLIFIED: PROFILE EXISTS SECTION */}
           {status === "exists" && (
             <div className="bg-amber-900/30 border border-amber-500/50 p-6 rounded-3xl mb-8 animate-in shake">
               <div className="flex items-center gap-3 mb-3">
@@ -262,36 +232,15 @@ export default function GlobalPlayerRegistration() {
                   Profile Already Registered
                 </h4>
               </div>
-              <p className="text-slate-300 text-xs leading-relaxed mb-4 font-medium">
-                This mobile number exists in the global directory. To update
-                your details, please contact tournament officials:
+              <p className="text-slate-200 text-xs leading-relaxed mb-4 font-bold">
+                This mobile number is already registered in our global
+                directory.
               </p>
-              <div className="space-y-2">
-                {contacts.length > 0 ? (
-                  contacts.map((c, i) => (
-                    <div
-                      key={i}
-                      className="bg-[#0F1115] p-3 rounded-xl border border-white/5 flex justify-between items-center group hover:border-teal-500/30 transition-all">
-                      <div>
-                        <p className="text-[8px] text-slate-500 font-black uppercase tracking-widest">
-                          {c.name}
-                        </p>
-                        <p className="text-xs font-mono text-slate-200">
-                          {c.email}
-                        </p>
-                      </div>
-                      <a
-                        href={`mailto:${c.email}?subject=Player Profile Update Request`}
-                        className="bg-teal-500/10 text-teal-400 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase hover:bg-teal-500 hover:text-black transition-all">
-                        Email ↗
-                      </a>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-[10px] text-slate-500 italic">
-                    Fetching official contact list...
-                  </p>
-                )}
+              <div className="bg-[#0F1115] p-4 rounded-xl border border-white/5 text-center">
+                <p className="text-teal-400 text-[10px] font-black uppercase tracking-widest">
+                  Please contact the Admin or Organizers to update your existing
+                  profile.
+                </p>
               </div>
               <button
                 onClick={() => setStatus("idle")}
