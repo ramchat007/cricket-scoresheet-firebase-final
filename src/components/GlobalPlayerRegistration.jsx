@@ -1,9 +1,21 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react"; // ✅ Fixed: Added useEffect
 import { Link } from "react-router-dom";
-import { collection, query, where, getDocs, addDoc, updateDoc, doc } from "firebase/firestore"; // Added updateDoc, doc
-import { db } from "../utils/firebase"; 
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  addDoc,
+  updateDoc,
+  doc,
+  getDoc, // ✅ Added getDoc
+} from "firebase/firestore";
+import { db } from "../utils/firebase";
+import { useAuth } from "../hooks/useAuth"; // ✅ Added Auth for admin check
 
 export default function GlobalPlayerRegistration() {
+  const { user } = useAuth(); // ✅ Get logged in user
+
   const [formData, setFormData] = useState({
     name: "",
     mobile: "",
@@ -14,14 +26,41 @@ export default function GlobalPlayerRegistration() {
 
   const [photoBase64, setPhotoBase64] = useState("");
   const [paymentBase64, setPaymentBase64] = useState("");
-  
-  // ✅ New State for Edit Mode
+
   const [existingPlayerId, setExistingPlayerId] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
 
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState("idle"); // idle, checking, exists, success, error, updated
+  const [status, setStatus] = useState("idle");
   const [errorMessage, setErrorMessage] = useState("");
+
+  const [contacts, setContacts] = useState([]);
+
+  // Fetch official contacts from the tournament document
+  useEffect(() => {
+    const fetchScorers = async () => {
+      try {
+        const docRef = doc(db, "tournaments", "generic");
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const list = [];
+          if (data.ownerEmail)
+            list.push({ name: "Admin", email: data.ownerEmail });
+          if (data.scorerEmails) {
+            data.scorerEmails.forEach((email) =>
+              list.push({ name: "Scorer", email })
+            );
+          }
+          setContacts(list);
+        }
+      } catch (err) {
+        console.error("Error fetching contacts:", err);
+      }
+    };
+    fetchScorers();
+  }, []);
 
   const compressImage = (file, maxWidth = 300) => {
     return new Promise((resolve) => {
@@ -59,20 +98,19 @@ export default function GlobalPlayerRegistration() {
     }
   };
 
-  // ✅ New Function: Load Existing Player Data
   const loadExistingPlayer = (playerData, docId) => {
-      setFormData({
-          name: playerData.name,
-          mobile: playerData.mobile,
-          role: playerData.role,
-          battingStyle: playerData.battingStyle || "Right Hand Bat",
-          bowlingStyle: playerData.bowlingStyle || "Right Arm Medium",
-      });
-      setPhotoBase64(playerData.photoURL || "");
-      setPaymentBase64(playerData.paymentScreenshotURL || "");
-      setExistingPlayerId(docId);
-      setIsEditing(true);
-      setStatus("idle"); // Reset status to allow editing
+    setFormData({
+      name: playerData.name,
+      mobile: playerData.mobile,
+      role: playerData.role,
+      battingStyle: playerData.battingStyle || "Right Hand Bat",
+      bowlingStyle: playerData.bowlingStyle || "Right Arm Medium",
+    });
+    setPhotoBase64(playerData.photoURL || "");
+    setPaymentBase64(playerData.paymentScreenshotURL || "");
+    setExistingPlayerId(docId);
+    setIsEditing(true);
+    setStatus("idle");
   };
 
   const handleSubmit = async (e) => {
@@ -90,17 +128,10 @@ export default function GlobalPlayerRegistration() {
       return;
     }
 
-    if (!photoBase64) {
+    if (!photoBase64 || !paymentBase64) {
       setLoading(false);
       setStatus("idle");
-      alert("⚠️ Profile Photo is mandatory.");
-      return;
-    }
-
-    if (!paymentBase64) {
-      setLoading(false);
-      setStatus("idle");
-      alert("⚠️ Payment Screenshot is mandatory.");
+      alert("⚠️ Profile Photo and Payment Screenshot are mandatory.");
       return;
     }
 
@@ -109,54 +140,62 @@ export default function GlobalPlayerRegistration() {
       const isoDate = new Date().toISOString();
 
       if (isEditing && existingPlayerId) {
-          // --- UPDATE EXISTING PLAYER ---
-          const playerDocRef = doc(db, "players", existingPlayerId);
-          await updateDoc(playerDocRef, {
-            name: formData.name.trim(),
-            role: formData.role,
-            battingStyle: formData.battingStyle,
-            bowlingStyle: formData.bowlingStyle,
-            photoURL: photoBase64,
-            paymentScreenshotURL: paymentBase64,
-            updatedAt: isoDate,
-            // We don't update createdAt or stats
-          });
-          setStatus("updated");
+        // --- UPDATE EXISTING PLAYER (Admin only via rules) ---
+        const playerDocRef = doc(db, "players", existingPlayerId);
+        await updateDoc(playerDocRef, {
+          name: formData.name.trim(),
+          role: formData.role,
+          battingStyle: formData.battingStyle,
+          bowlingStyle: formData.bowlingStyle,
+          photoURL: photoBase64,
+          paymentScreenshotURL: paymentBase64,
+          updatedAt: isoDate,
+        });
+        setStatus("updated");
       } else {
-          // --- CREATE NEW PLAYER ---
-          // 1. Duplicate Check
-          const q = query(playersRef, where("mobile", "==", cleanMobile));
-          const querySnapshot = await getDocs(q);
+        // --- CREATE NEW PLAYER ---
+        const q = query(playersRef, where("mobile", "==", cleanMobile));
+        const querySnapshot = await getDocs(q);
 
-          if (!querySnapshot.empty) {
-            // Found duplicate -> Ask user if they want to edit
-            const docSnap = querySnapshot.docs[0];
-            if(window.confirm("⚠️ This mobile number is already registered.\n\nDo you want to edit your existing profile?")) {
-                loadExistingPlayer(docSnap.data(), docSnap.id);
-                setLoading(false);
-                return;
-            } else {
-                setStatus("exists");
-                setLoading(false);
-                return;
+        if (!querySnapshot.empty) {
+          const docSnap = querySnapshot.docs[0];
+
+          // ✅ Admin Logic: Only allow editing if the user is the Admin email
+          const isUserAdmin = user && user.email === "ramchat007@gmail.com";
+
+          if (isUserAdmin) {
+            if (
+              window.confirm(
+                "⚠️ Admin Access: This mobile number is already registered. Load for editing?"
+              )
+            ) {
+              loadExistingPlayer(docSnap.data(), docSnap.id);
+              setLoading(false);
+              return;
             }
+          } else {
+            // ❌ Normal User: Stop and show contact alert
+            setStatus("exists");
+            setLoading(false);
+            return;
           }
+        }
 
-          // 2. Add Doc
-          await addDoc(playersRef, {
-            name: formData.name.trim(),
-            mobile: cleanMobile,
-            role: formData.role,
-            battingStyle: formData.battingStyle,
-            bowlingStyle: formData.bowlingStyle,
-            photoURL: photoBase64,
-            paymentScreenshotURL: paymentBase64, 
-            stats: { matches: 0, runs: 0, wickets: 0 },
-            isVerified: false,
-            createdAt: isoDate,
-            updatedAt: isoDate,
-          });
-          setStatus("success");
+        // Add New Doc
+        await addDoc(playersRef, {
+          name: formData.name.trim(),
+          mobile: cleanMobile,
+          role: formData.role,
+          battingStyle: formData.battingStyle,
+          bowlingStyle: formData.bowlingStyle,
+          photoURL: photoBase64,
+          paymentScreenshotURL: paymentBase64,
+          stats: { matches: 0, runs: 0, wickets: 0 },
+          isVerified: false,
+          createdAt: isoDate,
+          updatedAt: isoDate,
+        });
+        setStatus("success");
       }
     } catch (error) {
       console.error("Error registering:", error);
@@ -175,10 +214,13 @@ export default function GlobalPlayerRegistration() {
             ✓
           </div>
           <h2 className="text-2xl font-black text-slate-100 mb-2 uppercase tracking-tight italic">
-            {status === "updated" ? "Profile Updated!" : "Registration Complete!"}
+            {status === "updated"
+              ? "Profile Updated!"
+              : "Registration Complete!"}
           </h2>
           <p className="text-slate-500 mb-8 text-sm font-medium">
-            Your profile has been {status === "updated" ? "updated" : "submitted"} for review.
+            Your profile has been{" "}
+            {status === "updated" ? "updated" : "submitted"} for review.
           </p>
           <button
             onClick={() => window.location.reload()}
@@ -205,17 +247,60 @@ export default function GlobalPlayerRegistration() {
             </span>
           </h1>
           <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">
-            {isEditing ? "Modify your details below" : "Join the league • Create your profile"}
+            {isEditing
+              ? "Modify your details below"
+              : "Join the league • Create your profile"}
           </p>
         </div>
 
         <div className="bg-[#1C2128] border border-white/5 rounded-[2.5rem] p-8 shadow-2xl backdrop-blur-md">
-          
           {status === "exists" && (
-            <div className="bg-amber-900/20 border border-amber-500/30 text-amber-200 p-4 rounded-xl mb-8 text-sm text-center font-bold animate-in shake">
-              ⚠️ This mobile number is already registered.
+            <div className="bg-amber-900/30 border border-amber-500/50 p-6 rounded-3xl mb-8 animate-in shake">
+              <div className="flex items-center gap-3 mb-3">
+                <span className="text-2xl">⚠️</span>
+                <h4 className="text-amber-200 font-black uppercase text-sm italic tracking-tight">
+                  Profile Already Registered
+                </h4>
+              </div>
+              <p className="text-slate-300 text-xs leading-relaxed mb-4 font-medium">
+                This mobile number exists in the global directory. To update
+                your details, please contact tournament officials:
+              </p>
+              <div className="space-y-2">
+                {contacts.length > 0 ? (
+                  contacts.map((c, i) => (
+                    <div
+                      key={i}
+                      className="bg-[#0F1115] p-3 rounded-xl border border-white/5 flex justify-between items-center group hover:border-teal-500/30 transition-all">
+                      <div>
+                        <p className="text-[8px] text-slate-500 font-black uppercase tracking-widest">
+                          {c.name}
+                        </p>
+                        <p className="text-xs font-mono text-slate-200">
+                          {c.email}
+                        </p>
+                      </div>
+                      <a
+                        href={`mailto:${c.email}?subject=Player Profile Update Request`}
+                        className="bg-teal-500/10 text-teal-400 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase hover:bg-teal-500 hover:text-black transition-all">
+                        Email ↗
+                      </a>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-[10px] text-slate-500 italic">
+                    Fetching official contact list...
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => setStatus("idle")}
+                className="mt-6 w-full py-2 text-[9px] font-black uppercase text-slate-500 hover:text-white transition-colors border-t border-white/5 pt-4">
+                Register a different number
+              </button>
             </div>
           )}
+
           {status === "error" && (
             <div className="bg-red-900/20 border border-red-500/30 text-red-200 p-4 rounded-xl mb-8 text-sm text-center font-bold">
               Error: {errorMessage}
@@ -223,8 +308,6 @@ export default function GlobalPlayerRegistration() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-8">
-            
-            {/* PROFILE PHOTO  */}
             <div className="flex flex-col items-center">
               <div className="relative group cursor-pointer">
                 <input
@@ -234,7 +317,9 @@ export default function GlobalPlayerRegistration() {
                   className="hidden"
                   id="profile-upload"
                 />
-                <label htmlFor="profile-upload" className="cursor-pointer group">
+                <label
+                  htmlFor="profile-upload"
+                  className="cursor-pointer group">
                   <div
                     className={`w-32 h-32 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl ${
                       photoBase64
@@ -249,7 +334,9 @@ export default function GlobalPlayerRegistration() {
                       />
                     ) : (
                       <div className="text-center">
-                        <span className="text-3xl opacity-50 grayscale group-hover:grayscale-0 transition-all">📷</span>
+                        <span className="text-3xl opacity-50 grayscale transition-all">
+                          📷
+                        </span>
                         <p className="text-[9px] text-slate-500 uppercase mt-2 font-black tracking-widest">
                           Upload Photo
                         </p>
@@ -260,7 +347,6 @@ export default function GlobalPlayerRegistration() {
               </div>
             </div>
 
-            {/* TEXT FIELDS */}
             <div className="space-y-5">
               <input
                 required
@@ -272,21 +358,20 @@ export default function GlobalPlayerRegistration() {
                   setFormData({ ...formData, name: e.target.value })
                 }
               />
-
               <input
                 required
                 type="tel"
                 placeholder="Mobile Number *"
                 maxLength={10}
-                // Lock mobile number if editing to prevent changing identity
-                disabled={isEditing} 
-                className={`w-full bg-[#0F1115] border border-white/10 rounded-xl px-5 py-4 text-slate-200 outline-none focus:border-teal-500/50 transition-all placeholder:text-slate-600 font-bold ${isEditing ? "opacity-50 cursor-not-allowed" : ""}`}
+                disabled={isEditing}
+                className={`w-full bg-[#0F1115] border border-white/10 rounded-xl px-5 py-4 text-slate-200 outline-none focus:border-teal-500/50 transition-all placeholder:text-slate-600 font-bold ${
+                  isEditing ? "opacity-50 cursor-not-allowed" : ""
+                }`}
                 value={formData.mobile}
                 onChange={(e) =>
                   setFormData({ ...formData, mobile: e.target.value })
                 }
               />
-
               <div className="grid grid-cols-2 gap-3">
                 {["Batsman", "Bowler", "All-Rounder", "Wicket Keeper"].map(
                   (role) => (
@@ -304,7 +389,6 @@ export default function GlobalPlayerRegistration() {
                   )
                 )}
               </div>
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <select
                   className="w-full bg-[#0F1115] border border-white/10 rounded-xl px-4 py-4 text-xs font-bold text-slate-300 outline-none focus:border-teal-500/50"
@@ -332,7 +416,6 @@ export default function GlobalPlayerRegistration() {
               </div>
             </div>
 
-            {/* PAYMENT SCREENSHOT  */}
             <div className="bg-[#0F1115] p-6 rounded-2xl border border-dashed border-white/10 hover:border-white/20 transition-colors group">
               <label className="block text-[10px] font-black text-slate-500 uppercase mb-4 text-center tracking-[0.2em]">
                 Payment Screenshot *
@@ -355,7 +438,9 @@ export default function GlobalPlayerRegistration() {
                   />
                 ) : (
                   <div className="h-32 flex flex-col items-center justify-center bg-[#161920] rounded-xl transition-colors">
-                    <span className="text-3xl mb-3 opacity-30 grayscale group-hover:grayscale-0 transition-all">🧾</span>
+                    <span className="text-3xl mb-3 opacity-30 grayscale transition-all">
+                      🧾
+                    </span>
                     <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">
                       Click to upload proof
                     </span>
@@ -368,19 +453,19 @@ export default function GlobalPlayerRegistration() {
               disabled={loading}
               type="submit"
               className="w-full bg-gradient-to-r from-teal-600 to-indigo-600 hover:from-teal-500 hover:to-indigo-500 text-white font-black uppercase tracking-widest text-xs py-5 rounded-2xl shadow-xl shadow-teal-900/20 transition-all disabled:opacity-50 active:scale-[0.98]">
-              {loading 
-                ? (status === "checking" ? "Checking..." : isEditing ? "Updating..." : "Registering...") 
-                : (isEditing ? "Update Profile" : "Submit Registration")}
+              {loading
+                ? "Processing..."
+                : isEditing
+                ? "Update Profile"
+                : "Submit Registration"}
             </button>
-            
             {isEditing && (
-                <button
-                    type="button"
-                    onClick={() => window.location.reload()}
-                    className="w-full text-slate-500 text-xs font-bold uppercase tracking-widest hover:text-white transition-colors"
-                >
-                    Cancel Edit
-                </button>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="w-full text-slate-500 text-xs font-bold uppercase tracking-widest hover:text-white transition-colors">
+                Cancel Edit
+              </button>
             )}
           </form>
         </div>

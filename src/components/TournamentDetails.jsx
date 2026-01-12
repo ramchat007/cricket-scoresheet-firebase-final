@@ -7,12 +7,13 @@ import {
   collection,
   getDocs,
   writeBatch,
+  setDoc, // ✅ Added setDoc for auction init
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { useAuth } from "../hooks/useAuth";
 
-import TournamentTabs from "../components/TournamentTabs";
-import MatchScheduler from "../components/MatchScheduler";
+import TournamentTabs from "./TournamentTabs";
+import MatchScheduler from "./MatchScheduler";
 
 export default function TournamentDetails() {
   const { id } = useParams();
@@ -35,8 +36,8 @@ export default function TournamentDetails() {
   const [showScheduler, setShowScheduler] = useState(false);
 
   /* --------------------------------------------
-     Load tournament + permissions
-   --------------------------------------------- */
+      Load tournament + permissions
+    --------------------------------------------- */
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -96,8 +97,8 @@ export default function TournamentDetails() {
   }, [id, user, navigate]);
 
   /* --------------------------------------------
-     Load teams
-   --------------------------------------------- */
+      Load teams
+    --------------------------------------------- */
   useEffect(() => {
     if (!id) return;
     const loadTeams = async () => {
@@ -112,8 +113,8 @@ export default function TournamentDetails() {
   }, [id]);
 
   /* --------------------------------------------
-     Load matches
-   --------------------------------------------- */
+      Load matches
+    --------------------------------------------- */
   useEffect(() => {
     if (!id) return;
     const loadMatches = async () => {
@@ -130,12 +131,15 @@ export default function TournamentDetails() {
   }, [id]);
 
   /* --------------------------------------------
-     Toggle Auction Mode
-   --------------------------------------------- */
+      Toggle Auction Mode
+    --------------------------------------------- */
   const isAuctionEnabled = !!tournamentData?.isAuction;
-  const auctionInitialized = tournamentTeams.some(
-    (t) => Array.isArray(t.roster) && t.roster.length > 0
-  );
+
+  // ✅ Fixed Logic: Check explicit state OR if rosters have players
+  const auctionInitialized =
+    tournamentData?.auctionState === "READY" ||
+    tournamentData?.auctionState === "ACTIVE" ||
+    tournamentTeams.some((t) => Array.isArray(t.roster) && t.roster.length > 0);
 
   const toggleAuctionMode = async () => {
     if (!canEdit) return;
@@ -158,7 +162,7 @@ export default function TournamentDetails() {
   const handleInitializeTournament = async () => {
     if (!canEdit) return;
     const confirmMsg = isAuctionEnabled
-      ? "Initialize Auction? This will reset purses and empty rosters."
+      ? "Initialize Auction? This will reset purses, empty rosters, and create the console."
       : "Generate Fixtures? This will create round-robin matches for all teams.";
 
     if (!window.confirm(confirmMsg)) return;
@@ -166,6 +170,7 @@ export default function TournamentDetails() {
     try {
       const batch = writeBatch(db);
       if (isAuctionEnabled) {
+        // 1. Reset Team Wallets
         tournamentTeams.forEach((team) => {
           const ref = doc(db, "tournaments", id, "teams", team.id);
           batch.update(ref, {
@@ -174,9 +179,26 @@ export default function TournamentDetails() {
             roster: [],
           });
         });
+
+        // 2. Set Tournament Level State
         batch.update(doc(db, "tournaments", id), {
           auctionState: "READY",
         });
+
+        // 3. ✅ CRITICAL: Create the Auction Console State Document
+        const auctionStateRef = doc(db, "tournaments", id, "auction", "state");
+        // Use set() instead of update() to ensure creation
+        batch.set(auctionStateRef, {
+          status: "READY",
+          currentPlayerId: null,
+          currentBid: 0,
+          currentBidderId: null,
+          lastUpdate: Date.now(),
+        });
+
+        await batch.commit();
+        alert("Auction Initialized! You can now enter the console.");
+        window.location.reload();
       } else {
         if (tournamentTeams.length < 2) {
           alert("Need at least 2 teams to generate fixtures.");
@@ -195,12 +217,12 @@ export default function TournamentDetails() {
             });
           }
         }
+        await batch.commit();
+        window.location.reload();
       }
-      await batch.commit();
-      window.location.reload();
     } catch (e) {
       console.error("Initialization failed", e);
-      alert("Failed to initialize tournament");
+      alert("Failed to initialize tournament: " + e.message);
     }
   };
 
@@ -214,7 +236,6 @@ export default function TournamentDetails() {
 
   return (
     <div className="w-full min-h-screen bg-[#0F1115] text-slate-200 font-sans pb-20">
-      
       {/* HERO SECTION */}
       <div className="relative bg-[#161920] border-b border-white/5 pt-10 pb-20 px-4 overflow-hidden shadow-2xl">
         <div className="max-w-7xl mx-auto relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
@@ -247,7 +268,8 @@ export default function TournamentDetails() {
               <button
                 onClick={() => setShowScheduler(!showScheduler)}
                 className="bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 font-bold px-5 py-3 rounded-xl shadow-lg flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest">
-                <span>{showScheduler ? "✕" : "➕"}</span> {showScheduler ? "Hide Scheduler" : "Add Match"}
+                <span>{showScheduler ? "✕" : "➕"}</span>{" "}
+                {showScheduler ? "Hide Scheduler" : "Add Match"}
               </button>
 
               {/* 2. MODE SPECIFIC ACTIONS */}
@@ -262,19 +284,19 @@ export default function TournamentDetails() {
                   ) : (
                     <button
                       onClick={() => navigate(`/tournaments/${id}/auction`)}
-                      className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold px-5 py-3 rounded-xl shadow-lg shadow-purple-900/20 flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest">
-                      <span>🔨</span> Auction Console
+                      className="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white font-bold px-5 py-3 rounded-xl shadow-lg shadow-orange-900/40 flex items-center gap-2 transition-all border-b-4 border-orange-800 active:border-b-0 active:translate-y-1 text-xs uppercase tracking-widest">
+                      <span>🔨</span> Enter Auction Console
                     </button>
                   )}
+
                   <button
                     onClick={toggleAuctionMode}
-                    className="bg-red-900/20 text-red-400 border border-red-500/20 hover:bg-red-900/40 font-bold px-4 py-3 rounded-xl transition-all text-xs uppercase tracking-widest">
+                    className="bg-red-900/10 text-red-500 border border-red-500/20 hover:bg-red-900/20 font-bold px-4 py-3 rounded-xl transition-all text-xs uppercase tracking-widest">
                     Disable Auction
                   </button>
                 </>
               ) : (
                 <>
-                  {/* Show "Create Fixtures" only if no matches exist yet */}
                   {matches.length === 0 && (
                     <button
                       onClick={handleInitializeTournament}
@@ -286,7 +308,7 @@ export default function TournamentDetails() {
                   <button
                     onClick={toggleAuctionMode}
                     className="bg-[#0F1115] text-slate-400 border border-white/10 hover:border-white/20 hover:text-white font-bold px-4 py-3 rounded-xl transition-all text-xs uppercase tracking-widest flex items-center gap-2">
-                    <span>⚙️</span> Enable Auction
+                    <span>⚙️</span> Enable Auction Mode
                   </button>
                 </>
               )}
@@ -299,11 +321,11 @@ export default function TournamentDetails() {
       <div className="max-w-7xl mx-auto px-4 -mt-12 relative z-30 animate-in fade-in slide-in-from-top-4 duration-500">
         {showScheduler && (
           <div className="bg-[#1C2128] border border-white/10 rounded-[2rem] shadow-2xl p-2">
-             <MatchScheduler
-                tournamentId={id}
-                teams={tournamentTeams}
-                onCancel={() => setShowScheduler(false)}
-             />
+            <MatchScheduler
+              tournamentId={id}
+              teams={tournamentTeams}
+              onCancel={() => setShowScheduler(false)}
+            />
           </div>
         )}
       </div>
