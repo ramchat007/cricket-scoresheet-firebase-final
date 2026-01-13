@@ -14,7 +14,7 @@ import { useAuth } from "../hooks/useAuth";
 
 import TournamentTabs from "./TournamentTabs";
 import MatchScheduler from "./MatchScheduler";
-import TeamBanner from "./TeamBanner";
+import TeamBanner from "./TournamentTabs/TeamPosterModal";
 
 export default function TournamentDetails() {
   const { id } = useParams();
@@ -43,79 +43,105 @@ export default function TournamentDetails() {
     // ✅ FIX: Changed tournamentId to id (from useParams)
     const teamRef = doc(db, "tournaments", id, "teams", teamId);
     await updateDoc(teamRef, updates);
-    
+
     // ✅ ADDED: Update local state so UI reflects change immediately
-    setTournamentTeams(prev => prev.map(t => t.id === teamId ? { ...t, ...updates } : t));
-    
+    setTournamentTeams((prev) =>
+      prev.map((t) => (t.id === teamId ? { ...t, ...updates } : t))
+    );
+
     setEditingTeam(null);
     alert("Team Profile Updated!");
   };
 
   const TeamEditModal = ({ team, isOpen, onClose, onSave }) => {
-  const [name, setName] = React.useState(team?.name || "");
-  const [logoBase64, setLogoBase64] = React.useState(team?.logoURL || "");
-  const [loading, setLoading] = React.useState(false);
+    const [name, setName] = React.useState(team?.name || "");
+    const [logoBase64, setLogoBase64] = React.useState(team?.logoURL || "");
+    const [loading, setLoading] = React.useState(false);
 
-  // Helper to process Logo
-  const handleLogoChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target.result;
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const size = 300; // Standardize logo size
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, size, size);
-        setLogoBase64(canvas.toDataURL("image/png", 0.8));
+    // Helper to process Logo
+    const handleLogoChange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const size = 300; // Standardize logo size
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, size, size);
+          setLogoBase64(canvas.toDataURL("image/png", 0.8));
+        };
       };
     };
-  };
 
-  if (!isOpen) return null;
+    if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
-      <div className="bg-[#1C2128] border border-white/10 w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl">
-        <h3 className="text-xl font-black text-white uppercase italic mb-6">Edit Team Brand</h3>
-        
-        <div className="flex flex-col items-center mb-8">
-           <div className="relative group cursor-pointer" onClick={() => document.getElementById('logo-input').click()}>
+    return (
+      <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="bg-[#1C2128] border border-white/10 w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl">
+          <h3 className="text-xl font-black text-white uppercase italic mb-6">
+            Edit Team Brand
+          </h3>
+
+          <div className="flex flex-col items-center mb-8">
+            <div
+              className="relative group cursor-pointer"
+              onClick={() => document.getElementById("logo-input").click()}>
               <div className="w-32 h-32 rounded-3xl bg-[#0F1115] border-4 border-dashed border-white/10 flex items-center justify-center overflow-hidden group-hover:border-teal-500/50 transition-all">
-                {logoBase64 ? <img src={logoBase64} className="w-full h-full object-contain p-2" /> : <span className="text-4xl">🛡️</span>}
+                {logoBase64 ? (
+                  <img
+                    src={logoBase64}
+                    className="w-full h-full object-contain p-2"
+                  />
+                ) : (
+                  <span className="text-4xl">🛡️</span>
+                )}
               </div>
-              <p className="text-[10px] text-slate-500 font-black uppercase mt-3 tracking-widest text-center">Click to upload Logo</p>
-              <input id="logo-input" type="file" hidden onChange={handleLogoChange} accept="image/*" />
-           </div>
-        </div>
+              <p className="text-[10px] text-slate-500 font-black uppercase mt-3 tracking-widest text-center">
+                Click to upload Logo
+              </p>
+              <input
+                id="logo-input"
+                type="file"
+                hidden
+                onChange={handleLogoChange}
+                accept="image/*"
+              />
+            </div>
+          </div>
 
-        <div className="space-y-4 mb-8">
-          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Team Name</label>
-          <input 
-            className="w-full bg-[#0F1115] border border-white/10 rounded-2xl px-6 py-4 text-white font-bold outline-none focus:border-teal-500/50"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </div>
+          <div className="space-y-4 mb-8">
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">
+              Team Name
+            </label>
+            <input
+              className="w-full bg-[#0F1115] border border-white/10 rounded-2xl px-6 py-4 text-white font-bold outline-none focus:border-teal-500/50"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
 
-        <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 py-4 text-slate-500 font-black uppercase text-xs">Cancel</button>
-          <button 
-            onClick={() => onSave(team.id, { name, logoURL: logoBase64 })}
-            className="flex-1 bg-teal-600 hover:bg-teal-500 text-white font-black py-4 rounded-2xl uppercase text-xs shadow-lg shadow-teal-900/40 transition-all"
-          >
-            Save Brand
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={onClose}
+              className="flex-1 py-4 text-slate-500 font-black uppercase text-xs">
+              Cancel
+            </button>
+            <button
+              onClick={() => onSave(team.id, { name, logoURL: logoBase64 })}
+              className="flex-1 bg-teal-600 hover:bg-teal-500 text-white font-black py-4 rounded-2xl uppercase text-xs shadow-lg shadow-teal-900/40 transition-all">
+              Save Brand
+            </button>
+          </div>
         </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
 
   /* --------------------------------------------
       Load tournament + permissions
@@ -395,7 +421,6 @@ export default function TournamentDetails() {
                 </>
               )}
             </div>
-            
           )}
         </div>
       </div>
@@ -428,25 +453,26 @@ export default function TournamentDetails() {
           canEdit={canEdit}
           isOwner={isOwner}
           isAuctionEnabled={isAuctionEnabled}
+          tournament={tournamentData}
         />
       </div>
 
       {/* ✅ CORRECTED: Mapping over tournamentTeams instead of teams */}
       <div className="p-4 mt-8 max-w-7xl mx-auto space-y-6">
-        {tournamentTeams.map(t => (
-          <TeamBanner 
-              key={t.id} 
-              team={t} 
-              canEdit={canEdit} 
-              onEditClick={(team) => setEditingTeam(team)} 
+        {tournamentTeams.map((t) => (
+          <TeamBanner
+            key={t.id}
+            team={t}
+            canEdit={canEdit}
+            onEditClick={(team) => setEditingTeam(team)}
           />
         ))}
 
         {editingTeam && (
-          <TeamEditModal 
-            team={editingTeam} 
-            isOpen={!!editingTeam} 
-            onClose={() => setEditingTeam(null)} 
+          <TeamEditModal
+            team={editingTeam}
+            isOpen={!!editingTeam}
+            onClose={() => setEditingTeam(null)}
             onSave={handleUpdateTeam}
           />
         )}

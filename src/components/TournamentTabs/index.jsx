@@ -50,8 +50,12 @@ export default function TournamentTabs({
 
     return {
       liveMatches: live,
-      upcomingMatches: upcoming.sort((a, b) => new Date(a.date) - new Date(b.date)),
-      finishedMatches: finished.sort((a, b) => new Date(b.date) - new Date(a.date)),
+      upcomingMatches: upcoming.sort(
+        (a, b) => new Date(a.date) - new Date(b.date)
+      ),
+      finishedMatches: finished.sort(
+        (a, b) => new Date(b.date) - new Date(a.date)
+      ),
     };
   }, [matches]);
 
@@ -96,12 +100,22 @@ export default function TournamentTabs({
       memberNames.forEach((p) => {
         const playerName = typeof p === "object" ? p.name : p;
         if (playerName) {
-            players[playerName] = {
+          players[playerName] = {
             name: playerName,
             team: teamName,
-            runs: 0, balls: 0, fours: 0, sixes: 0, innings: 0, notOuts: 0, hs: 0,
-            wickets: 0, runsConceded: 0, ballsBowled: 0, history: [], mvp: 0,
-            };
+            runs: 0,
+            balls: 0,
+            fours: 0,
+            sixes: 0,
+            innings: 0,
+            notOuts: 0,
+            hs: 0,
+            wickets: 0,
+            runsConceded: 0,
+            ballsBowled: 0,
+            history: [],
+            mvp: 0,
+          };
         }
       });
     });
@@ -109,8 +123,20 @@ export default function TournamentTabs({
     const initPlayer = (name, team) => {
       if (!players[name]) {
         players[name] = {
-          name, team, runs: 0, balls: 0, fours: 0, sixes: 0, innings: 0, notOuts: 0, hs: 0,
-          wickets: 0, runsConceded: 0, ballsBowled: 0, history: [], mvp: 0,
+          name,
+          team,
+          runs: 0,
+          balls: 0,
+          fours: 0,
+          sixes: 0,
+          innings: 0,
+          notOuts: 0,
+          hs: 0,
+          wickets: 0,
+          runsConceded: 0,
+          ballsBowled: 0,
+          history: [],
+          mvp: 0,
         };
       }
       return players[name];
@@ -120,7 +146,8 @@ export default function TournamentTabs({
     matches.forEach((m) => {
       let innList = [];
       if (Array.isArray(m.innings)) innList = m.innings;
-      else if (m.innings && typeof m.innings === 'object') innList = Object.values(m.innings);
+      else if (m.innings && typeof m.innings === "object")
+        innList = Object.values(m.innings);
 
       innList.forEach((inn) => {
         if (!inn) return;
@@ -136,14 +163,24 @@ export default function TournamentTabs({
               const b = parseInt(s.balls || 0);
               const f = parseInt(s.fours || 0);
               const x = parseInt(s.sixes || 0);
-              
-              p.runs += r; p.balls += b; p.fours += f; p.sixes += x;
+
+              p.runs += r;
+              p.balls += b;
+              p.fours += f;
+              p.sixes += x;
               p.innings += 1;
               if (!s.out) p.notOuts += 1;
               if (r > p.hs) p.hs = r;
               p.mvp += r + f + x * 2;
-              
-              p.history.push({ type: "bat", matchId: m.id, date: m.date, opponent: bowlTeam, runs: r, balls: b });
+
+              p.history.push({
+                type: "bat",
+                matchId: m.id,
+                date: m.date,
+                opponent: bowlTeam,
+                runs: r,
+                balls: b,
+              });
             }
           });
         }
@@ -157,8 +194,19 @@ export default function TournamentTabs({
               const r = parseInt(s.runs || 0);
               const b = parseInt(s.balls || 0);
 
-              p.wickets += w; p.runsConceded += r; p.ballsBowled += b; p.mvp += w * 20;
-              p.history.push({ type: "bowl", matchId: m.id, date: m.date, opponent: batTeam, wickets: w, runs: r, overs: `${Math.floor(b / 6)}.${b % 6}` });
+              p.wickets += w;
+              p.runsConceded += r;
+              p.ballsBowled += b;
+              p.mvp += w * 20;
+              p.history.push({
+                type: "bowl",
+                matchId: m.id,
+                date: m.date,
+                opponent: batTeam,
+                wickets: w,
+                runs: r,
+                overs: `${Math.floor(b / 6)}.${b % 6}`,
+              });
             }
           });
         }
@@ -166,11 +214,16 @@ export default function TournamentTabs({
     });
 
     const statsArray = Object.values(players).map((p) => {
-      const batAvg = p.innings - p.notOuts > 0 ? (p.runs / (p.innings - p.notOuts)).toFixed(2) : p.runs.toFixed(2);
-      const batSR = p.balls > 0 ? ((p.runs / p.balls) * 100).toFixed(2) : "0.00";
+      const batAvg =
+        p.innings - p.notOuts > 0
+          ? (p.runs / (p.innings - p.notOuts)).toFixed(2)
+          : p.runs.toFixed(2);
+      const batSR =
+        p.balls > 0 ? ((p.runs / p.balls) * 100).toFixed(2) : "0.00";
       const overs = p.ballsBowled / 6;
       const bowlEco = overs > 0 ? (p.runsConceded / overs).toFixed(2) : "0.00";
-      const bowlAvg = p.wickets > 0 ? (p.runsConceded / p.wickets).toFixed(2) : "0.00";
+      const bowlAvg =
+        p.wickets > 0 ? (p.runsConceded / p.wickets).toFixed(2) : "0.00";
       return { ...p, batAvg, batSR, bowlEco, bowlAvg };
     });
 
@@ -178,7 +231,12 @@ export default function TournamentTabs({
     const purple = [...statsArray].sort((a, b) => b.wickets - a.wickets)[0];
     const teams = [...new Set(statsArray.map((p) => p.team).filter(Boolean))];
 
-    return { detailedStats: statsArray, orangeCap: orange, purpleCap: purple, distinctTeams: teams };
+    return {
+      detailedStats: statsArray,
+      orangeCap: orange,
+      purpleCap: purple,
+      distinctTeams: teams,
+    };
   }, [matches, tournamentTeams]);
 
   // --- 4. FILTERED STATS ---
@@ -190,11 +248,13 @@ export default function TournamentTabs({
       if (statsTab === "bat") {
         if (sortStyle === "most_runs") return b.runs - a.runs;
         if (sortStyle === "high_score") return b.hs - a.hs;
-        if (sortStyle === "strike_rate") return parseFloat(b.batSR) - parseFloat(a.batSR);
+        if (sortStyle === "strike_rate")
+          return parseFloat(b.batSR) - parseFloat(a.batSR);
         if (sortStyle === "most_sixes") return b.sixes - a.sixes;
       } else if (statsTab === "bowl") {
         if (sortStyle === "most_wickets") return b.wickets - a.wickets;
-        if (sortStyle === "best_economy") return parseFloat(a.bowlEco) - parseFloat(b.bowlEco);
+        if (sortStyle === "best_economy")
+          return parseFloat(a.bowlEco) - parseFloat(b.bowlEco);
       } else if (statsTab === "mvp") return b.mvp - a.mvp;
       return 0;
     });
@@ -203,7 +263,6 @@ export default function TournamentTabs({
   // --- RENDER CONTENT ---
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 min-h-screen">
-      
       {/* MOBILE-OPTIMIZED TABS NAVIGATION */}
       <div className="sticky top-2 z-40 mb-6 mx-[-16px] px-4 md:mx-0 md:px-0">
         <div className="bg-[#1C2128]/90 backdrop-blur-xl border border-white/10 p-1.5 rounded-2xl flex overflow-x-auto shadow-2xl custom-scrollbar snap-x snap-mandatory">
@@ -214,21 +273,20 @@ export default function TournamentTabs({
             { id: "players", label: "Stats", icon: "📈" },
             { id: "admin", label: "Admin", icon: "⚙️" },
           ]
-            .filter((tab) => tab.id !== "admin" || (canEdit || isOwner))
+            .filter((tab) => tab.id !== "admin" || canEdit || isOwner)
             .map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => {
                   setActiveTab(tab.id);
                   // Optional: smooth scroll to top when tab changes
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
                 className={`flex-shrink-0 flex-1 min-w-[90px] md:min-w-[120px] px-3 py-3 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider transition-all flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 snap-center ${
                   activeTab === tab.id
                     ? "bg-[#0F1115] text-white shadow-lg border border-white/10 scale-95 md:scale-100"
                     : "text-slate-500 hover:text-slate-300 hover:bg-white/5 border border-transparent"
-                }`}
-              >
+                }`}>
                 <span className="text-sm md:text-base">{tab.icon}</span>
                 <span>{tab.label}</span>
               </button>
@@ -239,54 +297,65 @@ export default function TournamentTabs({
       {/* CONTENT AREA - with extra padding for bottom navigation on mobile if needed */}
       <div className="pb-20 md:pb-0">
         {activeTab === "matches" && (
-          <MatchesTab 
-              liveMatches={liveMatches}
-              upcomingMatches={upcomingMatches}
-              finishedMatches={finishedMatches}
-              tournamentId={tournamentId}
-              canEdit={canEdit} 
+          <MatchesTab
+            liveMatches={liveMatches}
+            upcomingMatches={upcomingMatches}
+            finishedMatches={finishedMatches}
+            tournamentId={tournamentId}
+            canEdit={canEdit}
           />
         )}
 
         {activeTab === "teams" && (
-          <TeamsTab tournamentTeams={tournamentTeams} isAuctionEnabled={isAuctionEnabled} />
+          <TeamsTab
+            tournamentTeams={tournamentTeams}
+            tournamentData={tournamentData}
+            isAuctionEnabled={isAuctionEnabled}
+          />
         )}
 
-        {activeTab === "points" && (
-          <PointsTab pointsTable={pointsTable} />
-        )}
+        {activeTab === "points" && <PointsTab pointsTable={pointsTable} />}
 
         {activeTab === "players" && (
           <PlayerStatsTab
-            statsTab={statsTab} setStatsTab={setStatsTab}
-            sortStyle={sortStyle} setSortStyle={setSortStyle}
-            teamFilter={teamFilter} setTeamFilter={setTeamFilter}
+            statsTab={statsTab}
+            setStatsTab={setStatsTab}
+            sortStyle={sortStyle}
+            setSortStyle={setSortStyle}
+            teamFilter={teamFilter}
+            setTeamFilter={setTeamFilter}
             filteredStats={filteredStats}
-            expandedPlayer={expandedPlayer} setExpandedPlayer={setExpandedPlayer}
-            orangeCap={orangeCap} purpleCap={purpleCap}
-            distinctTeams={distinctTeams} id={tournamentId}
+            expandedPlayer={expandedPlayer}
+            setExpandedPlayer={setExpandedPlayer}
+            orangeCap={orangeCap}
+            purpleCap={purpleCap}
+            distinctTeams={distinctTeams}
+            id={tournamentId}
           />
         )}
 
         {activeTab === "admin" && (canEdit || isOwner) && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in zoom-in-95">
-            
             {/* Team Management / Auction */}
             <div className="bg-[#1C2128] border border-white/5 rounded-2xl p-6 shadow-xl relative overflow-hidden group">
               <h3 className="text-slate-100 font-bold text-lg mb-6 flex items-center gap-2">
-                  <span className="text-cyan-500">🛡️</span> Team Management
+                <span className="text-cyan-500">🛡️</span> Team Management
               </h3>
               {isAuctionEnabled ? (
                 <div className="bg-[#0F1115] border border-white/5 rounded-xl p-8 text-center">
                   <div className="text-4xl mb-4">🔒</div>
-                  <h4 className="text-slate-200 font-bold mb-2">Rosters Locked</h4>
+                  <h4 className="text-slate-200 font-bold mb-2">
+                    Rosters Locked
+                  </h4>
                   <p className="text-slate-500 text-sm mb-6">
-                    This is an Auction Tournament. Teams are managed in the Auction Console.
+                    This is an Auction Tournament. Teams are managed in the
+                    Auction Console.
                   </p>
                   <button
-                    onClick={() => navigate(`/tournaments/${tournamentId}/auction`)}
-                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-lg shadow-purple-900/20"
-                  >
+                    onClick={() =>
+                      navigate(`/tournaments/${tournamentId}/auction`)
+                    }
+                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-lg shadow-purple-900/20">
                     Go to Auction Console
                   </button>
                 </div>
@@ -300,19 +369,23 @@ export default function TournamentTabs({
               <div className="space-y-6">
                 <div className="bg-[#1C2128] border border-white/5 rounded-2xl p-6 shadow-xl">
                   <h3 className="text-slate-100 font-bold text-lg mb-4 flex items-center gap-2">
-                      <span className="text-yellow-500">🔑</span> Access Control
+                    <span className="text-yellow-500">🔑</span> Access Control
                   </h3>
                   <TournamentAccessManager tournament={tournamentData} />
                 </div>
                 <div className="bg-red-900/10 border border-red-500/20 rounded-2xl p-6">
-                  <h4 className="text-red-400 font-bold mb-2 uppercase text-xs tracking-widest">Danger Zone</h4>
-                  <p className="text-red-400/50 text-xs mb-4">This action cannot be undone.</p>
+                  <h4 className="text-red-400 font-bold mb-2 uppercase text-xs tracking-widest">
+                    Danger Zone
+                  </h4>
+                  <p className="text-red-400/50 text-xs mb-4">
+                    This action cannot be undone.
+                  </p>
                   <button
                     className="bg-red-600/10 text-red-400 border border-red-500/50 hover:bg-red-600 hover:text-white px-4 py-3 rounded-xl font-bold w-full transition-all"
                     onClick={() => {
-                        if(window.confirm("Delete Tournament?")) alert("Feature Pending: Delete");
-                    }}
-                  >
+                      if (window.confirm("Delete Tournament?"))
+                        alert("Feature Pending: Delete");
+                    }}>
                     Delete Tournament
                   </button>
                 </div>
