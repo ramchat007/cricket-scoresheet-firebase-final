@@ -354,7 +354,7 @@ const PastLeague = () => {
                   key={idx}
                   className="bg-[#1C2128] border border-white/5 rounded-[2.5rem] p-8 shadow-xl">
                   <h3 className="text-xl font-black italic uppercase mb-6 border-b border-white/5 pb-4 tracking-tight">
-                    {team.name}
+                    <span>{team.name}</span>
                   </h3>
                   <div className="space-y-3">
                     {team.players.map((p, i) => (

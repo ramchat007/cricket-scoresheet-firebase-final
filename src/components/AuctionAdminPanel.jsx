@@ -19,10 +19,177 @@ import {
 import { db } from "../utils/firebase";
 import { listGlobalPlayers } from "../utils/firestore";
 import { useAuth } from "../hooks/useAuth";
-import AuctionOwnersAdmin from "./AuctionOwnersAdmin";
 import MatchScheduler from "./MatchScheduler";
 
-// --- 1. SUB-COMPONENT FOR PLAYER ROW ---
+// --- 1. SUB-COMPONENT FOR TEAM CARD ---
+const TeamCard = ({
+  t,
+  globalUsers,
+  tournamentId,
+  maxSquadSize,
+  onUpdateOwner,
+}) => {
+  const [isEditingOwner, setIsEditingOwner] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [tempName, setTempName] = useState(t.name);
+
+  const handleSaveName = async () => {
+    if (!tempName.trim()) return;
+    await updateDoc(doc(db, "tournaments", tournamentId, "teams", t.id), {
+      name: tempName.trim(),
+    });
+    setIsEditingName(false);
+  };
+
+  return (
+    <div className="bg-[#1C2128] p-6 rounded-[2.5rem] shadow-xl border border-white/5 flex flex-col md:flex-row gap-8 transition-all hover:border-teal-500/20">
+      <div className="flex-1 space-y-4">
+        <div>
+          <div className="text-[8px] text-teal-500 uppercase font-black tracking-[0.2em] mb-1">
+            Active Team
+          </div>
+
+          {/* TEAM NAME EDIT LOGIC */}
+          <div className="flex items-center gap-3 mb-6">
+            {isEditingName ? (
+              <div className="flex items-center gap-2 w-full">
+                <input
+                  className="bg-[#0F1115] border border-teal-500/30 rounded-xl px-4 py-2 text-white font-black uppercase italic outline-none w-full"
+                  value={tempName}
+                  onChange={(e) => setTempName(e.target.value)}
+                  autoFocus
+                />
+                <button
+                  onClick={handleSaveName}
+                  className="bg-teal-600 p-2 rounded-lg text-[10px]">
+                  ✓
+                </button>
+                <button
+                  onClick={() => {
+                    setIsEditingName(false);
+                    setTempName(t.name);
+                  }}
+                  className="bg-white/5 p-2 rounded-lg text-[10px]">
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 group/name">
+                <div className="font-black text-white text-xl uppercase italic leading-none">
+                  {t.name}
+                </div>
+                <button
+                  onClick={() => setIsEditingName(true)}
+                  className="opacity-0 group-hover/name:opacity-100 text-slate-500 hover:text-teal-400 transition-all text-xs">
+                  ✎
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-[#0F1115] p-5 rounded-[2rem] border border-white/5 relative">
+            <div className="flex justify-between items-start mb-3">
+              <label className="text-[9px] text-slate-500 uppercase font-black">
+                Team Owner
+              </label>
+              <button
+                onClick={() => setIsEditingOwner(!isEditingOwner)}
+                className={`p-2 rounded-lg transition-all ${
+                  isEditingOwner
+                    ? "bg-teal-600 text-white"
+                    : "bg-white/5 text-slate-400 hover:text-teal-400"
+                }`}>
+                {isEditingOwner ? "✕" : "✎"}
+              </button>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-2xl bg-teal-600/20 border border-teal-500/20 flex items-center justify-center text-xs font-black text-teal-400">
+                {(t.ownerName || "U").charAt(0)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-bold text-slate-100 truncate">
+                  {t.ownerName || "No Owner Assigned"}
+                </div>
+                <div className="text-[8px] text-slate-600 font-mono truncate uppercase">
+                  {t.ownerId || "Not Linked"}
+                </div>
+              </div>
+            </div>
+            {isEditingOwner && (
+              <div className="mt-5 pt-5 border-t border-white/5 animate-in slide-in-from-top-2 duration-300">
+                <select
+                  className="w-full bg-[#1C2128] border border-teal-500/30 rounded-xl p-3 text-xs text-slate-200 outline-none focus:border-teal-500 shadow-lg"
+                  value={t.ownerId || ""}
+                  onChange={(e) => {
+                    onUpdateOwner(t.id, e.target.value);
+                    setIsEditingOwner(false);
+                  }}>
+                  <option value="">-- Change Owner --</option>
+                  {globalUsers.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.displayName || u.email}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 flex flex-col justify-between">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-[#0F1115] p-5 rounded-[2rem] border border-white/5 shadow-inner">
+            <div className="text-[8px] text-slate-500 uppercase font-black mb-1">
+              Squad Size
+            </div>
+            <div className="text-2xl font-black text-white italic">
+              {t.roster?.length || 0}{" "}
+              <span className="text-xs text-slate-600 ml-1 not-italic">
+                / {maxSquadSize}
+              </span>
+            </div>
+          </div>
+          <div className="bg-[#0F1115] p-5 rounded-[2rem] border border-white/5 shadow-inner">
+            <div className="text-[8px] text-slate-500 uppercase font-black mb-1">
+              Current Spent
+            </div>
+            <div className="text-xl font-black text-red-500">
+              ₹{(t.spent || 0).toLocaleString()}
+            </div>
+          </div>
+        </div>
+        <div className="mt-4 bg-[#0F1115] p-6 rounded-[2rem] border border-white/5 border-l-4 border-l-green-500 relative overflow-hidden">
+          <div className="flex justify-between items-center mb-3">
+            <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest">
+              Available Balance
+            </div>
+            <div className="text-xl font-black text-green-400 font-mono tracking-tighter">
+              ₹{((t.purse || 0) - (t.spent || 0)).toLocaleString()}
+            </div>
+          </div>
+          <div className="pt-4 border-t border-white/5">
+            <label className="text-[8px] text-slate-600 uppercase font-black block mb-2">
+              Modify Total Purse (₹)
+            </label>
+            <input
+              type="number"
+              className="w-full bg-transparent text-white font-mono font-black text-base outline-none focus:text-teal-400 border-b border-transparent focus:border-teal-500/30 pb-1"
+              value={t.purse || 0}
+              onChange={(e) =>
+                updateDoc(doc(db, "tournaments", tournamentId, "teams", t.id), {
+                  purse: Number(e.target.value),
+                })
+              }
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- 2. SUB-COMPONENT FOR PLAYER ROW ---
 const PlayerRow = ({
   p,
   teams,
@@ -49,7 +216,6 @@ const PlayerRow = ({
           </div>
         </div>
       </td>
-
       <td className="p-5">
         {p.status !== "SOLD" ? (
           <div className="flex items-center gap-2">
@@ -82,7 +248,6 @@ const PlayerRow = ({
           </span>
         )}
       </td>
-
       <td className="p-5">
         <select
           className="bg-[#0F1115] border border-white/10 rounded-lg p-2 text-[10px] text-slate-300 outline-none w-full max-w-[160px] font-bold cursor-pointer"
@@ -101,7 +266,6 @@ const PlayerRow = ({
           ))}
         </select>
       </td>
-
       <td className="p-5 font-mono">
         {poolFilter === "SOLD" ? (
           <span className="text-green-400 font-bold text-sm">
@@ -119,10 +283,10 @@ const PlayerRow = ({
           </div>
         )}
       </td>
-
       <td className="p-5 text-right flex justify-end gap-3 items-center">
+        {/* Calls the prop passed from Parent */}
         <button
-          onClick={() => onToggleIcon(p.id, p.isIcon)}
+          onClick={onToggleIcon}
           className={`text-lg transition-all ${
             p.isIcon ? "text-amber-400" : "text-slate-700"
           }`}>
@@ -145,13 +309,12 @@ const PlayerRow = ({
   );
 };
 
-// --- 2. GLOBAL PLAYER SEARCH MODAL ---
+// --- GLOBAL PLAYER PICKER MODAL ---
 const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
   const [players, setPlayers] = useState([]);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -164,7 +327,6 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
     } else {
       setSelected([]);
       setSearch("");
-      setIsImporting(false);
     }
   }, [isOpen, existingIds]);
 
@@ -176,31 +338,18 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
     }
   };
 
-  const handleConfirmImport = async () => {
-    if (isImporting) return;
-    setIsImporting(true);
-    await onImport(selected);
-    setIsImporting(false);
-  };
-
   if (!isOpen) return null;
-
   const filtered = players.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#0F1115]/95 p-4 backdrop-blur-md">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-[#0F1115]/95 p-4 backdrop-blur-md">
       <div className="bg-[#1C2128] border border-white/10 w-full max-w-lg rounded-3xl flex flex-col max-h-[80vh] shadow-2xl">
         <div className="p-6 border-b border-white/5 flex justify-between items-center bg-[#1C2128]">
-          <div>
-            <h3 className="text-slate-100 font-black uppercase tracking-tight text-lg italic">
-              Global Database
-            </h3>
-            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
-              Import players
-            </p>
-          </div>
+          <h3 className="text-slate-100 font-black uppercase tracking-tight text-lg italic">
+            Global Database
+          </h3>
           <button
             onClick={onClose}
             className="w-8 h-8 rounded-full bg-white/5 text-slate-400">
@@ -256,17 +405,17 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
             })
           )}
         </div>
-        <div className="p-6 border-t border-white/5 flex justify-end gap-3 bg-[#161920] rounded-b-3xl">
+        <div className="p-6 border-t border-white/5 flex justify-end gap-3">
           <button
             onClick={onClose}
             className="px-6 py-3 text-slate-500 text-xs font-black uppercase">
             Cancel
           </button>
           <button
-            onClick={handleConfirmImport}
-            disabled={selected.length === 0 || isImporting}
+            onClick={() => onImport(selected)}
+            disabled={selected.length === 0}
             className="bg-teal-600 text-white px-6 py-3 rounded-xl font-black text-xs uppercase shadow-lg disabled:opacity-20">
-            {isImporting ? "Importing..." : `Import ${selected.length} Players`}
+            Import {selected.length} Players
           </button>
         </div>
       </div>
@@ -283,8 +432,8 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
   const [teams, setTeams] = useState([]);
   const [slots, setSlots] = useState([]);
   const [newSlotName, setNewSlotName] = useState("");
+  const [globalUsers, setGlobalUsers] = useState([]);
 
-  // System Defaults for Safety Reset
   const systemDefaults = {
     minSquadSize: 11,
     maxSquadSize: 15,
@@ -293,10 +442,10 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
     maxBidPerPlayer: 0,
     maxIconsPerTeam: 2,
     bidSlabs: [],
+    allowDirectBuy: false,
   };
 
   const [config, setConfig] = useState(systemDefaults);
-
   const [showPicker, setShowPicker] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [hasAccess, setHasAccess] = useState(false);
@@ -346,6 +495,11 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
         setSlots(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       }
     );
+
+    getDocs(collection(db, "users")).then((snap) => {
+      setGlobalUsers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+
     getDoc(doc(db, "tournaments", tournamentId)).then(
       (s) => s.exists() && setConfig((prev) => ({ ...prev, ...s.data() }))
     );
@@ -382,13 +536,13 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
       maxBidPerPlayer: Number(config.maxBidPerPlayer),
       maxIconsPerTeam: Number(config.maxIconsPerTeam),
       bidSlabs: config.bidSlabs || [],
+      allowDirectBuy: !!config.allowDirectBuy,
     });
     alert("Updated Successfully!");
   };
 
-  // ✅ ADDED: RESET TO SYSTEM DEFAULTS
   const handleResetRules = async () => {
-    if (!window.confirm("⚠️ Reset all tournament rules to safe system defaults?")) return;
+    if (!window.confirm("⚠️ Reset all tournament rules to defaults?")) return;
     try {
       await updateDoc(doc(db, "tournaments", tournamentId), systemDefaults);
       setConfig(systemDefaults);
@@ -453,11 +607,57 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
     setShowPicker(false);
   };
 
+  // ✅ THIS FUNCTION IS NOW IN THE CORRECT PLACE (Inside the parent component)
+  const handleToggleIcon = async (player) => {
+    const newStatus = !player.isIcon;
+    const playerRef = doc(
+      db,
+      "tournaments",
+      tournamentId,
+      "auctionPlayers",
+      player.id
+    );
+
+    try {
+      await updateDoc(playerRef, { isIcon: newStatus });
+
+      if (player.teamId) {
+        const teamRef = doc(
+          db,
+          "tournaments",
+          tournamentId,
+          "teams",
+          player.teamId
+        );
+        await runTransaction(db, async (tx) => {
+          const teamSnap = await tx.get(teamRef);
+          if (!teamSnap.exists()) return;
+
+          const teamData = teamSnap.data();
+          const roster = teamData.roster || [];
+
+          const playerIndex = roster.findIndex((p) => p.id === player.id);
+          if (playerIndex !== -1) {
+            const newRoster = [...roster];
+            newRoster[playerIndex] = {
+              ...newRoster[playerIndex],
+              isIcon: newStatus,
+            };
+            tx.update(teamRef, { roster: newRoster });
+          }
+        });
+      }
+    } catch (error) {
+      console.error("Icon Sync Error:", error);
+      alert("Failed to sync icon status.");
+    }
+  };
+
   const forceAssignPlayer = async (playerId, teamId, price) => {
     if (!teamId) return alert("Select team!");
     if (!window.confirm("Confirm Force Assign?")) return;
     try {
-      await runTransaction(db, async (transaction) => {
+      await runTransaction(db, async (tx) => {
         const pRef = doc(
           db,
           "tournaments",
@@ -466,9 +666,9 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
           playerId
         );
         const tRef = doc(db, "tournaments", tournamentId, "teams", teamId);
-        const pSnap = await transaction.get(pRef);
+        const pSnap = await tx.get(pRef);
         const pData = pSnap.data();
-        transaction.update(tRef, {
+        tx.update(tRef, {
           spent: increment(Number(price)),
           roster: arrayUnion({
             id: playerId,
@@ -478,7 +678,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
             photoURL: pData.photoURL || "",
           }),
         });
-        transaction.update(pRef, {
+        tx.update(pRef, {
           status: "SOLD",
           teamId: teamId,
           soldPrice: Number(price),
@@ -493,7 +693,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
   const reAddPlayer = async (playerId) => {
     if (!window.confirm("Reset Player?")) return;
     try {
-      await runTransaction(db, async (transaction) => {
+      await runTransaction(db, async (tx) => {
         const pRef = doc(
           db,
           "tournaments",
@@ -501,7 +701,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
           "auctionPlayers",
           playerId
         );
-        const pData = (await transaction.get(pRef)).data();
+        const pData = (await tx.get(pRef)).data();
         if (pData.status === "SOLD" && pData.teamId) {
           const tRef = doc(
             db,
@@ -510,7 +710,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
             "teams",
             pData.teamId
           );
-          const tData = (await transaction.get(tRef)).data();
+          const tData = (await tx.get(tRef)).data();
           const newSpent = Math.max(
             0,
             (tData.spent || 0) - (pData.soldPrice || 0)
@@ -518,17 +718,23 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
           const newRoster = (tData.roster || []).filter(
             (item) => item.id !== playerId
           );
-          transaction.update(tRef, { spent: newSpent, roster: newRoster });
+          tx.update(tRef, { spent: newSpent, roster: newRoster });
         }
-        transaction.update(pRef, {
-          status: "PENDING",
-          soldPrice: 0,
-          teamId: null,
-        });
+        tx.update(pRef, { status: "PENDING", soldPrice: 0, teamId: null });
       });
     } catch (e) {
       alert(e.message);
     }
+  };
+
+  const handleUpdateOwner = async (teamId, userId) => {
+    const selectedUser = globalUsers.find((u) => u.id === userId);
+    await updateDoc(doc(db, "tournaments", tournamentId, "teams", teamId), {
+      ownerId: userId,
+      ownerName: selectedUser
+        ? selectedUser.displayName || selectedUser.email
+        : "",
+    });
   };
 
   const handleReset = async () => {
@@ -548,7 +754,6 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
   };
 
   const teamsMap = Object.fromEntries(teams.map((t) => [t.id, t.name]));
-
   const displayList = auctionPlayers.filter((p) => {
     if (poolFilter === "SOLD") return p.status === "SOLD";
     if (poolFilter === "UNSOLD") return p.status.includes("UNSOLD");
@@ -579,7 +784,8 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
 
       <div className="p-4 border-b border-white/5 flex justify-between items-center bg-[#1C2128]">
         <h2 className="text-lg font-black text-slate-100 flex items-center gap-3 uppercase tracking-tighter italic">
-          <span className="bg-teal-600 p-1.5 rounded-lg text-sm">⚙️</span> Auction Setup
+          <span className="bg-teal-600 p-1.5 rounded-lg text-sm">⚙️</span>{" "}
+          Auction Setup
         </h2>
         <button
           onClick={onClose}
@@ -589,7 +795,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
       </div>
 
       <div className="flex border-b border-white/5 bg-[#161920] overflow-x-auto no-scrollbar">
-        {["pool", "slots", "config", "teams", "owners", "matches"].map((t) => (
+        {["pool", "slots", "config", "teams", "matches"].map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -598,7 +804,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 ? "text-teal-400 border-teal-400 bg-teal-500/5"
                 : "text-slate-500 border-transparent"
             }`}>
-            {t === "config" ? "Rules" : t}
+            {t === "config" ? "Rules" : t === "teams" ? "Teams & Owners" : t}
           </button>
         ))}
       </div>
@@ -622,6 +828,33 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
               </button>
             </div>
 
+            <div className="bg-[#0F1115] p-6 rounded-2xl border border-white/5 flex justify-between items-center mt-4">
+              <div>
+                <h4 className="text-white font-black text-xs uppercase">
+                  Allow Direct Buy
+                </h4>
+                <p className="text-slate-500 text-[10px]">
+                  Owners can buy 1 player at base price but can't bid again in
+                  that slot.
+                </p>
+              </div>
+              <button
+                onClick={() =>
+                  setConfig({
+                    ...config,
+                    allowDirectBuy: !config.allowDirectBuy,
+                  })
+                }
+                className={`w-14 h-8 rounded-full transition-all relative ${
+                  config.allowDirectBuy ? "bg-teal-600" : "bg-slate-700"
+                }`}>
+                <div
+                  className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${
+                    config.allowDirectBuy ? "left-7" : "left-1"
+                  }`}></div>
+              </button>
+            </div>
+
             <div className="bg-[#1C2128] border border-white/5 p-8 rounded-[2rem] shadow-2xl relative overflow-hidden">
               <div className="mb-10">
                 <div className="flex justify-between items-center mb-6">
@@ -630,7 +863,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   </h3>
                   <button
                     onClick={addSlab}
-                    className="bg-teal-600 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-teal-500 transition-all">
+                    className="bg-teal-600 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest">
                     + Add Slab
                   </button>
                 </div>
@@ -674,7 +907,6 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   ))}
                 </div>
               </div>
-
               <h3 className="text-slate-100 font-black uppercase text-xs mb-8 border-b border-white/5 pb-4">
                 Auction Logic Configuration
               </h3>
@@ -774,6 +1006,21 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
           </div>
         )}
 
+        {tab === "teams" && (
+          <div className="grid grid-cols-1 gap-6">
+            {teams.map((t) => (
+              <TeamCard
+                key={t.id}
+                t={t}
+                globalUsers={globalUsers}
+                tournamentId={tournamentId}
+                maxSquadSize={config.maxSquadSize}
+                onUpdateOwner={handleUpdateOwner}
+              />
+            ))}
+          </div>
+        )}
+
         {tab === "pool" && (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -783,7 +1030,9 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                     key={f}
                     onClick={() => setPoolFilter(f)}
                     className={`px-5 py-2.5 rounded-lg text-[10px] font-black uppercase ${
-                      poolFilter === f ? "bg-[#0F1115] text-white" : "text-slate-500"
+                      poolFilter === f
+                        ? "bg-[#0F1115] text-white"
+                        : "text-slate-500"
                     }`}>
                     {f}
                   </button>
@@ -829,18 +1078,8 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                           { basePrice: Number(val) }
                         )
                       }
-                      onToggleIcon={(id, curr) =>
-                        updateDoc(
-                          doc(
-                            db,
-                            "tournaments",
-                            tournamentId,
-                            "auctionPlayers",
-                            id
-                          ),
-                          { isIcon: !curr }
-                        )
-                      }
+                      // ✅ CORRECT: Passing the function call
+                      onToggleIcon={() => handleToggleIcon(p)}
                       onDelete={(id) =>
                         window.confirm("Remove?") &&
                         deleteDoc(
@@ -896,42 +1135,6 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
           </div>
         )}
 
-        {tab === "teams" && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {teams.map((t) => (
-              <div
-                key={t.id}
-                className="bg-[#1C2128] p-6 rounded-[2rem] shadow-xl border border-white/5">
-                <div className="flex justify-between mb-4">
-                  <div className="font-black text-white text-lg uppercase italic">
-                    {t.name}
-                  </div>
-                  <div className="font-mono text-teal-400 font-bold text-xl">
-                    ₹{((t.purse || 0) - (t.spent || 0)).toLocaleString()}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 pt-4 border-t border-white/5">
-                  <span className="text-[10px] text-slate-500 uppercase font-black">
-                    Edit Total Purse
-                  </span>
-                  <input
-                    type="number"
-                    className="bg-[#0F1115] border border-white/10 rounded-lg px-3 py-1.5 w-32 text-white text-right outline-none font-bold"
-                    value={t.purse || 0}
-                    onChange={(e) =>
-                      updateDoc(
-                        doc(db, "tournaments", tournamentId, "teams", t.id),
-                        { purse: Number(e.target.value) }
-                      )
-                    }
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {tab === "owners" && <AuctionOwnersAdmin tournamentId={tournamentId} />}
         {tab === "matches" && (
           <MatchScheduler tournamentId={tournamentId} teams={teams} />
         )}

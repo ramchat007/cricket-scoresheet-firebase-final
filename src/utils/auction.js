@@ -14,6 +14,7 @@ import {
   getDocs,
   arrayUnion,
   addDoc,
+  increment,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -173,6 +174,73 @@ export const startBidding = async (tournamentId, player) => {
   }
 };
 
+export const directBuyPlayer = async (
+  tournamentId,
+  teamId,
+  teamName,
+  player
+) => {
+  if (
+    !window.confirm(
+      `⚡ Buy ${player.name} immediately for ₹${player.basePrice}?`
+    )
+  )
+    return;
+
+  const auctionRef = doc(db, "tournaments", tournamentId, "auction", "state");
+  const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
+  const playerRef = doc(
+    db,
+    "tournaments",
+    tournamentId,
+    "auctionPlayers",
+    player.id
+  );
+
+  try {
+    await runTransaction(db, async (tx) => {
+      const teamSnap = await tx.get(teamRef);
+      if (!teamSnap.exists()) throw "Team missing";
+
+      // 1. Update Player Status
+      tx.update(playerRef, {
+        status: "SOLD",
+        teamId: teamId,
+        soldPrice: Number(player.basePrice),
+        bidHistory: [
+          { bid: player.basePrice, bidderName: teamName, type: "DIRECT_BUY" },
+        ],
+      });
+
+      // 2. Update Team Wallet & Roster
+      tx.update(teamRef, {
+        spent: increment(Number(player.basePrice)), // ✅ Now this will work
+        roster: arrayUnion({
+          id: player.id,
+          name: player.name,
+          role: player.role,
+          soldPrice: Number(player.basePrice),
+          photoURL: player.photoURL || "",
+          isDirectBuy: true,
+        }),
+        lockedSlots: arrayUnion(player.auctionSlotId),
+      });
+
+      // 3. Reset Auction
+      tx.update(auctionRef, {
+        status: "PENDING",
+        currentPlayer: null,
+        currentBid: 0,
+        highestBidderId: null,
+        highestBidderName: null,
+      });
+    });
+  } catch (error) {
+    console.error("Direct Buy Failed:", error);
+    alert("Transaction failed: " + error.message);
+  }
+};
+
 export async function placeBid(tournamentId, teamId, teamName, amount) {
   const auctionRef = doc(db, "tournaments", tournamentId, "auction", "state");
   const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
@@ -182,53 +250,64 @@ export async function placeBid(tournamentId, teamId, teamName, amount) {
       // 1. Get Auction State
       const aucSnap = await tx.get(auctionRef);
       if (!aucSnap.exists()) throw new Error("Auction not initialized");
-      const auction = aucSnap.data();
+      const auction = aucSnap.data(); // ✅ 'auction' is defined here
 
       if (auction.status !== "LIVE") throw new Error("Bidding is closed");
-      
-      // ✅ VALIDATION LOGIC
-      // If there is NO highestBidderId, this is the opening bid.
-      // We check if amount is at least basePrice.
-      // If there IS a bidder, amount must be higher than currentBid.
-      if (!auction.highestBidderId) {
-         if (amount < (auction.currentPlayer?.basePrice || 0)) {
-           throw new Error("Opening bid must be at least Base Price");
-         }
-      } else if (amount <= (auction.currentBid || 0)) {
-        throw new Error("Bid must be higher");
-      }
 
-      // 2. Get Team State to verify balance
+      // 2. Get Team State
       const teamSnap = await tx.get(teamRef);
       if (!teamSnap.exists()) throw new Error("Team not found");
-      const team = teamSnap.data();
+      const team = teamSnap.data(); // ✅ 'team' is defined here
 
+      // ✅ FIX: Check for Locked Slot NOW (after both variables exist)
+      // If the team used "Direct Buy" for this slot, they are banned from bidding
+      if (team.lockedSlots?.includes(auction.activeSlotId)) {
+        throw new Error(
+          "⛔ You used Direct Buy for this round. Bidding is locked."
+        );
+      }
+
+      // 3. Validation Logic
+      if (!auction.highestBidderId) {
+        // Opening Bid Logic
+        if (amount < (auction.currentPlayer?.basePrice || 0)) {
+          throw new Error("Opening bid must be at least Base Price");
+        }
+      } else {
+        // Counter Bid Logic
+        if (amount <= (auction.currentBid || 0)) {
+          throw new Error("Bid must be higher than current price");
+        }
+      }
+
+      // 4. Budget Check
       const currentSpent = team.spent || 0;
       const purseLimit = team.purse || 0;
 
       if (purseLimit - currentSpent < amount) {
-        throw new Error(`Team only has ₹${purseLimit - currentSpent} remaining.`);
+        throw new Error(
+          `Insufficient funds. You only have ₹${
+            purseLimit - currentSpent
+          } left.`
+        );
       }
 
-      // 3. CAPTURE PREVIOUS STATE FOR UNDO logic
-      // We only store the snapshot of the auction before this bid happened.
+      // 5. Update Bid History & State
       const currentEntry = {
         bid: auction.currentBid || 0,
         bidderId: auction.highestBidderId || null,
         bidderName: auction.highestBidderName || null,
       };
 
-      // Keep only the last 10 bids to keep the document size small
       const existingHistory = auction.bidHistory || [];
       const updatedHistory = [...existingHistory, currentEntry].slice(-10);
 
-      // 4. Update Bid
       tx.update(auctionRef, {
         currentBid: amount,
         highestBidderId: teamId,
         highestBidderName: teamName,
         lastBidAt: serverTimestamp(),
-        bidHistory: updatedHistory, // ✅ Save history here
+        bidHistory: updatedHistory,
       });
     });
   } catch (error) {
@@ -293,6 +372,7 @@ export const markSold = async (tournamentId) => {
       status: "SOLD",
       teamId: highestBidderId,
       soldPrice: finalPrice,
+      bidHistory: auction.bidHistory || [],
     });
 
     // Reset State

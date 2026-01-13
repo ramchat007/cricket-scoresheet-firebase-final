@@ -17,7 +17,8 @@ import {
   placeBid,
   markSold,
   markUnsold,
-  undoLastBid,
+  undoLastBid, // ✅ Correctly Imported
+  directBuyPlayer,
 } from "../utils/auction";
 import AuctionAdminPanel from "./AuctionAdminPanel";
 
@@ -138,40 +139,22 @@ export default function AuctionDashboard() {
     return current + inc;
   };
 
-const reverseLastBid = async () => {
-  if (!window.confirm("⚠️ Undo last bid? The previous bidder will become the leader.")) return;
+  // ✅ UPDATED: Now using the imported undoLastBid function
+  const reverseLastBid = async () => {
+    if (
+      !window.confirm(
+        "⚠️ Undo last bid? The previous bidder will become the leader."
+      )
+    )
+      return;
 
-  const aucRef = doc(db, "tournaments", tournamentId, "auction", "state");
-  const history = auctionState.bidHistory || [];
-
-  try {
-    if (history.length > 0) {
-      const previousState = history[history.length - 1];
-      const newHistory = history.slice(0, -1);
-
-      await updateDoc(aucRef, {
-        currentBid: previousState.bid,
-        highestBidderId: previousState.bidderId,
-        highestBidderName: previousState.bidderName,
-        bidHistory: newHistory,
-        lastAction: "UNDO_PERFORMED",
-        updatedAt: serverTimestamp() // This requires the import above
-      });
-    } else {
-      await updateDoc(aucRef, {
-        currentBid: auctionState.currentPlayer.basePrice,
-        highestBidderId: null,
-        highestBidderName: null,
-        bidHistory: [],
-        lastAction: "RESET_TO_BASE",
-        updatedAt: serverTimestamp()
-      });
+    try {
+      await undoLastBid(tournamentId);
+    } catch (error) {
+      console.error("Undo failed:", error);
+      alert("Undo failed: " + error.message);
     }
-  } catch (error) {
-    console.error("Undo failed:", error);
-    alert("Undo failed: Check console for details.");
-  }
-};
+  };
 
   const toggleAuctionPause = async () => {
     const aucRef = doc(db, "tournaments", tournamentId, "auction", "state");
@@ -318,6 +301,7 @@ const reverseLastBid = async () => {
                   } px-6 py-4 rounded-xl font-black text-xs uppercase border transition-all`}>
                   {isPaused ? "▶ Resume" : "⏸ Pause"}
                 </button>
+                {/* UNDO BUTTON: Calls the imported function */}
                 {auctionState.highestBidderId && (
                   <button
                     onClick={reverseLastBid}
@@ -426,128 +410,224 @@ const reverseLastBid = async () => {
     );
   };
 
-const renderBidders = () => {
-  return (
-    <div className="mt-8 pb-20">
-      <div className="flex justify-between items-center mb-6">
-        <h3 className="text-slate-100 font-black text-xl uppercase tracking-tighter italic">
-          Bidding Console{" "}
-          <span className="text-xs bg-[#1C2128] text-teal-500 px-3 py-1 rounded-lg font-black border border-teal-500/20 uppercase not-italic">
-            Smart Rules Active
-          </span>
-        </h3>
-        {canEdit && (
-          <button 
-            onClick={() => setRuleOverride(!ruleOverride)}
-            className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase transition-all border ${ruleOverride ? 'bg-red-600 text-white border-red-500 shadow-lg shadow-red-900/20' : 'bg-white/5 text-slate-500 border-white/10'}`}
-          >
-            {ruleOverride ? "⚠️ Rule Override: ON" : "Rule Override: OFF"}
-          </button>
-        )}
-      </div>
+  const renderBidders = () => {
+    return (
+      <div className="mt-8 pb-20">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-slate-100 font-black text-xl uppercase tracking-tighter italic">
+            Bidding Console{" "}
+            <span className="text-xs bg-[#1C2128] text-teal-500 px-3 py-1 rounded-lg font-black border border-teal-500/20 uppercase not-italic">
+              Smart Rules Active
+            </span>
+          </h3>
+          {canEdit && (
+            <button
+              onClick={() => setRuleOverride(!ruleOverride)}
+              className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase transition-all border ${
+                ruleOverride
+                  ? "bg-red-600 text-white border-red-500 shadow-lg shadow-red-900/20"
+                  : "bg-white/5 text-slate-500 border-white/10"
+              }`}>
+              {ruleOverride ? "⚠️ Rule Override: ON" : "Rule Override: OFF"}
+            </button>
+          )}
+        </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {teams.map((team) => {
-          const minSquadGoal = parseInt(tournamentConfig?.minSquadSize) || 11;
-          const minBasePrice = parseInt(tournamentConfig?.minBasePrice) || 100;
-          
-          const remainingPurse = (parseInt(team?.purse) || 0) - (parseInt(team?.spent) || 0);
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {teams.map((team) => {
+            const minSquadGoal = parseInt(tournamentConfig?.minSquadSize) || 11;
+            const minBasePrice =
+              parseInt(tournamentConfig?.minBasePrice) || 100;
 
-          const isHighest = auctionState?.highestBidderId === team.id;
-          const isNoBidsYet = !auctionState?.highestBidderId;
+            const totalPurse = parseInt(team?.purse) || 0;
+            const totalSpent = parseInt(team?.spent) || 0;
+            const remainingPurse = totalPurse - totalSpent;
 
-          const playingSquad = (team?.roster || []).filter(p => p.isOwner !== true);
-          const currentPlayingCount = playingSquad.length;
-          
-          const bidAmountToPlace = isNoBidsYet 
-            ? (auctionState?.currentBid === currentPlayer?.basePrice ? calculateNextBid(auctionState?.currentBid) : (currentPlayer?.basePrice || 0))
-            : (nextBidAmount || 0);
+            const isHighest = auctionState?.highestBidderId === team.id;
+            const isNoBidsYet = !auctionState?.highestBidderId;
 
-          const playingIfWin = isHighest ? currentPlayingCount : currentPlayingCount + 1;
-          const playersStillNeeded = Math.max(0, minSquadGoal - playingIfWin);
-          const mandatoryReserve = playersStillNeeded * minBasePrice;
-          const maxPossibleBid = remainingPurse - mandatoryReserve;
+            const playingSquad = (team?.roster || []).filter(
+              (p) => p.isOwner !== true
+            );
+            const currentPlayingCount = playingSquad.length;
 
-          let isDisabled = !isLive || isHighest || !currentPlayer;
-          let errorReason = "";
+            // ✅ FIX 1: Safely handle currentPlayer being null
+            const playerBasePrice = currentPlayer?.basePrice || 0;
+            const currentAuctionBid = auctionState?.currentBid || 0;
 
-          if (!isDisabled && currentPlayer && !ruleOverride) {
-            if (currentPlayingCount >= (parseInt(tournamentConfig?.maxSquadSize) || 100)) {
-              isDisabled = true;
-              errorReason = "Squad Full";
-            } else if (bidAmountToPlace > maxPossibleBid) {
-              isDisabled = true;
-              errorReason = "Low Budget"; 
+            const bidAmountToPlace = isNoBidsYet
+              ? currentAuctionBid === playerBasePrice
+                ? calculateNextBid(currentAuctionBid) // If current bid IS base, next is Base + Inc
+                : playerBasePrice // If current bid is 0/lower, first bid is Base
+              : nextBidAmount || 0;
+
+            const playingIfWin = isHighest
+              ? currentPlayingCount
+              : currentPlayingCount + 1;
+            const playersStillNeeded = Math.max(0, minSquadGoal - playingIfWin);
+
+            // ✅ SAFETY LOGIC: We reserve MIN_BASE_PRICE for future slots, not the incremented price.
+            const mandatoryReserve = playersStillNeeded * minBasePrice;
+            const maxPossibleBid = remainingPurse - mandatoryReserve;
+
+            let isDisabled = !isLive || isHighest || !currentPlayer;
+            let errorReason = "";
+
+            const isLocked = team.lockedSlots?.includes(
+              auctionState.activeSlotId
+            );
+
+            // ✅ FIX 2: Safely check for Direct Buy condition
+            const canDirectBuy =
+              tournamentConfig?.allowDirectBuy &&
+              currentPlayer &&
+              currentAuctionBid === playerBasePrice &&
+              isNoBidsYet;
+
+            if (!isDisabled && currentPlayer && !ruleOverride) {
+              if (
+                currentPlayingCount >=
+                (parseInt(tournamentConfig?.maxSquadSize) || 100)
+              ) {
+                isDisabled = true;
+                errorReason = "Squad Full";
+              } else if (bidAmountToPlace > maxPossibleBid) {
+                isDisabled = true;
+                errorReason = "Low Budget";
+              }
             }
-          }
 
-          return (
-            <div
-              key={team.id}
-              className={`p-6 rounded-2xl border-2 relative transition-all duration-300 group ${
-                isHighest
-                  ? "bg-teal-900/20 border-teal-500 shadow-lg scale-[1.02]"
-                  : "bg-[#1C2128] border-white/5"
-              } ${isDisabled && !isHighest ? "opacity-50 grayscale" : ""}`}
-            >
-              {isHighest && (
-                <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-teal-500 text-black text-xs px-4 py-1 rounded-full font-black uppercase tracking-widest shadow-lg z-20">
-                  Leading
-                </div>
-              )}
-              
-              <div className="text-center mb-4 mt-2">
-                {/* Increased team name to base size */}
-                <div className={`font-black truncate text-base uppercase italic mb-1 ${isHighest ? 'text-teal-400' : 'text-slate-100'}`}>
-                  {team.name}
-                </div>
-                
-                {/* Max Bid label increased */}
-                <div className={`text-xs mt-1 font-bold uppercase tracking-wider ${errorReason ? "text-red-400" : "text-slate-400"}`}>
-                  {errorReason || `Max Bid: ₹${(maxPossibleBid || 0).toLocaleString()}`}
+            return (
+              <div
+                key={team.id}
+                className={`p-6 rounded-2xl border-2 relative transition-all duration-300 group ${
+                  isHighest
+                    ? "bg-teal-900/20 border-teal-500 shadow-lg scale-[1.02]"
+                    : "bg-[#1C2128] border-white/5"
+                } ${isDisabled && !isHighest ? "opacity-50 grayscale" : ""} 
+                ${isLocked ? "opacity-30 grayscale" : ""}`}>
+                {isHighest && (
+                  <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-teal-500 text-black text-xs px-4 py-1 rounded-full font-black uppercase tracking-widest shadow-lg z-20">
+                    Leading
+                  </div>
+                )}
+
+                <div className="text-center mb-4 mt-2">
+                  <div
+                    className={`font-black truncate text-base uppercase italic mb-1 ${
+                      isHighest ? "text-teal-400" : "text-slate-100"
+                    }`}>
+                    {team.name}
+                  </div>
+
+                  <div
+                    className={`text-xs mt-1 font-bold uppercase tracking-wider ${
+                      errorReason ? "text-red-400" : "text-slate-400"
+                    }`}>
+                    {errorReason ||
+                      `Max Bid: ₹${(maxPossibleBid || 0).toLocaleString()}`}
+                  </div>
+
+                  <div className="mt-4 space-y-1.5 border-y border-white/5 py-3">
+                    <div className="flex justify-between text-[10px] uppercase font-bold px-1">
+                      <span className="text-slate-500">Total Purse</span>
+                      <span className="text-slate-300">
+                        ₹{totalPurse.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-[10px] uppercase font-bold px-1">
+                      <span className="text-slate-500">Total Spent</span>
+                      <span className="text-red-400">
+                        ₹{totalSpent.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-[11px] uppercase font-black px-1 pt-1 border-t border-white/5">
+                      <span className="text-slate-400">Balance</span>
+                      <span className="text-teal-400">
+                        ₹{remainingPurse.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-[10px] text-slate-500 uppercase font-bold tracking-tight mt-3">
+                    {playersStillNeeded > 0
+                      ? `Reserve ₹${(
+                          mandatoryReserve || 0
+                        ).toLocaleString()} for ${playersStillNeeded} slots`
+                      : `Squad Goal Met!`}
+                  </div>
                 </div>
 
-                {/* Reserve info increased */}
-                <div className="text-[10px] text-slate-500 uppercase font-bold tracking-tight mt-1">
-                  {playersStillNeeded > 0 
-                    ? `Reserve ₹${(mandatoryReserve || 0).toLocaleString()} for ${playersStillNeeded} slots`
-                    : `Squad Goal Met!`}
-                </div>
+                {canEdit ? (
+                  <div className="mt-4 space-y-2">
+                    {isLocked ? (
+                      <div className="py-3 px-4 bg-red-900/20 border border-red-500/20 rounded-xl text-[10px] text-red-500 font-black text-center uppercase tracking-widest">
+                        🔒 Slot Locked
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          disabled={isDisabled}
+                          onClick={() =>
+                            placeBid(
+                              tournamentId,
+                              team.id,
+                              team.name,
+                              bidAmountToPlace
+                            )
+                          }
+                          className={`w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+                            isHighest
+                              ? "bg-teal-500 text-black shadow-lg"
+                              : isDisabled
+                              ? "bg-[#0F1115] text-slate-600 cursor-not-allowed"
+                              : "bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 text-white shadow-lg"
+                          }`}>
+                          {isHighest
+                            ? "Leading"
+                            : !currentPlayer
+                            ? "Standby"
+                            : `Bid ₹${(
+                                bidAmountToPlace || 0
+                              ).toLocaleString()}`}
+                        </button>
 
-                {/* Purse amount increased */}
-                <div className={`text-sm font-mono font-black mt-3 ${isHighest ? 'text-white' : 'text-teal-500'}`}>
-                  Purse: ₹{(remainingPurse || 0).toLocaleString()}
-                </div>
+                        {canDirectBuy && (
+                          <button
+                            onClick={() =>
+                              directBuyPlayer(
+                                tournamentId,
+                                team.id,
+                                team.name,
+                                currentPlayer
+                              )
+                            }
+                            className="w-full py-2 bg-amber-600/10 hover:bg-amber-600 text-amber-500 hover:text-white border border-amber-600/30 rounded-xl text-[9px] font-black uppercase transition-all">
+                            ⚡ Direct Buy (Base)
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center">
+                    <span
+                      className={`text-xs font-bold uppercase tracking-wider px-4 py-2 rounded-lg border ${
+                        isHighest
+                          ? "bg-teal-500 text-black border-teal-500"
+                          : "bg-[#0F1115] border-white/5 text-slate-600"
+                      }`}>
+                      {isHighest ? "Leader" : "Waiting"}
+                    </span>
+                  </div>
+                )}
               </div>
-
-              {canEdit ? (
-                <button
-                  disabled={isDisabled}
-                  onClick={() => placeBid(tournamentId, team.id, team.name, bidAmountToPlace)}
-                  className={`w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
-                    isHighest
-                      ? "bg-teal-500 text-black shadow-lg"
-                      : isDisabled
-                      ? "bg-[#0F1115] text-slate-600 cursor-not-allowed"
-                      : "bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 text-white shadow-lg"
-                  }`}
-                >
-                  {isHighest ? "Leading" : !currentPlayer ? "Standby" : `Bid ₹${(bidAmountToPlace || 0).toLocaleString()}`}
-                </button>
-              ) : (
-                <div className="text-center">
-                  <span className={`text-xs font-bold uppercase tracking-wider px-4 py-2 rounded-lg border ${isHighest ? "bg-teal-500 text-black border-teal-500" : "bg-[#0F1115] border-white/5 text-slate-600"}`}>
-                    {isHighest ? "Leader" : "Waiting"}
-                  </span>
-                </div>
-              )}
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
 
   if (!auctionState)
     return (
