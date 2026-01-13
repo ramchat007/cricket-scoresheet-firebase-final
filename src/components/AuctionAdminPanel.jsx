@@ -20,174 +20,7 @@ import { db } from "../utils/firebase";
 import { listGlobalPlayers } from "../utils/firestore";
 import { useAuth } from "../hooks/useAuth";
 import MatchScheduler from "./MatchScheduler";
-
-// --- 1. SUB-COMPONENT FOR TEAM CARD ---
-const TeamCard = ({
-  t,
-  globalUsers,
-  tournamentId,
-  maxSquadSize,
-  onUpdateOwner,
-}) => {
-  const [isEditingOwner, setIsEditingOwner] = useState(false);
-  const [isEditingName, setIsEditingName] = useState(false);
-  const [tempName, setTempName] = useState(t.name);
-
-  const handleSaveName = async () => {
-    if (!tempName.trim()) return;
-    await updateDoc(doc(db, "tournaments", tournamentId, "teams", t.id), {
-      name: tempName.trim(),
-    });
-    setIsEditingName(false);
-  };
-
-  return (
-    <div className="bg-[#1C2128] p-6 rounded-[2.5rem] shadow-xl border border-white/5 flex flex-col md:flex-row gap-8 transition-all hover:border-teal-500/20">
-      <div className="flex-1 space-y-4">
-        <div>
-          <div className="text-[8px] text-teal-500 uppercase font-black tracking-[0.2em] mb-1">
-            Active Team
-          </div>
-
-          {/* TEAM NAME EDIT LOGIC */}
-          <div className="flex items-center gap-3 mb-6">
-            {isEditingName ? (
-              <div className="flex items-center gap-2 w-full">
-                <input
-                  className="bg-[#0F1115] border border-teal-500/30 rounded-xl px-4 py-2 text-white font-black uppercase italic outline-none w-full"
-                  value={tempName}
-                  onChange={(e) => setTempName(e.target.value)}
-                  autoFocus
-                />
-                <button
-                  onClick={handleSaveName}
-                  className="bg-teal-600 p-2 rounded-lg text-[10px]">
-                  ✓
-                </button>
-                <button
-                  onClick={() => {
-                    setIsEditingName(false);
-                    setTempName(t.name);
-                  }}
-                  className="bg-white/5 p-2 rounded-lg text-[10px]">
-                  ✕
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-3 group/name">
-                <div className="font-black text-white text-xl uppercase italic leading-none">
-                  {t.name}
-                </div>
-                <button
-                  onClick={() => setIsEditingName(true)}
-                  className="opacity-0 group-hover/name:opacity-100 text-slate-500 hover:text-teal-400 transition-all text-xs">
-                  ✎
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div className="bg-[#0F1115] p-5 rounded-[2rem] border border-white/5 relative">
-            <div className="flex justify-between items-start mb-3">
-              <label className="text-[9px] text-slate-500 uppercase font-black">
-                Team Owner
-              </label>
-              <button
-                onClick={() => setIsEditingOwner(!isEditingOwner)}
-                className={`p-2 rounded-lg transition-all ${
-                  isEditingOwner
-                    ? "bg-teal-600 text-white"
-                    : "bg-white/5 text-slate-400 hover:text-teal-400"
-                }`}>
-                {isEditingOwner ? "✕" : "✎"}
-              </button>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 rounded-2xl bg-teal-600/20 border border-teal-500/20 flex items-center justify-center text-xs font-black text-teal-400">
-                {(t.ownerName || "U").charAt(0)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-bold text-slate-100 truncate">
-                  {t.ownerName || "No Owner Assigned"}
-                </div>
-                <div className="text-[8px] text-slate-600 font-mono truncate uppercase">
-                  {t.ownerId || "Not Linked"}
-                </div>
-              </div>
-            </div>
-            {isEditingOwner && (
-              <div className="mt-5 pt-5 border-t border-white/5 animate-in slide-in-from-top-2 duration-300">
-                <select
-                  className="w-full bg-[#1C2128] border border-teal-500/30 rounded-xl p-3 text-xs text-slate-200 outline-none focus:border-teal-500 shadow-lg"
-                  value={t.ownerId || ""}
-                  onChange={(e) => {
-                    onUpdateOwner(t.id, e.target.value);
-                    setIsEditingOwner(false);
-                  }}>
-                  <option value="">-- Change Owner --</option>
-                  {globalUsers.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.displayName || u.email}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="flex-1 flex flex-col justify-between">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-[#0F1115] p-5 rounded-[2rem] border border-white/5 shadow-inner">
-            <div className="text-[8px] text-slate-500 uppercase font-black mb-1">
-              Squad Size
-            </div>
-            <div className="text-2xl font-black text-white italic">
-              {t.roster?.length || 0}{" "}
-              <span className="text-xs text-slate-600 ml-1 not-italic">
-                / {maxSquadSize}
-              </span>
-            </div>
-          </div>
-          <div className="bg-[#0F1115] p-5 rounded-[2rem] border border-white/5 shadow-inner">
-            <div className="text-[8px] text-slate-500 uppercase font-black mb-1">
-              Current Spent
-            </div>
-            <div className="text-xl font-black text-red-500">
-              ₹{(t.spent || 0).toLocaleString()}
-            </div>
-          </div>
-        </div>
-        <div className="mt-4 bg-[#0F1115] p-6 rounded-[2rem] border border-white/5 border-l-4 border-l-green-500 relative overflow-hidden">
-          <div className="flex justify-between items-center mb-3">
-            <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest">
-              Available Balance
-            </div>
-            <div className="text-xl font-black text-green-400 font-mono tracking-tighter">
-              ₹{((t.purse || 0) - (t.spent || 0)).toLocaleString()}
-            </div>
-          </div>
-          <div className="pt-4 border-t border-white/5">
-            <label className="text-[8px] text-slate-600 uppercase font-black block mb-2">
-              Modify Total Purse (₹)
-            </label>
-            <input
-              type="number"
-              className="w-full bg-transparent text-white font-mono font-black text-base outline-none focus:text-teal-400 border-b border-transparent focus:border-teal-500/30 pb-1"
-              value={t.purse || 0}
-              onChange={(e) =>
-                updateDoc(doc(db, "tournaments", tournamentId, "teams", t.id), {
-                  purse: Number(e.target.value),
-                })
-              }
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
+import AuctionOwnersAdmin from "./AuctionOwnersAdmin";
 
 // --- 2. SUB-COMPONENT FOR PLAYER ROW ---
 const PlayerRow = ({
@@ -434,6 +267,9 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
   const [newSlotName, setNewSlotName] = useState("");
   const [globalUsers, setGlobalUsers] = useState([]);
 
+  // ✅ New State for Adding Teams
+  const [newTeamName, setNewTeamName] = useState("");
+
   const systemDefaults = {
     minSquadSize: 11,
     maxSquadSize: 15,
@@ -537,6 +373,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
       maxIconsPerTeam: Number(config.maxIconsPerTeam),
       bidSlabs: config.bidSlabs || [],
       allowDirectBuy: !!config.allowDirectBuy,
+      limitOnePlayerPerSlot: !!config.limitOnePlayerPerSlot,
     });
     alert("Updated Successfully!");
   };
@@ -580,6 +417,27 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
       doc(db, "tournaments", tournamentId, "auction_slots", slotId)
     ));
 
+  // ✅ New Logic: Create Team
+  const handleCreateTeam = async () => {
+    if (!newTeamName.trim()) return;
+    try {
+      await addDoc(collection(db, "tournaments", tournamentId, "teams"), {
+        name: newTeamName.trim(),
+        purse: 1000000, // Default Purse
+        spent: 0,
+        roster: [],
+        ownerId: null,
+        ownerName: "",
+        createdAt: Date.now(),
+      });
+      setNewTeamName("");
+      alert("Team Created Successfully!");
+    } catch (error) {
+      console.error("Error adding team:", error);
+      alert("Failed to add team.");
+    }
+  };
+
   const handleImport = async (uniqueSelection) => {
     const batch = writeBatch(db);
     const colRef = collection(
@@ -607,7 +465,6 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
     setShowPicker(false);
   };
 
-  // ✅ THIS FUNCTION IS NOW IN THE CORRECT PLACE (Inside the parent component)
   const handleToggleIcon = async (player) => {
     const newStatus = !player.isIcon;
     const playerRef = doc(
@@ -738,19 +595,46 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
   };
 
   const handleReset = async () => {
-    if (!window.confirm("⚠ DANGER: DELETE EVERYTHING?")) return;
+    if (!window.confirm("⚠ DANGER: DELETE EVERYTHING? This cannot be undone."))
+      return;
     setIsResetting(true);
-    const batch = writeBatch(db);
-    const collections = ["auctionPlayers", "auction_slots", "teams", "matches"];
-    for (const cName of collections) {
-      const snap = await getDocs(
-        collection(db, "tournaments", tournamentId, cName)
-      );
-      snap.docs.forEach((d) => batch.delete(d.ref));
+
+    try {
+      const batch = writeBatch(db);
+      const collections = [
+        "auctionPlayers",
+        "auction_slots",
+        "teams",
+        "matches",
+      ];
+
+      // 1. Delete all sub-collections
+      for (const cName of collections) {
+        const snap = await getDocs(
+          collection(db, "tournaments", tournamentId, cName)
+        );
+        snap.docs.forEach((d) => batch.delete(d.ref));
+      }
+
+      // 2. Delete the Auction Console State
+      batch.delete(doc(db, "tournaments", tournamentId, "auction", "state"));
+
+      // 3. ✅ CRITICAL FIX: Reset the Main Tournament Status
+      const tournamentRef = doc(db, "tournaments", tournamentId);
+      batch.update(tournamentRef, {
+        auctionState: "PENDING",
+        isAuction: true,
+      });
+
+      await batch.commit();
+
+      // 4. Reload to reflect changes
+      window.location.reload();
+    } catch (error) {
+      console.error("Reset failed:", error);
+      alert("Reset failed: " + error.message);
+      setIsResetting(false);
     }
-    batch.delete(doc(db, "tournaments", tournamentId, "auction", "state"));
-    await batch.commit();
-    window.location.reload();
   };
 
   const teamsMap = Object.fromEntries(teams.map((t) => [t.id, t.name]));
@@ -811,213 +695,247 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8 max-w-7xl mx-auto w-full">
         {tab === "config" && (
-          <div className="space-y-6">
-            <div className="bg-teal-900/10 border border-teal-500/20 p-6 rounded-2xl flex justify-between items-center">
-              <div>
-                <h4 className="text-teal-400 font-black text-xs uppercase">
-                  Repair Auction Signal
-                </h4>
-                <p className="text-slate-500 text-[10px]">
-                  Use if dashboard is stuck on 'Connecting'
-                </p>
+          <>
+            <div className="space-y-6">
+              <div className="bg-teal-900/10 border border-teal-500/20 p-6 rounded-2xl flex justify-between items-center">
+                <div>
+                  <h4 className="text-teal-400 font-black text-xs uppercase">
+                    Repair Auction Signal
+                  </h4>
+                  <p className="text-slate-500 text-[10px]">
+                    Use if dashboard is stuck on 'Connecting'
+                  </p>
+                </div>
+                <button
+                  onClick={forceAuctionReady}
+                  className="bg-teal-600 px-6 py-2 rounded-xl text-[10px] font-black uppercase">
+                  Repair
+                </button>
               </div>
-              <button
-                onClick={forceAuctionReady}
-                className="bg-teal-600 px-6 py-2 rounded-xl text-[10px] font-black uppercase">
-                Repair
-              </button>
-            </div>
-
-            <div className="bg-[#0F1115] p-6 rounded-2xl border border-white/5 flex justify-between items-center mt-4">
-              <div>
-                <h4 className="text-white font-black text-xs uppercase">
-                  Allow Direct Buy
-                </h4>
-                <p className="text-slate-500 text-[10px]">
-                  Owners can buy 1 player at base price but can't bid again in
-                  that slot.
-                </p>
+              <div className="bg-[#0F1115] p-6 rounded-2xl border border-white/5 flex justify-between items-center mt-4">
+                <div>
+                  <h4 className="text-white font-black text-xs uppercase">
+                    Limit: 1 Player Per Slot
+                  </h4>
+                  <p className="text-slate-500 text-[10px]">
+                    Once a team buys a player in a slot, they cannot bid again
+                    until the next slot.
+                  </p>
+                </div>
+                <button
+                  onClick={() =>
+                    setConfig({
+                      ...config,
+                      limitOnePlayerPerSlot: !config.limitOnePlayerPerSlot,
+                    })
+                  }
+                  className={`w-14 h-8 rounded-full transition-all relative ${
+                    config.limitOnePlayerPerSlot
+                      ? "bg-teal-600"
+                      : "bg-slate-700"
+                  }`}>
+                  <div
+                    className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${
+                      config.limitOnePlayerPerSlot ? "left-7" : "left-1"
+                    }`}></div>
+                </button>
               </div>
-              <button
-                onClick={() =>
-                  setConfig({
-                    ...config,
-                    allowDirectBuy: !config.allowDirectBuy,
-                  })
-                }
-                className={`w-14 h-8 rounded-full transition-all relative ${
-                  config.allowDirectBuy ? "bg-teal-600" : "bg-slate-700"
-                }`}>
-                <div
-                  className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${
-                    config.allowDirectBuy ? "left-7" : "left-1"
-                  }`}></div>
-              </button>
-            </div>
 
-            <div className="bg-[#1C2128] border border-white/5 p-8 rounded-[2rem] shadow-2xl relative overflow-hidden">
-              <div className="mb-10">
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-slate-100 font-black uppercase text-xs">
-                    Dynamic Bidding Slabs
-                  </h3>
+              <div className="bg-[#0F1115] p-6 rounded-2xl border border-white/5 flex justify-between items-center mt-4">
+                <div>
+                  <h4 className="text-white font-black text-xs uppercase">
+                    Allow Direct Buy
+                  </h4>
+                  <p className="text-slate-500 text-[10px]">
+                    Owners can buy 1 player at base price but can't bid again in
+                    that slot.
+                  </p>
+                </div>
+                <button
+                  onClick={() =>
+                    setConfig({
+                      ...config,
+                      allowDirectBuy: !config.allowDirectBuy,
+                    })
+                  }
+                  className={`w-14 h-8 rounded-full transition-all relative ${
+                    config.allowDirectBuy ? "bg-teal-600" : "bg-slate-700"
+                  }`}>
+                  <div
+                    className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${
+                      config.allowDirectBuy ? "left-7" : "left-1"
+                    }`}></div>
+                </button>
+              </div>
+
+              <div className="bg-[#1C2128] border border-white/5 p-8 rounded-[2rem] shadow-2xl relative overflow-hidden">
+                <div className="mb-10">
+                  <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-slate-100 font-black uppercase text-xs">
+                      Dynamic Bidding Slabs
+                    </h3>
+                    <button
+                      onClick={addSlab}
+                      className="bg-teal-600 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest">
+                      + Add Slab
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {(config.bidSlabs || []).map((slab, index) => (
+                      <div
+                        key={index}
+                        className="flex gap-4 items-center bg-[#0F1115] p-3 rounded-xl border border-white/5">
+                        <div className="flex-1">
+                          <label className="text-[8px] text-slate-500 block mb-1 uppercase font-black">
+                            Up to (₹)
+                          </label>
+                          <input
+                            type="number"
+                            className="bg-transparent text-white font-bold outline-none w-full"
+                            value={slab.max}
+                            onChange={(e) =>
+                              updateSlab(index, "max", e.target.value)
+                            }
+                          />
+                        </div>
+                        <div className="flex-1 border-l border-white/10 pl-4">
+                          <label className="text-[8px] text-teal-500 block mb-1 uppercase font-black">
+                            Inc (₹)
+                          </label>
+                          <input
+                            type="number"
+                            className="bg-transparent text-teal-400 font-bold outline-none w-full"
+                            value={slab.inc}
+                            onChange={(e) =>
+                              updateSlab(index, "inc", e.target.value)
+                            }
+                          />
+                        </div>
+                        <button
+                          onClick={() => removeSlab(index)}
+                          className="text-red-500 text-xl">
+                          &times;
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <h3 className="text-slate-100 font-black uppercase text-xs mb-8 border-b border-white/5 pb-4">
+                  Auction Logic Configuration
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-500 uppercase">
+                      Min Squad Size
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full bg-[#0F1115] border border-white/10 rounded-xl p-4 text-slate-200"
+                      value={config.minSquadSize}
+                      onChange={(e) =>
+                        setConfig({ ...config, minSquadSize: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-500 uppercase">
+                      Max Squad Size
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full bg-[#0F1115] border border-white/10 rounded-xl p-4 text-slate-200"
+                      value={config.maxSquadSize}
+                      onChange={(e) =>
+                        setConfig({ ...config, maxSquadSize: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-500 uppercase">
+                      Min Base Price
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full bg-[#0F1115] border border-white/10 rounded-xl p-4 text-slate-200"
+                      value={config.minBasePrice}
+                      onChange={(e) =>
+                        setConfig({ ...config, minBasePrice: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-500 uppercase">
+                      Fallback Increment
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full bg-[#0F1115] border border-white/10 rounded-xl p-4 text-slate-200"
+                      value={config.bidIncrement}
+                      onChange={(e) =>
+                        setConfig({ ...config, bidIncrement: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-orange-400 uppercase">
+                      Max Bid Per Player
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full bg-[#0F1115] border border-orange-500/20 rounded-xl p-4 text-slate-200 focus:border-orange-500/50"
+                      value={config.maxBidPerPlayer}
+                      onChange={(e) =>
+                        setConfig({
+                          ...config,
+                          maxBidPerPlayer: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-orange-400 uppercase">
+                      Max Icons Per Team
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full bg-[#0F1115] border border-orange-500/20 rounded-xl p-4 text-slate-200 focus:border-orange-500/50"
+                      value={config.maxIconsPerTeam}
+                      onChange={(e) =>
+                        setConfig({
+                          ...config,
+                          maxIconsPerTeam: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-4 mt-12">
                   <button
-                    onClick={addSlab}
-                    className="bg-teal-600 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest">
-                    + Add Slab
+                    onClick={handleResetRules}
+                    className="flex-1 bg-red-900/20 text-red-500 border border-red-500/20 font-black py-5 rounded-xl uppercase text-xs">
+                    Reset Rules
+                  </button>
+                  <button
+                    onClick={handleUpdateConfig}
+                    className="flex-[2] bg-teal-600 text-white font-black py-5 rounded-xl uppercase text-xs shadow-lg">
+                    Update Rules
                   </button>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {(config.bidSlabs || []).map((slab, index) => (
-                    <div
-                      key={index}
-                      className="flex gap-4 items-center bg-[#0F1115] p-3 rounded-xl border border-white/5">
-                      <div className="flex-1">
-                        <label className="text-[8px] text-slate-500 block mb-1 uppercase font-black">
-                          Up to (₹)
-                        </label>
-                        <input
-                          type="number"
-                          className="bg-transparent text-white font-bold outline-none w-full"
-                          value={slab.max}
-                          onChange={(e) =>
-                            updateSlab(index, "max", e.target.value)
-                          }
-                        />
-                      </div>
-                      <div className="flex-1 border-l border-white/10 pl-4">
-                        <label className="text-[8px] text-teal-500 block mb-1 uppercase font-black">
-                          Inc (₹)
-                        </label>
-                        <input
-                          type="number"
-                          className="bg-transparent text-teal-400 font-bold outline-none w-full"
-                          value={slab.inc}
-                          onChange={(e) =>
-                            updateSlab(index, "inc", e.target.value)
-                          }
-                        />
-                      </div>
-                      <button
-                        onClick={() => removeSlab(index)}
-                        className="text-red-500 text-xl">
-                        &times;
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <h3 className="text-slate-100 font-black uppercase text-xs mb-8 border-b border-white/5 pb-4">
-                Auction Logic Configuration
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-500 uppercase">
-                    Min Squad Size
-                  </label>
-                  <input
-                    type="number"
-                    className="w-full bg-[#0F1115] border border-white/10 rounded-xl p-4 text-slate-200"
-                    value={config.minSquadSize}
-                    onChange={(e) =>
-                      setConfig({ ...config, minSquadSize: e.target.value })
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-500 uppercase">
-                    Max Squad Size
-                  </label>
-                  <input
-                    type="number"
-                    className="w-full bg-[#0F1115] border border-white/10 rounded-xl p-4 text-slate-200"
-                    value={config.maxSquadSize}
-                    onChange={(e) =>
-                      setConfig({ ...config, maxSquadSize: e.target.value })
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-500 uppercase">
-                    Min Base Price
-                  </label>
-                  <input
-                    type="number"
-                    className="w-full bg-[#0F1115] border border-white/10 rounded-xl p-4 text-slate-200"
-                    value={config.minBasePrice}
-                    onChange={(e) =>
-                      setConfig({ ...config, minBasePrice: e.target.value })
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-500 uppercase">
-                    Fallback Increment
-                  </label>
-                  <input
-                    type="number"
-                    className="w-full bg-[#0F1115] border border-white/10 rounded-xl p-4 text-slate-200"
-                    value={config.bidIncrement}
-                    onChange={(e) =>
-                      setConfig({ ...config, bidIncrement: e.target.value })
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-orange-400 uppercase">
-                    Max Bid Per Player
-                  </label>
-                  <input
-                    type="number"
-                    className="w-full bg-[#0F1115] border border-orange-500/20 rounded-xl p-4 text-slate-200 focus:border-orange-500/50"
-                    value={config.maxBidPerPlayer}
-                    onChange={(e) =>
-                      setConfig({ ...config, maxBidPerPlayer: e.target.value })
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-orange-400 uppercase">
-                    Max Icons Per Team
-                  </label>
-                  <input
-                    type="number"
-                    className="w-full bg-[#0F1115] border border-orange-500/20 rounded-xl p-4 text-slate-200 focus:border-orange-500/50"
-                    value={config.maxIconsPerTeam}
-                    onChange={(e) =>
-                      setConfig({ ...config, maxIconsPerTeam: e.target.value })
-                    }
-                  />
-                </div>
-              </div>
-              <div className="flex gap-4 mt-12">
-                <button
-                  onClick={handleResetRules}
-                  className="flex-1 bg-red-900/20 text-red-500 border border-red-500/20 font-black py-5 rounded-xl uppercase text-xs">
-                  Reset Rules
-                </button>
-                <button
-                  onClick={handleUpdateConfig}
-                  className="flex-[2] bg-teal-600 text-white font-black py-5 rounded-xl uppercase text-xs shadow-lg">
-                  Update Rules
-                </button>
               </div>
             </div>
-          </div>
+          </>
         )}
 
         {tab === "teams" && (
-          <div className="grid grid-cols-1 gap-6">
-            {teams.map((t) => (
-              <TeamCard
-                key={t.id}
-                t={t}
-                globalUsers={globalUsers}
-                tournamentId={tournamentId}
-                maxSquadSize={config.maxSquadSize}
-                onUpdateOwner={handleUpdateOwner}
-              />
-            ))}
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-6">
+              {teams.length === 0 && (
+                <div className="text-center py-10 text-slate-500 italic">
+                  No teams added yet. Create one above!
+                </div>
+              )}
+              <AuctionOwnersAdmin tournamentId={tournamentId} />
+            </div>
           </div>
         )}
 
@@ -1139,7 +1057,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
           <MatchScheduler tournamentId={tournamentId} teams={teams} />
         )}
 
-        <div className="mt-20 border-t border-red-500/10 pt-10">
+        <div className="border-t border-red-500/10 pt-10">
           <div className="bg-red-900/5 border border-red-500/20 p-8 rounded-[2rem] flex justify-between items-center">
             <div>
               <h4 className="text-red-500 font-black uppercase text-xs">

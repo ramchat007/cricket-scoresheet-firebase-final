@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { auth, db } from "../utils/firebase";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot } from "firebase/firestore";
 
 export default function Navigation() {
   const [isOpen, setIsOpen] = useState(false);
@@ -10,6 +10,7 @@ export default function Navigation() {
   const navigate = useNavigate();
   const location = useLocation();
   const [profileData, setProfileData] = useState(null);
+  const [isAuctionEnabled, setIsAuctionEnabled] = useState(false);
 
   // --- Fetch Profile Logic ---
   useEffect(() => {
@@ -18,48 +19,78 @@ export default function Navigation() {
         try {
           const snap = await getDoc(doc(db, "users", user.uid));
           if (snap.exists()) setProfileData(snap.data());
-        } catch (e) { console.error(e); }
-      } else { setProfileData(null); }
+        } catch (e) {
+          console.error(e);
+        }
+      } else {
+        setProfileData(null);
+      }
     }
     fetchProfileData();
   }, [user]);
 
+  // --- Dynamic Links Logic (Extract ID) ---
+  const pathSegments = location.pathname.split("/");
+  const tournamentIndex = pathSegments.indexOf("tournaments");
+  const tournamentId =
+    tournamentIndex !== -1 && pathSegments.length > tournamentIndex + 1
+      ? pathSegments[tournamentIndex + 1]
+      : null;
+
+  // --- NEW: Check if Auction is Enabled for current tournament ---
+  useEffect(() => {
+    if (tournamentId && tournamentId !== "auction") {
+      const unsub = onSnapshot(
+        doc(db, "tournaments", tournamentId),
+        (docSnap) => {
+          if (docSnap.exists()) {
+            // Check the flag in the database
+            setIsAuctionEnabled(docSnap.data().isAuction === true);
+          } else {
+            setIsAuctionEnabled(false);
+          }
+        }
+      );
+      return () => unsub();
+    } else {
+      setIsAuctionEnabled(false);
+    }
+  }, [tournamentId]);
+
   // Block body scroll when menu is open
   useEffect(() => {
     if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      document.body.style.touchAction = 'none';
+      document.body.style.overflow = "hidden";
+      document.body.style.touchAction = "none";
     } else {
-      document.body.style.overflow = 'unset';
-      document.body.style.touchAction = 'auto';
+      document.body.style.overflow = "unset";
+      document.body.style.touchAction = "auto";
     }
-    return () => { 
-        document.body.style.overflow = 'unset';
-        document.body.style.touchAction = 'auto';
+    return () => {
+      document.body.style.overflow = "unset";
+      document.body.style.touchAction = "auto";
     };
   }, [isOpen]);
 
   const displayImage = profileData?.photoURL || user?.photoURL || null;
 
-  // --- Dynamic Links Logic ---
-  const pathSegments = location.pathname.split("/");
-  const tournamentIndex = pathSegments.indexOf("tournaments");
-  const tournamentId = tournamentIndex !== -1 && pathSegments.length > tournamentIndex + 1 ? pathSegments[tournamentIndex + 1] : null;
-
   // 1. Base Public Links
   const links = [
-    { name: "Home", path: "/" },  
-    { name: "Global Stats", path: "/players" }
+    { name: "Home", path: "/" },
+    { name: "Global Stats", path: "/players" },
   ];
 
   // 2. Contextual Links (Only if inside a tournament)
-  if (tournamentId && tournamentId !== 'auction') {
+  if (tournamentId && tournamentId !== "auction") {
     // Public tournament view
     links.push({ name: "Tournament", path: `/tournaments/${tournamentId}` });
-    
-    // ✅ Protected: Only show Auction Room if logged in
-    if (user) {
-      links.push({ name: "Auction Room", path: `/tournaments/${tournamentId}/auction` });
+
+    // ✅ Protected: Only show Auction Room if logged in AND Auction is Enabled
+    if (user && isAuctionEnabled) {
+      links.push({
+        name: "Auction Room",
+        path: `/tournaments/${tournamentId}/auction`,
+      });
     }
   }
 
@@ -77,13 +108,20 @@ export default function Navigation() {
   };
 
   const Logo = () => (
-    <Link to="/" className="group flex items-center gap-2" onClick={() => setIsOpen(false)}>
+    <Link
+      to="/"
+      className="group flex items-center gap-2"
+      onClick={() => setIsOpen(false)}>
       <div className="bg-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.4)] w-8 h-8 rounded-lg flex items-center justify-center group-hover:rotate-12 transition-transform">
         <span className="text-white text-lg font-bold">⚡</span>
       </div>
       <div className="flex flex-col leading-none">
-        <span className="text-white font-black text-xl tracking-tighter uppercase">CRIC</span>
-        <span className="text-cyan-500 font-black text-[10px] tracking-[0.3em] uppercase ml-0.5">SYNC</span>
+        <span className="text-white font-black text-xl tracking-tighter uppercase">
+          CRIC
+        </span>
+        <span className="text-cyan-500 font-black text-[10px] tracking-[0.3em] uppercase ml-0.5">
+          SYNC
+        </span>
       </div>
     </Link>
   );
@@ -94,33 +132,75 @@ export default function Navigation() {
       <nav className="bg-black/90 border-b border-white/5 sticky top-0 z-[100] backdrop-blur-xl h-16 flex items-center shadow-2xl">
         <div className="container mx-auto px-5 flex justify-between items-center">
           <Logo />
-          
+
           <div className="hidden md:flex items-center gap-8">
             {links.map((link) => (
-              <Link key={link.path} to={link.path} className={`text-[11px] font-black uppercase tracking-widest transition-all ${isActive(link.path) ? "text-cyan-400" : "text-gray-500 hover:text-white"}`}>
+              <Link
+                key={link.path}
+                to={link.path}
+                className={`text-[11px] font-black uppercase tracking-widest transition-all ${
+                  isActive(link.path)
+                    ? "text-cyan-400"
+                    : "text-gray-500 hover:text-white"
+                }`}>
                 {link.name}
               </Link>
             ))}
 
             {user ? (
               <div className="flex items-center gap-5 border-l border-white/10 pl-5">
-                <Link to="/profile" className="w-9 h-9 rounded-full border border-white/10 overflow-hidden hover:border-cyan-500 transition-all shadow-lg">
-                  {displayImage ? <img src={displayImage} alt="profile" className="w-full h-full object-cover" /> : <div className="bg-gray-800 w-full h-full flex items-center justify-center font-bold text-cyan-500">{user.email?.charAt(0).toUpperCase()}</div>}
+                <Link
+                  to="/profile"
+                  className="w-9 h-9 rounded-full border border-white/10 overflow-hidden hover:border-cyan-500 transition-all shadow-lg">
+                  {displayImage ? (
+                    <img
+                      src={displayImage}
+                      alt="profile"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="bg-gray-800 w-full h-full flex items-center justify-center font-bold text-cyan-500">
+                      {user.email?.charAt(0).toUpperCase()}
+                    </div>
+                  )}
                 </Link>
-                <button onClick={handleLogout} className="text-[10px] font-black uppercase text-red-500 hover:text-red-400 transition-colors tracking-widest">
-                   Logout
+                <button
+                  onClick={handleLogout}
+                  className="text-[10px] font-black uppercase text-red-500 hover:text-red-400 transition-colors tracking-widest">
+                  Logout
                 </button>
               </div>
             ) : (
               <div className="flex items-center gap-4">
-                <Link to="/register-player" className="text-[10px] font-black uppercase text-gray-400 hover:text-white transition-colors">Register Player</Link>
-                <Link to="/login" className="bg-white text-black text-[11px] font-black uppercase px-6 py-2 rounded-full hover:bg-cyan-500 hover:text-white transition-all">Login</Link>
+                <Link
+                  to="/register-player"
+                  className="text-[10px] font-black uppercase text-gray-400 hover:text-white transition-colors">
+                  Register Player
+                </Link>
+                <Link
+                  to="/login"
+                  className="bg-white text-black text-[11px] font-black uppercase px-6 py-2 rounded-full hover:bg-cyan-500 hover:text-white transition-all">
+                  Login
+                </Link>
               </div>
             )}
           </div>
 
-          <button onClick={() => setIsOpen(true)} className="md:hidden w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white active:scale-90 transition-transform">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+          <button
+            onClick={() => setIsOpen(true)}
+            className="md:hidden w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white active:scale-90 transition-transform">
+            <svg
+              className="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 6h16M4 12h16M4 18h16"
+              />
+            </svg>
           </button>
         </div>
       </nav>
@@ -128,19 +208,37 @@ export default function Navigation() {
       {/* 2. FULL SCREEN DRAWER */}
       {isOpen && (
         <div className="fixed inset-0 z-[9999] isolate">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-2xl animate-in fade-in duration-300" onClick={() => setIsOpen(false)} />
+          <div
+            className="absolute inset-0 bg-black/80 backdrop-blur-2xl animate-in fade-in duration-300"
+            onClick={() => setIsOpen(false)}
+          />
 
           <div className="absolute inset-y-0 right-0 w-full bg-black border-l border-white/10 shadow-2xl flex flex-col animate-in slide-in-from-right duration-500">
             <div className="flex justify-between items-center px-6 h-20 border-b border-white/5 bg-black">
               <Logo />
-              <button onClick={() => setIsOpen(false)} className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white transition-all active:scale-90">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+              <button
+                onClick={() => setIsOpen(false)}
+                className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white transition-all active:scale-90">
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={3}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 flex flex-col">
-              <label className="text-[10px] font-black text-gray-600 uppercase tracking-[0.4em] mb-8 block">Navigation</label>
-              
+              <label className="text-[10px] font-black text-gray-600 uppercase tracking-[0.4em] mb-8 block">
+                Navigation
+              </label>
+
               <div className="space-y-3">
                 {links.map((link) => (
                   <Link
@@ -151,10 +249,11 @@ export default function Navigation() {
                       isActive(link.path)
                         ? "bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-xl shadow-cyan-500/20"
                         : "bg-white/5 border border-white/5 text-gray-400"
-                    }`}
-                  >
+                    }`}>
                     {link.name}
-                    {isActive(link.path) && <div className="w-2 h-2 bg-white rounded-full animate-pulse shadow-[0_0_10px_white]"></div>}
+                    {isActive(link.path) && (
+                      <div className="w-2 h-2 bg-white rounded-full animate-pulse shadow-[0_0_10px_white]"></div>
+                    )}
                   </Link>
                 ))}
               </div>
@@ -162,18 +261,37 @@ export default function Navigation() {
               <div className="mt-auto pt-10 pb-8 flex flex-col gap-4">
                 {!user ? (
                   <div className="grid grid-cols-1 gap-4">
-                    <Link to="/register-player" onClick={() => setIsOpen(false)} className="w-full py-5 rounded-[2rem] bg-white/5 border border-white/10 text-white text-center font-black uppercase tracking-widest text-xs">Register Player</Link>
-                    <Link to="/login" onClick={() => setIsOpen(false)} className="w-full py-5 rounded-[2rem] bg-white text-black text-center font-black uppercase tracking-widest text-sm shadow-xl">Login</Link>
+                    <Link
+                      to="/register-player"
+                      onClick={() => setIsOpen(false)}
+                      className="w-full py-5 rounded-[2rem] bg-white/5 border border-white/10 text-white text-center font-black uppercase tracking-widest text-xs">
+                      Register Player
+                    </Link>
+                    <Link
+                      to="/login"
+                      onClick={() => setIsOpen(false)}
+                      className="w-full py-5 rounded-[2rem] bg-white text-black text-center font-black uppercase tracking-widest text-sm shadow-xl">
+                      Login
+                    </Link>
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-4">
-                    <Link to="/profile" onClick={() => setIsOpen(false)} className="flex flex-col items-center justify-center gap-2 p-6 rounded-[2.5rem] bg-white/5 border border-white/10 transition-colors active:bg-white/10">
+                    <Link
+                      to="/profile"
+                      onClick={() => setIsOpen(false)}
+                      className="flex flex-col items-center justify-center gap-2 p-6 rounded-[2.5rem] bg-white/5 border border-white/10 transition-colors active:bg-white/10">
                       <span className="text-2xl">👤</span>
-                      <span className="text-[10px] font-black text-gray-500 uppercase">Profile</span>
+                      <span className="text-[10px] font-black text-gray-500 uppercase">
+                        Profile
+                      </span>
                     </Link>
-                    <button onClick={handleLogout} className="flex flex-col items-center justify-center gap-2 p-6 rounded-[2.5rem] bg-red-500/10 border border-red-500/20 transition-all active:bg-red-500/20">
+                    <button
+                      onClick={handleLogout}
+                      className="flex flex-col items-center justify-center gap-2 p-6 rounded-[2.5rem] bg-red-500/10 border border-red-500/20 transition-all active:bg-red-500/20">
                       <span className="text-2xl">🚪</span>
-                      <span className="text-[10px] font-black text-red-500 uppercase">Logout</span>
+                      <span className="text-[10px] font-black text-red-500 uppercase">
+                        Logout
+                      </span>
                     </button>
                   </div>
                 )}

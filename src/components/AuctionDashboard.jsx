@@ -17,7 +17,7 @@ import {
   placeBid,
   markSold,
   markUnsold,
-  undoLastBid, // ✅ Correctly Imported
+  undoLastBid,
   directBuyPlayer,
 } from "../utils/auction";
 import AuctionAdminPanel from "./AuctionAdminPanel";
@@ -139,7 +139,6 @@ export default function AuctionDashboard() {
     return current + inc;
   };
 
-  // ✅ UPDATED: Now using the imported undoLastBid function
   const reverseLastBid = async () => {
     if (
       !window.confirm(
@@ -301,7 +300,6 @@ export default function AuctionDashboard() {
                   } px-6 py-4 rounded-xl font-black text-xs uppercase border transition-all`}>
                   {isPaused ? "▶ Resume" : "⏸ Pause"}
                 </button>
-                {/* UNDO BUTTON: Calls the imported function */}
                 {auctionState.highestBidderId && (
                   <button
                     onClick={reverseLastBid}
@@ -435,10 +433,17 @@ export default function AuctionDashboard() {
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {teams.map((team) => {
-            const minSquadGoal = parseInt(tournamentConfig?.minSquadSize) || 11;
+            // --- CONFIGURATION ---
+            const minSquadGoal = parseInt(tournamentConfig?.minSquadSize) || 10;
+            const maxSquadLimit =
+              parseInt(tournamentConfig?.maxSquadSize) || 100;
             const minBasePrice =
               parseInt(tournamentConfig?.minBasePrice) || 100;
+            const maxBidPerPlayer =
+              parseInt(tournamentConfig?.maxBidPerPlayer) || 3000;
+            const maxIcons = parseInt(tournamentConfig?.maxIconsPerTeam) || 1;
 
+            // --- FINANCIALS ---
             const totalPurse = parseInt(team?.purse) || 0;
             const totalSpent = parseInt(team?.spent) || 0;
             const remainingPurse = totalPurse - totalSpent;
@@ -446,56 +451,94 @@ export default function AuctionDashboard() {
             const isHighest = auctionState?.highestBidderId === team.id;
             const isNoBidsYet = !auctionState?.highestBidderId;
 
-            const playingSquad = (team?.roster || []).filter(
-              (p) => p.isOwner !== true
-            );
-            const currentPlayingCount = playingSquad.length;
+            // --- ROSTER SIZE LOGIC ---
+            // Fix: Add +1 if Owner exists but is missing from DB roster array
+            let currentSquadSize = (team?.roster || []).length;
+            const hasOwnerInRoster = team?.roster?.some((p) => p.isOwner);
+            if (!hasOwnerInRoster && (team.isOwner || team.ownerName)) {
+              currentSquadSize += 1;
+            }
 
-            // ✅ FIX 1: Safely handle currentPlayer being null
+            // --- BIDDING MATH ---
             const playerBasePrice = currentPlayer?.basePrice || 0;
             const currentAuctionBid = auctionState?.currentBid || 0;
 
             const bidAmountToPlace = isNoBidsYet
               ? currentAuctionBid === playerBasePrice
-                ? calculateNextBid(currentAuctionBid) // If current bid IS base, next is Base + Inc
-                : playerBasePrice // If current bid is 0/lower, first bid is Base
+                ? calculateNextBid(currentAuctionBid)
+                : playerBasePrice
               : nextBidAmount || 0;
 
-            const playingIfWin = isHighest
-              ? currentPlayingCount
-              : currentPlayingCount + 1;
-            const playersStillNeeded = Math.max(0, minSquadGoal - playingIfWin);
-
-            // ✅ SAFETY LOGIC: We reserve MIN_BASE_PRICE for future slots, not the incremented price.
+            // --- RESERVE LOGIC ---
+            const sizeIfWin = isHighest
+              ? currentSquadSize
+              : currentSquadSize + 1;
+            const playersStillNeeded = Math.max(0, minSquadGoal - sizeIfWin);
             const mandatoryReserve = playersStillNeeded * minBasePrice;
             const maxPossibleBid = remainingPurse - mandatoryReserve;
 
-            let isDisabled = !isLive || isHighest || !currentPlayer;
-            let errorReason = "";
+            // --- RULE CHECKS ---
 
+            // 1. Locked Slot Check
             const isLocked = team.lockedSlots?.includes(
               auctionState.activeSlotId
             );
 
-            // ✅ FIX 2: Safely check for Direct Buy condition
+            // 2. Limit One Per Slot Check (ROBUST FIX)
+            // We look up the player in 'allPlayers' to ensure we get the auctionSlotId
+            const limitActive = tournamentConfig?.limitOnePlayerPerSlot;
+            const currentSlotId = auctionState?.activeSlotId;
+
+            let hasPlayerInSlot = false;
+            if (limitActive && currentSlotId && team.roster?.length > 0) {
+              // Get IDs of players this team has bought
+              const teamPlayerIds = team.roster.map((p) => p.id);
+              // Check against the Master List (allPlayers) which definitely has the slot info
+              hasPlayerInSlot = allPlayers.some(
+                (p) =>
+                  teamPlayerIds.includes(p.id) &&
+                  String(p.auctionSlotId) === String(currentSlotId)
+              );
+            }
+
+            // 3. Icon Limit Check
+            const currentIcons =
+              team.roster?.filter((p) => p.isIcon).length || 0;
+            const isIconLimitReached =
+              currentPlayer?.isIcon && currentIcons >= maxIcons;
+
+            // 4. Max Bid Cap Check
+            const isBidOverCap = bidAmountToPlace > maxBidPerPlayer;
+
+            // --- VALIDATION DECISION ---
+            let isDisabled = !isLive || isHighest || !currentPlayer;
+            let errorReason = "";
+
+            if (!isDisabled && currentPlayer && !ruleOverride) {
+              if (currentSquadSize >= maxSquadLimit) {
+                isDisabled = true;
+                errorReason = "Squad Full";
+              } else if (hasPlayerInSlot) {
+                isDisabled = true;
+                errorReason = "Slot Limit Reached";
+              } else if (isIconLimitReached) {
+                isDisabled = true;
+                errorReason = "Max Icons Reached";
+              } else if (isBidOverCap) {
+                isDisabled = true;
+                errorReason = `Max Bid Limit (₹${maxBidPerPlayer})`;
+              } else if (bidAmountToPlace > maxPossibleBid) {
+                isDisabled = true;
+                errorReason = "Low Budget (Reserve)";
+              }
+            }
+
+            // Direct Buy Logic
             const canDirectBuy =
               tournamentConfig?.allowDirectBuy &&
               currentPlayer &&
               currentAuctionBid === playerBasePrice &&
               isNoBidsYet;
-
-            if (!isDisabled && currentPlayer && !ruleOverride) {
-              if (
-                currentPlayingCount >=
-                (parseInt(tournamentConfig?.maxSquadSize) || 100)
-              ) {
-                isDisabled = true;
-                errorReason = "Squad Full";
-              } else if (bidAmountToPlace > maxPossibleBid) {
-                isDisabled = true;
-                errorReason = "Low Budget";
-              }
-            }
 
             return (
               <div
@@ -592,7 +635,7 @@ export default function AuctionDashboard() {
                               ).toLocaleString()}`}
                         </button>
 
-                        {canDirectBuy && (
+                        {canDirectBuy && !isDisabled && (
                           <button
                             onClick={() =>
                               directBuyPlayer(

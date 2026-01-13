@@ -13,6 +13,16 @@ export default function TournamentAccessManager({ tournament }) {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
 
+  // ✅ CRITICAL FIX: Guard Clause
+  // If tournament data isn't loaded yet, return null (or a loader) to prevent crash
+  if (!tournament) {
+    return (
+      <div className="p-4 text-slate-500 italic text-xs">
+        Loading access controls...
+      </div>
+    );
+  }
+
   const handleAddUser = async (e) => {
     e.preventDefault();
     if (!email) return;
@@ -25,14 +35,20 @@ export default function TournamentAccessManager({ tournament }) {
         setLoading(false);
         return;
       }
+
+      // ✅ SAFE CHECK: Use (array || []) to prevent crashing if fields are missing
+      const currentScorers = tournament.scorers || [];
+      const currentViewers = tournament.viewers || [];
+
       if (
-        tournament.scorers?.includes(targetUid) ||
-        tournament.viewers?.includes(targetUid)
+        currentScorers.includes(targetUid) ||
+        currentViewers.includes(targetUid)
       ) {
         setMsg("⚠️ User already has access.");
         setLoading(false);
         return;
       }
+
       if (role === "scorer") {
         await addScorerToTournament(tournament.id, targetUid);
         setMsg("✅ Scorer added!");
@@ -60,6 +76,10 @@ export default function TournamentAccessManager({ tournament }) {
       alert("Error removing user");
     }
   };
+
+  // ✅ Prepare lists safely
+  const scorersList = tournament.scorers || [];
+  const viewersList = tournament.viewers || [];
 
   return (
     <div className="bg-[#1C2128] border border-white/5 rounded-2xl p-6 shadow-xl">
@@ -117,10 +137,12 @@ export default function TournamentAccessManager({ tournament }) {
             Scorers (Edit Access)
           </h4>
           <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-1">
-            {(tournament.scorers || []).length === 0 && (
-              <span className="text-xs text-slate-600 italic p-2 block text-center">No scorers added</span>
+            {scorersList.length === 0 && (
+              <span className="text-xs text-slate-600 italic p-2 block text-center">
+                No scorers added
+              </span>
             )}
-            {tournament.scorers?.map((uid) => (
+            {scorersList.map((uid) => (
               <div
                 key={uid}
                 className="flex justify-between items-center bg-[#161920] p-2.5 rounded-lg border border-white/5 hover:border-white/10 transition-colors group">
@@ -147,10 +169,12 @@ export default function TournamentAccessManager({ tournament }) {
             Viewers (Read Only)
           </h4>
           <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-1">
-            {(tournament.viewers || []).length === 0 && (
-              <span className="text-xs text-slate-600 italic p-2 block text-center">No viewers added</span>
+            {viewersList.length === 0 && (
+              <span className="text-xs text-slate-600 italic p-2 block text-center">
+                No viewers added
+              </span>
             )}
-            {tournament.viewers?.map((uid) => (
+            {viewersList.map((uid) => (
               <div
                 key={uid}
                 className="flex justify-between items-center bg-[#161920] p-2.5 rounded-lg border border-white/5 hover:border-white/10 transition-colors group">

@@ -7,14 +7,13 @@ import {
   collection,
   getDocs,
   writeBatch,
-  setDoc, // ✅ Added setDoc for auction init
+  setDoc,
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { useAuth } from "../hooks/useAuth";
 
 import TournamentTabs from "./TournamentTabs";
 import MatchScheduler from "./MatchScheduler";
-import TeamBanner from "./TournamentTabs/TeamPosterModal";
 
 export default function TournamentDetails() {
   const { id } = useParams();
@@ -36,116 +35,9 @@ export default function TournamentDetails() {
   // Toggle for showing the scheduler
   const [showScheduler, setShowScheduler] = useState(false);
 
-  const [editingTeam, setEditingTeam] = useState(null);
-
-  // 2. In your Save logic:
-  const handleUpdateTeam = async (teamId, updates) => {
-    // ✅ FIX: Changed tournamentId to id (from useParams)
-    const teamRef = doc(db, "tournaments", id, "teams", teamId);
-    await updateDoc(teamRef, updates);
-
-    // ✅ ADDED: Update local state so UI reflects change immediately
-    setTournamentTeams((prev) =>
-      prev.map((t) => (t.id === teamId ? { ...t, ...updates } : t))
-    );
-
-    setEditingTeam(null);
-    alert("Team Profile Updated!");
-  };
-
-  const TeamEditModal = ({ team, isOpen, onClose, onSave }) => {
-    const [name, setName] = React.useState(team?.name || "");
-    const [logoBase64, setLogoBase64] = React.useState(team?.logoURL || "");
-    const [loading, setLoading] = React.useState(false);
-
-    // Helper to process Logo
-    const handleLogoChange = (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target.result;
-        img.onload = () => {
-          const canvas = document.createElement("canvas");
-          const size = 300; // Standardize logo size
-          canvas.width = size;
-          canvas.height = size;
-          const ctx = canvas.getContext("2d");
-          ctx.drawImage(img, 0, 0, size, size);
-          setLogoBase64(canvas.toDataURL("image/png", 0.8));
-        };
-      };
-    };
-
-    if (!isOpen) return null;
-
-    return (
-      <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
-        <div className="bg-[#1C2128] border border-white/10 w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl">
-          <h3 className="text-xl font-black text-white uppercase italic mb-6">
-            Edit Team Brand
-          </h3>
-
-          <div className="flex flex-col items-center mb-8">
-            <div
-              className="relative group cursor-pointer"
-              onClick={() => document.getElementById("logo-input").click()}>
-              <div className="w-32 h-32 rounded-3xl bg-[#0F1115] border-4 border-dashed border-white/10 flex items-center justify-center overflow-hidden group-hover:border-teal-500/50 transition-all">
-                {logoBase64 ? (
-                  <img
-                    src={logoBase64}
-                    className="w-full h-full object-contain p-2"
-                  />
-                ) : (
-                  <span className="text-4xl">🛡️</span>
-                )}
-              </div>
-              <p className="text-[10px] text-slate-500 font-black uppercase mt-3 tracking-widest text-center">
-                Click to upload Logo
-              </p>
-              <input
-                id="logo-input"
-                type="file"
-                hidden
-                onChange={handleLogoChange}
-                accept="image/*"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-4 mb-8">
-            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">
-              Team Name
-            </label>
-            <input
-              className="w-full bg-[#0F1115] border border-white/10 rounded-2xl px-6 py-4 text-white font-bold outline-none focus:border-teal-500/50"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
-
-          <div className="flex gap-3">
-            <button
-              onClick={onClose}
-              className="flex-1 py-4 text-slate-500 font-black uppercase text-xs">
-              Cancel
-            </button>
-            <button
-              onClick={() => onSave(team.id, { name, logoURL: logoBase64 })}
-              className="flex-1 bg-teal-600 hover:bg-teal-500 text-white font-black py-4 rounded-2xl uppercase text-xs shadow-lg shadow-teal-900/40 transition-all">
-              Save Brand
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   /* --------------------------------------------
       Load tournament + permissions
-    --------------------------------------------- */
+     --------------------------------------------- */
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -206,7 +98,7 @@ export default function TournamentDetails() {
 
   /* --------------------------------------------
       Load teams
-    --------------------------------------------- */
+     --------------------------------------------- */
   useEffect(() => {
     if (!id) return;
     const loadTeams = async () => {
@@ -222,7 +114,7 @@ export default function TournamentDetails() {
 
   /* --------------------------------------------
       Load matches
-    --------------------------------------------- */
+     --------------------------------------------- */
   useEffect(() => {
     if (!id) return;
     const loadMatches = async () => {
@@ -240,14 +132,15 @@ export default function TournamentDetails() {
 
   /* --------------------------------------------
       Toggle Auction Mode
-    --------------------------------------------- */
+     --------------------------------------------- */
   const isAuctionEnabled = !!tournamentData?.isAuction;
 
-  // ✅ Fixed Logic: Check explicit state OR if rosters have players
+  // ✅ IMPROVED LOGIC: Primarily trust the explicit 'auctionState' flag
+  // This ensures that if we reset the DB flag to 'PENDING', the button shows up
+  // even if there is some lingering data.
   const auctionInitialized =
     tournamentData?.auctionState === "READY" ||
-    tournamentData?.auctionState === "ACTIVE" ||
-    tournamentTeams.some((t) => Array.isArray(t.roster) && t.roster.length > 0);
+    tournamentData?.auctionState === "ACTIVE";
 
   const toggleAuctionMode = async () => {
     if (!canEdit) return;
@@ -259,8 +152,19 @@ export default function TournamentDetails() {
 
     try {
       const ref = doc(db, "tournaments", id);
-      await updateDoc(ref, { isAuction: newStatus });
-      setTournamentData((prev) => ({ ...prev, isAuction: newStatus }));
+
+      const updateData = { isAuction: newStatus };
+
+      // ✅ CRITICAL FIX: If disabling, reset the state to PENDING.
+      // This ensures that when you re-enable it, the "Init Auction" button reappears.
+      if (newStatus === false) {
+        updateData.auctionState = "PENDING";
+      }
+
+      await updateDoc(ref, updateData);
+
+      // Update local state immediately so UI changes without refresh
+      setTournamentData((prev) => ({ ...prev, ...updateData }));
     } catch (e) {
       console.error(e);
       alert("Failed to update tournament mode.");
@@ -293,9 +197,8 @@ export default function TournamentDetails() {
           auctionState: "READY",
         });
 
-        // 3. ✅ CRITICAL: Create the Auction Console State Document
+        // 3. Create the Auction Console State Document
         const auctionStateRef = doc(db, "tournaments", id, "auction", "state");
-        // Use set() instead of update() to ensure creation
         batch.set(auctionStateRef, {
           status: "READY",
           currentPlayerId: null,
@@ -370,58 +273,69 @@ export default function TournamentDetails() {
             </div>
           </div>
 
-          {canEdit && (
-            <div className="flex flex-wrap gap-3">
-              {/* 1. ADD MATCH BUTTON (Always Visible) */}
+          {/* ACTIONS AREA */}
+          <div className="flex flex-wrap gap-3">
+            {/* 1. PUBLIC ACTION: WATCH LIVE */}
+            {/* Visible to everyone IF auction is initialized */}
+            {isAuctionEnabled && auctionInitialized && (
               <button
-                onClick={() => setShowScheduler(!showScheduler)}
-                className="bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 font-bold px-5 py-3 rounded-xl shadow-lg flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest">
-                <span>{showScheduler ? "✕" : "➕"}</span>{" "}
-                {showScheduler ? "Hide Scheduler" : "Add Match"}
+                onClick={() => navigate(`/tournaments/${id}/auction`)}
+                className={`font-bold px-5 py-3 rounded-xl shadow-lg flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest ${
+                  canEdit
+                    ? "bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white shadow-orange-900/40 border-b-4 border-orange-800 active:border-b-0 active:translate-y-1"
+                    : "bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white shadow-red-900/40 animate-pulse border border-red-500/50"
+                }`}>
+                <span>{canEdit ? "🔨" : "🔴"}</span>
+                {canEdit ? "Enter Console" : "Watch Live"}
               </button>
+            )}
 
-              {/* 2. MODE SPECIFIC ACTIONS */}
-              {isAuctionEnabled ? (
-                <>
-                  {!auctionInitialized ? (
-                    <button
-                      onClick={handleInitializeTournament}
-                      className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold px-5 py-3 rounded-xl shadow-lg shadow-purple-900/20 flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest">
-                      <span>🔨</span> Init Auction
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => navigate(`/tournaments/${id}/auction`)}
-                      className="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white font-bold px-5 py-3 rounded-xl shadow-lg shadow-orange-900/40 flex items-center gap-2 transition-all border-b-4 border-orange-800 active:border-b-0 active:translate-y-1 text-xs uppercase tracking-widest">
-                      <span>🔨</span> Enter Auction Console
-                    </button>
-                  )}
+            {/* 2. ADMIN ONLY ACTIONS */}
+            {canEdit && (
+              <>
+                <button
+                  onClick={() => setShowScheduler(!showScheduler)}
+                  className="bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 font-bold px-5 py-3 rounded-xl shadow-lg flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest">
+                  <span>{showScheduler ? "✕" : "➕"}</span>{" "}
+                  {showScheduler ? "Hide Scheduler" : "Add Match"}
+                </button>
 
-                  <button
-                    onClick={toggleAuctionMode}
-                    className="bg-red-900/10 text-red-500 border border-red-500/20 hover:bg-red-900/20 font-bold px-4 py-3 rounded-xl transition-all text-xs uppercase tracking-widest">
-                    Disable Auction
-                  </button>
-                </>
-              ) : (
-                <>
-                  {matches.length === 0 && (
-                    <button
-                      onClick={handleInitializeTournament}
-                      className="bg-gradient-to-r from-teal-600 to-emerald-600 text-white font-bold px-5 py-3 rounded-xl shadow-lg shadow-teal-900/20 flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest">
-                      <span>📅</span> Auto Fixtures
-                    </button>
-                  )}
+                {isAuctionEnabled ? (
+                  <>
+                    {!auctionInitialized && (
+                      <button
+                        onClick={handleInitializeTournament}
+                        className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold px-5 py-3 rounded-xl shadow-lg shadow-purple-900/20 flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest">
+                        <span>🔨</span> Init Auction
+                      </button>
+                    )}
 
-                  <button
-                    onClick={toggleAuctionMode}
-                    className="bg-[#0F1115] text-slate-400 border border-white/10 hover:border-white/20 hover:text-white font-bold px-4 py-3 rounded-xl transition-all text-xs uppercase tracking-widest flex items-center gap-2">
-                    <span>⚙️</span> Enable Auction Mode
-                  </button>
-                </>
-              )}
-            </div>
-          )}
+                    <button
+                      onClick={toggleAuctionMode}
+                      className="bg-red-900/10 text-red-500 border border-red-500/20 hover:bg-red-900/20 font-bold px-4 py-3 rounded-xl transition-all text-xs uppercase tracking-widest">
+                      Disable Auction
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {matches.length === 0 && (
+                      <button
+                        onClick={handleInitializeTournament}
+                        className="bg-gradient-to-r from-teal-600 to-emerald-600 text-white font-bold px-5 py-3 rounded-xl shadow-lg shadow-teal-900/20 flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest">
+                        <span>📅</span> Auto Fixtures
+                      </button>
+                    )}
+
+                    <button
+                      onClick={toggleAuctionMode}
+                      className="bg-[#0F1115] text-slate-400 border border-white/10 hover:border-white/20 hover:text-white font-bold px-4 py-3 rounded-xl transition-all text-xs uppercase tracking-widest flex items-center gap-2">
+                      <span>⚙️</span> Enable Auction Mode
+                    </button>
+                  </>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -447,35 +361,13 @@ export default function TournamentDetails() {
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           tournamentId={id}
-          tournamentData={tournamentData}
+          tournament={tournamentData} // ✅ Correct Prop Name
           tournamentTeams={tournamentTeams}
           matches={matches}
           canEdit={canEdit}
           isOwner={isOwner}
           isAuctionEnabled={isAuctionEnabled}
-          tournament={tournamentData}
         />
-      </div>
-
-      {/* ✅ CORRECTED: Mapping over tournamentTeams instead of teams */}
-      <div className="p-4 mt-8 max-w-7xl mx-auto space-y-6">
-        {tournamentTeams.map((t) => (
-          <TeamBanner
-            key={t.id}
-            team={t}
-            canEdit={canEdit}
-            onEditClick={(team) => setEditingTeam(team)}
-          />
-        ))}
-
-        {editingTeam && (
-          <TeamEditModal
-            team={editingTeam}
-            isOpen={!!editingTeam}
-            onClose={() => setEditingTeam(null)}
-            onSave={handleUpdateTeam}
-          />
-        )}
       </div>
     </div>
   );

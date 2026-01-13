@@ -25,27 +25,75 @@ export const getNextBidAmount = (currentBid) => {
   return currentBid + 500;
 };
 
-/**
- * MANDATORY RULE: Purse Reserve (Section 1 & 5)
- * Checks if a team can afford the bid while ensuring they can still afford
- * enough players to reach the MIN_SQUAD_SIZE at the MIN_BASE_PRICE.
- */
 export const canAffordBid = (team, bidAmount, tournamentConfig) => {
-  const minSquadSize = parseInt(tournamentConfig?.minSquadSize || 11);
-  const minBasePrice = parseInt(tournamentConfig?.minBasePrice || 100);
+  // 1. Check Config (Default to 10 if missing to fix your specific issue)
+  const minSquadSize = parseInt(tournamentConfig?.minSquadSize || 10);
+  const minBasePrice = parseInt(tournamentConfig?.minBasePrice || 200);
 
-  const currentSquadSize = team.roster?.length || 0;
+  // 2. Get Current Roster Count
+  // We trust the array if it exists.
+  let currentSquadSize = team.roster?.length || 0;
+
+  // SAFETY CHECK:
+  // If roster is empty (0) but the team is valid, assume the Owner exists
+  // but hasn't loaded into the roster array yet.
+  if (currentSquadSize === 0 && (team.isOwner || team.ownerName)) {
+    currentSquadSize = 1;
+  }
+
   const purse = parseInt(team.purse || 0);
   const spent = parseInt(team.spent || 0);
   const remainingPurse = purse - spent;
 
+  // 3. Logic: Calculate Slots Needed
+  // (Target) - (Current + 1 for the player we are bidding on right now)
   const playersNeededToReachMin = Math.max(
     0,
     minSquadSize - (currentSquadSize + 1)
   );
+
   const reserveNeeded = playersNeededToReachMin * minBasePrice;
 
   return remainingPurse - bidAmount >= reserveNeeded;
+};
+
+export const validateBidRules = (team, player, bidAmount, config) => {
+  // Defaults based on your specific config
+  const MAX_SQUAD_SIZE = parseInt(config?.maxSquadSize || 11);
+  const MAX_ICONS = parseInt(config?.maxIconsPerTeam || 1); // Check your exact config key name
+  const MAX_BID_LIMIT = parseInt(config?.maxBidPerPlayer || 3000);
+
+  // 1. Check Max Squad Size
+  if ((team.roster?.length || 0) >= MAX_SQUAD_SIZE) {
+    return { allowed: false, reason: `Squad is full (Max ${MAX_SQUAD_SIZE}).` };
+  }
+
+  // 2. Check Icon Limit
+  if (player.isIcon) {
+    const currentIcons = team.roster?.filter((p) => p.isIcon).length || 0;
+    if (currentIcons >= MAX_ICONS) {
+      return { allowed: false, reason: "You already have an Icon player." };
+    }
+  }
+
+  // 3. Check Max Bid Limit (Hard Cap)
+  if (bidAmount > MAX_BID_LIMIT) {
+    return {
+      allowed: false,
+      reason: `Bid ₹${bidAmount} exceeds limit of ₹${MAX_BID_LIMIT}.`,
+    };
+  }
+
+  // 4. Check Financial Reserve (using your existing helper)
+  // We pass 'config' because canAffordBid needs minSquadSize/minBasePrice
+  if (!canAffordBid(team, bidAmount, config)) {
+    return {
+      allowed: false,
+      reason: "Insufficient funds (need reserve for min squad).",
+    };
+  }
+
+  return { allowed: true };
 };
 
 // --- SUBSCRIPTIONS ---
@@ -79,7 +127,7 @@ export function subscribePassedPlayers(tournamentId, callback) {
   });
 }
 
-// --- INITIALIZATION & SLOTS ---
+// --- INITIALIZATION ---
 
 export async function initializeAuction(tournamentId) {
   const ref = doc(db, "tournaments", tournamentId, "auction", "state");
@@ -89,7 +137,7 @@ export async function initializeAuction(tournamentId) {
     currentPlayer: null,
     highestBidderId: null,
     highestBidderName: null,
-    activeSlotId: null, // ✅ NEW: Track the round being auctioned
+    activeSlotId: null,
     history: [],
     updatedAt: serverTimestamp(),
   });
@@ -99,7 +147,7 @@ export const createAuctionSlot = async (tournamentId, slotData) => {
   const slotsRef = collection(db, "tournaments", tournamentId, "auction_slots");
   return await addDoc(slotsRef, {
     ...slotData,
-    status: "pending", // pending, live, completed
+    status: "pending",
     createdAt: Date.now(),
   });
 };
@@ -134,7 +182,6 @@ export async function resetAuction(tournamentId) {
   const playerSnap = await getDocs(playersRef);
   playerSnap.docs.forEach((doc) => batch.delete(doc.ref));
 
-  // ✅ Also clear rounds/slots on reset
   const slotsRef = collection(db, "tournaments", tournamentId, "auction_slots");
   const slotSnap = await getDocs(slotsRef);
   slotSnap.docs.forEach((doc) => batch.delete(doc.ref));
@@ -145,6 +192,7 @@ export async function resetAuction(tournamentId) {
 export const startBidding = async (tournamentId, player) => {
   const auctionRef = doc(db, "tournaments", tournamentId, "auction", "state");
 
+  // ✅ CRITICAL: We ensure auctionSlotId is passed to the live state
   const playerPayload = {
     id: player.id,
     originalId: player.originalPlayerId || player.originalId || null,
@@ -154,7 +202,7 @@ export const startBidding = async (tournamentId, player) => {
     isIcon: !!player.isIcon,
     isOwner: !!player.isOwner,
     photoURL: player.photoURL || "",
-    auctionSlotId: player.auctionSlotId || null, // ✅ Sync slot data
+    auctionSlotId: player.auctionSlotId || null,
   };
 
   const updateData = {
@@ -174,125 +222,54 @@ export const startBidding = async (tournamentId, player) => {
   }
 };
 
-export const directBuyPlayer = async (
-  tournamentId,
-  teamId,
-  teamName,
-  player
-) => {
-  if (
-    !window.confirm(
-      `⚡ Buy ${player.name} immediately for ₹${player.basePrice}?`
-    )
-  )
-    return;
-
-  const auctionRef = doc(db, "tournaments", tournamentId, "auction", "state");
-  const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
-  const playerRef = doc(
-    db,
-    "tournaments",
-    tournamentId,
-    "auctionPlayers",
-    player.id
-  );
-
-  try {
-    await runTransaction(db, async (tx) => {
-      const teamSnap = await tx.get(teamRef);
-      if (!teamSnap.exists()) throw "Team missing";
-
-      // 1. Update Player Status
-      tx.update(playerRef, {
-        status: "SOLD",
-        teamId: teamId,
-        soldPrice: Number(player.basePrice),
-        bidHistory: [
-          { bid: player.basePrice, bidderName: teamName, type: "DIRECT_BUY" },
-        ],
-      });
-
-      // 2. Update Team Wallet & Roster
-      tx.update(teamRef, {
-        spent: increment(Number(player.basePrice)), // ✅ Now this will work
-        roster: arrayUnion({
-          id: player.id,
-          name: player.name,
-          role: player.role,
-          soldPrice: Number(player.basePrice),
-          photoURL: player.photoURL || "",
-          isDirectBuy: true,
-        }),
-        lockedSlots: arrayUnion(player.auctionSlotId),
-      });
-
-      // 3. Reset Auction
-      tx.update(auctionRef, {
-        status: "PENDING",
-        currentPlayer: null,
-        currentBid: 0,
-        highestBidderId: null,
-        highestBidderName: null,
-      });
-    });
-  } catch (error) {
-    console.error("Direct Buy Failed:", error);
-    alert("Transaction failed: " + error.message);
-  }
-};
+// --- BIDDING & TRANSACTIONS ---
 
 export async function placeBid(tournamentId, teamId, teamName, amount) {
   const auctionRef = doc(db, "tournaments", tournamentId, "auction", "state");
   const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
+  const tournamentRef = doc(db, "tournaments", tournamentId);
 
   try {
     await runTransaction(db, async (tx) => {
-      // 1. Get Auction State
+      // 1. Get State
       const aucSnap = await tx.get(auctionRef);
       if (!aucSnap.exists()) throw new Error("Auction not initialized");
-      const auction = aucSnap.data(); // ✅ 'auction' is defined here
+      const auction = aucSnap.data();
 
       if (auction.status !== "LIVE") throw new Error("Bidding is closed");
 
-      // 2. Get Team State
+      // 2. Get Team
       const teamSnap = await tx.get(teamRef);
       if (!teamSnap.exists()) throw new Error("Team not found");
-      const team = teamSnap.data(); // ✅ 'team' is defined here
+      const team = teamSnap.data();
 
-      // ✅ FIX: Check for Locked Slot NOW (after both variables exist)
-      // If the team used "Direct Buy" for this slot, they are banned from bidding
-      if (team.lockedSlots?.includes(auction.activeSlotId)) {
-        throw new Error(
-          "⛔ You used Direct Buy for this round. Bidding is locked."
+      // 3. Get Config
+      const tournSnap = await tx.get(tournamentRef);
+      const config = tournSnap.exists() ? tournSnap.data() : {};
+
+      // --- NEW VALIDATION LOGIC START ---
+      // We validate against the CURRENT player being auctioned
+      const currentPlayer = auction.currentPlayer;
+      if (!currentPlayer) throw new Error("No active player found.");
+
+      const validation = validateBidRules(team, currentPlayer, amount, config);
+      if (!validation.allowed) {
+        throw new Error("⛔ " + validation.reason);
+      }
+      // --- NEW VALIDATION LOGIC END ---
+
+      // 4. Rule Check: Limit 1 Player Per Slot (Existing Logic)
+      if (config.limitOnePlayerPerSlot && auction.activeSlotId) {
+        const currentSlotId = String(auction.activeSlotId);
+        const alreadyWonInSlot = team.roster?.some(
+          (p) => String(p.auctionSlotId) === currentSlotId
         );
-      }
-
-      // 3. Validation Logic
-      if (!auction.highestBidderId) {
-        // Opening Bid Logic
-        if (amount < (auction.currentPlayer?.basePrice || 0)) {
-          throw new Error("Opening bid must be at least Base Price");
-        }
-      } else {
-        // Counter Bid Logic
-        if (amount <= (auction.currentBid || 0)) {
-          throw new Error("Bid must be higher than current price");
+        if (alreadyWonInSlot) {
+          throw new Error("⛔ You have already bought a player in this slot.");
         }
       }
 
-      // 4. Budget Check
-      const currentSpent = team.spent || 0;
-      const purseLimit = team.purse || 0;
-
-      if (purseLimit - currentSpent < amount) {
-        throw new Error(
-          `Insufficient funds. You only have ₹${
-            purseLimit - currentSpent
-          } left.`
-        );
-      }
-
-      // 5. Update Bid History & State
+      // 5. Update Bid
       const currentEntry = {
         bid: auction.currentBid || 0,
         bidderId: auction.highestBidderId || null,
@@ -316,6 +293,92 @@ export async function placeBid(tournamentId, teamId, teamName, amount) {
   }
 }
 
+// ✅ FIXED: Direct Buy - Now saves auctionSlotId to roster
+export const directBuyPlayer = async (
+  tournamentId,
+  teamId,
+  teamName,
+  player
+) => {
+  if (
+    !window.confirm(
+      `⚡ Buy ${player.name} immediately for ₹${player.basePrice}?`
+    )
+  )
+    return;
+
+  const auctionRef = doc(db, "tournaments", tournamentId, "auction", "state");
+  const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
+  const tournamentRef = doc(db, "tournaments", tournamentId); // Added this
+  const playerRef = doc(
+    db,
+    "tournaments",
+    tournamentId,
+    "auctionPlayers",
+    player.id
+  );
+
+  try {
+    await runTransaction(db, async (tx) => {
+      const teamSnap = await tx.get(teamRef);
+      if (!teamSnap.exists()) throw new Error("Team missing");
+      const team = teamSnap.data();
+
+      // Get Config for Validation
+      const tournSnap = await tx.get(tournamentRef);
+      const config = tournSnap.exists() ? tournSnap.data() : {};
+
+      const price = Number(player.basePrice) || 0;
+
+      // --- NEW VALIDATION LOGIC ---
+      const validation = validateBidRules(team, player, price, config);
+      if (!validation.allowed) {
+        throw new Error("⛔ " + validation.reason);
+      }
+      // ----------------------------
+
+      const slotId = player.auctionSlotId || null;
+
+      // 1. Update Player
+      tx.update(playerRef, {
+        status: "SOLD",
+        teamId: teamId,
+        soldPrice: price,
+        bidHistory: [{ bid: price, bidderName: teamName, type: "DIRECT_BUY" }],
+      });
+
+      // 2. Update Team
+      tx.update(teamRef, {
+        spent: increment(price),
+        roster: arrayUnion({
+          id: player.id,
+          name: player.name,
+          role: player.role,
+          soldPrice: price,
+          photoURL: player.photoURL || "",
+          auctionSlotId: slotId,
+          isDirectBuy: true,
+          isIcon: !!player.isIcon,
+        }),
+        lockedSlots: slotId ? arrayUnion(slotId) : undefined,
+      });
+
+      // 3. Reset Auction
+      tx.update(auctionRef, {
+        status: "PENDING",
+        currentPlayer: null,
+        currentBid: 0,
+        highestBidderId: null,
+        highestBidderName: null,
+      });
+    });
+  } catch (error) {
+    console.error("Direct Buy Failed:", error);
+    alert("Transaction failed: " + error.message);
+  }
+};
+
+// ✅ FIXED: Mark Sold - Now saves auctionSlotId to roster
 export const markSold = async (tournamentId) => {
   const auctionRef = doc(db, "tournaments", tournamentId, "auction", "state");
 
@@ -342,6 +405,9 @@ export const markSold = async (tournamentId) => {
     const team = teamSnap.data();
     const finalPrice = Number(currentBid) || 0;
 
+    // ✅ Grab Slot ID from the live state
+    const currentSlotId = currentPlayer.auctionSlotId || null;
+
     const rosterItem = {
       id: currentPlayer.id,
       originalId: currentPlayer.originalId,
@@ -351,16 +417,20 @@ export const markSold = async (tournamentId) => {
       isIcon: !!currentPlayer.isIcon,
       isOwner: !!currentPlayer.isOwner,
       photoURL: currentPlayer.photoURL || "",
+
+      // ✅ CRITICAL: Save this for the limit rule to work
+      auctionSlotId: currentSlotId,
+
+      isDirectBuy: false,
     };
 
-    // Update Team (Wallet + Roster)
+    // Update Team
     tx.update(teamRef, {
       spent: (Number(team.spent) || 0) + finalPrice,
       roster: arrayUnion(rosterItem),
-      players: arrayUnion(currentPlayer.name),
     });
 
-    // Update Player Status
+    // Update Player
     const playerRef = doc(
       db,
       "tournaments",
@@ -408,9 +478,6 @@ export async function markUnsold(tournamentId, playerId) {
   });
 }
 
-/**
- * TRANSACTION-SAFE BIDDING (Consolidated with existing placeBid logic)
- */
 export const placeSafeBid = async (
   tournamentId,
   matchId,
@@ -433,7 +500,6 @@ export async function undoLastBid(tournamentId) {
       const history = auction.bidHistory || [];
 
       if (history.length === 0) {
-        // If no history, we revert to the starting state (Base Price, No Bidder)
         tx.update(auctionRef, {
           currentBid: auction.currentPlayer?.basePrice || 0,
           highestBidderId: null,
@@ -444,13 +510,9 @@ export async function undoLastBid(tournamentId) {
         return;
       }
 
-      // 1. Get the last state from the history stack
       const previousState = history[history.length - 1];
-
-      // 2. Remove that entry from the history array
       const newHistory = history.slice(0, -1);
 
-      // 3. Revert the main state to the previous values
       tx.update(auctionRef, {
         currentBid: previousState.bid,
         highestBidderId: previousState.bidderId,
