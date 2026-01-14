@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { doc, onSnapshot } from "firebase/firestore";
+import { db } from "../utils/firebase"; // Ensure db is imported
 import {
   findUserByEmail,
   addScorerToTournament,
@@ -7,18 +9,44 @@ import {
   removeViewerFromTournament,
 } from "../utils/firestore";
 
-export default function TournamentAccessManager({ tournament }) {
+// Updated to accept tournamentId OR tournament object
+export default function TournamentAccessManager({ tournamentId, tournament: initialData }) {
+  const [data, setData] = useState(initialData || null);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("scorer");
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
 
-  // ✅ CRITICAL FIX: Guard Clause
-  // If tournament data isn't loaded yet, return null (or a loader) to prevent crash
-  if (!tournament) {
+  // ✅ REAL-TIME LISTENER
+  // This ensures that if the parent passes null, we fetch the data ourselves
+  useEffect(() => {
+    // If we already have data via props, use it
+    if (initialData) {
+      setData(initialData);
+      return;
+    }
+
+    // Otherwise, fetch it using the ID
+    if (tournamentId) {
+      const unsub = onSnapshot(doc(db, "tournaments", tournamentId), (docSnap) => {
+        if (docSnap.exists()) {
+          setData({ id: docSnap.id, ...docSnap.data() });
+        }
+      });
+      return () => unsub();
+    }
+  }, [tournamentId, initialData]);
+
+  // If we still have no data after trying to fetch
+  if (!data) {
     return (
-      <div className="p-4 text-slate-500 italic text-xs">
-        Loading access controls...
+      <div className="p-6 bg-[#1C2128] border border-white/5 rounded-2xl flex flex-col items-center justify-center animate-pulse">
+        <div className="text-slate-500 italic text-xs mb-2">
+            Loading access controls...
+        </div>
+        <div className="text-[10px] text-slate-600">
+            (Waiting for Tournament ID: {tournamentId || "None provided"})
+        </div>
       </div>
     );
   }
@@ -36,9 +64,9 @@ export default function TournamentAccessManager({ tournament }) {
         return;
       }
 
-      // ✅ SAFE CHECK: Use (array || []) to prevent crashing if fields are missing
-      const currentScorers = tournament.scorers || [];
-      const currentViewers = tournament.viewers || [];
+      // ✅ SAFE CHECK: Use (array || []) to prevent crashing
+      const currentScorers = data.scorers || [];
+      const currentViewers = data.viewers || [];
 
       if (
         currentScorers.includes(targetUid) ||
@@ -49,11 +77,12 @@ export default function TournamentAccessManager({ tournament }) {
         return;
       }
 
+      // Use data.id (from local state)
       if (role === "scorer") {
-        await addScorerToTournament(tournament.id, targetUid);
+        await addScorerToTournament(data.id, targetUid);
         setMsg("✅ Scorer added!");
       } else {
-        await addViewerToTournament(tournament.id, targetUid);
+        await addViewerToTournament(data.id, targetUid);
         setMsg("✅ Viewer added!");
       }
       setEmail("");
@@ -69,17 +98,18 @@ export default function TournamentAccessManager({ tournament }) {
     if (!window.confirm("Remove user?")) return;
     try {
       if (currentRole === "scorer")
-        await removeScorerFromTournament(tournament.id, uid);
-      else await removeViewerFromTournament(tournament.id, uid);
+        await removeScorerFromTournament(data.id, uid);
+      else await removeViewerFromTournament(data.id, uid);
     } catch (err) {
       console.error(err);
       alert("Error removing user");
     }
   };
 
-  // ✅ Prepare lists safely
-  const scorersList = tournament.scorers || [];
-  const viewersList = tournament.viewers || [];
+  // ✅ Prepare lists safely from local state
+  const scorersList = data.scorers || [];
+  const viewersList = data.viewers || [];
+  const ownerId = data.ownerId; // Get owner ID from data
 
   return (
     <div className="bg-[#1C2128] border border-white/5 rounded-2xl p-6 shadow-xl">
@@ -147,11 +177,11 @@ export default function TournamentAccessManager({ tournament }) {
                 key={uid}
                 className="flex justify-between items-center bg-[#161920] p-2.5 rounded-lg border border-white/5 hover:border-white/10 transition-colors group">
                 <span className="font-mono text-xs text-slate-300">
-                  {uid === tournament.ownerId
+                  {uid === ownerId
                     ? "Owner (Creator)"
                     : uid.slice(0, 12) + "..."}
                 </span>
-                {uid !== tournament.ownerId && (
+                {uid !== ownerId && (
                   <button
                     onClick={() => handleRemove(uid, "scorer")}
                     className="text-slate-600 hover:text-red-400 text-[10px] uppercase font-black px-2 py-1 rounded hover:bg-red-900/20 transition-all">

@@ -366,30 +366,7 @@ export default function TournamentTabs({
 
             {/* Owner Zone */}
             {isOwner && (
-              <div className="space-y-6">
-                <div className="bg-[#1C2128] border border-white/5 rounded-2xl p-6 shadow-xl">
-                  <h3 className="text-slate-100 font-bold text-lg mb-4 flex items-center gap-2">
-                    <span className="text-yellow-500">🔑</span> Access Control
-                  </h3>
-                  <TournamentAccessManager tournament={tournamentData} />
-                </div>
-                <div className="bg-red-900/10 border border-red-500/20 rounded-2xl p-6">
-                  <h4 className="text-red-400 font-bold mb-2 uppercase text-xs tracking-widest">
-                    Danger Zone
-                  </h4>
-                  <p className="text-red-400/50 text-xs mb-4">
-                    This action cannot be undone.
-                  </p>
-                  <button
-                    className="bg-red-600/10 text-red-400 border border-red-500/50 hover:bg-red-600 hover:text-white px-4 py-3 rounded-xl font-bold w-full transition-all"
-                    onClick={() => {
-                      if (window.confirm("Delete Tournament?"))
-                        alert("Feature Pending: Delete");
-                    }}>
-                    Delete Tournament
-                  </button>
-                </div>
-              </div>
+              <TournamentAccessManager tournament={tournamentData} tournamentId={tournamentId} />
             )}
           </div>
         )}

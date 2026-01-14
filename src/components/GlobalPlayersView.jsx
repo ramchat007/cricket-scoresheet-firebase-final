@@ -573,7 +573,7 @@ export default function GlobalPlayersView() {
                                   "https://cdn-icons-png.flaticon.com/512/847/847969.png"
                                 }
                                 alt=""
-                                className="w-12 h-12 rounded-xl object-cover bg-[#0F1115] border border-white/10 flex-shrink-0 shadow-sm"
+                                className="w-12 h-12 rounded-xl object-cover bg-[#0F1115] border border-white/10 flex-shrink-0 shadow-sm cursor-pointer"
                                 onError={(e) => {
                                   e.target.src =
                                     "https://cdn-icons-png.flaticon.com/512/847/847969.png";
@@ -644,7 +644,10 @@ export default function GlobalPlayersView() {
                                       "https://cdn-icons-png.flaticon.com/512/847/847969.png"
                                     }
                                     alt={player.name}
-                                    className="w-32 h-32 md:w-40 md:h-40 rounded-2xl object-cover border-2 border-teal-500/30 shadow-2xl shadow-teal-900/20 bg-[#161920]"
+                                    className="w-32 h-32 md:w-40 md:h-40 rounded-2xl object-cover border-2 border-teal-500/30 shadow-2xl shadow-teal-900/20 bg-[#161920] cursor-pointer"
+                                    onClick={() => {
+                                      if (player.photoURL) setPreviewImage(player.photoURL);
+                                    }}
                                     onError={(e) => {
                                       e.target.src =
                                         "https://cdn-icons-png.flaticon.com/512/847/847969.png";
@@ -795,8 +798,12 @@ export default function GlobalPlayersView() {
             <div className="relative max-w-4xl max-h-[90vh]">
               <img
                 src={previewImage}
-                alt="Payment Proof"
-                className="max-w-full max-h-[85vh] rounded-xl shadow-2xl border border-white/10"
+                alt="Preview"
+                className="rounded-xl shadow-2xl border border-white/10"
+                style={{
+                  maxWidth: "70vw",   // ✅ as requested
+                  maxHeight: "70vh",  // ✅ as requested
+                }}
                 onClick={(e) => e.stopPropagation()}
               />
               <button

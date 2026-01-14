@@ -8,15 +8,46 @@ import {
   query,
   where,
   runTransaction,
+  arrayUnion
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { listGlobalPlayers, createGlobalPlayer } from "../utils/firestore";
+
+// --- UTILITY: COMPRESS IMAGE TO BASE64 ---
+// (Paste this at the top of your file or import it)
+const compressImage = (file, maxWidth = 400) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const ratio = maxWidth / img.width;
+        canvas.width = maxWidth;
+        canvas.height = img.height * ratio;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        // Compress to JPEG with 0.7 quality
+        resolve(canvas.toDataURL("image/jpeg", 0.7));
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+};
 
 // --- SUB-COMPONENT: OWNER ASSIGNMENT FORM (Form Modal) ---
 const OwnerAssignmentForm = ({ team, globalPlayers, onSave, onCancel }) => {
   const [mode, setMode] = useState("existing");
   const [teamName, setTeamName] = useState(team?.name || "");
   const [purse, setPurse] = useState(team?.purse || 10000);
+  
+  // LOGO STATE (Stores Base64 string directly)
+  const [logoBase64, setLogoBase64] = useState(team?.logoUrl || null);
+  const [processingImage, setProcessingImage] = useState(false);
+
   const [selectedPlayerId, setSelectedPlayerId] = useState(team?.ownerId || "");
   const [newOwnerData, setNewOwnerData] = useState({
     name: "",
@@ -26,6 +57,22 @@ const OwnerAssignmentForm = ({ team, globalPlayers, onSave, onCancel }) => {
   });
   const [isPlayer, setIsPlayer] = useState(team?.isOwnerPlaying || false);
   const [playerRole, setPlayerRole] = useState("All-Rounder");
+
+  // --- NEW HANDLER: Compress & Set State ---
+  const handleImageUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    setProcessingImage(true);
+    try {
+      const compressed = await compressImage(file, 400); // 400px width
+      setLogoBase64(compressed);
+    } catch (error) {
+      alert("Failed to process image.");
+      console.error(error);
+    } finally {
+      setProcessingImage(false);
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -43,6 +90,7 @@ const OwnerAssignmentForm = ({ team, globalPlayers, onSave, onCancel }) => {
       newOwnerData,
       isPlayer,
       playerRole,
+      logoUrl: logoBase64 // Pass the base64 string directly
     });
   };
 
@@ -53,6 +101,35 @@ const OwnerAssignmentForm = ({ team, globalPlayers, onSave, onCancel }) => {
           {team?.id ? "Edit Team & Owner" : "Create New Team"}
         </h3>
       </div>
+
+      {/* --- LOGO UPLOAD SECTION --- */}
+      <div className="flex justify-center mb-4">
+        <div className="relative group">
+          <div className={`w-24 h-24 rounded-full bg-gray-900 border-2 border-dashed border-gray-600 flex items-center justify-center overflow-hidden ${processingImage ? "animate-pulse" : ""}`}>
+            {logoBase64 ? (
+              <img 
+                src={logoBase64} 
+                alt="Logo Preview" 
+                className="w-full h-full object-cover" 
+              />
+            ) : (
+              <span className="text-gray-500 text-xs text-center font-bold px-2">
+                {processingImage ? "Processing..." : "Upload Logo"}
+              </span>
+            )}
+          </div>
+          <label className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 rounded-full cursor-pointer transition-opacity">
+            <span className="text-white text-xs font-bold">Change</span>
+            <input 
+              type="file" 
+              accept="image/*" 
+              className="hidden" 
+              onChange={handleImageUpload}
+            />
+          </label>
+        </div>
+      </div>
+
       <div className="bg-gray-800/50 p-3 rounded-lg border border-gray-700">
         <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
           Team Name
@@ -187,6 +264,7 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
   const [editingTeam, setEditingTeam] = useState(null);
   const [globalPlayers, setGlobalPlayers] = useState([]);
 
+  // ... (fetchData and useEffects remain unchanged) ...
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -257,11 +335,13 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
   const handleSave = async (payload) => {
     setProcessing(true);
     try {
+      // NOTE: No Storage upload needed. 'payload.logoUrl' contains the base64 string.
+
       await runTransaction(db, async (transaction) => {
         let finalOwnerId = payload.selectedPlayerId;
         let ownerDetails = null;
 
-        // 1. Handle New Profile Creation (Transactionally creates Global Player if needed)
+        // 1. Handle New Profile
         if (payload.mode === "new") {
           const newPlayerRef = doc(collection(db, "globalPlayers"));
           transaction.set(newPlayerRef, {
@@ -283,6 +363,7 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
           purse: payload.purse,
           ownerId: finalOwnerId,
           ownerName: ownerDetails.name,
+          logoUrl: payload.logoUrl || null // Save Base64 string directly
         };
 
         let teamRef;
@@ -294,7 +375,7 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
           transaction.set(teamRef, { ...teamData, spent: 0, roster: [], stats: { played: 0, won: 0, lost: 0, points: 0, nrr: 0 } });
         }
 
-        // 3. Handle "Owner as Player" Logic (Ensures Squad and Auction Pool stay synced)
+        // 3. Handle "Owner as Player"
         if (payload.isPlayer) {
           const auctionPlayersRef = collection(db, `tournaments/${tournamentId}/auctionPlayers`);
           const existingQuery = query(auctionPlayersRef, where("originalPlayerId", "==", finalOwnerId));
@@ -322,9 +403,8 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
             transaction.set(newAPRef, { ...auctionPlayerData, basePrice: 0, statsSnapshot: ownerDetails.stats || {} });
           }
 
-          // Update Roster Array on Team
           transaction.update(teamRef, {
-            roster: [{
+            roster: arrayUnion({
               id: auctionPlayerDocId,
               name: ownerDetails.name,
               role: ownerDetails.role,
@@ -333,7 +413,7 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
               isIcon: true,
               originalId: finalOwnerId,
               photoURL: ownerDetails.photoURL
-            }]
+            })
           });
         }
       });
@@ -344,8 +424,6 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
       alert("Transaction failed: " + e.message);
     } finally { setProcessing(false); }
   };
-
-
 
   return (
     <div className="space-y-6">
@@ -362,14 +440,13 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
             Refresh
           </button>
           <button
-            onClick={() => setEditingTeam({ id: null, purse: 1000000 })}
+            onClick={() => setEditingTeam({ id: null, purse: 10000 })}
             className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black uppercase rounded-xl shadow-lg transition-colors">
             + Add Team
           </button>
         </div>
       </div>
 
-      {/* --- REPLACED TABLE WITH GRID CARDS --- */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {loading ? (
           <div className="col-span-full text-center p-12 text-teal-500 animate-pulse font-bold text-xs uppercase tracking-widest">
@@ -386,26 +463,36 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
               <div
                 key={t.id}
                 className="bg-[#1C2128] p-5 rounded-[2.5rem] shadow-xl border border-white/5 hover:border-teal-500/20 transition-all group relative">
-                {/* Edit Button Absolute */}
+                
                 <button
                   onClick={() => setEditingTeam(t)}
-                  className="absolute top-5 right-5 text-slate-500 hover:text-teal-400 bg-white/5 hover:bg-white/10 p-2 rounded-lg transition-all text-xs">
+                  className="absolute top-5 right-5 text-slate-500 hover:text-teal-400 bg-white/5 hover:bg-white/10 p-2 rounded-lg transition-all text-xs z-10">
                   ✎ Edit
                 </button>
 
-                <div className="mb-6">
-                  <div className="text-[8px] text-teal-500 uppercase font-black tracking-[0.2em] mb-1">
-                    Active Team
+                <div className="mb-6 flex items-center gap-4">
+                  {/* Logo Display */}
+                  <div className="h-16 w-16 rounded-full bg-black/40 border border-white/10 flex items-center justify-center overflow-hidden shrink-0">
+                    {t.logoUrl ? (
+                        <img src={t.logoUrl} alt={t.name} className="h-full w-full object-cover" />
+                    ) : (
+                        <span className="text-2xl">🛡️</span>
+                    )}
                   </div>
-                  <div className="font-black text-white text-xl uppercase italic leading-none pr-8 truncate">
-                    {t.name}
-                  </div>
-                  <div className="text-[10px] text-slate-500 font-bold mt-1">
-                    Owner: <span className="text-slate-300">{t.ownerName}</span>
+                  
+                  <div className="overflow-hidden">
+                    <div className="text-[8px] text-teal-500 uppercase font-black tracking-[0.2em] mb-1">
+                      Active Team
+                    </div>
+                    <div className="font-black text-white text-xl uppercase italic leading-none truncate">
+                      {t.name}
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-bold mt-1">
+                      Owner: <span className="text-slate-300">{t.ownerName}</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* RICH STATS GRID (Styled like Form) */}
                 <div className="flex flex-col gap-3">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-[#0F1115] p-4 rounded-2xl border border-white/5 shadow-inner">

@@ -24,9 +24,11 @@ const TeamStatsModal = ({ team, isOpen, onClose }) => {
       <div className="relative bg-[#1C2128] border border-white/10 w-full max-w-4xl rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
         <div className="bg-[#161920] p-6 border-b border-white/5 flex justify-between items-center">
           <div className="flex items-center gap-4">
-            {team.logo ? (
+            {/* UPDATED FIELD NAME: logoUrl */}
+            {team.logoUrl ? (
               <img
-                src={team.logo}
+                src={team.logoUrl}
+                alt={team.name}
                 className="w-16 h-16 rounded-2xl object-cover bg-black border border-white/10"
               />
             ) : (
@@ -118,6 +120,7 @@ const TeamStatsModal = ({ team, isOpen, onClose }) => {
                         <img
                           src={p.photoURL}
                           className="w-8 h-8 rounded-lg object-cover bg-[#161920]"
+                          alt={p.name}
                         />
                         <div className="flex flex-col">
                           <span className="font-bold text-white flex items-center gap-2">
@@ -201,9 +204,8 @@ export default function TeamsTab({
         return (
           <div
             key={team.id}
-            // ✅ ADDED 'relative' HERE - Critical for absolute positioning of children
             className="bg-[#1C2128] border border-white/5 rounded-[2rem] overflow-hidden shadow-xl hover:border-teal-500/30 transition-all duration-300 flex flex-col h-full group relative">
-            {/* ✅ SHARE BUTTON - Moved outside Header div, direct child of Card, Positioned Top-Right */}
+            
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -229,9 +231,10 @@ export default function TeamsTab({
             {/* Header */}
             <div className="p-6 pb-4 flex items-center gap-4">
               <div className="relative">
-                {team.logo ? (
+                {/* UPDATED FIELD NAME: logoUrl */}
+                {team.logoUrl ? (
                   <img
-                    src={team.logo}
+                    src={team.logoUrl}
                     alt={team.name}
                     className="w-16 h-16 rounded-2xl object-cover border-2 border-white/5 shadow-2xl bg-black"
                   />
@@ -319,6 +322,7 @@ export default function TeamsTab({
                       }
                       className="w-10 h-10 rounded-xl object-cover border border-white/10 grayscale group-hover/avatar:grayscale-0 transition-all"
                       title={player.name}
+                      alt={player.name}
                     />
                     <div className="absolute -top-1.5 -right-1.5 flex gap-0.5">
                       {player.isIcon && (

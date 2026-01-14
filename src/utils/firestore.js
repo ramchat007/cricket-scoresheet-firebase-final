@@ -570,6 +570,7 @@ export async function addTournament(tournamentId, meta = {}, ownerId = null) {
     name: meta.name || tournamentId,
     organizer: meta.organizer || "",
     location: meta.location || "",
+    date: data.date || null, // ✅ ADD THIS LINE
     format: meta.format || null,
 
     status: meta.status || "upcoming",

@@ -30,6 +30,12 @@ export default function Dashboard() {
   // 3. Determine which list to show
   const currentList = activeTab === "mine" ? myTournaments : allTournaments;
 
+  const formatDate = (dateString) => {
+    if (!dateString) return "Date TBA";
+    const options = { year: "numeric", month: "short", day: "numeric" };
+    return new Date(dateString).toLocaleDateString("en-US", options);
+  };
+
   // --- Helper: Status Badge ---
   const getStatusBadge = (status) => {
     const s = (status || "").toLowerCase();
@@ -222,7 +228,7 @@ export default function Dashboard() {
                       Start Date
                     </div>
                     <div className="font-medium text-gray-300">
-                      {t.startDate || "TBA"}
+                      {formatDate(t.date)}
                     </div>
                   </div>
                 </div>

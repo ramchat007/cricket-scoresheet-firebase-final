@@ -287,6 +287,10 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
   const [hasAccess, setHasAccess] = useState(false);
   const [checkingAccess, setCheckingAccess] = useState(true);
 
+  const [editingSlotId, setEditingSlotId] = useState(null);
+  const [editingSlotName, setEditingSlotName] = useState("");
+
+
   useEffect(() => {
     async function checkPermission() {
       if (!user) return setHasAccess(false), setCheckingAccess(false);
@@ -410,6 +414,37 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
     });
     setNewSlotName("");
   };
+
+  const handleEditSlot = (slot) => {
+      setEditingSlotId(slot.id);
+      setEditingSlotName(slot.name);
+    };
+
+    const handleCancelEdit = () => {
+      setEditingSlotId(null);
+      setEditingSlotName("");
+    };
+
+    const handleUpdateSlot = async (slotId) => {
+      if (!editingSlotName.trim()) {
+        alert("Slot name cannot be empty");
+        return;
+      }
+
+      await updateDoc(
+        doc(db, `tournaments/${tournamentId}/auction_slots`, slotId),
+        { name: editingSlotName.trim() }
+      );
+
+      setSlots((prev) =>
+        prev.map((s) =>
+          s.id === slotId ? { ...s, name: editingSlotName.trim() } : s
+        )
+      );
+
+      handleCancelEdit();
+    };
+
 
   const handleDeleteSlot = async (slotId) =>
     window.confirm("Delete?") &&
@@ -1036,20 +1071,64 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 </button>
               </div>
             </div>
-            {slots.map((s) => (
-              <div
-                key={s.id}
-                className="bg-[#1C2128] p-4 rounded-xl flex justify-between items-center mb-2 border border-white/5">
-                <span className="text-white font-bold">
-                  {s.order}. {s.name}
-                </span>
-                <button
-                  onClick={() => handleDeleteSlot(s.id)}
-                  className="text-slate-600 hover:text-red-500">
-                  🗑
-                </button>
-              </div>
-            ))}
+            {slots.map((s) => {
+              const isEditing = editingSlotId === s.id;
+
+              return (
+                <div
+                  key={s.id}
+                  className="bg-[#1C2128] p-4 rounded-xl flex justify-between items-center mb-2 border border-white/5">
+                  
+                  {/* LEFT SIDE */}
+                  <div className="flex-1">
+                    {isEditing ? (
+                      <input
+                        className="w-full bg-[#0F1115] border border-white/10 rounded-lg px-4 py-2 text-slate-200 outline-none"
+                        value={editingSlotName}
+                        onChange={(e) => setEditingSlotName(e.target.value)}
+                        autoFocus
+                      />
+                    ) : (
+                      <span className="text-white font-bold">
+                        {s.order}. {s.name}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* RIGHT ACTIONS */}
+                  <div className="flex gap-3 ml-4">
+                    {isEditing ? (
+                      <>
+                        <button
+                          onClick={() => handleUpdateSlot(s.id)}
+                          className="text-green-500 font-bold text-xs">
+                          Save
+                        </button>
+                        <button
+                          onClick={handleCancelEdit}
+                          className="text-slate-500 text-xs">
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => handleEditSlot(s)}
+                          className="text-slate-500 hover:text-cyan-400">
+                          ✎
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSlot(s.id)}
+                          className="text-slate-600 hover:text-red-500">
+                          🗑
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
           </div>
         )}
 
@@ -1057,7 +1136,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
           <MatchScheduler tournamentId={tournamentId} teams={teams} />
         )}
 
-        <div className="border-t border-red-500/10 pt-10">
+        {/* <div className="border-t border-red-500/10 pt-10">
           <div className="bg-red-900/5 border border-red-500/20 p-8 rounded-[2rem] flex justify-between items-center">
             <div>
               <h4 className="text-red-500 font-black uppercase text-xs">
@@ -1074,7 +1153,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
               {isResetting ? "Purging..." : "Destroy Data"}
             </button>
           </div>
-        </div>
+        </div> */}
       </div>
     </div>
   );
