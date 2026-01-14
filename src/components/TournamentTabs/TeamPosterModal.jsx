@@ -46,7 +46,7 @@ export default function TeamPosterModal({
         {/* Header Actions */}
         <div className="flex justify-between w-full text-white">
           <h3 className="font-black uppercase tracking-widest text-sm">
-            Preview Poster
+            <span>Preview Poster</span>
           </h3>
           <button onClick={onClose} className="text-slate-400 hover:text-white">
             ✕ Close
@@ -87,7 +87,14 @@ export default function TeamPosterModal({
                 {team.name}
               </h1>
               <div className="inline-block bg-gradient-to-r from-amber-500 to-yellow-600 text-black text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider">
-                Owned by {team.ownerName || "TBA"}
+                <div className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-500 to-yellow-600 text-black text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider whitespace-nowrap">
+                  <img
+                    src={roster[0].photoURL}
+                    className="w-8 h-8 rounded-md object-cover bg-black"
+                    crossOrigin="anonymous"
+                  />
+                  <span>Owned by {team.ownerName || "TBA"}</span>
+                </div>
               </div>
             </div>
 

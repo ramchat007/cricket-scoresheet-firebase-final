@@ -260,6 +260,8 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
 export default function AuctionAdminPanel({ tournamentId, onClose }) {
   const { user } = useAuth();
   const [tab, setTab] = useState("pool");
+  const [roleFilter, setRoleFilter] = useState("All");
+  const [slotFilter, setSlotFilter] = useState("All");
   const [poolFilter, setPoolFilter] = useState("PENDING");
   const [auctionPlayers, setAuctionPlayers] = useState([]);
   const [teams, setTeams] = useState([]);
@@ -289,7 +291,6 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
 
   const [editingSlotId, setEditingSlotId] = useState(null);
   const [editingSlotName, setEditingSlotName] = useState("");
-
 
   useEffect(() => {
     async function checkPermission() {
@@ -416,35 +417,34 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
   };
 
   const handleEditSlot = (slot) => {
-      setEditingSlotId(slot.id);
-      setEditingSlotName(slot.name);
-    };
+    setEditingSlotId(slot.id);
+    setEditingSlotName(slot.name);
+  };
 
-    const handleCancelEdit = () => {
-      setEditingSlotId(null);
-      setEditingSlotName("");
-    };
+  const handleCancelEdit = () => {
+    setEditingSlotId(null);
+    setEditingSlotName("");
+  };
 
-    const handleUpdateSlot = async (slotId) => {
-      if (!editingSlotName.trim()) {
-        alert("Slot name cannot be empty");
-        return;
-      }
+  const handleUpdateSlot = async (slotId) => {
+    if (!editingSlotName.trim()) {
+      alert("Slot name cannot be empty");
+      return;
+    }
 
-      await updateDoc(
-        doc(db, `tournaments/${tournamentId}/auction_slots`, slotId),
-        { name: editingSlotName.trim() }
-      );
+    await updateDoc(
+      doc(db, `tournaments/${tournamentId}/auction_slots`, slotId),
+      { name: editingSlotName.trim() }
+    );
 
-      setSlots((prev) =>
-        prev.map((s) =>
-          s.id === slotId ? { ...s, name: editingSlotName.trim() } : s
-        )
-      );
+    setSlots((prev) =>
+      prev.map((s) =>
+        s.id === slotId ? { ...s, name: editingSlotName.trim() } : s
+      )
+    );
 
-      handleCancelEdit();
-    };
-
+    handleCancelEdit();
+  };
 
   const handleDeleteSlot = async (slotId) =>
     window.confirm("Delete?") &&
@@ -672,11 +672,41 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
     }
   };
 
+  const stats = {
+    total: auctionPlayers.length,
+    pending: auctionPlayers.filter((p) => p.status === "PENDING").length,
+    sold: auctionPlayers.filter((p) => p.status === "SOLD").length,
+    unsold: auctionPlayers.filter((p) => p.status.includes("UNSOLD")).length,
+    batsmen: auctionPlayers.filter((p) => p.role === "Batsman").length,
+    bowlers: auctionPlayers.filter((p) => p.role === "Bowler").length,
+    allRounders: auctionPlayers.filter((p) => p.role === "All-Rounder").length,
+  };
+
   const teamsMap = Object.fromEntries(teams.map((t) => [t.id, t.name]));
+
+  const slotCounts = slots.reduce((acc, slot) => {
+    acc[slot.id] = auctionPlayers.filter(
+      (p) => p.auctionSlotId === slot.id
+    ).length;
+    return acc;
+  }, {});
+  const unassignedCount = auctionPlayers.filter((p) => !p.auctionSlotId).length;
   const displayList = auctionPlayers.filter((p) => {
-    if (poolFilter === "SOLD") return p.status === "SOLD";
-    if (poolFilter === "UNSOLD") return p.status.includes("UNSOLD");
-    return p.status === "PENDING";
+    const statusMatch =
+      (poolFilter === "SOLD" && p.status === "SOLD") ||
+      (poolFilter === "UNSOLD" && p.status.includes("UNSOLD")) ||
+      (poolFilter === "PENDING" && p.status === "PENDING");
+
+    // 2. Check Role
+    const roleMatch = roleFilter === "All" || p.role === roleFilter;
+    let slotMatch = true;
+    if (slotFilter === "Unassigned") {
+      slotMatch = !p.auctionSlotId;
+    } else if (slotFilter !== "All") {
+      slotMatch = p.auctionSlotId === slotFilter;
+    }
+
+    return statusMatch && roleMatch && slotMatch;
   });
 
   if (checkingAccess)
@@ -976,28 +1006,110 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
 
         {tab === "pool" && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <div className="flex bg-[#161920] rounded-xl p-1">
-                {["PENDING", "SOLD", "UNSOLD"].map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setPoolFilter(f)}
-                    className={`px-5 py-2.5 rounded-lg text-[10px] font-black uppercase ${
-                      poolFilter === f
-                        ? "bg-[#0F1115] text-white"
-                        : "text-slate-500"
-                    }`}>
-                    {f}
-                  </button>
-                ))}
+            {/* 1. Stats Overview Bar */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-[#1C2128] p-4 rounded-2xl border border-white/5">
+                <div className="text-[10px] text-slate-500 uppercase font-black">
+                  Total Pooled
+                </div>
+                <div className="text-2xl text-white font-black">
+                  {stats.total}
+                </div>
               </div>
+              <div className="bg-[#1C2128] p-4 rounded-2xl border border-white/5">
+                <div className="text-[10px] text-teal-500 uppercase font-black">
+                  Sold
+                </div>
+                <div className="text-2xl text-teal-400 font-black">
+                  {stats.sold}
+                </div>
+              </div>
+              <div className="bg-[#1C2128] p-4 rounded-2xl border border-white/5">
+                <div className="text-[10px] text-orange-500 uppercase font-black">
+                  Pending
+                </div>
+                <div className="text-2xl text-orange-400 font-black">
+                  {stats.pending}
+                </div>
+              </div>
+              <div className="bg-[#1C2128] p-4 rounded-2xl border border-white/5">
+                <div className="text-[10px] text-red-500 uppercase font-black">
+                  Unsold
+                </div>
+                <div className="text-2xl text-red-400 font-black">
+                  {stats.unsold}
+                </div>
+              </div>
+            </div>
+
+            {/* 2. Filters & Actions Toolbar */}
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-[#1C2128] p-4 rounded-2xl border border-white/5">
+              <div className="flex flex-wrap gap-3 items-center w-full md:w-auto">
+                {/* Status Filter */}
+                <div className="flex bg-[#0F1115] rounded-xl p-1 border border-white/5">
+                  {["PENDING", "SOLD", "UNSOLD"].map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setPoolFilter(f)}
+                      className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${
+                        poolFilter === f
+                          ? "bg-teal-600 text-white shadow-lg"
+                          : "text-slate-500 hover:text-slate-300"
+                      }`}>
+                      {f}{" "}
+                      <span className="opacity-50 text-[9px] ml-1">
+                        (
+                        {f === "PENDING"
+                          ? stats.pending
+                          : f === "SOLD"
+                          ? stats.sold
+                          : stats.unsold}
+                        )
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Role Filter */}
+                <select
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value)}
+                  className="bg-[#0F1115] text-slate-300 text-xs font-bold px-4 py-2.5 rounded-xl border border-white/10 outline-none focus:border-teal-500/50">
+                  <option value="All">All Roles ({stats.total})</option>
+                  <option value="Batsman">Batsman ({stats.batsmen})</option>
+                  <option value="Bowler">Bowler ({stats.bowlers})</option>
+                  <option value="All-Rounder">
+                    All-Rounder ({stats.allRounders})
+                  </option>
+                  <option value="Wicket Keeper">Wicket Keeper</option>
+                </select>
+                <select
+                  value={slotFilter}
+                  onChange={(e) => setSlotFilter(e.target.value)}
+                  className="bg-[#0F1115] text-slate-300 text-xs font-bold px-4 py-2.5 rounded-xl border border-white/10 outline-none focus:border-teal-500/50">
+                  <option value="All">All Slots</option>
+                  <option value="Unassigned">
+                    Unassigned ({unassignedCount})
+                  </option>
+                  <option disabled>──────────</option>
+                  {slots.map((slot) => (
+                    <option key={slot.id} value={slot.id}>
+                      {slot.name} ({slotCounts[slot.id] || 0})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <button
                 onClick={() => setShowPicker(true)}
-                className="bg-teal-900/10 border border-teal-500/20 text-teal-400 px-6 py-3 rounded-xl font-black text-xs uppercase hover:bg-teal-900/20 active:scale-95 transition-all">
-                + Add Players
+                className="w-full md:w-auto bg-gradient-to-r from-teal-600 to-teal-500 text-white px-6 py-3 rounded-xl font-black text-xs uppercase shadow-lg hover:shadow-teal-500/20 active:scale-95 transition-all">
+                + Import Players
               </button>
             </div>
             <div className="bg-[#1C2128] border border-white/5 rounded-2xl overflow-hidden shadow-2xl overflow-x-auto">
+              <div className="p-4 border-b border-white/5 bg-[#161920] text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                Showing {displayList.length} Players
+              </div>
               <table className="w-full text-left text-sm text-slate-400 min-w-[1000px]">
                 <thead className="bg-[#0F1115] text-[10px] font-black text-slate-500 border-b border-white/5 uppercase tracking-widest">
                   <tr>
@@ -1031,7 +1143,6 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                           { basePrice: Number(val) }
                         )
                       }
-                      // ✅ CORRECT: Passing the function call
                       onToggleIcon={() => handleToggleIcon(p)}
                       onDelete={(id) =>
                         window.confirm("Remove?") &&
@@ -1050,6 +1161,11 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   ))}
                 </tbody>
               </table>
+              {displayList.length === 0 && (
+                <div className="p-10 text-center text-slate-500 italic text-xs">
+                  No players found matching current filters.
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1078,7 +1194,6 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 <div
                   key={s.id}
                   className="bg-[#1C2128] p-4 rounded-xl flex justify-between items-center mb-2 border border-white/5">
-                  
                   {/* LEFT SIDE */}
                   <div className="flex-1">
                     {isEditing ? (
@@ -1128,7 +1243,6 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 </div>
               );
             })}
-
           </div>
         )}
 
