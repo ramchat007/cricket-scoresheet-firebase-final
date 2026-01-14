@@ -5,6 +5,8 @@ import {
   doc,
   updateDoc,
   addDoc,
+  query,
+  where,
   runTransaction,
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
@@ -255,37 +257,95 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
   const handleSave = async (payload) => {
     setProcessing(true);
     try {
-      const teamData = {
-        name: payload.teamName,
-        purse: payload.purse,
-        ownerName: payload.ownerName,
-        ownerMobile: payload.ownerMobile,
-      };
-      if (payload.teamId) {
-        await updateDoc(
-          doc(db, `tournaments/${tournamentId}/teams`, payload.teamId),
-          teamData
-        );
-      } else {
-        await addDoc(collection(db, `tournaments/${tournamentId}/teams`), {
-          ...teamData,
-          spent: 0,
-          roster: [],
-          ownerId: null,
-          stats: { played: 0, won: 0, lost: 0, points: 0, nrr: 0 },
-        });
-      }
+      await runTransaction(db, async (transaction) => {
+        let finalOwnerId = payload.selectedPlayerId;
+        let ownerDetails = null;
+
+        // 1. Handle New Profile Creation (Transactionally creates Global Player if needed)
+        if (payload.mode === "new") {
+          const newPlayerRef = doc(collection(db, "globalPlayers"));
+          transaction.set(newPlayerRef, {
+            name: payload.newOwnerData.name,
+            role: payload.isPlayer ? payload.playerRole : "Owner",
+            mobile: payload.newOwnerData.mobile,
+            createdAt: new Date().toISOString()
+          });
+          finalOwnerId = newPlayerRef.id;
+          ownerDetails = { name: payload.newOwnerData.name, photoURL: "", role: payload.isPlayer ? payload.playerRole : "Owner" };
+        } else {
+          const p = globalPlayers.find((x) => x.id === finalOwnerId);
+          ownerDetails = { name: p?.name, photoURL: p?.photoURL || "", role: p?.role, stats: p?.stats || {} };
+        }
+
+        // 2. Prepare Team Update
+        const teamData = {
+          name: payload.teamName,
+          purse: payload.purse,
+          ownerId: finalOwnerId,
+          ownerName: ownerDetails.name,
+        };
+
+        let teamRef;
+        if (payload.teamId) {
+          teamRef = doc(db, `tournaments/${tournamentId}/teams`, payload.teamId);
+          transaction.update(teamRef, teamData);
+        } else {
+          teamRef = doc(collection(db, `tournaments/${tournamentId}/teams`));
+          transaction.set(teamRef, { ...teamData, spent: 0, roster: [], stats: { played: 0, won: 0, lost: 0, points: 0, nrr: 0 } });
+        }
+
+        // 3. Handle "Owner as Player" Logic (Ensures Squad and Auction Pool stay synced)
+        if (payload.isPlayer) {
+          const auctionPlayersRef = collection(db, `tournaments/${tournamentId}/auctionPlayers`);
+          const existingQuery = query(auctionPlayersRef, where("originalPlayerId", "==", finalOwnerId));
+          const querySnap = await getDocs(existingQuery);
+
+          let auctionPlayerDocId;
+          const auctionPlayerData = {
+            originalPlayerId: finalOwnerId,
+            name: ownerDetails.name,
+            role: ownerDetails.role,
+            status: "SOLD",
+            teamId: teamRef.id,
+            soldPrice: 0,
+            isOwner: true,
+            isIcon: true,
+            photoURL: ownerDetails.photoURL,
+          };
+
+          if (!querySnap.empty) {
+            auctionPlayerDocId = querySnap.docs[0].id;
+            transaction.update(doc(auctionPlayersRef, auctionPlayerDocId), auctionPlayerData);
+          } else {
+            const newAPRef = doc(auctionPlayersRef);
+            auctionPlayerDocId = newAPRef.id;
+            transaction.set(newAPRef, { ...auctionPlayerData, basePrice: 0, statsSnapshot: ownerDetails.stats || {} });
+          }
+
+          // Update Roster Array on Team
+          transaction.update(teamRef, {
+            roster: [{
+              id: auctionPlayerDocId,
+              name: ownerDetails.name,
+              role: ownerDetails.role,
+              soldPrice: 0,
+              isOwner: true,
+              isIcon: true,
+              originalId: finalOwnerId,
+              photoURL: ownerDetails.photoURL
+            }]
+          });
+        }
+      });
+
       setEditingTeam(null);
-      const teamsSnap = await getDocs(
-        collection(db, `tournaments/${tournamentId}/teams`)
-      );
-      setTeams(teamsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      await fetchData();
     } catch (e) {
-      alert("Save failed: " + e.message);
-    } finally {
-      setProcessing(false);
-    }
+      alert("Transaction failed: " + e.message);
+    } finally { setProcessing(false); }
   };
+
+
 
   return (
     <div className="space-y-6">
