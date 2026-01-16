@@ -147,7 +147,7 @@ const TeamStatsModal = ({ team, isOpen, onClose }) => {
                         {p.role}
                       </td>
                       <td className="p-4 text-right font-mono font-bold text-teal-400">
-                        {formatCurrency(p.soldPrice)}
+                        {formatCurrency(p.soldPrice || p.price || 0)}
                       </td>
                     </tr>
                   ))}
@@ -173,7 +173,7 @@ const TeamStatsModal = ({ team, isOpen, onClose }) => {
 // --- MAIN TEAMS TAB ---
 export default function TeamsTab({
   tournamentTeams,
-  tournamentData,
+  tournamentName,
   isAuctionEnabled,
 }) {
   const [selectedPlayer, setSelectedPlayer] = useState(null);
@@ -181,8 +181,8 @@ export default function TeamsTab({
   const [posterTeam, setPosterTeam] = useState(null);
 
   const displayName =
-    tournamentData?.name ||
-    (typeof tournamentData === "string" ? tournamentData : "OFFICIAL SQUAD");
+    tournamentName ||
+    (typeof tournamentName === "string" ? tournamentName : "OFFICIAL SQUAD");
 
   if (tournamentTeams.length === 0) {
     return (
@@ -205,7 +205,6 @@ export default function TeamsTab({
           <div
             key={team.id}
             className="bg-[#1C2128] border border-white/5 rounded-[2rem] overflow-hidden shadow-xl hover:border-teal-500/30 transition-all duration-300 flex flex-col h-full group relative">
-            
             <button
               onClick={(e) => {
                 e.stopPropagation();

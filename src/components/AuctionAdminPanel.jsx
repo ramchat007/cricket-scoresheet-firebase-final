@@ -558,22 +558,46 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
           playerId
         );
         const tRef = doc(db, "tournaments", tournamentId, "teams", teamId);
+        
+        // ✅ Read both documents first
         const pSnap = await tx.get(pRef);
+        const tSnap = await tx.get(tRef);
+
+        if (!pSnap.exists()) throw new Error("Player does not exist");
+        if (!tSnap.exists()) throw new Error("Team does not exist");
+
         const pData = pSnap.data();
+        const tData = tSnap.data();
+        const finalPrice = Number(price);
+
+        // ✅ Prepare the Bid History Entry
+        const historyEntry = {
+            bid: finalPrice,
+            bidderId: teamId,
+            bidderName: tData.name || "Admin Assign",
+            type: "FORCE_ASSIGN",
+            timestamp: Date.now()
+        };
+
+        // Update Team
         tx.update(tRef, {
-          spent: increment(Number(price)),
+          spent: increment(finalPrice),
           roster: arrayUnion({
             id: playerId,
             name: pData.name,
             role: pData.role,
-            price: Number(price),
+            price: finalPrice, // Keeping your existing field name
             photoURL: pData.photoURL || "",
+            auctionSlotId: pData.auctionSlotId || null // Good practice to include this if it exists
           }),
         });
+
+        // Update Player with Bid History
         tx.update(pRef, {
           status: "SOLD",
           teamId: teamId,
-          soldPrice: Number(price),
+          soldPrice: finalPrice,
+          bidHistory: [historyEntry], // ✅ Added History
         });
       });
       alert("Player Assigned!");

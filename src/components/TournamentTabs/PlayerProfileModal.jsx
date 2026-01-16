@@ -3,6 +3,9 @@ import React from "react";
 export default function PlayerProfileModal({ player, isOpen, onClose }) {
   if (!isOpen || !player) return null;
 
+  // ✅ FIX: Check both 'soldPrice' (standard) and 'price' (direct assign legacy)
+  const finalPrice = player.soldPrice || player.price || 0;
+
   // Mock stats - in a real app, these would come from player.stats
   const stats = player.stats || {
     matches: 0,
@@ -49,7 +52,8 @@ export default function PlayerProfileModal({ player, isOpen, onClose }) {
                 Auction Price
               </span>
               <span className="text-sm font-mono font-bold text-white">
-                ₹{player.soldPrice?.toLocaleString()}
+                {/* ✅ FIX: Using finalPrice variable */}
+                {finalPrice > 0 ? `₹${finalPrice.toLocaleString()}` : "Unsold"}
               </span>
             </div>
             <div className="flex justify-between items-center bg-white/5 p-3 rounded-2xl border border-white/5">
@@ -100,7 +104,7 @@ export default function PlayerProfileModal({ player, isOpen, onClose }) {
             ))}
           </div>
 
-          {/* Auction History Timeline - Dynamic Version */}
+          {/* Auction History Timeline */}
           <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-6">
             Bidding Journey
           </h3>
@@ -115,7 +119,10 @@ export default function PlayerProfileModal({ player, isOpen, onClose }) {
                 Hammer Price
               </p>
               <p className="text-sm font-bold text-slate-100">
-                Sold for ₹{player.soldPrice?.toLocaleString()}
+                {/* ✅ FIX: Using finalPrice variable */}
+                {finalPrice > 0
+                  ? `Sold for ₹${finalPrice.toLocaleString()}`
+                  : "Not Sold Yet"}
               </p>
             </div>
 
@@ -130,7 +137,9 @@ export default function PlayerProfileModal({ player, isOpen, onClose }) {
                         {entry.bidderName || "Unknown Team"}
                       </p>
                       <p className="text-xs font-bold text-slate-400">
-                        Raised to ₹{entry.bid?.toLocaleString()}
+                        {entry.type === "FORCE_ASSIGN"
+                          ? "Directly Assigned"
+                          : `Raised to ₹${entry.bid?.toLocaleString()}`}
                       </p>
                     </div>
                     <span className="text-[8px] text-slate-700 font-mono">
@@ -143,7 +152,10 @@ export default function PlayerProfileModal({ player, isOpen, onClose }) {
               <div className="relative pl-8">
                 <div className="absolute left-2.5 top-2 w-1.5 h-1.5 rounded-full bg-white/10 z-10"></div>
                 <p className="text-xs italic text-slate-600">
-                  No bidding war recorded.
+                  {/* ✅ FIX: Check finalPrice to show direct buy message */}
+                  {finalPrice > 0
+                    ? "Purchased directly (No Bids recorded)"
+                    : "No bidding activity yet."}
                 </p>
               </div>
             )}

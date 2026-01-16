@@ -4,14 +4,82 @@ import { useNavigate } from "react-router-dom";
 export default function MatchCard({ match, teams, tournamentId, canEdit }) {
   const navigate = useNavigate();
 
-  // Find Team Logos
-  const teamAData = teams.find(
-    (t) => t.name === (match.teamA || match.meta?.teamA)
-  );
-  const teamBData = teams.find(
-    (t) => t.name === (match.teamB || match.meta?.teamB)
-  );
+  // --- DATA EXTRACTION ---
+  const meta = match.meta || {};
 
+  // 1. Team Names
+  const teamAName = match.teamA || meta.teamA || "Team A";
+  const teamBName = match.teamB || meta.teamB || "Team B";
+
+  // 2. Format Date & Time: "16 Jan 2026, 9.00 AM"
+  const rawDate = match.date || meta.date;
+  const rawTime = match.time || meta.time;
+
+  let formattedDateTime = "TBA";
+
+  if (rawDate) {
+    // Format Date: "16 Jan 2026"
+    const dateObj = new Date(rawDate);
+    const datePart = dateObj.toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+
+    // Format Time: "9.00 AM"
+    let timePart = "";
+    if (rawTime) {
+      try {
+        const [hours, minutes] = rawTime.split(":");
+        const timeObj = new Date();
+        timeObj.setHours(hours);
+        timeObj.setMinutes(minutes);
+
+        timePart = timeObj
+          .toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+          })
+          .replace(":", ".");
+      } catch (e) {
+        timePart = rawTime;
+      }
+    } else if (match.startAt || meta.startAt) {
+      const startObj = new Date(match.startAt || meta.startAt);
+      if (!isNaN(startObj)) {
+        timePart = startObj
+          .toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+          })
+          .replace(":", ".");
+      }
+    }
+
+    formattedDateTime = timePart ? `${datePart}, ${timePart}` : datePart;
+  }
+
+  // 3. Match Details
+  const matchNo = match.matchNo || meta.matchNo || match.id.substring(0, 4);
+  const overs = match.overs || meta.overs || "T20";
+
+  // --- LOGO LOOKUP (Fallback if meta logos missing) ---
+  // Ideally, meta.teamALogo is present. If not, look up from teams array.
+  let logoA = meta.teamALogo;
+  let logoB = meta.teamBLogo;
+
+  if (!logoA) {
+    const teamAData = teams.find((t) => t.name === teamAName);
+    logoA = teamAData?.logoUrl;
+  }
+  if (!logoB) {
+    const teamBData = teams.find((t) => t.name === teamBName);
+    logoB = teamBData?.logoUrl;
+  }
+
+  // --- STATUS CHECK ---
   const status = (match?.status || "upcoming").toLowerCase();
   const isLive = ["in-progress", "ongoing", "live"].includes(status);
   const isFinished = ["finished", "completed"].includes(status);
@@ -28,13 +96,23 @@ export default function MatchCard({ match, teams, tournamentId, canEdit }) {
           ? "border-red-500/30 shadow-lg shadow-red-900/10"
           : "border-white/5"
       }`}>
-      {/* Top Bar: Info & Status */}
+      {/* Top Bar: Match Info */}
       <div className="px-6 py-3 bg-[#0F1115]/50 flex justify-between items-center border-b border-white/5">
-        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-          {match.date || "Match Day"} • {match.meta?.overs || "T20"}
+        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+          <span className="bg-white/10 text-slate-300 px-1.5 py-0.5 rounded">
+            #{matchNo}
+          </span>
+          <span>•</span>
+          <span>{overs} Overs</span>
         </span>
+
+        {/* Date & Time */}
+        <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400">
+          <span className="text-teal-500">{formattedDateTime}</span>
+        </div>
+
         <span
-          className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-tighter ${
+          className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-tighter ml-2 ${
             isLive
               ? "bg-red-600 text-white animate-pulse"
               : isFinished
@@ -49,19 +127,20 @@ export default function MatchCard({ match, teams, tournamentId, canEdit }) {
         <div className="flex items-center justify-between gap-4">
           {/* Team A */}
           <div className="flex flex-col items-center gap-3 flex-1 text-center">
-            <div className="w-16 h-16 md:w-20 md:h-20 bg-[#0F1115] rounded-3xl p-3 border border-white/5 flex items-center justify-center shadow-inner group-hover:rotate-[-5deg] transition-transform">
-              {teamAData?.logoURL ? (
+            {/* ✅ UPDATED: Added overflow-hidden and p-0 */}
+            <div className="w-16 h-16 md:w-20 md:h-20 bg-[#0F1115] rounded-3xl p-0 overflow-hidden border border-white/5 flex items-center justify-center shadow-inner group-hover:rotate-[-5deg] transition-transform">
+              {logoA ? (
                 <img
-                  src={teamAData.logoURL}
+                  src={logoA}
                   className="w-full h-full object-contain"
-                  alt="Logo"
+                  alt={teamAName}
                 />
               ) : (
                 <span className="text-2xl">🛡️</span>
               )}
             </div>
-            <h4 className="text-sm md:text-base font-black text-slate-200 uppercase tracking-tighter leading-tight">
-              {match.teamA}
+            <h4 className="text-sm md:text-base font-black text-slate-200 uppercase tracking-tighter leading-tight break-words w-full">
+              {teamAName}
             </h4>
           </div>
 
@@ -74,19 +153,20 @@ export default function MatchCard({ match, teams, tournamentId, canEdit }) {
 
           {/* Team B */}
           <div className="flex flex-col items-center gap-3 flex-1 text-center">
-            <div className="w-16 h-16 md:w-20 md:h-20 bg-[#0F1115] rounded-3xl p-3 border border-white/5 flex items-center justify-center shadow-inner group-hover:rotate-[5deg] transition-transform">
-              {teamBData?.logoURL ? (
+            {/* ✅ UPDATED: Added overflow-hidden and p-0 */}
+            <div className="w-16 h-16 md:w-20 md:h-20 bg-[#0F1115] rounded-3xl p-0 overflow-hidden border border-white/5 flex items-center justify-center shadow-inner group-hover:rotate-[5deg] transition-transform">
+              {logoB ? (
                 <img
-                  src={teamBData.logoURL}
+                  src={logoB}
                   className="w-full h-full object-contain"
-                  alt="Logo"
+                  alt={teamBName}
                 />
               ) : (
                 <span className="text-2xl">🛡️</span>
               )}
             </div>
-            <h4 className="text-sm md:text-base font-black text-slate-200 uppercase tracking-tighter leading-tight">
-              {match.teamB}
+            <h4 className="text-sm md:text-base font-black text-slate-200 uppercase tracking-tighter leading-tight break-words w-full">
+              {teamBName}
             </h4>
           </div>
         </div>
@@ -102,7 +182,7 @@ export default function MatchCard({ match, teams, tournamentId, canEdit }) {
                 : "bg-white/5 text-slate-500 border border-white/5 italic"
             }`}>
             {isFinished
-              ? `🏆 ${match.winner} won`
+              ? `🏆 ${match.winner || "Result Pending"}`
               : isLive
               ? "View Live Scorecard"
               : "Preview Match"}

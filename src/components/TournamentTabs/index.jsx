@@ -9,12 +9,15 @@ import MatchesTab from "./MatchesTab";
 import TeamsTab from "./TeamsTab";
 import PointsTab from "./PointsTab";
 import PlayerStatsTab from "./PlayerStatsTab";
+import MatchSetup from "../MatchSetup";
+import MatchScheduler from "../MatchScheduler";
 
 export default function TournamentTabs({
   activeTab,
   setActiveTab,
   tournamentId,
   tournamentData,
+  tournamentName,
   tournamentTeams,
   matches,
   canEdit,
@@ -309,7 +312,7 @@ export default function TournamentTabs({
         {activeTab === "teams" && (
           <TeamsTab
             tournamentTeams={tournamentTeams}
-            tournamentData={tournamentData}
+            tournamentName={tournamentName}
             isAuctionEnabled={isAuctionEnabled}
           />
         )}
@@ -366,7 +369,10 @@ export default function TournamentTabs({
 
             {/* Owner Zone */}
             {isOwner && (
-              <TournamentAccessManager tournament={tournamentData} tournamentId={tournamentId} />
+              <TournamentAccessManager
+                tournamentData={tournamentData}
+                tournamentId={tournamentId}
+              />
             )}
           </div>
         )}

@@ -27,6 +27,7 @@ export default function TournamentDetails() {
 
   const [tournamentData, setTournamentData] = useState(null);
   const [tournamentTeams, setTournamentTeams] = useState([]);
+  const [tournamentName, setTournamentName] = useState("");
   const [matches, setMatches] = useState([]);
 
   const [canEdit, setCanEdit] = useState(false);
@@ -54,6 +55,7 @@ export default function TournamentDetails() {
 
         const data = snap.data();
         setTournamentData(data);
+        setTournamentName(data.name);
 
         // 2. Check Permissions (Only if Logged In)
         if (user) {
@@ -135,9 +137,6 @@ export default function TournamentDetails() {
      --------------------------------------------- */
   const isAuctionEnabled = !!tournamentData?.isAuction;
 
-  // ✅ IMPROVED LOGIC: Primarily trust the explicit 'auctionState' flag
-  // This ensures that if we reset the DB flag to 'PENDING', the button shows up
-  // even if there is some lingering data.
   const auctionInitialized =
     tournamentData?.auctionState === "READY" ||
     tournamentData?.auctionState === "ACTIVE";
@@ -155,15 +154,14 @@ export default function TournamentDetails() {
 
       const updateData = { isAuction: newStatus };
 
-      // ✅ CRITICAL FIX: If disabling, reset the state to PENDING.
-      // This ensures that when you re-enable it, the "Init Auction" button reappears.
+      // Reset state to PENDING if disabling so we can re-init later
       if (newStatus === false) {
         updateData.auctionState = "PENDING";
       }
 
       await updateDoc(ref, updateData);
 
-      // Update local state immediately so UI changes without refresh
+      // Update local state immediately
       setTournamentData((prev) => ({ ...prev, ...updateData }));
     } catch (e) {
       console.error(e);
@@ -171,69 +169,49 @@ export default function TournamentDetails() {
     }
   };
 
-  const handleInitializeTournament = async () => {
+  const handleInitializeAuction = async () => {
     if (!canEdit) return;
-    const confirmMsg = isAuctionEnabled
-      ? "Initialize Auction? This will reset purses, empty rosters, and create the console."
-      : "Generate Fixtures? This will create round-robin matches for all teams.";
-
-    if (!window.confirm(confirmMsg)) return;
+    if (
+      !window.confirm(
+        "Initialize Auction? This will reset purses, empty rosters, and create the console."
+      )
+    )
+      return;
 
     try {
       const batch = writeBatch(db);
-      if (isAuctionEnabled) {
-        // 1. Reset Team Wallets
-        tournamentTeams.forEach((team) => {
-          const ref = doc(db, "tournaments", id, "teams", team.id);
-          batch.update(ref, {
-            purse: team.purse ?? tournamentData.defaultPurse ?? 1000000,
-            spent: 0,
-            roster: [],
-          });
-        });
 
-        // 2. Set Tournament Level State
-        batch.update(doc(db, "tournaments", id), {
-          auctionState: "READY",
+      // 1. Reset Team Wallets
+      tournamentTeams.forEach((team) => {
+        const ref = doc(db, "tournaments", id, "teams", team.id);
+        batch.update(ref, {
+          purse: team.purse ?? tournamentData.defaultPurse ?? 1000000,
+          spent: 0,
+          roster: [],
         });
+      });
 
-        // 3. Create the Auction Console State Document
-        const auctionStateRef = doc(db, "tournaments", id, "auction", "state");
-        batch.set(auctionStateRef, {
-          status: "READY",
-          currentPlayerId: null,
-          currentBid: 0,
-          currentBidderId: null,
-          lastUpdate: Date.now(),
-        });
+      // 2. Set Tournament Level State
+      batch.update(doc(db, "tournaments", id), {
+        auctionState: "READY",
+      });
 
-        await batch.commit();
-        alert("Auction Initialized! You can now enter the console.");
-        window.location.reload();
-      } else {
-        if (tournamentTeams.length < 2) {
-          alert("Need at least 2 teams to generate fixtures.");
-          return;
-        }
-        let counter = 1;
-        for (let i = 0; i < tournamentTeams.length; i++) {
-          for (let j = i + 1; j < tournamentTeams.length; j++) {
-            const matchRef = doc(collection(db, "tournaments", id, "matches"));
-            batch.set(matchRef, {
-              matchNo: counter++,
-              teamA: tournamentTeams[i].name,
-              teamB: tournamentTeams[j].name,
-              status: "upcoming",
-              createdAt: Date.now(),
-            });
-          }
-        }
-        await batch.commit();
-        window.location.reload();
-      }
+      // 3. Create the Auction Console State Document
+      const auctionStateRef = doc(db, "tournaments", id, "auction", "state");
+      batch.set(auctionStateRef, {
+        status: "READY",
+        currentPlayerId: null,
+        currentBid: 0,
+        currentBidderId: null,
+        lastUpdate: Date.now(),
+      });
+
+      await batch.commit();
+      alert("Auction Initialized! You can now enter the console.");
+      window.location.reload();
     } catch (e) {
       console.error("Initialization failed", e);
-      alert("Failed to initialize tournament: " + e.message);
+      alert("Failed to initialize auction: " + e.message);
     }
   };
 
@@ -276,7 +254,6 @@ export default function TournamentDetails() {
           {/* ACTIONS AREA */}
           <div className="flex flex-wrap gap-3">
             {/* 1. PUBLIC ACTION: WATCH LIVE */}
-            {/* Visible to everyone IF auction is initialized */}
             {isAuctionEnabled && auctionInitialized && (
               <button
                 onClick={() => navigate(`/tournaments/${id}/auction`)}
@@ -293,18 +270,19 @@ export default function TournamentDetails() {
             {/* 2. ADMIN ONLY ACTIONS */}
             {canEdit && (
               <>
+                {/* ✅ SCHEDULER BUTTON: Always visible for Admins */}
                 <button
                   onClick={() => setShowScheduler(!showScheduler)}
                   className="bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 font-bold px-5 py-3 rounded-xl shadow-lg flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest">
                   <span>{showScheduler ? "✕" : "➕"}</span>{" "}
-                  {showScheduler ? "Hide Scheduler" : "Add Match"}
+                  {showScheduler ? "Hide Scheduler" : "Add Match / Schedule"}
                 </button>
 
                 {isAuctionEnabled ? (
                   <>
                     {!auctionInitialized && (
                       <button
-                        onClick={handleInitializeTournament}
+                        onClick={handleInitializeAuction}
                         className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold px-5 py-3 rounded-xl shadow-lg shadow-purple-900/20 flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest">
                         <span>🔨</span> Init Auction
                       </button>
@@ -317,21 +295,11 @@ export default function TournamentDetails() {
                     </button>
                   </>
                 ) : (
-                  <>
-                    {matches.length === 0 && (
-                      <button
-                        onClick={handleInitializeTournament}
-                        className="bg-gradient-to-r from-teal-600 to-emerald-600 text-white font-bold px-5 py-3 rounded-xl shadow-lg shadow-teal-900/20 flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest">
-                        <span>📅</span> Auto Fixtures
-                      </button>
-                    )}
-
-                    <button
-                      onClick={toggleAuctionMode}
-                      className="bg-[#0F1115] text-slate-400 border border-white/10 hover:border-white/20 hover:text-white font-bold px-4 py-3 rounded-xl transition-all text-xs uppercase tracking-widest flex items-center gap-2">
-                      <span>⚙️</span> Enable Auction Mode
-                    </button>
-                  </>
+                  <button
+                    onClick={toggleAuctionMode}
+                    className="bg-[#0F1115] text-slate-400 border border-white/10 hover:border-white/20 hover:text-white font-bold px-4 py-3 rounded-xl transition-all text-xs uppercase tracking-widest flex items-center gap-2">
+                    <span>⚙️</span> Enable Auction Mode
+                  </button>
                 )}
               </>
             )}
@@ -361,7 +329,8 @@ export default function TournamentDetails() {
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           tournamentId={id}
-          tournament={tournamentData} // ✅ Correct Prop Name
+          tournament={tournamentData}
+          tournamentName={tournamentName}
           tournamentTeams={tournamentTeams}
           matches={matches}
           canEdit={canEdit}

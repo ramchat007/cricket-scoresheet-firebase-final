@@ -9,6 +9,39 @@ export default function MatchesTab({
   tournamentId,
   canEdit,
 }) {
+  // --- SORTING HELPER ---
+  const sortMatches = (list, direction = "asc") => {
+    return [...list].sort((a, b) => {
+      // 1. Extract Time (ISO String -> Timestamp)
+      // Checks: meta.startAt -> root.startAt -> root.date -> default
+      const timeA = new Date(
+        a.meta?.startAt || a.startAt || a.date || 0
+      ).getTime();
+      const timeB = new Date(
+        b.meta?.startAt || b.startAt || b.date || 0
+      ).getTime();
+
+      // 2. Extract Match Number
+      const noA = Number(a.meta?.matchNo || a.matchNo || 0);
+      const noB = Number(b.meta?.matchNo || b.matchNo || 0);
+
+      if (direction === "asc") {
+        // Ascending: Earliest Time first, then Lowest Match #
+        if (timeA !== timeB) return timeA - timeB;
+        return noA - noB;
+      } else {
+        // Descending: Latest Time first, then Highest Match #
+        if (timeA !== timeB) return timeB - timeA;
+        return noB - noA;
+      }
+    });
+  };
+
+  // ✅ Processed Lists
+  const sortedLive = sortMatches(liveMatches, "asc");
+  const sortedUpcoming = sortMatches(upcomingMatches, "asc"); // Match #1 -> #15
+  const sortedFinished = sortMatches(finishedMatches, "desc"); // Match #15 -> #1
+
   const renderSection = (title, matches, type) => {
     if (matches.length === 0 && type !== "upcoming") return null;
 
@@ -35,7 +68,7 @@ export default function MatchesTab({
             No matches found in this category.
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 xl:grid-cols-3 md:grid-cols-2 gap-6">
             {matches.map((m) => (
               <MatchCard
                 key={m.id}
@@ -53,9 +86,9 @@ export default function MatchesTab({
 
   return (
     <div className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      {renderSection("Live Action", liveMatches, "live")}
-      {renderSection("Upcoming Fixtures", upcomingMatches, "upcoming")}
-      {renderSection("Recent Results", finishedMatches, "finished")}
+      {renderSection("Live Action", sortedLive, "live")}
+      {renderSection("Upcoming Fixtures", sortedUpcoming, "upcoming")}
+      {renderSection("Recent Results", sortedFinished, "finished")}
     </div>
   );
 }
