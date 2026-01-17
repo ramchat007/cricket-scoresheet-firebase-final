@@ -23,13 +23,9 @@ const KeyButton = React.memo(
       onClick={onClick}
       disabled={disabled || loading}
       className={`${color} h-14 text-lg font-bold flex items-center justify-center rounded-xl active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed touch-manipulation border shadow-sm select-none relative`}>
-      {loading ? (
-        <span className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
-      ) : (
-        val
-      )}
+      {val}
     </button>
-  )
+  ),
 );
 
 export default function ScoreInput({
@@ -63,38 +59,28 @@ export default function ScoreInput({
   const [incoming, setIncoming] = useState("");
   const [newBowler, setNewBowler] = useState("");
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
-
   const [editStriker, setEditStriker] = useState(false);
   const [editNonStriker, setEditNonStriker] = useState(false);
   const [editBowler, setEditBowler] = useState(false);
-
   const [localOverlayDismissed, setLocalOverlayDismissed] = useState(false);
 
-  // Sync Lock
+  // ✅ SYNC LOCK
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // 🔊 AUDIO REFS (Using URLs)
-  // Replace these URLs with your own local files (e.g. "/sounds/click.mp3")
-  const clickSound = useRef(
-    new Audio("https://cdn.pixabay.com/audio/2022/03/15/audio_8f7f6f3f4b.mp3")
-  );
+  // 🔊 AUDIO REFS
+  const clickSound = useRef(new Audio("/sounds/click.mp3"));
   const wicketSound = useRef(
-    new Audio("https://cdn.pixabay.com/audio/2021/08/04/audio_12b0c7443c.mp3")
+    new Audio("https://cdn.pixabay.com/audio/2021/08/04/audio_12b0c7443c.mp3"),
   );
 
-  // Preload Audio
   useEffect(() => {
     clickSound.current.load();
     wicketSound.current.load();
   }, []);
 
-  // 📳 FEEDBACK HELPER
   const triggerFeedback = (type = "click") => {
-    // 1. HAPTIC
-    if (navigator.vibrate) {
+    if (navigator.vibrate)
       navigator.vibrate(type === "wicket" ? [50, 30, 50] : 15);
-    }
-    // 2. AUDIO
     try {
       if (type === "wicket") {
         wicketSound.current.currentTime = 0;
@@ -103,12 +89,10 @@ export default function ScoreInput({
         clickSound.current.currentTime = 0;
         clickSound.current.play().catch(() => {});
       }
-    } catch (e) {
-      // Ignore play errors
-    }
+    } catch (e) {}
   };
 
-  // --- 1. DATA EXTRACTION ---
+  // --- DATA EXTRACTION ---
   const activeIndex = match?.currentInnings || 0;
   const m = useMemo(() => {
     if (!match || !match.innings) return {};
@@ -118,21 +102,6 @@ export default function ScoreInput({
     return innArr[activeIndex] || {};
   }, [match, activeIndex]);
 
-  // ↩️ SMART UNDO LABEL
-  const undoLabel = useMemo(() => {
-    if (!m.timeline || m.timeline.length === 0) return "Undo";
-    const lastBall = m.timeline[m.timeline.length - 1];
-
-    let text = "";
-    if (lastBall.isWicket) text = "W";
-    else if (lastBall.isWide) text = "WD";
-    else if (lastBall.isNoBall) text = "NB";
-    else text = lastBall.runs;
-
-    return `Undo (${text})`;
-  }, [m.timeline]);
-
-  // RESET FLAGS
   useEffect(() => {
     if (!m.awaitingNewBatsman && !m.awaitingNewBowler) {
       setLocalOverlayDismissed(false);
@@ -146,16 +115,16 @@ export default function ScoreInput({
       !p
         ? ""
         : typeof p === "object"
-        ? p.name || p.playerName || ""
-        : String(p).trim(),
-    []
+          ? p.name || p.playerName || ""
+          : String(p).trim(),
+    [],
   );
 
   const strikerName = getPlayerName(m.striker);
   const nonStrikerName = getPlayerName(m.nonStriker);
   const currentBowlerName = getPlayerName(m.currentBowler);
 
-  // --- 2. SQUAD & STATS LOGIC ---
+  // --- SQUAD LOGIC ---
   const { currentBattingSquad, currentBowlingSquad } = useMemo(() => {
     const teamA = match?.meta?.teamA;
     const teamB = match?.meta?.teamB;
@@ -194,73 +163,62 @@ export default function ScoreInput({
     return stats;
   }, [m]);
 
-  const nextBatsmenList = useMemo(() => {
-    return currentBattingSquad
-      .map((p) => getPlayerName(p))
-      .filter((name) => {
-        if (m.batsmenStats?.[name]?.out) return false;
-        if (name === strikerName || name === nonStrikerName) return false;
-        return true;
-      })
-      .sort();
-  }, [m, currentBattingSquad, strikerName, nonStrikerName, getPlayerName]);
-
   const battingOptions = useMemo(
     () => currentBattingSquad.map((p) => getPlayerName(p)).sort(),
-    [currentBattingSquad, getPlayerName]
+    [currentBattingSquad, getPlayerName],
   );
   const fieldingTeamPlayers = useMemo(
     () => currentBowlingSquad.map((p) => getPlayerName(p)).sort(),
-    [currentBowlingSquad, getPlayerName]
+    [currentBowlingSquad, getPlayerName],
   );
 
-  // --- 3. SCORING HANDLERS ---
+  // --- SCORING HANDLERS ---
   const handleBallClick = useCallback(
     async (val) => {
       if (isSyncing) return;
-      triggerFeedback("click"); // 🔊
+      triggerFeedback("click");
       setIsSyncing(true);
       setExtraType("none");
       await onBall(val);
     },
-    [onBall, isSyncing]
+    [onBall, isSyncing],
   );
 
   const handleExtra = useCallback(
     async (physicalRuns) => {
       if (extraType === "none")
         return alert("Select Extra Type (WD/NB/BYE/LB) first");
-
       if (isSyncing) return;
-      triggerFeedback("click"); // 🔊
+      triggerFeedback("click");
       setIsSyncing(true);
-
-      const runs = parseInt(physicalRuns, 10);
-      await onExtraBallRuns(extraType, runs);
+      await onExtraBallRuns(extraType, parseInt(physicalRuns, 10));
     },
-    [extraType, onExtraBallRuns, isSyncing]
+    [extraType, onExtraBallRuns, isSyncing],
   );
 
-  const liveCommentary = useMemo(() => {
-    if (
-      match?.meta?.toss?.winner &&
-      m.over === 0 &&
-      m.overBallCount === 0 &&
-      (!m.timeline || m.timeline.length === 0)
-    ) {
-      return `📢 ${match.meta.toss.winner} won the toss and elected to ${match.meta.toss.decision} first.`;
-    }
-    if (m.awaitingNewBatsman)
-      return "☝️ Wicket! Waiting for the new batsman to take guard...";
+  const undoLabel = useMemo(() => {
+    if (!m.timeline || m.timeline.length === 0) return "Undo";
+    const lastBall = m.timeline[m.timeline.length - 1];
+    let text = lastBall.isWicket
+      ? "W"
+      : lastBall.isWide
+        ? "WD"
+        : lastBall.isNoBall
+          ? "NB"
+          : lastBall.runs;
+    return `Undo (${text})`;
+  }, [m.timeline]);
+
+  const liveNarrative = useMemo(() => {
+    if (m.awaitingNewBatsman) return "☝️ Wicket! Waiting for new batsman...";
     if (m.awaitingNewBowler)
-      return `🥎 Over complete. ${currentBowlerName} finishes. Change of ends...`;
+      return `🥎 Over complete. ${currentBowlerName} finishes end.`;
     if (strikerName && currentBowlerName)
-      return `🏏 ${strikerName} vs ${currentBowlerName}. ${nonStrikerName} at non-striker.`;
-    return "⚡ System ready. Select players to begin.";
-  }, [match?.meta, m, strikerName, nonStrikerName, currentBowlerName]);
+      return `🏏 ${strikerName} vs ${currentBowlerName}.`;
+    return "⚡ System ready.";
+  }, [m, strikerName, currentBowlerName]);
 
   const hasSetup = strikerName && nonStrikerName && currentBowlerName;
-
   const disableBallEntry =
     isSyncing ||
     match?.status === "finished" ||
@@ -270,7 +228,6 @@ export default function ScoreInput({
     isWicketMenuOpen ||
     !hasSetup;
 
-  // --- TOSS UI ---
   if (!match?.meta?.toss?.winner) {
     return (
       <div className="bg-[#161920] border border-white/5 rounded-3xl p-8 text-center max-w-md mx-auto mt-10 shadow-2xl">
@@ -289,20 +246,12 @@ export default function ScoreInput({
           <div className="flex gap-2">
             <button
               onClick={() => setTossDecision("Bat")}
-              className={`flex-1 py-4 rounded-xl font-bold transition-all ${
-                tossDecision === "Bat"
-                  ? "bg-slate-700 text-white"
-                  : "bg-slate-800 text-slate-500"
-              }`}>
+              className={`flex-1 py-4 rounded-xl font-bold transition-all ${tossDecision === "Bat" ? "bg-slate-700 text-white" : "bg-slate-800 text-slate-500"}`}>
               Bat 🏏
             </button>
             <button
               onClick={() => setTossDecision("Bowl")}
-              className={`flex-1 py-4 rounded-xl font-bold transition-all ${
-                tossDecision === "Bowl"
-                  ? "bg-slate-700 text-white"
-                  : "bg-slate-800 text-slate-500"
-              }`}>
+              className={`flex-1 py-4 rounded-xl font-bold transition-all ${tossDecision === "Bowl" ? "bg-slate-700 text-white" : "bg-slate-800 text-slate-500"}`}>
               Bowl 🥎
             </button>
           </div>
@@ -333,7 +282,7 @@ export default function ScoreInput({
                     },
                   ],
                   currentInnings: 0,
-                }
+                },
               );
               setStartLoading(false);
             }}
@@ -351,7 +300,7 @@ export default function ScoreInput({
 
   return (
     <div className="flex flex-col h-full bg-[#0F1115] text-slate-300 overflow-hidden relative">
-      {/* SECTION 1: BANNER */}
+      {/* SECTION 1: SCORE BANNER */}
       <div className="flex-none bg-[#161920] border-b border-white/5 px-6 py-4 flex justify-between items-end">
         <div className="flex flex-col">
           <span className="text-[10px] text-teal-600 font-bold uppercase tracking-widest leading-none mb-1">
@@ -368,9 +317,13 @@ export default function ScoreInput({
           </div>
         </div>
         <div className="flex flex-col items-end">
-          <span className="text-[8px] text-slate-500 font-black uppercase tracking-widest mb-1">
-            Innings RR
-          </span>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[8px] text-slate-500 font-black uppercase tracking-widest">
+              Innings RR
+            </span>
+            <div
+              className={`w-2 h-2 rounded-full ${isSyncing ? "bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]" : "bg-emerald-500"}`}></div>
+          </div>
           <div className="bg-slate-800/50 px-3 py-1 rounded-lg border border-white/5">
             <span className="text-lg font-bold text-slate-400">
               {m.over > 0 || m.overBallCount > 0
@@ -382,30 +335,30 @@ export default function ScoreInput({
       </div>
 
       {/* SECTION 2: STATS BAR */}
-      <div className="flex-none px-4 py-2 bg-[#12141a] flex justify-around border-b border-white/5 shadow-inner">
+      <div className="flex-none px-4 py-2 bg-[#12141a] flex justify-around border-b border-white/5">
         <div className="flex flex-col items-center">
-          <span className="text-[8px] font-black uppercase text-slate-500 mb-1">
+          <span className="text-[8px] font-black uppercase text-slate-500">
             Extras
           </span>
-          <span className="text-sm font-bold text-amber-600/80">
+          <span className="text-sm font-bold text-amber-600">
             {statsSummary.extras}
           </span>
         </div>
         <div className="h-6 w-px bg-white/5 self-center"></div>
         <div className="flex flex-col items-center">
-          <span className="text-[8px] font-black uppercase text-slate-500 mb-1">
-            Total 4s
+          <span className="text-[8px] font-black uppercase text-slate-500">
+            4s
           </span>
-          <span className="text-sm font-bold text-emerald-600/80">
+          <span className="text-sm font-bold text-emerald-600">
             {statsSummary.fours}
           </span>
         </div>
         <div className="h-6 w-px bg-white/5 self-center"></div>
         <div className="flex flex-col items-center">
-          <span className="text-[8px] font-black uppercase text-slate-500 mb-1">
-            Total 6s
+          <span className="text-[8px] font-black uppercase text-slate-500">
+            6s
           </span>
-          <span className="text-sm font-bold text-indigo-500/80">
+          <span className="text-sm font-bold text-indigo-500">
             {statsSummary.sixes}
           </span>
         </div>
@@ -413,13 +366,12 @@ export default function ScoreInput({
 
       {/* SECTION 3: PLAYER CARDS */}
       <div className="flex-none p-3 grid grid-cols-2 gap-3">
-        <div className="bg-[#1C2128] border border-white/5 rounded-2xl p-4 relative flex flex-col justify-center gap-2">
-          {/* STRIKER SLOT */}
+        <div className="bg-[#1C2128] border border-white/5 rounded-2xl p-4 relative flex flex-col justify-center gap-2 shadow-lg">
           <div className="flex justify-between items-center border-b border-white/5 pb-2">
             <div className="flex items-center gap-2 flex-1 overflow-hidden">
               {!strikerName || editStriker ? (
                 <select
-                  className="bg-slate-900 text-teal-500 text-[10px] w-full border border-slate-700 rounded p-1 outline-none"
+                  className="bg-slate-900 text-teal-500 text-[10px] w-full border border-slate-700 rounded p-1"
                   value={strikerName}
                   onChange={(e) => {
                     onStrikeChange?.(e.target.value, nonStrikerName);
@@ -449,41 +401,37 @@ export default function ScoreInput({
               )}
             </div>
           </div>
-
-          {/* NON-STRIKER SLOT */}
-          <div className="flex justify-between items-center opacity-50">
-            <div className="flex items-center gap-2 flex-1 overflow-hidden">
-              {!nonStrikerName || editNonStriker ? (
-                <select
-                  className="bg-slate-900 text-teal-500 text-[10px] w-full border border-slate-700 rounded p-1 outline-none"
-                  value={nonStrikerName}
-                  onChange={(e) => {
-                    onStrikeChange?.(strikerName, e.target.value);
-                    setEditNonStriker(false);
-                  }}>
-                  <option value="">NON-STRIKER</option>
-                  {battingOptions.map((n) => (
-                    <option key={n} value={n} disabled={n === strikerName}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <div className="flex items-center gap-2 truncate">
-                  <span className="text-xs uppercase truncate font-medium">
-                    {nonStrikerName}
-                  </span>
-                  <span className="text-[10px] font-bold text-slate-400">
-                    {m.batsmenStats?.[nonStrikerName]?.runs || 0}
-                  </span>
-                  <button
-                    onClick={() => setEditNonStriker(true)}
-                    className="text-[10px] opacity-30 hover:opacity-100">
-                    ✎
-                  </button>
-                </div>
-              )}
-            </div>
+          <div className="flex justify-between items-center opacity-50 overflow-hidden">
+            {!nonStrikerName || editNonStriker ? (
+              <select
+                className="bg-slate-900 text-teal-500 text-[10px] w-full border border-slate-700 rounded p-1"
+                value={nonStrikerName}
+                onChange={(e) => {
+                  onStrikeChange?.(strikerName, e.target.value);
+                  setEditNonStriker(false);
+                }}>
+                <option value="">NON-STRIKER</option>
+                {battingOptions.map((n) => (
+                  <option key={n} value={n} disabled={n === strikerName}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="flex items-center gap-2 truncate">
+                <span className="text-xs uppercase truncate font-medium">
+                  {nonStrikerName}
+                </span>
+                <span className="text-[10px] font-bold text-slate-400">
+                  {m.batsmenStats?.[nonStrikerName]?.runs || 0}
+                </span>
+                <button
+                  onClick={() => setEditNonStriker(true)}
+                  className="text-[10px] opacity-30 hover:opacity-100">
+                  ✎
+                </button>
+              </div>
+            )}
           </div>
           <button
             onClick={() => onStrikeChange?.(nonStrikerName, strikerName)}
@@ -491,15 +439,13 @@ export default function ScoreInput({
             ⇄
           </button>
         </div>
-
-        {/* BOWLER SLOT */}
-        <div className="bg-[#1C2128] border border-white/5 rounded-2xl p-4 flex flex-col justify-center text-center relative">
+        <div className="bg-[#1C2128] border border-white/5 rounded-2xl p-4 flex flex-col justify-center text-center relative shadow-lg">
           <span className="text-[9px] text-slate-500 font-bold uppercase mb-1">
             Bowler
           </span>
           {!currentBowlerName || editBowler ? (
             <select
-              className="bg-slate-900 text-teal-500 text-[10px] w-full border border-slate-700 rounded p-1 outline-none"
+              className="bg-slate-900 text-teal-500 text-[10px] w-full border border-slate-700 rounded p-1"
               value={currentBowlerName}
               onChange={(e) => {
                 onChangeBowler?.(e.target.value);
@@ -531,7 +477,7 @@ export default function ScoreInput({
         </div>
       </div>
 
-      {/* SECTION 4: NARRATIVE & TIMELINE */}
+      {/* ✅ RESTORED SECTION 4: LIVE COMMENTARY LOG */}
       <div className="flex-none px-4 space-y-2 mb-2">
         <div className="bg-slate-900/50 rounded-xl p-2 flex items-center gap-2 overflow-x-auto no-scrollbar border border-white/5 h-10 shadow-inner">
           {(m.timeline || []).slice(-10).map((b, i) => {
@@ -539,19 +485,7 @@ export default function ScoreInput({
             return (
               <span
                 key={i}
-                className={`h-6 min-w-[32px] px-2 rounded flex items-center justify-center text-[10px] font-bold whitespace-nowrap ${
-                  String(displayVal).includes("W") ||
-                  String(displayVal).includes("Ret")
-                    ? "bg-red-900/40 text-red-400"
-                    : String(displayVal).includes("wd") ||
-                      String(displayVal).includes("nb")
-                    ? "bg-amber-900/40 text-amber-400"
-                    : b.runs === 4
-                    ? "bg-emerald-900/40 text-emerald-400"
-                    : b.runs === 6
-                    ? "bg-indigo-900/40 text-indigo-400"
-                    : "bg-slate-800 text-slate-500"
-                }`}>
+                className={`h-6 min-w-[32px] px-2 rounded flex items-center justify-center text-[10px] font-bold whitespace-nowrap ${String(displayVal).includes("W") || String(displayVal).includes("Ret") ? "bg-red-900/40 text-red-400" : String(displayVal).includes("wd") || String(displayVal).includes("nb") ? "bg-amber-900/40 text-amber-400" : b.runs === 4 ? "bg-emerald-900/40 text-emerald-400" : b.runs === 6 ? "bg-indigo-900/40 text-indigo-400" : "bg-slate-800 text-slate-500"}`}>
                 {displayVal}
               </span>
             );
@@ -559,13 +493,21 @@ export default function ScoreInput({
         </div>
         <div className="bg-teal-900/10 border border-teal-900/20 rounded-xl p-3 min-h-[50px] flex items-center">
           <p className="text-[11px] font-medium text-teal-600 italic leading-snug animate-in fade-in slide-in-from-left duration-500">
-            {liveCommentary}
+            {liveNarrative}
           </p>
         </div>
       </div>
 
       {/* SECTION 5: KEYPAD */}
-      <div className="flex-none bg-[#0F1115] grid grid-cols-4 gap-2 p-4 pt-0">
+      <div className="flex-none bg-[#0F1115] grid grid-cols-4 gap-2 p-4 pt-0 relative">
+        {isSyncing && (
+          <div className="absolute inset-0 bg-[#0F1115]/80 z-50 flex items-center justify-center rounded-xl backdrop-blur-sm">
+            <div className="bg-red-500/10 text-red-500 border border-red-500/20 px-6 py-3 rounded-full font-bold uppercase tracking-widest text-xs flex items-center gap-3 shadow-lg">
+              <span className="w-2 h-2 bg-red-500 rounded-full animate-ping"></span>{" "}
+              Saving...
+            </div>
+          </div>
+        )}
         {["0", "1", "2", "3"].map((v) => (
           <KeyButton
             key={v}
@@ -602,25 +544,20 @@ export default function ScoreInput({
           disabled={disableBallEntry}
           loading={isSyncing}
         />
-
         <div className="col-span-1 row-span-2 bg-slate-800/20 rounded-xl border border-slate-800/50 flex flex-col overflow-hidden">
           {["wides", "noBalls", "byes", "legByes"].map((type) => (
             <button
               key={type}
               onClick={() => setExtraType(type)}
               disabled={isSyncing}
-              className={`flex-1 text-[9px] font-bold uppercase transition-all ${
-                extraType === type
-                  ? "bg-amber-700/40 text-amber-200"
-                  : "text-slate-600"
-              }`}>
+              className={`flex-1 text-[9px] font-bold uppercase transition-all ${extraType === type ? "bg-amber-700/40 text-amber-200" : "text-slate-600"}`}>
               {type === "noBalls"
                 ? "NB"
                 : type === "wides"
-                ? "WD"
-                : type === "byes"
-                ? "BYE"
-                : "LB"}
+                  ? "WD"
+                  : type === "byes"
+                    ? "BYE"
+                    : "LB"}
             </button>
           ))}
         </div>
@@ -635,7 +572,10 @@ export default function ScoreInput({
           />
         ))}
         <button
-          onClick={onUndo}
+          onClick={() => {
+            setIsSyncing(true);
+            onUndo();
+          }}
           disabled={isSyncing}
           className="bg-slate-800/40 text-slate-500 text-xs font-bold rounded-xl h-14 active:scale-95 border border-white/5 disabled:opacity-30 flex items-center justify-center gap-1">
           ↩ {undoLabel}
@@ -646,7 +586,10 @@ export default function ScoreInput({
           Fix
         </button>
         <button
-          onClick={() => onEndInnings()}
+          onClick={() => {
+            setIsSyncing(true);
+            onEndInnings();
+          }}
           disabled={isSyncing}
           className="bg-slate-800/40 text-red-800 text-[10px] font-bold rounded-xl h-14 uppercase border border-red-900/10 disabled:opacity-30">
           End
@@ -659,19 +602,22 @@ export default function ScoreInput({
         </button>
       </div>
 
-      {/* OVERLAYS & MODALS (Kept Same) */}
+      {/* OVERLAYS: New Batsman/Bowler */}
       {showPlayerSelector && (
         <div className="absolute inset-0 z-[100] bg-[#0F1115]/95 backdrop-blur-md flex flex-col justify-end p-6 pb-20 animate-in slide-in-from-bottom duration-300">
           <div className="bg-[#1C2128] border border-white/10 p-8 rounded-3xl shadow-2xl relative">
             <button
-              onClick={onUndo}
-              className="absolute top-4 right-4 bg-white/5 hover:bg-white/10 text-slate-400 text-[10px] px-3 py-1.5 rounded-lg font-bold uppercase transition-colors">
+              onClick={() => {
+                setIsSyncing(true);
+                onUndo();
+              }}
+              className="absolute top-4 right-4 bg-white/5 hover:bg-white/10 text-slate-400 text-[10px] px-3 py-1.5 rounded-lg font-bold uppercase">
               Wrong? Undo
             </button>
             <h3 className="text-lg font-bold text-slate-200 mb-6">
               {m.awaitingNewBatsman
                 ? "Select New Batsman"
-                : "Select Next Bowler"}
+                : "Over Complete! Select Bowler"}
             </h3>
             <select
               className="w-full bg-slate-900 border border-slate-700 text-slate-300 p-4 rounded-xl font-medium outline-none mb-6"
@@ -682,22 +628,34 @@ export default function ScoreInput({
                   : setNewBowler(e.target.value)
               }>
               <option value="">Choose Member</option>
-              {(m.awaitingNewBatsman
-                ? nextBatsmenList
-                : fieldingTeamPlayers
-              ).map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
+              {m.awaitingNewBatsman
+                ? battingOptions.map((n) => {
+                    const isOut = m.batsmenStats?.[n]?.out;
+                    const isOnCrease =
+                      n === strikerName || n === nonStrikerName;
+                    return (
+                      <option key={n} value={n} disabled={isOut || isOnCrease}>
+                        {n} {isOut ? "(Out)" : ""}{" "}
+                        {isOnCrease ? "(Playing)" : ""}
+                      </option>
+                    );
+                  })
+                : fieldingTeamPlayers.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
             </select>
             <button
               onClick={() => {
                 if (m.awaitingNewBatsman && incoming) {
-                  setLocalOverlayDismissed(true);
+                  triggerFeedback();
+                  const alsoNeedsBowler = m.awaitingNewBowler;
+                  setLocalOverlayDismissed(!alsoNeedsBowler);
                   onNewBatsman(incoming);
                   setIncoming("");
                 } else if (m.awaitingNewBowler && newBowler) {
+                  triggerFeedback();
                   setLocalOverlayDismissed(true);
                   onConfirmBowler(newBowler);
                   setNewBowler("");
@@ -710,6 +668,7 @@ export default function ScoreInput({
         </div>
       )}
 
+      {/* WICKET MODAL */}
       {isWicketMenuOpen && (
         <div className="fixed inset-0 z-[100] flex items-end justify-center bg-[#0F1115]/90 backdrop-blur-md">
           <div className="relative w-full bg-[#1C2128] border-t border-white/10 rounded-t-[3rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom duration-500">
@@ -776,7 +735,7 @@ export default function ScoreInput({
                       return alert("Select Fielder");
                     setIsWicketMenuOpen(false);
                     if (isSyncing) return;
-                    triggerFeedback("wicket"); // 🔊
+                    triggerFeedback("wicket");
                     setIsSyncing(true);
                     await onBall("W", {
                       isWicket: true,
@@ -784,7 +743,7 @@ export default function ScoreInput({
                       fielderName,
                       whoOut:
                         whoOut === "striker" ? strikerName : nonStrikerName,
-                      next: null,
+                      nextStriker: null,
                       isWide: extraType === "wides",
                       isNoBall: extraType === "noBalls",
                     });

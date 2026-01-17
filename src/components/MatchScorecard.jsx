@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
-import { doc, onSnapshot, getDoc } from "firebase/firestore"; // ✅ Import onSnapshot
-import { db } from "../utils/firebase"; // ✅ Import DB instance
+import { doc, onSnapshot, getDoc } from "firebase/firestore";
+import { db } from "../utils/firebase";
 import ScoreSummary from "../components/ScoreSummary";
 import ScoreTable from "../components/ScoreTable";
 import MatchCommentary from "../components/MatchCommentary";
@@ -15,14 +15,14 @@ export default function MatchScorecard() {
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("scorecard");
 
-  // --- 1. REAL-TIME AUTO SYNC ---
+  // --- 1. REAL-TIME AUTO SYNC (Theater Mode) ---
   useEffect(() => {
     if (!tournamentId || !matchId) return;
 
     setLoading(true);
     const matchRef = doc(db, "tournaments", tournamentId, "matches", matchId);
 
-    // This listener fires every time the DB changes
+    // ✅ High-End Sync: Listener remains active to catch every micro-update from the scorer
     const unsubscribe = onSnapshot(
       matchRef,
       (docSnap) => {
@@ -30,52 +30,54 @@ export default function MatchScorecard() {
           setMatch(docSnap.data());
           setError("");
         } else {
-          setError("Match not found.");
+          setError("Match record not found in the arena.");
         }
         setLoading(false);
       },
       (err) => {
         console.error("Real-time sync error:", err);
-        setError("Live connection lost. Please refresh.");
+        setError("Connection to arena lost. Attempting to reconnect...");
         setLoading(false);
-      }
+      },
     );
 
-    // Cleanup listener when leaving page
     return () => unsubscribe();
   }, [tournamentId, matchId]);
 
-  // --- 2. MANUAL REFRESH (Backup) ---
+  // --- 2. MANUAL REFRESH (Visual Feedback Only) ---
   const handleManualRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
       const matchRef = doc(db, "tournaments", tournamentId, "matches", matchId);
       const snap = await getDoc(matchRef);
-      if (snap.exists()) {
-        setMatch(snap.data());
-      }
+      if (snap.exists()) setMatch(snap.data());
     } catch (e) {
       console.error(e);
     } finally {
-      setTimeout(() => setRefreshing(false), 500);
+      // Small delay so the user sees the spinner "working"
+      setTimeout(() => setRefreshing(false), 600);
     }
   }, [tournamentId, matchId]);
 
   if (loading)
     return (
-      <div className="flex justify-center items-center min-h-screen bg-[#0F1115] text-teal-500 font-bold uppercase tracking-widest text-sm">
-        <span className="animate-pulse">Loading Live Score...</span>
+      <div className="flex flex-col justify-center items-center min-h-screen bg-[#0F1115] text-teal-500">
+        <div className="w-12 h-12 border-4 border-teal-500/20 border-t-teal-500 rounded-full animate-spin mb-4"></div>
+        <span className="font-black uppercase tracking-[0.3em] text-[10px] animate-pulse">
+          Syncing Arena Data
+        </span>
       </div>
     );
 
   if (error)
     return (
-      <div className="flex flex-col justify-center items-center min-h-screen bg-[#0F1115] text-slate-400 font-bold gap-4">
-        <span className="text-red-400">{error}</span>
+      <div className="flex flex-col justify-center items-center min-h-screen bg-[#0F1115] text-slate-400 p-6 text-center">
+        <div className="text-4xl mb-4">📡</div>
+        <span className="text-red-400 font-bold mb-6">{error}</span>
         <button
-          onClick={handleManualRefresh}
-          className="bg-white/10 px-4 py-2 rounded-lg text-xs uppercase hover:bg-white/20 transition-colors">
-          Reconnect
+          onClick={() => window.location.reload()}
+          className="bg-teal-600 text-white px-8 py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-teal-500 transition-all shadow-lg shadow-teal-900/20">
+          Force Reconnect
         </button>
       </div>
     );
@@ -84,94 +86,103 @@ export default function MatchScorecard() {
 
   const matchTitle = match.meta
     ? `${match.meta.teamA} vs ${match.meta.teamB}`
-    : "Match Details";
+    : "Live Match Statistics";
 
-  // Check if match is live for the pulsing badge
   const isLive = ["ongoing", "live", "in-progress"].includes(
-    (match.status || "").toLowerCase()
+    (match.status || "").toLowerCase(),
   );
 
   return (
-    <div className="min-h-screen bg-[#0F1115] text-slate-300 font-sans pb-20">
-      {/* HEADER */}
-      <div className="bg-[#161920]/80 backdrop-blur-lg border-b border-white/5 sticky top-0 z-50 transition-all duration-300">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div className="min-h-screen bg-[#0F1115] text-slate-300 font-sans pb-32 selection:bg-teal-500/30">
+      {/* 🏛 HEADER: GLASSMORPHISM STYLE */}
+      <div className="bg-[#161920]/90 backdrop-blur-xl border-b border-white/5 sticky top-0 z-[100]">
+        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <Link
             to={`/tournaments/${tournamentId}`}
-            className="text-slate-400 hover:text-white text-sm font-bold flex items-center gap-2 transition-colors active:scale-95">
-            <span className="text-xl">←</span>
-            <span className="hidden sm:inline">Back</span>
+            className="w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 border border-white/5 text-slate-400 hover:text-white transition-all active:scale-90">
+            ←
           </Link>
 
           <div className="flex flex-col items-center">
-            <div className="text-xs sm:text-sm font-black text-slate-200 uppercase tracking-widest truncate max-w-[200px] sm:max-w-md text-center">
+            <h1 className="text-[11px] font-black text-slate-200 uppercase tracking-[0.15em] truncate max-w-[180px] sm:max-w-md text-center italic">
               {matchTitle}
-            </div>
+            </h1>
             {isLive ? (
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_red]"></span>
+              <div className="flex items-center gap-1.5 mt-1">
+                <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(239,68,68,1)]"></span>
                 <span className="text-[9px] font-black text-red-500 uppercase tracking-widest">
-                  LIVE
+                  LIVE BROADCAST
                 </span>
               </div>
             ) : (
-              <span className="text-[9px] font-bold text-slate-500 uppercase mt-0.5">
-                {match.status || "Completed"}
+              <span className="text-[9px] font-black text-slate-500 uppercase mt-1 tracking-widest">
+                Match Result
               </span>
             )}
           </div>
 
-          {/* Refresh Button (Now mostly cosmetic, but good for backup) */}
           <button
             onClick={handleManualRefresh}
             disabled={refreshing}
-            className="w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-teal-500 transition-all active:scale-90 active:rotate-180 disabled:opacity-50"
-            title="Force Sync">
-            <span
-              className={`text-lg leading-none ${
-                refreshing ? "animate-spin" : ""
-              }`}>
+            className={`w-10 h-10 rounded-xl bg-teal-500/5 border border-teal-500/10 flex items-center justify-center text-teal-500 transition-all active:scale-90 ${refreshing ? "opacity-50 pointer-events-none" : "hover:bg-teal-500/10"}`}>
+            <span className={`text-xl ${refreshing ? "animate-spin" : ""}`}>
               ↻
             </span>
           </button>
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-6">
-        {/* MATCH SUMMARY */}
-        <ScoreSummary match={match} />
+      <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-8">
+        {/* MATCH SUMMARY (Authoritative State) */}
+        <div className="animate-in fade-in slide-in-from-top-4 duration-700">
+          <ScoreSummary match={match} />
+        </div>
 
-        {/* TABS */}
-        <div className="bg-[#1C2128] border border-white/5 p-1.5 rounded-2xl flex gap-1 shadow-lg max-w-md mx-auto sticky top-[70px] z-40 backdrop-blur-md">
+        {/* 📑 TABS: HIGH-END BROADCAST STYLE */}
+        <div className="bg-[#1C2128] border border-white/10 p-1 rounded-2xl flex gap-1 shadow-2xl max-w-sm mx-auto sticky top-20 z-50 backdrop-blur-md">
           {["scorecard", "commentary", "info"].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`flex-1 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all duration-300 ${
+              className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-tighter transition-all duration-300 ${
                 activeTab === tab
-                  ? "bg-gradient-to-br from-teal-600 to-teal-800 text-white shadow-md transform scale-100"
-                  : "text-slate-500 hover:text-slate-200 hover:bg-white/5"
+                  ? "bg-gradient-to-br from-teal-500 to-teal-700 text-white shadow-lg shadow-teal-900/40"
+                  : "text-slate-500 hover:text-slate-300"
               }`}>
               {tab === "info"
-                ? "ℹ️ Info"
+                ? "Match Info"
                 : tab === "commentary"
-                ? "🎙️ Comm"
-                : "📊 Score"}
+                  ? "Timeline"
+                  : "Scorecard"}
             </button>
           ))}
         </div>
 
-        {/* CONTENT */}
-        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 min-h-[400px]">
-          {activeTab === "scorecard" && <ScoreTable match={match} />}
+        {/* 📉 DYNAMIC CONTENT AREA */}
+        <div className="animate-in fade-in slide-in-from-bottom-6 duration-1000 min-h-[500px]">
+          {activeTab === "scorecard" && (
+            <div className="space-y-6">
+              <ScoreTable match={match} />
+            </div>
+          )}
+
           {activeTab === "commentary" && (
             <div className="max-w-3xl mx-auto">
+              {/* Timeline is often the most requested feature during live games */}
               <MatchCommentary match={match} />
             </div>
           )}
-          {activeTab === "info" && <MatchInfo match={match} />}
+
+          {activeTab === "info" && (
+            <div className="max-w-2xl mx-auto">
+              <MatchInfo match={match} />
+            </div>
+          )}
         </div>
       </div>
+
+      {/* 🏁 BOTTOM DECORATIVE GRADIENT */}
+      <div className="fixed bottom-0 left-0 w-full h-32 bg-gradient-to-t from-[#0F1115] to-transparent pointer-events-none z-0"></div>
     </div>
   );
 }

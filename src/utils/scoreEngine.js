@@ -14,9 +14,10 @@ export const calculateMatchStats = (timeline, matchMeta) => {
     nonStriker: matchMeta?.initialNonStriker || "",
     currentBowler: matchMeta?.initialBowler || "",
     battingOrder: [],
+    awaitingNewBatsman: false, // ✅ Added for UI recovery
+    awaitingNewBowler: false, // ✅ Added for UI recovery
   };
 
-  // Helper to init player stats
   const initBat = (name) => {
     if (!name) return;
     if (!stats.batsmenStats[name]) {
@@ -37,12 +38,10 @@ export const calculateMatchStats = (timeline, matchMeta) => {
     }
   };
 
-  timeline.forEach((ball) => {
+  timeline.forEach((ball, index) => {
     // 1. Extract Data
-    // Handle both old string format ("1", "WD") and new Object format
-    let ballData = {};
+    let ballData = typeof ball === "string" ? {} : ball;
     if (typeof ball === "string") {
-      // Legacy support
       ballData = { runs: parseInt(ball) || 0, isWicket: ball === "W" };
       if (ball.includes("WD")) {
         ballData.isWide = true;
@@ -52,8 +51,6 @@ export const calculateMatchStats = (timeline, matchMeta) => {
         ballData.isNoBall = true;
         ballData.runs = 1;
       }
-    } else {
-      ballData = ball;
     }
 
     const {
@@ -65,115 +62,120 @@ export const calculateMatchStats = (timeline, matchMeta) => {
       isLegBye,
       wicketType,
       outBatsman,
+      physicalRuns = 0,
     } = ballData;
+
+    // ✅ CRITICAL: Replay the history using the batter/bowler recorded at the time
     const currentStriker = ballData.batter || stats.striker;
     const currentBowler = ballData.bowler || stats.currentBowler;
 
     initBat(currentStriker);
     initBowl(currentBowler);
 
-    // 2. Logic Flags
-    // A ball is "Legal" (counts towards over) if it's NOT Wide and NOT No-Ball
     const isLegalBall = !isWide && !isNoBall;
 
-    // A ball counts as "faced" by batsman if it's Legal OR it's a No-Ball (Batsman plays NB, but it doesn't count to over)
-    // Wait! Standard Rule: No Ball does NOT count as ball faced for strike rate usually,
-    // BUT runs scored off bat on NB DO count.
-    // The Review suggested: "No-ball... incorrectly increments batsman's balls faced".
-    // FIX: We will ONLY increment balls faced if isLegalBall is true.
-    // (Note: This depends on specific tournament rules, but standard is NB doesn't count as ball faced).
-
-    // 3. Calculate Runs
+    // 2. Calculate Runs
     let batterRuns = 0;
     let bowlerRuns = 0;
     let totalBallRuns = 0;
 
     if (isWide) {
-      stats.extras.wides += 1 + runs; // 1 wide + extra runs
+      stats.extras.wides += 1 + runs;
       bowlerRuns += 1 + runs;
       totalBallRuns += 1 + runs;
-      // Batter gets 0 runs, 0 balls
     } else if (isNoBall) {
       stats.extras.noBalls += 1;
-      bowlerRuns += 1; // Penalty
+      bowlerRuns += 1;
       totalBallRuns += 1;
-
-      // Runs off bat during NB
-      if (isBye) {
-        stats.extras.byes += runs;
-        totalBallRuns += runs;
-      } else if (isLegBye) {
-        stats.extras.legByes += runs;
-        totalBallRuns += runs;
-      } else {
-        batterRuns += runs; // Runs off bat
-        bowlerRuns += runs; // Bowler hit for runs
-        totalBallRuns += runs;
-      }
-    } else {
-      // Legal Delivery
-      if (isBye) {
-        stats.extras.byes += runs;
-        totalBallRuns += runs;
-      } else if (isLegBye) {
-        stats.extras.legByes += runs;
-        totalBallRuns += runs;
-      } else {
+      if (isBye) stats.extras.byes += runs;
+      else if (isLegBye) stats.extras.legByes += runs;
+      else {
         batterRuns += runs;
         bowlerRuns += runs;
-        totalBallRuns += runs;
       }
+      totalBallRuns += runs;
+    } else {
+      if (isBye) stats.extras.byes += runs;
+      else if (isLegBye) stats.extras.legByes += runs;
+      else {
+        batterRuns += runs;
+        bowlerRuns += runs;
+      }
+      totalBallRuns += runs;
     }
 
-    // 4. Update Stats
+    // 3. Update Stats
     stats.score += totalBallRuns;
-
     if (currentStriker) {
       stats.batsmenStats[currentStriker].runs += batterRuns;
-      // ✅ FIX: Only increment balls faced if it is a LEGAL delivery (No Wides, No NBs)
-      if (isLegalBall) {
-        stats.batsmenStats[currentStriker].balls += 1;
-      }
+      if (isLegalBall || isNoBall)
+        stats.batsmenStats[currentStriker].balls += 1; // Standard: NB counts as ball faced
       if (batterRuns === 4) stats.batsmenStats[currentStriker].fours += 1;
       if (batterRuns === 6) stats.batsmenStats[currentStriker].sixes += 1;
     }
-
     if (currentBowler) {
       stats.bowlerStats[currentBowler].runs += bowlerRuns;
-      // Only legal balls count for bowler's over count
-      if (isLegalBall) {
-        stats.bowlerStats[currentBowler].balls += 1;
-      }
+      if (isLegalBall) stats.bowlerStats[currentBowler].balls += 1;
     }
 
-    // 5. Wickets
+    // 4. Wickets
     if (isWicket) {
       stats.wickets += 1;
       const victim = outBatsman || currentStriker;
-      if (stats.batsmenStats[victim]) {
+      if (stats.batsmenStats[victim])
         stats.batsmenStats[victim].out = wicketType || "out";
-      }
-
-      // Run outs don't count for bowler
-      if (wicketType !== "runout" && currentBowler) {
+      if (
+        wicketType !== "runout" &&
+        wicketType !== "retiredhurt" &&
+        currentBowler
+      )
         stats.bowlerStats[currentBowler].wickets += 1;
-      }
-
       stats.fallOfWickets.push({
         score: stats.score,
         wicketNo: stats.wickets,
         batsman: victim,
-        over: `${stats.over}.${stats.overBallCount + (isLegalBall ? 1 : 0)}`, // Approx
+        over: `${stats.over}.${stats.overBallCount + (isLegalBall ? 1 : 0)}`,
       });
     }
 
-    // 6. Over Count
+    // 5. Strike Rotation Logic (The "Heart" Fix)
+    // We only perform rotation if it's NOT the last ball, OR if we have the explicit next states
+    if (ballData.nextStriker !== undefined) {
+      stats.striker = ballData.nextStriker;
+      stats.nonStriker = ballData.nextNonStriker;
+      stats.currentBowler = ballData.nextBowler || currentBowler;
+    } else {
+      // Fallback for logic without explicit snapshots
+      let shouldSwap = (physicalRuns || batterRuns) % 2 !== 0;
+      if (shouldSwap) {
+        const temp = stats.striker;
+        stats.striker = stats.nonStriker;
+        stats.nonStriker = temp;
+      }
+    }
+
+    // 6. Over Count & Over End Rotation
     if (isLegalBall) {
       stats.overBallCount += 1;
       if (stats.overBallCount === 6) {
         stats.over += 1;
         stats.overBallCount = 0;
+
+        // ✅ Only rotate strike on over end if NO wicket fell on this ball
+        // If a wicket fell, the rotation happens when the new batsman is confirmed
+        if (!isWicket && ballData.nextStriker === undefined) {
+          const temp = stats.striker;
+          stats.striker = stats.nonStriker;
+          stats.nonStriker = temp;
+        }
       }
+    }
+
+    // 7. UI Flag Recovery (For the final ball in the timeline)
+    if (index === timeline.length - 1) {
+      stats.awaitingNewBatsman = isWicket && !ballData.nextStriker;
+      stats.awaitingNewBowler =
+        stats.overBallCount === 0 && stats.over > 0 && isLegalBall;
     }
   });
 

@@ -31,6 +31,7 @@ function localDateString(d = new Date()) {
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
+
 function normalizeDate(val) {
   if (!val) return null;
   if (val instanceof Date) return localDateString(val);
@@ -40,6 +41,7 @@ function normalizeDate(val) {
   }
   return null;
 }
+
 function normalizeStatus(storedStatus, dateStr) {
   const today = localDateString();
   const s = (storedStatus || "").toLowerCase();
@@ -51,12 +53,13 @@ function normalizeStatus(storedStatus, dateStr) {
   }
   return s || "unknown";
 }
+
 function sanitizeForCommit(obj) {
   return JSON.parse(
     JSON.stringify(obj, (key, value) => {
       if (value === undefined) return null; // Convert undefined to null
       return value;
-    })
+    }),
   );
 }
 
@@ -118,7 +121,7 @@ export async function createMatch(tournamentId, matchId, payload) {
   await setDoc(
     tDoc,
     { id: tournamentId, updatedAt: new Date().toISOString() },
-    { merge: true }
+    { merge: true },
   );
 
   const bats = Array.isArray(payload.batsmenList) ? payload.batsmenList : [];
@@ -140,12 +143,12 @@ export async function createMatch(tournamentId, matchId, payload) {
     batsmenStats: Object.fromEntries(
       (bats || [])
         .filter(Boolean)
-        .map((n) => [n, { runs: 0, balls: 0, fours: 0, sixes: 0, out: null }])
+        .map((n) => [n, { runs: 0, balls: 0, fours: 0, sixes: 0, out: null }]),
     ),
     bowlerStats: Object.fromEntries(
       (bowl || [])
         .filter(Boolean)
-        .map((n) => [n, { balls: 0, runs: 0, wickets: 0 }])
+        .map((n) => [n, { balls: 0, runs: 0, wickets: 0 }]),
     ),
     extras: { wides: 0, noBalls: 0, byes: 0, legByes: 0 },
     fallOfWickets: [],
@@ -212,13 +215,14 @@ export async function createMatch(tournamentId, matchId, payload) {
 
 /**
  * THE UNIVERSAL MODIFY FUNCTION
- * Recalculates stats from timeline using scoreEngine
+ * Recalculates stats from timeline using scoreEngine.
+ * Now includes state-locking and awaiting flag recovery.
  */
 export const modifyMatchTimeline = async (
   tournamentId,
   matchId,
   action,
-  payload
+  payload,
 ) => {
   const matchRef = doc(db, "tournaments", tournamentId, "matches", matchId);
 
@@ -267,7 +271,7 @@ export const modifyMatchTimeline = async (
         throw new Error("Invalid Action");
     }
 
-    // 2. RECALCULATE
+    // 2. RECALCULATE (Self-Healing)
     const matchMeta = {
       teamA: data.meta?.teamA || data.innings[0]?.battingTeam,
       teamB: data.meta?.teamB || data.innings[1]?.battingTeam,
@@ -276,15 +280,17 @@ export const modifyMatchTimeline = async (
       initialBowler: inningsData.bowlersList?.[0],
     };
 
+    // Recalculate stats using history. High-end logic ensures strike rotation is valid.
     const newStats = calculateMatchStats(timeline, matchMeta);
 
-    // 3. UPDATE DB
+    // 3. UPDATE DB STRUCTURE
     data.innings[inningsIdx] = {
       ...data.innings[inningsIdx],
       ...newStats,
       timeline: timeline,
     };
 
+    // Update root level summaries if active innings
     if (inningsIdx === (data.currentInnings || 0)) {
       data.score = newStats.score;
       data.wickets = newStats.wickets;
@@ -293,8 +299,16 @@ export const modifyMatchTimeline = async (
       data.striker = newStats.striker;
       data.nonStriker = newStats.nonStriker;
       data.currentBowler = newStats.currentBowler;
+
+      // ✅ Force reset/update awaiting flags based on new timeline reality
+      data.innings[inningsIdx].awaitingNewBatsman =
+        newStats.awaitingNewBatsman || false;
+      data.innings[inningsIdx].awaitingNewBowler =
+        newStats.awaitingNewBowler || false;
     }
 
+    // 4. COMMIT with Sync Timestamp
+    data.lastUpdate = Date.now();
     const safeData = sanitizeForCommit(data);
     transaction.set(matchRef, safeData);
   });
@@ -327,6 +341,7 @@ export const finishMatch = async (tournamentId, matchId, winner, reason) => {
     "meta.winner": winner,
     status: "finished",
     winner: winner,
+    lastUpdate: Date.now(),
   });
 };
 
@@ -334,13 +349,9 @@ export const deleteMatch = async (tournamentId, matchId) => {
   const matchRef = doc(db, "tournaments", tournamentId, "matches", matchId);
 
   try {
-    // 1. Fetch match data BEFORE deleting
     const snap = await getDoc(matchRef);
-
     if (snap.exists()) {
       const matchData = snap.data();
-
-      // 2. If match was finished, revert the stats
       if (
         matchData.status === "finished" ||
         matchData.meta?.matchStatus === "finished"
@@ -348,8 +359,6 @@ export const deleteMatch = async (tournamentId, matchId) => {
         await revertMatchStatsFromGlobal(matchData);
       }
     }
-
-    // 3. Delete the document
     await deleteDoc(matchRef);
   } catch (error) {
     console.error("Error deleting match:", error);
@@ -357,10 +366,18 @@ export const deleteMatch = async (tournamentId, matchId) => {
   }
 };
 
+/**
+ * 🛠️ UPDATED: updateMatch
+ * Ensures every manual update triggers a fresh sync in the UI.
+ */
 export const updateMatch = async (tournamentId, matchId, data) => {
+  const finalUpdate = {
+    ...data,
+    lastUpdate: Date.now(),
+  };
   await updateDoc(
     doc(db, "tournaments", tournamentId, "matches", matchId),
-    data
+    sanitizeForCommit(finalUpdate),
   );
 };
 
@@ -403,7 +420,7 @@ export async function addTeam(
   tournamentId,
   teamName,
   playersArray,
-  extraData = {}
+  extraData = {},
 ) {
   try {
     const teamsRef = collection(db, "tournaments", tournamentId, "teams");
@@ -424,7 +441,7 @@ export async function updateTeam(
   tournamentId,
   teamId,
   playersArray,
-  extraData = {}
+  extraData = {},
 ) {
   try {
     const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);

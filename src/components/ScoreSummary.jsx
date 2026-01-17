@@ -39,17 +39,19 @@ export default function ScoreSummary({ match }) {
   const partnership = useMemo(() => {
     if (!currentInning) return null;
     const timeline = currentInning.timeline || currentInning.ballsLog || [];
-    
+
     let runs = 0;
     let balls = 0;
 
     // Traverse backwards from the last ball
     for (let i = timeline.length - 1; i >= 0; i--) {
       const ball = timeline[i];
-      
+
       // Stop if we hit a wicket (partnership started after previous wicket)
-      if (typeof ball === "object" ? ball.isWicket : String(ball).includes("W")) {
-         break;
+      if (
+        typeof ball === "object" ? ball.isWicket : String(ball).includes("W")
+      ) {
+        break;
       }
 
       // Calculate Runs
@@ -58,8 +60,8 @@ export default function ScoreSummary({ match }) {
 
       if (typeof ball === "object") {
         runVal = ball.runs || 0;
-        if (ball.isWide || ball.isNoBall) isLegal = false; 
-        // Note: In partnership stats, balls faced usually excludes wides. 
+        if (ball.isWide || ball.isNoBall) isLegal = false;
+        // Note: In partnership stats, balls faced usually excludes wides.
         // Some standards exclude NB from balls faced too, but we keep logic consistent with engine.
       } else {
         // Legacy String Fallback
@@ -67,9 +69,9 @@ export default function ScoreSummary({ match }) {
         if (s.includes("WD") || s.includes("NB")) isLegal = false;
         runVal = parseInt(s) || 0;
         if (s.includes("WD") || s.includes("NB")) {
-           // Extract runs from string like "1wd+1" -> 2 runs
-           const extra = parseInt(s.replace(/\D/g, "")) || 0; 
-           runVal = 1 + extra; 
+          // Extract runs from string like "1wd+1" -> 2 runs
+          const extra = parseInt(s.replace(/\D/g, "")) || 0;
+          runVal = 1 + extra;
         }
       }
 
@@ -81,10 +83,8 @@ export default function ScoreSummary({ match }) {
 
   return (
     <div className="flex flex-col gap-4 w-full max-w-2xl mx-auto">
-      
       {/* 1. SCOREBOARD HEADER */}
       <div className="bg-gradient-to-b from-[#1C2128] to-[#161920] border border-white/10 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
-        
         {/* Status Badge */}
         <div className="absolute top-4 right-4">
           <span
@@ -111,11 +111,15 @@ export default function ScoreSummary({ match }) {
                 </span>
               </div>
             ) : (
-              <div className="text-slate-600 text-sm font-bold italic">Yet to bat</div>
+              <div className="text-slate-600 text-sm font-bold italic">
+                Yet to bat
+              </div>
             )}
           </div>
 
-          <div className="text-slate-700 font-black text-2xl italic opacity-20 select-none">VS</div>
+          <div className="text-slate-700 font-black text-2xl italic opacity-20 select-none">
+            VS
+          </div>
 
           {/* Team B */}
           <div className="text-right w-5/12">
@@ -130,7 +134,9 @@ export default function ScoreSummary({ match }) {
                 </span>
               </div>
             ) : (
-              <div className="text-slate-600 text-sm font-bold italic">Yet to bat</div>
+              <div className="text-slate-600 text-sm font-bold italic">
+                Yet to bat
+              </div>
             )}
           </div>
         </div>
@@ -148,13 +154,22 @@ export default function ScoreSummary({ match }) {
         {!result && inn2 && match.meta?.target && (
           <div className="mt-6 bg-indigo-900/20 border border-indigo-500/20 rounded-xl p-3 text-center">
             <div className="text-indigo-300 text-[10px] uppercase font-bold tracking-widest mb-1">
-              Target: <span className="text-white text-base">{match.meta.target}</span>
+              Target:{" "}
+              <span className="text-white text-base">{match.meta.target}</span>
             </div>
             <div className="text-slate-400 text-sm">
-              Need <span className="text-white font-bold text-lg">{match.meta.target - inn2.score}</span> runs off{" "}
+              Need{" "}
               <span className="text-white font-bold text-lg">
-                {Math.max(0, match.meta.overs * 6 - (inn2.over * 6 + inn2.overBallCount))}
-              </span> balls
+                {match.meta.target - inn2.score}
+              </span>{" "}
+              runs off{" "}
+              <span className="text-white font-bold text-lg">
+                {Math.max(
+                  0,
+                  match.meta.overs * 6 - (inn2.over * 6 + inn2.overBallCount),
+                )}
+              </span>{" "}
+              balls
             </div>
           </div>
         )}
@@ -169,7 +184,9 @@ export default function ScoreSummary({ match }) {
             </div>
             {partnership && (
               <div className="text-xs font-bold text-teal-400 bg-teal-900/20 px-3 py-1 rounded-full border border-teal-500/20">
-                <span className="text-white text-base mr-1">{partnership.runs}</span> 
+                <span className="text-white text-base mr-1">
+                  {partnership.runs}
+                </span>
                 <span className="text-slate-400">({partnership.balls})</span>
               </div>
             )}
@@ -209,8 +226,12 @@ export default function ScoreSummary({ match }) {
           {/* Bowler Card */}
           <div className="mt-3 bg-[#161920] p-4 rounded-xl border border-white/5 flex justify-between items-center">
             <div>
-              <div className="text-[9px] text-slate-500 uppercase font-bold mb-1 tracking-wider">Bowling</div>
-              <div className="text-slate-200 font-bold text-lg">{bowlerName}</div>
+              <div className="text-[9px] text-slate-500 uppercase font-bold mb-1 tracking-wider">
+                Bowling
+              </div>
+              <div className="text-slate-200 font-bold text-lg">
+                {bowlerName}
+              </div>
             </div>
             <div className="text-right">
               <div className="text-slate-100 font-mono font-black text-2xl leading-none">
@@ -219,9 +240,10 @@ export default function ScoreSummary({ match }) {
                 {currentInning.bowlerStats?.[bowlerName]?.runs || 0}
               </div>
               <div className="text-[10px] text-slate-500 font-medium mt-1">
-                {currentInning.bowlerStats?.[bowlerName]?.balls 
-                  ? `${Math.floor(currentInning.bowlerStats[bowlerName].balls / 6)}.${currentInning.bowlerStats[bowlerName].balls % 6}` 
-                  : "0.0"} overs
+                {currentInning.bowlerStats?.[bowlerName]?.balls
+                  ? `${Math.floor(currentInning.bowlerStats[bowlerName].balls / 6)}.${currentInning.bowlerStats[bowlerName].balls % 6}`
+                  : "0.0"}{" "}
+                overs
               </div>
             </div>
           </div>
@@ -231,14 +253,53 @@ export default function ScoreSummary({ match }) {
       {/* 3. KEY STATS GRID */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: "Run Rate", value: currentInning && (currentInning.overBallCount + currentInning.over * 6 > 0) ? (currentInning.score / ((currentInning.over * 6 + currentInning.overBallCount) / 6)).toFixed(2) : "0.00", color: "text-slate-200" },
-          { label: "Extras", value: (currentInning?.extras?.wides||0) + (currentInning?.extras?.noBalls||0) + (currentInning?.extras?.byes||0) + (currentInning?.extras?.legByes||0), color: "text-amber-400" },
-          { label: "Fours", value: Object.values(currentInning?.batsmenStats || {}).reduce((acc, p) => acc + (p.fours || 0), 0), color: "text-emerald-400" },
-          { label: "Sixes", value: Object.values(currentInning?.batsmenStats || {}).reduce((acc, p) => acc + (p.sixes || 0), 0), color: "text-indigo-400" },
+          {
+            label: "Run Rate",
+            value:
+              currentInning &&
+              currentInning.overBallCount + currentInning.over * 6 > 0
+                ? (
+                    currentInning.score /
+                    ((currentInning.over * 6 + currentInning.overBallCount) / 6)
+                  ).toFixed(2)
+                : "0.00",
+            color: "text-slate-200",
+          },
+          {
+            label: "Extras",
+            value:
+              (currentInning?.extras?.wides || 0) +
+              (currentInning?.extras?.noBalls || 0) +
+              (currentInning?.extras?.byes || 0) +
+              (currentInning?.extras?.legByes || 0),
+            color: "text-amber-400",
+          },
+          {
+            label: "Fours",
+            value: Object.values(currentInning?.batsmenStats || {}).reduce(
+              (acc, p) => acc + (p.fours || 0),
+              0,
+            ),
+            color: "text-emerald-400",
+          },
+          {
+            label: "Sixes",
+            value: Object.values(currentInning?.batsmenStats || {}).reduce(
+              (acc, p) => acc + (p.sixes || 0),
+              0,
+            ),
+            color: "text-indigo-400",
+          },
         ].map((stat, idx) => (
-          <div key={idx} className="bg-[#1C2128] border border-white/5 p-4 rounded-2xl text-center shadow-sm">
-            <div className="text-[9px] text-slate-500 uppercase font-black tracking-widest mb-1">{stat.label}</div>
-            <div className={`${stat.color} font-mono font-black text-2xl`}>{stat.value}</div>
+          <div
+            key={idx}
+            className="bg-[#1C2128] border border-white/5 p-4 rounded-2xl text-center shadow-sm">
+            <div className="text-[9px] text-slate-500 uppercase font-black tracking-widest mb-1">
+              {stat.label}
+            </div>
+            <div className={`${stat.color} font-mono font-black text-2xl`}>
+              {stat.value}
+            </div>
           </div>
         ))}
       </div>
