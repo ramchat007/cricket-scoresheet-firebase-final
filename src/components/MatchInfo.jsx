@@ -77,7 +77,7 @@ export default function MatchInfo({ match }) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <InfoRow
             label="Series"
-            value={meta.tournament?.name || "Exhibition"}
+            value={meta.tournament || "Exhibition"}
             icon="🏆"
           />
           <InfoRow
