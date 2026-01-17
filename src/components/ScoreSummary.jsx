@@ -14,9 +14,20 @@ export default function ScoreSummary({ match }) {
     ? match.innings
     : [match.innings?.[0], match.innings?.[1]].filter(Boolean);
 
-  const status = match.status || match.meta?.status || "upcoming";
-  const result = match.winner || match.meta?.result || match.result?.winner;
-  const currentInningIndex = match.currentInnings || 0;
+  // 🔧 FIX: Status consistency
+  const status =
+    match.meta?.matchStatus || match.status || match.meta?.status || "upcoming";
+
+  // 🔧 FIX: Result consistency
+  const result =
+    match.meta?.result ||
+    match.result?.text ||
+    match.winner ||
+    match.result?.winner;
+
+  // 🔧 FIX: Safe current inning index
+  const currentInningIndex =
+    typeof match.currentInnings === "number" ? match.currentInnings : 0;
 
   // 🔥 GET TOTAL OVERS (Meta or Default)
   const totalOvers = match.meta?.overs || 20;
@@ -43,33 +54,27 @@ export default function ScoreSummary({ match }) {
     let runs = 0;
     let balls = 0;
 
-    // Traverse backwards from the last ball
     for (let i = timeline.length - 1; i >= 0; i--) {
       const ball = timeline[i];
 
-      // Stop if we hit a wicket (partnership started after previous wicket)
       if (
         typeof ball === "object" ? ball.isWicket : String(ball).includes("W")
       ) {
         break;
       }
 
-      // Calculate Runs
       let runVal = 0;
       let isLegal = true;
 
       if (typeof ball === "object") {
         runVal = ball.runs || 0;
-        if (ball.isWide || ball.isNoBall) isLegal = false;
-        // Note: In partnership stats, balls faced usually excludes wides.
-        // Some standards exclude NB from balls faced too, but we keep logic consistent with engine.
+        // 🔧 FIX: Only wides are illegal balls (NB counts as ball in your engine)
+        if (ball.isWide) isLegal = false;
       } else {
-        // Legacy String Fallback
         const s = String(ball);
-        if (s.includes("WD") || s.includes("NB")) isLegal = false;
+        if (s.includes("WD")) isLegal = false; // 🔧 FIX
         runVal = parseInt(s) || 0;
         if (s.includes("WD") || s.includes("NB")) {
-          // Extract runs from string like "1wd+1" -> 2 runs
           const extra = parseInt(s.replace(/\D/g, "")) || 0;
           runVal = 1 + extra;
         }
@@ -80,6 +85,20 @@ export default function ScoreSummary({ match }) {
     }
     return { runs, balls };
   }, [currentInning]);
+
+  // ✨ NEW: Last ball summary
+  const lastBall =
+    currentInning?.timeline?.[currentInning.timeline.length - 1] ||
+    currentInning?.ballsLog?.[currentInning.ballsLog.length - 1];
+
+  const lastBallText = (() => {
+    if (!lastBall) return null;
+    if (typeof lastBall === "string") return lastBall;
+    if (lastBall.isWicket) return "WICKET";
+    if (lastBall.isWide) return "WIDE";
+    if (lastBall.isNoBall) return "NO BALL";
+    return `${lastBall.runs || 0} run${lastBall.runs === 1 ? "" : "s"}`;
+  })();
 
   return (
     <div className="flex flex-col gap-4 w-full max-w-2xl mx-auto">
@@ -107,7 +126,7 @@ export default function ScoreSummary({ match }) {
               <div className="text-slate-100 font-mono font-black text-3xl md:text-4xl leading-none tracking-tighter">
                 {inn1.score}/{inn1.wickets}
                 <span className="text-slate-500 text-sm md:text-base font-sans font-medium ml-2 block md:inline">
-                  ({inn1.over}.{inn1.overBallCount})
+                  ({inn1.over}.{inn1.overBallCount} / {totalOvers} overs)
                 </span>
               </div>
             ) : (
@@ -130,7 +149,7 @@ export default function ScoreSummary({ match }) {
               <div className="text-slate-100 font-mono font-black text-3xl md:text-4xl leading-none tracking-tighter">
                 {inn2.score}/{inn2.wickets}
                 <span className="text-slate-500 text-sm md:text-base font-sans font-medium ml-2 block md:inline">
-                  ({inn2.over}.{inn2.overBallCount})
+                  ({inn2.over}.{inn2.overBallCount} / {totalOvers} overs)
                 </span>
               </div>
             ) : (
@@ -157,20 +176,37 @@ export default function ScoreSummary({ match }) {
               Target:{" "}
               <span className="text-white text-base">{match.meta.target}</span>
             </div>
-            <div className="text-slate-400 text-sm">
-              Need{" "}
-              <span className="text-white font-bold text-lg">
-                {match.meta.target - inn2.score}
-              </span>{" "}
-              runs off{" "}
-              <span className="text-white font-bold text-lg">
-                {Math.max(
-                  0,
-                  match.meta.overs * 6 - (inn2.over * 6 + inn2.overBallCount),
-                )}
-              </span>{" "}
-              balls
-            </div>
+            {(() => {
+              const remainingBalls = Math.max(
+                0,
+                totalOvers * 6 - (inn2.over * 6 + inn2.overBallCount),
+              );
+              const remainingRuns = Math.max(0, match.meta.target - inn2.score); // 🔧 FIX
+              const rrr =
+                remainingBalls > 0
+                  ? (remainingRuns / (remainingBalls / 6)).toFixed(2)
+                  : "0.00";
+              return (
+                <>
+                  <div className="text-slate-400 text-sm">
+                    Need{" "}
+                    <span className="text-white font-bold text-lg">
+                      {remainingRuns}
+                    </span>{" "}
+                    runs off{" "}
+                    <span className="text-white font-bold text-lg">
+                      {remainingBalls}
+                    </span>{" "}
+                    balls
+                  </div>
+                  {/* ✨ NEW: Required Run Rate */}
+                  <div className="text-[11px] text-indigo-300 mt-1">
+                    Required RR:{" "}
+                    <span className="text-white font-bold">{rrr}</span>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
       </div>
@@ -191,6 +227,14 @@ export default function ScoreSummary({ match }) {
               </div>
             )}
           </div>
+
+          {/* ✨ NEW: Last Ball */}
+          {lastBallText && (
+            <div className="mb-3 text-center text-xs text-slate-400">
+              Last ball:{" "}
+              <span className="text-white font-bold">{lastBallText}</span>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             {/* Striker Card */}

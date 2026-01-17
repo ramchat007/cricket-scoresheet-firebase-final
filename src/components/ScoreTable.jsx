@@ -31,6 +31,8 @@ const ScoreTable = ({ match }) => {
     return String(p).trim();
   };
 
+  const totalOvers = match.meta?.overs;
+
   // --- 🛠️ 1. DISMISSAL TEXT (Standardized Color & Shorthand) ---
   const getDismissalText = (stats, isStriker, isNonStriker) => {
     if (isStriker || isNonStriker)
@@ -163,7 +165,7 @@ const ScoreTable = ({ match }) => {
                 {inn.score}/{inn.wickets}
               </span>
               <span className="text-slate-500 text-xs ml-2 font-mono">
-                ({inn.over}.{inn.overBallCount} Ov)
+                ({inn.over}.{inn.overBallCount} / {totalOvers} Ov)
               </span>
             </div>
             <span
@@ -265,7 +267,7 @@ const ScoreTable = ({ match }) => {
                         {inn.score}/{inn.wickets}
                       </span>
                       <span className="text-slate-500 text-xs font-mono">
-                        ({inn.over}.{inn.overBallCount} Ov)
+                        ({inn.over}.{inn.overBallCount} / {totalOvers} Ov)
                       </span>
                       <span className="text-teal-500/80 text-xs font-mono ml-3">
                         CRR: {crr}
