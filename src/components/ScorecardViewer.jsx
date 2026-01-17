@@ -3,7 +3,7 @@ import React from "react";
 import MatchSummary from "./MatchSummary";
 import ScoreTable from "./ScoreTable";
 
-export default function ScorecardViewer({ match }) {
+export default function ScorecardViewer({ match, onRefresh, isRefreshing }) {
   // --- Empty State ---
   if (!match) {
     return (
@@ -20,8 +20,38 @@ export default function ScorecardViewer({ match }) {
     );
   }
 
+  const isLive = match.status === "ongoing" || match.status === "live";
+
   return (
     <div className="w-full max-w-6xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+      {/* ✅ NEW: Match Center Header with Refresh */}
+      <div className="flex justify-between items-center bg-[#161920] p-4 rounded-2xl border border-white/5 shadow-lg">
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-black text-slate-100 uppercase tracking-wide italic">
+            Match Center
+          </h2>
+          {isLive && (
+            <span className="flex items-center gap-1.5 bg-red-500/10 border border-red-500/20 px-2 py-1 rounded text-[10px] font-black text-red-500 uppercase tracking-widest animate-pulse">
+              <span className="w-1.5 h-1.5 bg-red-500 rounded-full"></span>
+              Live
+            </span>
+          )}
+        </div>
+
+        {/* Refresh Button */}
+        {onRefresh && (
+          <button
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-teal-400 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all active:scale-95 disabled:opacity-50">
+            <span className={`text-sm ${isRefreshing ? "animate-spin" : ""}`}>
+              🔄
+            </span>
+            {isRefreshing ? "Updating..." : "Refresh"}
+          </button>
+        )}
+      </div>
+
       {/* Match Summary Header */}
       <div className="w-full">
         <MatchSummary match={match} />

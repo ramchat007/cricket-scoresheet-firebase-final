@@ -8,6 +8,9 @@ import {
   getDocs,
   writeBatch,
   setDoc,
+  onSnapshot, // ✅ Import onSnapshot for real-time updates
+  query, // ✅ Import query
+  orderBy, // ✅ Import orderBy
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { useAuth } from "../hooks/useAuth";
@@ -99,7 +102,7 @@ export default function TournamentDetails() {
   }, [id, user, navigate]);
 
   /* --------------------------------------------
-      Load teams
+      Load teams (One-time fetch is usually fine here)
      --------------------------------------------- */
   useEffect(() => {
     if (!id) return;
@@ -115,21 +118,31 @@ export default function TournamentDetails() {
   }, [id]);
 
   /* --------------------------------------------
-      Load matches
+      ✅ FIX: Load matches (REAL-TIME LISTENER)
      --------------------------------------------- */
   useEffect(() => {
     if (!id) return;
-    const loadMatches = async () => {
-      try {
-        const snap = await getDocs(
-          collection(db, "tournaments", id, "matches")
-        );
-        setMatches(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      } catch (error) {
-        console.error("Error loading matches:", error);
+
+    // Use onSnapshot instead of getDocs so new matches appear instantly
+    // Ordered by 'matchNo' so they stay consistent
+    const q = query(
+      collection(db, "tournaments", id, "matches"),
+      orderBy("matchNo", "asc")
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const liveData = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setMatches(liveData);
+      },
+      (error) => {
+        console.error("Error listening to matches:", error);
       }
-    };
-    loadMatches();
+    );
+
+    // Cleanup listener when component unmounts
+    return () => unsubscribe();
   }, [id]);
 
   /* --------------------------------------------
@@ -270,7 +283,7 @@ export default function TournamentDetails() {
             {/* 2. ADMIN ONLY ACTIONS */}
             {canEdit && (
               <>
-                {/* ✅ SCHEDULER BUTTON: Always visible for Admins */}
+                {/* SCHEDULER BUTTON */}
                 <button
                   onClick={() => setShowScheduler(!showScheduler)}
                   className="bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 font-bold px-5 py-3 rounded-xl shadow-lg flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest">

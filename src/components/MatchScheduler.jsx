@@ -6,6 +6,8 @@ import {
   addDoc,
   getDocs,
   deleteDoc,
+  query,
+  where,
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 
@@ -20,7 +22,8 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState("09:00");
   const [venue, setVenue] = useState("");
-  const [overs, setOvers] = useState(10);
+  const [overs, setOvers] = useState(5);
+  const [matchLabel, setMatchLabel] = useState(""); // Manual Label
 
   // Auto Schedule State
   const [startDate, setStartDate] = useState(
@@ -28,24 +31,33 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
   );
   const [startTime, setStartTime] = useState("09:00");
   const [defaultVenue, setDefaultVenue] = useState("");
-  const [matchDuration, setMatchDuration] = useState(180);
-  const [matchGap, setMatchGap] = useState(30);
-  const [matchesPerDay, setMatchesPerDay] = useState(2);
-  const [autoOvers, setAutoOvers] = useState(10);
+  const [matchDuration, setMatchDuration] = useState(30);
+  const [matchGap, setMatchGap] = useState(0);
+  const [matchesPerDay, setMatchesPerDay] = useState(25);
+  const [autoOvers, setAutoOvers] = useState(5);
+  const [leagueStageName, setLeagueStageName] = useState("League Match");
 
+  // ✅ HELPER: Sanitize Squad (Crucial for Payload Size)
   const sanitizeSquad = (roster) => {
     if (!roster) return [];
-    return roster.map((player) => {
-      const { photoURL, statsSnapshot, ...lightweightPlayer } = player;
-      return lightweightPlayer;
-    });
+    return roster.map((player) => ({
+      id: player.id,
+      name: player.name,
+      role: player.role || "All-Rounder",
+      // 🚨 STRIP BASE64 IMAGES to prevent 10MB payload error
+      photoURL:
+        player.photoURL && player.photoURL.startsWith("data:image")
+          ? ""
+          : player.photoURL || "",
+      isIcon: !!player.isIcon,
+    }));
   };
 
   // --- 1. RESET SCHEDULE ---
   const handleResetSchedule = async () => {
     if (
       !window.confirm(
-        "⚠️ DANGER: This will DELETE ALL matches in the schedule. Are you sure?"
+        "⚠️ Are you sure? This will delete all UPCOMING matches.\n\n(Live and Finished matches will be SAFE)"
       )
     )
       return;
@@ -53,30 +65,27 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
     setResetting(true);
     try {
       const matchesCol = collection(db, "tournaments", tournamentId, "matches");
-      const snapshot = await getDocs(matchesCol);
+      const q = query(matchesCol, where("status", "==", "upcoming"));
+      const snapshot = await getDocs(q);
 
       if (snapshot.empty) {
-        alert("No matches to delete.");
+        alert("No 'upcoming' matches found to delete.");
+        setResetting(false);
         return;
       }
 
-      const chunks = [];
-      let currentBatch = writeBatch(db);
-      let count = 0;
+      // Small chunks for delete operations too
+      const chunkSize = 100;
+      const docs = snapshot.docs;
 
-      snapshot.docs.forEach((doc) => {
-        currentBatch.delete(doc.ref);
-        count++;
-        if (count >= 450) {
-          chunks.push(currentBatch.commit());
-          currentBatch = writeBatch(db);
-          count = 0;
-        }
-      });
-      if (count > 0) chunks.push(currentBatch.commit());
+      for (let i = 0; i < docs.length; i += chunkSize) {
+        const chunk = docs.slice(i, i + chunkSize);
+        const batch = writeBatch(db);
+        chunk.forEach((doc) => batch.delete(doc.ref));
+        await batch.commit();
+      }
 
-      await Promise.all(chunks);
-      alert("Schedule cleared successfully!");
+      alert(`Successfully deleted ${snapshot.size} upcoming matches.`);
     } catch (e) {
       console.error(e);
       alert("Reset failed: " + e.message);
@@ -94,8 +103,9 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
     try {
       const teamA = teams.find((t) => t.id === teamAId);
       const teamB = teams.find((t) => t.id === teamBId);
-
       const startDateTime = new Date(`${date}T${time}`);
+
+      const finalMatchNo = matchLabel.trim() || Date.now();
 
       const matchPayload = {
         meta: {
@@ -104,7 +114,6 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
           teamB: teamB.name,
           teamAId: teamA.id,
           teamBId: teamB.id,
-          // ✅ NEW: Save Logos directly to Match Document
           teamALogo: teamA.logoUrl || teamA.logo || "",
           teamBLogo: teamB.logoUrl || teamB.logo || "",
           overs: Number(overs),
@@ -115,12 +124,13 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
           status: "upcoming",
           createdAt: new Date().toISOString(),
           format: "T20",
+          matchTitle: matchLabel.trim(),
         },
         teamASquad: sanitizeSquad(teamA.roster),
         teamBSquad: sanitizeSquad(teamB.roster),
         innings: [],
         status: "upcoming",
-        matchNo: Date.now(),
+        matchNo: finalMatchNo,
       };
 
       await addDoc(
@@ -128,9 +138,10 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
         matchPayload
       );
       alert("Match scheduled successfully!");
+
       setTeamAId("");
       setTeamBId("");
-      setVenue("");
+      setMatchLabel("");
     } catch (e) {
       console.error(e);
       alert("Error: " + e.message);
@@ -139,25 +150,16 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
     }
   };
 
-  // --- 3. AUTO SCHEDULE LOGIC ---
+  // --- 3. AUTO SCHEDULE LOGIC (FIXED PAYLOAD SIZE) ---
   const handleAutoSchedule = async () => {
     if (teams.length < 2) return alert("Need at least 2 teams.");
-    if (
-      !window.confirm(
-        `Generate optimized schedule for ${teams.length} teams? (Avoids back-to-back games)`
-      )
-    )
-      return;
+    if (!window.confirm(`Generate schedule for ${teams.length} teams?`)) return;
 
     setCreating(true);
     try {
-      const batch = writeBatch(db);
-      const matchesCol = collection(db, "tournaments", tournamentId, "matches");
-
+      // 1. Generate Pairings
       let pool = [...teams];
-      if (pool.length % 2 !== 0) {
-        pool.push({ id: "BYE" });
-      }
+      if (pool.length % 2 !== 0) pool.push({ id: "BYE" });
 
       const numTeams = pool.length;
       const numRounds = numTeams - 1;
@@ -168,7 +170,6 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
         for (let match = 0; match < matchesPerRound; match++) {
           const team1 = pool[match];
           const team2 = pool[numTeams - 1 - match];
-
           if (team1.id !== "BYE" && team2.id !== "BYE") {
             generatedMatches.push({ teamA: team1, teamB: team2 });
           }
@@ -180,9 +181,11 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
         pool = [fixedTeam, ...rotatedTeams];
       }
 
+      // 2. Prepare Data
       let matchCount = 0;
       let matchesToday = 0;
       let currentDateTime = new Date(`${startDate}T${startTime}`);
+      const matchesToSave = [];
 
       generatedMatches.forEach(({ teamA, teamB }) => {
         if (matchesToday >= matchesPerDay) {
@@ -195,22 +198,24 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
         const dateString = currentDateTime.toISOString().slice(0, 10);
         const timeString = currentDateTime.toTimeString().slice(0, 5);
         const startIso = currentDateTime.toISOString();
-
         const endDateTime = new Date(currentDateTime);
         endDateTime.setMinutes(
           endDateTime.getMinutes() + Number(matchDuration)
         );
 
-        const newMatchRef = doc(matchesCol);
+        matchCount++;
 
-        batch.set(newMatchRef, {
+        const autoTitle = `Match ${matchCount}${
+          leagueStageName ? ` - ${leagueStageName}` : ""
+        }`;
+
+        matchesToSave.push({
           meta: {
             tournament: tournamentId,
             teamA: teamA.name,
             teamB: teamB.name,
             teamAId: teamA.id,
             teamBId: teamB.id,
-            // ✅ NEW: Save Logos here too
             teamALogo: teamA.logoUrl || teamA.logo || "",
             teamBLogo: teamB.logoUrl || teamB.logo || "",
             overs: Number(autoOvers),
@@ -222,17 +227,16 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
             status: "upcoming",
             createdAt: new Date().toISOString(),
             format: "League",
+            matchTitle: autoTitle,
           },
           teamASquad: sanitizeSquad(teamA.roster),
           teamBSquad: sanitizeSquad(teamB.roster),
           innings: [],
           status: "upcoming",
-          matchNo: matchCount + 1,
+          matchNo: matchCount,
         });
 
-        matchCount++;
         matchesToday++;
-
         currentDateTime.setMinutes(
           currentDateTime.getMinutes() +
             Number(matchDuration) +
@@ -240,8 +244,25 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
         );
       });
 
-      await batch.commit();
-      alert(`Generated ${matchCount} optimized matches!`);
+      // 3. 🚀 OPTIMIZED BATCHING (Size: 50)
+      // Reduced from 400 to 50 to stay under the 10MB Payload Limit
+      const chunkSize = 50;
+      const matchesCol = collection(db, "tournaments", tournamentId, "matches");
+
+      for (let i = 0; i < matchesToSave.length; i += chunkSize) {
+        const chunk = matchesToSave.slice(i, i + chunkSize);
+        const batch = writeBatch(db);
+
+        chunk.forEach((matchData) => {
+          const newRef = doc(matchesCol);
+          batch.set(newRef, matchData);
+        });
+
+        await batch.commit();
+        // console.log(`Saved matches ${i + 1} to ${i + chunk.length}`);
+      }
+
+      alert(`Successfully generated ${matchesToSave.length} matches!`);
       setMode("single");
     } catch (e) {
       console.error(e);
@@ -254,7 +275,7 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
   const labelClass =
     "block text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2 ml-1";
   const inputClass =
-    "w-full bg-[#0F1115] text-slate-200 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-teal-500/50 transition-all font-bold placeholder:text-slate-600";
+    "w-full bg-[#303643] text-slate-200 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-teal-500/50 transition-all font-bold placeholder:text-slate-600";
 
   return (
     <div className="bg-[#1C2128] border border-white/5 rounded-[2rem] p-6 shadow-2xl relative animate-in slide-in-from-top-5 mt-6 mb-8 backdrop-blur-md">
@@ -280,13 +301,12 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
             ⚡ Auto Scheduler
           </button>
         </div>
-
         <div className="flex gap-3">
           <button
             onClick={handleResetSchedule}
             disabled={resetting}
             className="text-red-500 hover:text-white bg-red-900/10 hover:bg-red-600/80 text-xs font-black uppercase tracking-wider transition-all px-4 py-2 border border-red-500/20 hover:border-transparent rounded-lg flex items-center gap-2">
-            {resetting ? "Deleting..." : "🗑 Reset Schedule"}
+            {resetting ? "Deleting..." : "🗑 Reset Upcoming"}
           </button>
           {onCancel && (
             <button
@@ -302,7 +322,6 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
       {mode === "single" ? (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Team Selects... (Same as before) */}
             <div>
               <label className={`${labelClass} text-teal-500`}>Home Team</label>
               <div className="relative group">
@@ -344,7 +363,6 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
               </div>
             </div>
 
-            {/* Date, Time & Venue */}
             <div>
               <label className={labelClass}>Date</label>
               <input
@@ -375,8 +393,21 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
               </div>
             </div>
 
-            {/* Venue Input for Single Match */}
-            <div className="md:col-span-2">
+            <div>
+              <label className={labelClass}>
+                Match Label{" "}
+                <span className="text-slate-600 normal-case">(Optional)</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Final, Qualifier 1"
+                className={inputClass}
+                value={matchLabel}
+                onChange={(e) => setMatchLabel(e.target.value)}
+              />
+            </div>
+
+            <div>
               <label className={labelClass}>Venue</label>
               <input
                 type="text"
@@ -395,16 +426,15 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
           </button>
         </div>
       ) : (
+        /* ... Auto Schedule UI ... */
         <div className="space-y-6">
           <div className="flex items-center gap-3 bg-indigo-900/20 border border-indigo-500/20 p-4 rounded-xl">
             <span className="text-xl">🤖</span>
             <p className="text-slate-300 text-xs font-medium">
               Generates a <strong>Round Robin</strong> schedule where every team
-              plays every other team. Automatically calculates timings based on
-              inputs below.
+              plays every other team.
             </p>
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
               <label className={labelClass}>Start Date</label>
@@ -460,8 +490,21 @@ export default function MatchScheduler({ tournamentId, teams, onCancel }) {
                 onChange={(e) => setAutoOvers(e.target.value)}
               />
             </div>
-
-            {/* Venue Input for Auto Schedule */}
+            <div className="md:col-span-3">
+              <label className={labelClass}>
+                League Stage Name{" "}
+                <span className="text-slate-600 normal-case">
+                  (Suffix for Title)
+                </span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. League Match, Group A"
+                className={inputClass}
+                value={leagueStageName}
+                onChange={(e) => setLeagueStageName(e.target.value)}
+              />
+            </div>
             <div className="md:col-span-3">
               <label className={labelClass}>Default Venue</label>
               <input
