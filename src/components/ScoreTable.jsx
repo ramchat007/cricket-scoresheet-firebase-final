@@ -148,7 +148,7 @@ const ScoreTable = ({ match }) => {
         {/* HEADER */}
         <div
           onClick={() => setOpenInningIndex(isOpen ? null : idx)}
-          className={`px-6 py-4 flex justify-between items-center cursor-pointer transition-all ${isOpen ? "bg-[#1C2128]" : "hover:bg-white/5"}`}>
+          className={`px-4 py-4 flex justify-between items-center cursor-pointer transition-all ${isOpen ? "bg-[#1C2128]" : "hover:bg-white/5"}`}>
           <div className="flex items-center gap-3">
             <span className="text-slate-200 font-black text-lg tracking-tight uppercase">
               {inn.battingTeam}
@@ -182,7 +182,7 @@ const ScoreTable = ({ match }) => {
               <table className="w-full text-left border-collapse">
                 <thead className="bg-[#1C2128]/50 text-slate-500 text-[10px] uppercase font-black border-b border-white/5">
                   <tr>
-                    <th className="px-6 py-3 w-1/2">Batter</th>
+                    <th className="px-4 py-3 w-1/2">Batter</th>
                     <th className="px-2 py-3 text-right">R</th>
                     <th className="px-2 py-3 text-right">B</th>
                     <th className="px-2 py-3 text-right hidden sm:table-cell">
@@ -218,7 +218,7 @@ const ScoreTable = ({ match }) => {
                             ? "bg-teal-500/[0.04]"
                             : "hover:bg-white/[0.02]"
                         }>
-                        <td className="px-6 py-4">
+                        <td className="px-4 py-4">
                           <div
                             className={`font-bold ${isAtCrease ? "text-teal-400" : "text-slate-300"}`}>
                             {name} {isS && "*"}
@@ -247,22 +247,22 @@ const ScoreTable = ({ match }) => {
                   })}
                   {/* EXTRAS ROW (Restored) */}
                   <tr className="bg-[#161920]/50 border-t border-white/5">
-                    <td className="px-6 py-2 text-[10px] font-bold text-slate-500 uppercase">
+                    <td className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase">
                       Extras
                     </td>
                     <td
                       colSpan={5}
-                      className="px-6 py-2 text-right text-slate-300 font-mono text-xs">
+                      className="px-4 py-2 text-right text-slate-300 font-mono text-xs">
                       {totalExtras} (wd {extras.wides}, nb {extras.noBalls}, b{" "}
                       {extras.byes}, lb {extras.legByes})
                     </td>
                   </tr>
                   {/* TOTAL ROW (Restored) */}
                   <tr className="bg-[#1C2128] border-t border-white/10 font-bold">
-                    <td className="px-6 py-3 text-slate-200 uppercase text-xs">
+                    <td className="px-4 py-3 text-slate-200 uppercase text-xs">
                       Total Score
                     </td>
-                    <td colSpan={5} className="px-6 py-3 text-right">
+                    <td colSpan={5} className="px-4 py-3 text-right">
                       <span className="text-slate-100 text-base mr-2">
                         {inn.score}/{inn.wickets}
                       </span>
@@ -280,7 +280,7 @@ const ScoreTable = ({ match }) => {
 
             {/* YET TO BAT SECTION */}
             {dnbBatsmen.length > 0 && (
-              <div className="px-6 py-3 border-t border-white/5 bg-black/20">
+              <div className="px-4 py-3 border-t border-white/5 bg-black/20">
                 <span className="text-[9px] font-black text-slate-600 uppercase mr-3 tracking-[0.2em]">
                   Yet to Bat:
                 </span>
@@ -292,13 +292,13 @@ const ScoreTable = ({ match }) => {
 
             {/* BOWLING SECTION (Restored Appearance Order & Current Highlight) */}
             <div className="mt-2 border-t border-white/5">
-              <div className="px-6 py-2 text-[10px] font-black text-slate-600 uppercase bg-[#161920]">
+              <div className="px-4 py-2 text-[10px] font-black text-slate-600 uppercase bg-[#161920]">
                 Bowling
               </div>
               <table className="w-full text-left">
                 <thead className="bg-[#1C2128]/30 text-slate-500 text-[10px] uppercase font-black border-b border-white/5">
                   <tr>
-                    <th className="px-6 py-2 w-1/2">Bowler</th>
+                    <th className="px-4 py-2 w-1/2">Bowler</th>
                     <th className="px-2 py-2 text-right">O</th>
                     <th className="px-2 py-2 text-right">R</th>
                     <th className="px-2 py-2 text-right text-slate-300">W</th>
@@ -324,7 +324,7 @@ const ScoreTable = ({ match }) => {
                             : "hover:bg-white/[0.02]"
                         }>
                         <td
-                          className={`px-6 py-3 font-bold ${isCurrent ? "text-teal-400" : "text-slate-400"}`}>
+                          className={`px-4 py-3 font-bold ${isCurrent ? "text-teal-400" : "text-slate-400"}`}>
                           {name} {isCurrent && "🥎"}
                         </td>
                         <td className="px-2 py-3 text-right text-slate-500 font-mono">
@@ -349,7 +349,7 @@ const ScoreTable = ({ match }) => {
 
             {/* YET TO BOWL SECTION */}
             {dnbBowlers.length > 0 && (
-              <div className="px-6 py-3 border-t border-white/5 bg-black/20">
+              <div className="px-4 py-3 border-t border-white/5 bg-black/20">
                 <span className="text-[9px] font-black text-slate-600 uppercase mr-3 tracking-[0.2em]">
                   Yet to Bowl:
                 </span>

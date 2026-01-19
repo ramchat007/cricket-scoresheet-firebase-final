@@ -333,7 +333,7 @@ export default function LiveScoring() {
                 ✕
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 no-scrollbar pb-32">
+            <div className="flex-1 overflow-y-auto no-scrollbar">
               {activeTab === "scorecard" && (
                 <div className="border border-white/5 rounded-[2rem] p-2">
                   <MemoizedScoreTable match={processedMatch} />
@@ -349,7 +349,7 @@ export default function LiveScoring() {
       </div>
 
       {/* NAV */}
-      <nav className="flex-none h-16 bg-black border-t border-white/5 grid grid-cols-4 items-center px-2 pb-1 shadow-[0_-10px_30px_rgba(0,0,0,0.5)] z-[60]">
+      <nav className="fixed bottom-0 left-0 w-full h-16 bg-black/95 backdrop-blur-lg border-t border-white/5 grid grid-cols-4 items-center px-2 pb-1 shadow-[0_-10px_30px_rgba(0,0,0,0.8)] z-[70]">
         <NavBtn
           active={activeTab === "summary"}
           onClick={handleTabSummary}

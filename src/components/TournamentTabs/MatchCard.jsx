@@ -1,7 +1,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { doc, deleteDoc } from "firebase/firestore";
-import { db } from "../../utils/firebase"; // Double check this path matches your folder structure
+import { db } from "../../utils/firebase"; 
 
 export default function MatchCard({ match, teams, tournamentId, canEdit }) {
   const navigate = useNavigate();
@@ -28,8 +28,6 @@ export default function MatchCard({ match, teams, tournamentId, canEdit }) {
 
   // --- DATA EXTRACTION ---
   const meta = match.meta || {};
-
-  // ✅ FIX: Extract Venue Here
   const venue = match.venue || meta.venue;
 
   // 1. Team Names
@@ -110,6 +108,30 @@ export default function MatchCard({ match, teams, tournamentId, canEdit }) {
   const isFinished = ["finished", "completed"].includes(status);
 
   let statusText = isLive ? "Live" : isFinished ? "Finished" : "Upcoming";
+
+  // --- 🧠 CALCULATE RESULT CONTEXT ---
+  let resultText = match.winner || "Match Ended"; // Default fallback
+
+  if (isFinished && match.innings && match.innings.length >= 2) {
+    const inn1 = match.innings[0];
+    const inn2 = match.innings[1];
+
+    if (inn1 && inn2) {
+      if (inn1.score > inn2.score) {
+        const diff = inn1.score - inn2.score;
+        resultText = `${inn1.battingTeam} won by ${diff} run${diff !== 1 ? 's' : ''}`;
+      } else if (inn2.score > inn1.score) {
+        const totalWickets = parseInt(meta.totalWickets || 10);
+        const diff = Math.max(0, totalWickets - inn2.wickets);
+        resultText = `${inn2.battingTeam} won by ${diff} wicket${diff !== 1 ? 's' : ''}`;
+      } else {
+        resultText = "Match Tied";
+      }
+    }
+  } else if (match.meta?.result) {
+    // If backend stored a computed result string
+    resultText = match.meta.result; 
+  }
 
   return (
     <div
@@ -194,11 +216,11 @@ export default function MatchCard({ match, teams, tournamentId, canEdit }) {
           </div>
         </div>
 
-        {/* Status Message */}
+        {/* Status Message (Updated with Calculated Result) */}
         <div className="mt-6 text-center">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
             {isFinished
-              ? `🏆 ${match.winner || "Match Ended"}`
+              ? `🏆 ${resultText}`
               : venue || "TBA"}
           </p>
         </div>
