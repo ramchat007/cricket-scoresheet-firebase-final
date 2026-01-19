@@ -11,6 +11,7 @@ import PointsTab from "./PointsTab";
 import PlayerStatsTab from "./PlayerStatsTab";
 import MatchSetup from "../MatchSetup";
 import MatchScheduler from "../MatchScheduler";
+import TournamentSettings from "./TournamentSettings"; // ✅ Ensure this path is correct
 
 export default function TournamentTabs({
   activeTab,
@@ -54,10 +55,10 @@ export default function TournamentTabs({
     return {
       liveMatches: live,
       upcomingMatches: upcoming.sort(
-        (a, b) => new Date(a.date) - new Date(b.date)
+        (a, b) => new Date(a.date) - new Date(b.date),
       ),
       finishedMatches: finished.sort(
-        (a, b) => new Date(b.date) - new Date(a.date)
+        (a, b) => new Date(b.date) - new Date(a.date),
       ),
     };
   }, [matches]);
@@ -337,9 +338,10 @@ export default function TournamentTabs({
           />
         )}
 
+        {/* ✅ FIXED ADMIN SECTION LAYOUT */}
         {activeTab === "admin" && (canEdit || isOwner) && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in zoom-in-95">
-            {/* Team Management / Auction */}
+            {/* COLUMN 1: Team Management */}
             <div className="bg-[#1C2128] border border-white/5 rounded-2xl p-6 shadow-xl relative overflow-hidden group">
               <h3 className="text-slate-100 font-bold text-lg mb-6 flex items-center gap-2">
                 <span className="text-cyan-500">🛡️</span> Team Management
@@ -367,13 +369,23 @@ export default function TournamentTabs({
               )}
             </div>
 
-            {/* Owner Zone */}
-            {isOwner && (
-              <TournamentAccessManager
-                tournamentData={tournamentData}
-                tournamentId={tournamentId}
-              />
-            )}
+            {/* COLUMN 2: Admin Tools (Stacked) */}
+            <div className="space-y-6">
+              {/* 1. Settings (Visible to Scorer AND Owner) */}
+              {canEdit && (
+                <TournamentSettings
+                  tournament={tournamentData}
+                  tournamentId={tournamentId}
+                />
+              )}
+              {/* 2. Access Manager (Strictly Owner Only) */}
+              {isOwner && (
+                <TournamentAccessManager
+                  tournamentData={tournamentData}
+                  tournamentId={tournamentId}
+                />
+              )}
+            </div>
           </div>
         )}
       </div>

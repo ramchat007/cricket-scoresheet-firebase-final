@@ -40,10 +40,14 @@ export default function MainApp() {
   const [tournamentId, setTournamentId] = useState("");
   const [matchId, setMatchId] = useState(null);
   const [availableTournaments, setAvailableTournaments] = useState([]);
-  const [allMatches, setAllMatches] = useState([]); 
+  const [allMatches, setAllMatches] = useState([]);
   const [allTeams, setAllTeams] = useState([]);
 
-  const isMatchesPage = location.pathname === "/" || location.pathname === "/scoreboard";
+  // ✅ DETECT OVERLAY ROUTE
+  const isOverlay = location.pathname.startsWith("/overlay");
+
+  const isMatchesPage =
+    location.pathname === "/" || location.pathname === "/scoreboard";
 
   const navigateToScoring = (tid, mid) => {
     navigate(`/live/${tid}/${mid}`);
@@ -83,9 +87,15 @@ export default function MainApp() {
   }, [tournamentId]);
 
   async function handleCreate({ payload, tournament }) {
-    if (!user) { alert("Login required."); return; }
+    if (!user) {
+      alert("Login required.");
+      return;
+    }
     const tid = tournament || tournamentId;
-    if (!tid) { alert("Tournament required."); return; }
+    if (!tid) {
+      alert("Tournament required.");
+      return;
+    }
     try {
       const newMatchId = await createMatchAuto(tid, payload);
       navigateToScoring(tid, newMatchId);
@@ -99,20 +109,37 @@ export default function MainApp() {
     navigateToScoring(tournament, matchIdSelected);
   }
 
+  // ✅ CONDITIONAL RENDER: If Overlay, return plain wrapper with Routes only
+  if (isOverlay) {
+    return (
+      <div className="w-full h-screen bg-transparent font-sans overflow-hidden">
+        <Routes>
+          <Route
+            path="/overlay/:tournamentId/:matchId"
+            element={<MatchOverlay />}
+          />
+        </Routes>
+      </div>
+    );
+  }
+
+  // ✅ STANDARD APP LAYOUT (For all other pages)
   return (
     <div className="min-h-screen bg-black text-gray-200 font-sans selection:bg-cyan-500/30">
       <Navigation />
-      
+
       <div className="container mx-auto px-4 pb-24 md:pb-10 pt-4">
         {/* --- MOBILE-OPTIMIZED ADMIN COMMAND CENTER --- */}
         {isMatchesPage && user && (
           <div className="bg-gray-900/50 border border-white/5 rounded-3xl p-5 mb-8 shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-4 duration-500">
             <div className="flex items-center justify-between mb-6">
-               <h2 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-2">
-                 <span className="flex h-2 w-2 rounded-full bg-cyan-500 animate-pulse"></span>
-                 Admin Console
-               </h2>
-               <span className="text-[10px] text-gray-500 font-bold bg-white/5 px-2 py-1 rounded-full uppercase">Live Sync</span>
+              <h2 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-2">
+                <span className="flex h-2 w-2 rounded-full bg-cyan-500 animate-pulse"></span>
+                Admin Console
+              </h2>
+              <span className="text-[10px] text-gray-500 font-bold bg-white/5 px-2 py-1 rounded-full uppercase">
+                Live Sync
+              </span>
             </div>
 
             {/* Selectors Section */}
@@ -136,34 +163,24 @@ export default function MainApp() {
               </div>
             </div>
 
-            {/* Quick Action Cards - Horizontal Scroll on Mobile */}
+            {/* Quick Action Cards */}
             <div className="grid grid-cols-2 gap-3">
-              {/* <button
-                onClick={() => setMatchId("new")}
-                className="flex items-center gap-3 p-4 bg-gradient-to-br from-teal-900/20 to-teal-900/10 border border-teal-500/20 rounded-2xl hover:border-teal-400 transition-all active:scale-95 group shadow-lg"
-              >
-                <div className="bg-teal-600 shadow-[0_0_15px_rgba(20,184,166,0.4)] w-10 h-10 rounded-xl flex items-center justify-center text-xl group-hover:rotate-12 transition-transform">
-                  🏏
-                </div>
-                <div className="text-left overflow-hidden">
-                   <h3 className="text-white font-black text-xs uppercase tracking-tight truncate">New Match</h3>
-                   <p className="text-[9px] text-teal-400 font-bold uppercase tracking-wider truncate">Quick Setup</p>
-                </div>
-              </button> */}
-
               <button
                 onClick={() => {
                   if (tournamentId) navigate(`/tournaments/${tournamentId}`);
                   else alert("Select a tournament first.");
                 }}
-                className="flex items-center gap-3 p-4 bg-gradient-to-br from-indigo-900/20 to-indigo-900/10 border border-indigo-500/20 rounded-2xl hover:border-indigo-400 transition-all active:scale-95 group shadow-lg"
-              >
+                className="flex items-center gap-3 p-4 bg-gradient-to-br from-indigo-900/20 to-indigo-900/10 border border-indigo-500/20 rounded-2xl hover:border-indigo-400 transition-all active:scale-95 group shadow-lg">
                 <div className="bg-indigo-600 shadow-[0_0_15px_rgba(99,102,241,0.4)] w-10 h-10 rounded-xl flex items-center justify-center text-xl group-hover:rotate-12 transition-transform">
                   📊
                 </div>
                 <div className="text-left overflow-hidden">
-                   <h3 className="text-white font-black text-xs uppercase tracking-tight truncate">Analytics</h3>
-                   <p className="text-[9px] text-indigo-400 font-bold uppercase tracking-wider truncate">View Dashboard</p>
+                  <h3 className="text-white font-black text-xs uppercase tracking-tight truncate">
+                    Analytics
+                  </h3>
+                  <p className="text-[9px] text-indigo-400 font-bold uppercase tracking-wider truncate">
+                    View Dashboard
+                  </p>
                 </div>
               </button>
             </div>
@@ -180,8 +197,12 @@ export default function MainApp() {
                   <div className="animate-in fade-in zoom-in duration-300 max-w-2xl mx-auto">
                     <div className="flex justify-between items-end mb-6 px-2">
                       <div>
-                        <h2 className="text-3xl font-black text-white uppercase tracking-tighter italic">Match Setup</h2>
-                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Configuration Phase</p>
+                        <h2 className="text-3xl font-black text-white uppercase tracking-tighter italic">
+                          Match Setup
+                        </h2>
+                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
+                          Configuration Phase
+                        </p>
                       </div>
                       <button
                         onClick={() => setMatchId(null)}
@@ -201,11 +222,15 @@ export default function MainApp() {
                 ) : (
                   <div className="flex flex-col items-center justify-center min-h-[40vh] text-center space-y-6">
                     <div className="w-20 h-20 bg-gray-900 rounded-3xl border border-white/5 flex items-center justify-center text-3xl animate-bounce shadow-2xl">
-                       🚀
+                      🚀
                     </div>
                     <div>
-                      <h3 className="text-white font-black uppercase tracking-tighter text-lg">System Ready</h3>
-                      <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">Select an action above to start scoring</p>
+                      <h3 className="text-white font-black uppercase tracking-tighter text-lg">
+                        System Ready
+                      </h3>
+                      <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">
+                        Select an action above to start scoring
+                      </p>
                     </div>
                   </div>
                 )
@@ -215,24 +240,49 @@ export default function MainApp() {
             <Route path="/" element={<Dashboard />} />
           )}
 
-          <Route path="/live/:tournamentId/:matchId" element={<LiveScoring />} />
+          <Route
+            path="/live/:tournamentId/:matchId"
+            element={<LiveScoring />}
+          />
           <Route path="/scoreboard" element={<Scoreboard />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/create-tournament" element={<CreateTournament />} />
-          <Route path="/tournaments/:id/auction" element={<AuctionDashboard />} />
-          <Route path="/overlay/:tournamentId/:matchId" element={<MatchOverlay />} />
+          <Route
+            path="/tournaments/:id/auction"
+            element={<AuctionDashboard />}
+          />
+
+          {/* Note: Overlay route is technically handled above in the early return, 
+              but leaving it here doesn't hurt if logic changes later */}
+          <Route
+            path="/overlay/:tournamentId/:matchId"
+            element={<MatchOverlay />}
+          />
+
           <Route
             path="/matches"
-            element={<MatchesPage availableTournaments={availableTournaments} onSelect={handleMatchesPageSelect} readOnly={!user} />}
+            element={
+              <MatchesPage
+                availableTournaments={availableTournaments}
+                onSelect={handleMatchesPageSelect}
+                readOnly={!user}
+              />
+            }
           />
           <Route path="/players" element={<GlobalPlayersView />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          <Route path="/register-player" element={<GlobalPlayerRegistration />} />
+          <Route
+            path="/register-player"
+            element={<GlobalPlayerRegistration />}
+          />
           <Route path="/migrate" element={<MigrationTool />} />
           <Route path="/tournaments/:id" element={<TournamentDetails />} />
-          <Route path="/tournaments/:tournamentId/scorecard/:matchId" element={<MatchScorecard />} />
+          <Route
+            path="/tournaments/:tournamentId/scorecard/:matchId"
+            element={<MatchScorecard />}
+          />
           <Route path="/teams" element={<TeamsManager />} />
           <Route path="/past-leagues" element={<PastLeague />} />
         </Routes>

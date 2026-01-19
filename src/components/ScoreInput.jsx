@@ -36,7 +36,6 @@ export default function ScoreInput({
   onUndo,
   onEndInnings,
   onStrikeChange,
-  onExtraBallRuns,
   onConfirmBowler,
   onFinishMatch,
   onDeleteMatch,
@@ -48,12 +47,19 @@ export default function ScoreInput({
   const [tossDecision, setTossDecision] = useState("Bat");
   const [startLoading, setStartLoading] = useState(false);
 
-  // -- Wicket & Extra States --
+  // -- Wicket States --
   const [isWicketMenuOpen, setIsWicketMenuOpen] = useState(false);
   const [wicketType, setWicketType] = useState("bowled");
   const [fielderName, setFielderName] = useState("");
   const [whoOut, setWhoOut] = useState("striker");
-  const [extraType, setExtraType] = useState("none");
+
+  // ✅ NEW: Wicket Runs State (for Run Outs)
+  const [wicketRuns, setWicketRuns] = useState(0);
+
+  // -- Extras States --
+  const [deliveryType, setDeliveryType] = useState("legal"); // 'legal', 'wides', 'noBalls'
+  const [runType, setRunType] = useState("bat"); // 'bat', 'byes', 'legByes'
+  const [isLegalOverride, setIsLegalOverride] = useState(false); // For Box Cricket
 
   // -- Input States --
   const [incoming, setIncoming] = useState("");
@@ -63,15 +69,11 @@ export default function ScoreInput({
   const [editNonStriker, setEditNonStriker] = useState(false);
   const [editBowler, setEditBowler] = useState(false);
   const [localOverlayDismissed, setLocalOverlayDismissed] = useState(false);
-
-  // ✅ SYNC LOCK
   const [isSyncing, setIsSyncing] = useState(false);
 
   // 🔊 AUDIO REFS
   const clickSound = useRef(new Audio("/sounds/click.mp3"));
-  const wicketSound = useRef(
-    new Audio("https://cdn.pixabay.com/audio/2021/08/04/audio_12b0c7443c.mp3"),
-  );
+  const wicketSound = useRef(new Audio("/sounds/wicket.mp3"));
 
   useEffect(() => {
     clickSound.current.load();
@@ -172,28 +174,38 @@ export default function ScoreInput({
     [currentBowlingSquad, getPlayerName],
   );
 
-  // --- SCORING HANDLERS ---
-  const handleBallClick = useCallback(
+  // --- ⚡️ CORE SCORING HANDLER ---
+  const handleSubmitBall = useCallback(
     async (val) => {
       if (isSyncing) return;
       triggerFeedback("click");
       setIsSyncing(true);
-      setExtraType("none");
-      await onBall(val);
-    },
-    [onBall, isSyncing],
-  );
 
-  const handleExtra = useCallback(
-    async (physicalRuns) => {
-      if (extraType === "none")
-        return alert("Select Extra Type (WD/NB/BYE/LB) first");
-      if (isSyncing) return;
-      triggerFeedback("click");
-      setIsSyncing(true);
-      await onExtraBallRuns(extraType, parseInt(physicalRuns, 10));
+      let code = val;
+      const isWide = deliveryType === "wides";
+      const isNoBall = deliveryType === "noBalls";
+      const isBye = runType === "byes";
+      const isLegBye = runType === "legByes";
+
+      if (isWide) code = "WD";
+      else if (isNoBall) code = "NB";
+
+      const extraData = {
+        isWide,
+        isNoBall,
+        isBye: isBye && !isWide,
+        isLegBye: isLegBye && !isWide,
+        isWicket: false,
+      };
+
+      const runs = parseInt(val) || 0;
+
+      await onBall(code, extraData, runs);
+
+      setDeliveryType("legal");
+      setRunType("bat");
     },
-    [extraType, onExtraBallRuns, isSyncing],
+    [deliveryType, runType, onBall, isSyncing],
   );
 
   const undoLabel = useMemo(() => {
@@ -300,7 +312,7 @@ export default function ScoreInput({
 
   return (
     <div className="flex flex-col h-full bg-[#0F1115] text-slate-300 overflow-hidden relative">
-      {/* SECTION 1: SCORE BANNER */}
+      {/* SECTION 1 & 2: Banners */}
       <div className="flex-none bg-[#161920] border-b border-white/5 px-6 py-4 flex justify-between items-end">
         <div className="flex flex-col">
           <span className="text-[10px] text-teal-600 font-bold uppercase tracking-widest leading-none mb-1">
@@ -334,7 +346,6 @@ export default function ScoreInput({
         </div>
       </div>
 
-      {/* SECTION 2: STATS BAR */}
       <div className="flex-none px-4 py-2 bg-[#12141a] flex justify-around border-b border-white/5">
         <div className="flex flex-col items-center">
           <span className="text-[8px] font-black uppercase text-slate-500">
@@ -477,15 +488,44 @@ export default function ScoreInput({
         </div>
       </div>
 
-      {/* ✅ RESTORED SECTION 4: LIVE COMMENTARY LOG */}
+      {/* SECTION 4: LIVE LOG */}
       <div className="flex-none px-4 space-y-2 mb-2">
         <div className="bg-slate-900/50 rounded-xl p-2 flex items-center gap-2 overflow-x-auto no-scrollbar border border-white/5 h-10 shadow-inner">
           {(m.timeline || []).slice(-10).map((b, i) => {
-            const displayVal = b.code || (b.isWicket ? "W" : b.runs);
+            // 🛠️ SEPARATED DISPLAY LOGIC
+            let displayVal = b.runs;
+            let isExtra = false;
+
+            if (b.isWicket) {
+              displayVal = "W";
+            } else if (b.isNoBall) {
+              isExtra = true;
+              const extraRuns = b.runs - 1;
+              displayVal = extraRuns > 0 ? `NB+${extraRuns}` : "NB";
+            } else if (b.isWide) {
+              isExtra = true;
+              const extraRuns = b.runs - 1;
+              displayVal = extraRuns > 0 ? `WD+${extraRuns}` : "WD";
+            } else if (b.isLegBye) {
+              displayVal = `${b.runs}LB`;
+            } else if (b.isBye) {
+              displayVal = `${b.runs}B`;
+            }
+
             return (
               <span
                 key={i}
-                className={`h-6 min-w-[32px] px-2 rounded flex items-center justify-center text-[10px] font-bold whitespace-nowrap ${String(displayVal).includes("W") || String(displayVal).includes("Ret") ? "bg-red-900/40 text-red-400" : String(displayVal).includes("wd") || String(displayVal).includes("nb") ? "bg-amber-900/40 text-amber-400" : b.runs === 4 ? "bg-emerald-900/40 text-emerald-400" : b.runs === 6 ? "bg-indigo-900/40 text-indigo-400" : "bg-slate-800 text-slate-500"}`}>
+                className={`h-6 px-2 min-w-[36px] rounded flex items-center justify-center text-[10px] font-bold whitespace-nowrap border border-white/5 ${
+                  b.isWicket
+                    ? "bg-red-900/40 text-red-400 border-red-500/20"
+                    : isExtra
+                      ? "bg-amber-900/40 text-amber-400 border-amber-500/20"
+                      : b.runs === 4 || (b.runs >= 4 && !isExtra)
+                        ? "bg-emerald-900/40 text-emerald-400 border-emerald-500/20"
+                        : b.runs === 6
+                          ? "bg-indigo-900/40 text-indigo-400 border-indigo-500/20"
+                          : "bg-slate-800 text-slate-500"
+                }`}>
                 {displayVal}
               </span>
             );
@@ -508,69 +548,122 @@ export default function ScoreInput({
             </div>
           </div>
         )}
+
+        {/* ROW 1: Numbers */}
         {["0", "1", "2", "3"].map((v) => (
           <KeyButton
             key={v}
             val={v}
-            onClick={() => handleBallClick(v)}
+            onClick={() => handleSubmitBall(v)}
             disabled={disableBallEntry}
             loading={isSyncing}
           />
         ))}
+
+        {/* ROW 2: Boundaries & 5 */}
         <KeyButton
           val="4"
           color="bg-emerald-900/20 border-emerald-800/30 text-emerald-600/90"
-          onClick={() => handleBallClick("4")}
+          onClick={() => handleSubmitBall("4")}
           disabled={disableBallEntry}
           loading={isSyncing}
         />
         <KeyButton
           val="6"
           color="bg-indigo-900/20 border-indigo-800/30 text-indigo-600/90"
-          onClick={() => handleBallClick("6")}
+          onClick={() => handleSubmitBall("6")}
           disabled={disableBallEntry}
           loading={isSyncing}
         />
         <KeyButton
           val="5"
-          onClick={() => handleBallClick("5")}
+          onClick={() => handleSubmitBall("5")}
           disabled={disableBallEntry}
           loading={isSyncing}
         />
         <KeyButton
           val="OUT"
           color="bg-red-900/20 border-red-800/30 text-red-600/90"
-          onClick={() => setIsWicketMenuOpen(true)}
+          onClick={() => {
+            setIsWicketMenuOpen(true);
+            setWicketRuns(0); // ✅ Reset wicket runs
+          }}
           disabled={disableBallEntry}
           loading={isSyncing}
         />
+
+        {/* ROW 3: EXTRAS CONTROLS */}
         <div className="col-span-1 row-span-2 bg-slate-800/20 rounded-xl border border-slate-800/50 flex flex-col overflow-hidden">
-          {["wides", "noBalls", "byes", "legByes"].map((type) => (
-            <button
-              key={type}
-              onClick={() => setExtraType(type)}
-              disabled={isSyncing}
-              className={`flex-1 text-[9px] font-bold uppercase transition-all ${extraType === type ? "bg-amber-700/40 text-amber-200" : "text-slate-600"}`}>
-              {type === "noBalls"
-                ? "NB"
-                : type === "wides"
-                  ? "WD"
-                  : type === "byes"
-                    ? "BYE"
-                    : "LB"}
-            </button>
-          ))}
+          <button
+            onClick={() => {
+              const newVal = deliveryType === "wides" ? "legal" : "wides";
+              setDeliveryType(newVal);
+              if (newVal === "wides") setRunType("bat");
+            }}
+            disabled={isSyncing}
+            className={`flex-1 text-[9px] font-bold uppercase transition-all border-b border-white/5 ${
+              deliveryType === "wides"
+                ? "bg-amber-600 text-white"
+                : "text-slate-500 hover:text-slate-300"
+            }`}>
+            WD
+          </button>
+
+          <button
+            onClick={() =>
+              setDeliveryType(deliveryType === "noBalls" ? "legal" : "noBalls")
+            }
+            disabled={isSyncing}
+            className={`flex-1 text-[9px] font-bold uppercase transition-all border-b border-white/5 ${
+              deliveryType === "noBalls"
+                ? "bg-amber-600 text-white"
+                : "text-slate-500 hover:text-slate-300"
+            }`}>
+            NB
+          </button>
+
+          <button
+            onClick={() => setRunType(runType === "byes" ? "bat" : "byes")}
+            disabled={isSyncing || deliveryType === "wides"}
+            className={`flex-1 text-[9px] font-bold uppercase transition-all border-b border-white/5 ${
+              runType === "byes"
+                ? "bg-cyan-600 text-white"
+                : "text-slate-600 hover:text-slate-400 disabled:opacity-30"
+            }`}>
+            BYE
+          </button>
+
+          <button
+            onClick={() =>
+              setRunType(runType === "legByes" ? "bat" : "legByes")
+            }
+            disabled={isSyncing || deliveryType === "wides"}
+            className={`flex-1 text-[9px] font-bold uppercase transition-all ${
+              runType === "legByes"
+                ? "bg-cyan-600 text-white"
+                : "text-slate-600 hover:text-slate-400 disabled:opacity-30"
+            }`}>
+            LB
+          </button>
         </div>
+
+        {/* Runs Buttons (+0 to +6) */}
         {["+0", "+1", "+2", "+3", "+4", "+6"].map((v) => (
           <KeyButton
             key={v}
             val={v}
-            color="bg-amber-900/10 border-amber-800/20 text-amber-600/80"
-            onClick={() => handleExtra(v.replace("+", ""))}
+            color={`bg-amber-900/10 border-amber-800/20 text-amber-600/80 ${
+              deliveryType !== "legal" || runType !== "bat"
+                ? "ring-1 ring-amber-500/50"
+                : ""
+            }`}
+            onClick={() => handleSubmitBall(v.replace("+", ""))}
             disabled={disableBallEntry}
             loading={isSyncing}
           />
         ))}
+
+        {/* BOTTOM CONTROLS */}
         <button
           onClick={() => {
             setIsSyncing(true);
@@ -601,6 +694,159 @@ export default function ScoreInput({
           Finish
         </button>
       </div>
+
+      {/* WICKET MODAL */}
+      {isWicketMenuOpen && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-[#0F1115]/90 backdrop-blur-md">
+          <div className="relative w-full bg-[#1C2128] border-t border-white/10 rounded-t-[3rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom duration-500">
+            <h3 className="text-lg font-bold text-red-500 uppercase mb-6">
+              Dismissal {deliveryType !== "legal" ? `on ${deliveryType}` : ""}
+            </h3>
+            <div className="space-y-4">
+              <select
+                value={wicketType}
+                onChange={(e) => setWicketType(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 text-slate-300 p-4 rounded-xl outline-none">
+                <option value="runout">Run Out</option>
+                <option value="retiredhurt">Retired Hurt</option>
+                <option value="retiredout">Retired Out</option>
+
+                {deliveryType !== "noBalls" && (
+                  <>
+                    <option value="stumped">Stumped</option>
+                    <option value="hitwicket">Hit Wicket</option>
+                  </>
+                )}
+
+                {deliveryType === "legal" && (
+                  <>
+                    <option value="bowled">Bowled</option>
+                    <option value="caught">Caught</option>
+                    <option value="lbw">LBW</option>
+                  </>
+                )}
+              </select>
+
+              {/* ✅ NEW: Completed Runs Selector (For Run Outs) */}
+              {wicketType === "runout" && (
+                <div className="bg-black/20 p-3 rounded-xl border border-white/5">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block mb-2">
+                    Completed Runs (Before Wicket)
+                  </span>
+                  <div className="flex gap-2">
+                    {[0, 1, 2, 3, 4].map((r) => (
+                      <button
+                        key={r}
+                        onClick={() => setWicketRuns(r)}
+                        className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
+                          wicketRuns === r
+                            ? "bg-teal-600 text-white shadow-lg scale-105"
+                            : "bg-slate-800 text-slate-500 hover:bg-slate-700"
+                        }`}>
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Legal Override for Underarm Box Cricket */}
+              {deliveryType === "noBalls" && wicketType === "runout" && (
+                <div className="flex items-center gap-3 bg-slate-800/50 p-4 rounded-xl border border-white/10">
+                  <input
+                    type="checkbox"
+                    id="legalOverride"
+                    checked={isLegalOverride}
+                    onChange={(e) => setIsLegalOverride(e.target.checked)}
+                    className="w-5 h-5 rounded accent-teal-500 bg-slate-900 border-slate-600"
+                  />
+                  <label
+                    htmlFor="legalOverride"
+                    className="text-xs font-bold text-slate-300 uppercase select-none">
+                    Count as Legal Ball?{" "}
+                    <span className="text-slate-500 text-[10px] normal-case block">
+                      (Underarm Rule: Ball counts in over)
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              {["caught", "runout", "stumped"].includes(wicketType) && (
+                <select
+                  value={fielderName}
+                  onChange={(e) => setFielderName(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 text-slate-300 p-4 rounded-xl outline-none">
+                  <option value="">Select Fielder</option>
+                  {fieldingTeamPlayers.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              <select
+                value={whoOut}
+                onChange={(e) => setWhoOut(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 text-slate-300 p-4 rounded-xl outline-none">
+                <option value="striker">Striker Out ({strikerName})</option>
+                <option value="nonStriker">
+                  Non-Striker Out ({nonStrikerName})
+                </option>
+              </select>
+
+              <div className="flex gap-4 pt-4">
+                <button
+                  onClick={() => setIsWicketMenuOpen(false)}
+                  className="flex-1 py-4 bg-slate-800 text-slate-500 font-bold rounded-xl uppercase">
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    if (
+                      ["caught", "runout", "stumped"].includes(wicketType) &&
+                      !fielderName
+                    )
+                      return alert("Select Fielder");
+                    setIsWicketMenuOpen(false);
+                    if (isSyncing) return;
+                    triggerFeedback("wicket");
+                    setIsSyncing(true);
+
+                    // Construct Wicket Payload
+                    await onBall(
+                      "W",
+                      {
+                        isWicket: true,
+                        wicketType,
+                        fielderName,
+                        whoOut:
+                          whoOut === "striker" ? strikerName : nonStrikerName,
+                        nextStriker: null,
+                        isWide: deliveryType === "wides",
+                        isNoBall: deliveryType === "noBalls",
+                        isBye: runType === "byes" && deliveryType !== "wides",
+                        isLegBye:
+                          runType === "legByes" && deliveryType !== "wides",
+                        isLegalOverride: isLegalOverride,
+                      },
+                      wicketRuns,
+                    ); // ✅ Pass Completed Runs here
+
+                    // Reset
+                    setDeliveryType("legal");
+                    setRunType("bat");
+                    setIsLegalOverride(false);
+                    setWicketRuns(0);
+                  }}
+                  className="flex-[2] py-4 bg-red-900 text-white font-bold rounded-xl uppercase shadow-xl">
+                  Confirm OUT
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* OVERLAYS: New Batsman/Bowler */}
       {showPlayerSelector && (
@@ -664,95 +910,6 @@ export default function ScoreInput({
               className="w-full py-4 bg-slate-700 text-slate-100 font-bold uppercase rounded-xl">
               Confirm Selection
             </button>
-          </div>
-        </div>
-      )}
-
-      {/* WICKET MODAL */}
-      {isWicketMenuOpen && (
-        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-[#0F1115]/90 backdrop-blur-md">
-          <div className="relative w-full bg-[#1C2128] border-t border-white/10 rounded-t-[3rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom duration-500">
-            <h3 className="text-lg font-bold text-red-500 uppercase mb-6">
-              Dismissal{" "}
-              {extraType !== "none" ? `on ${extraType.toUpperCase()}` : ""}
-            </h3>
-            <div className="space-y-4">
-              <select
-                value={wicketType}
-                onChange={(e) => setWicketType(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 text-slate-300 p-4 rounded-xl outline-none">
-                <option value="runout">Run Out</option>
-                <option value="retiredhurt">Retired Hurt</option>
-                <option value="retiredout">Retired Out</option>
-                {(extraType === "none" || extraType === "wides") && (
-                  <>
-                    <option value="stumped">Stumped</option>
-                    <option value="hitwicket">Hit Wicket</option>
-                  </>
-                )}
-                {extraType === "none" && (
-                  <>
-                    <option value="bowled">Bowled</option>
-                    <option value="caught">Caught</option>
-                    <option value="lbw">LBW</option>
-                  </>
-                )}
-              </select>
-              {["caught", "runout", "stumped"].includes(wicketType) && (
-                <select
-                  value={fielderName}
-                  onChange={(e) => setFielderName(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 text-slate-300 p-4 rounded-xl outline-none">
-                  <option value="">Select Fielder</option>
-                  {fieldingTeamPlayers.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <select
-                value={whoOut}
-                onChange={(e) => setWhoOut(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 text-slate-300 p-4 rounded-xl outline-none">
-                <option value="striker">Striker Out ({strikerName})</option>
-                <option value="nonStriker">
-                  Non-Striker Out ({nonStrikerName})
-                </option>
-              </select>
-              <div className="flex gap-4 pt-4">
-                <button
-                  onClick={() => setIsWicketMenuOpen(false)}
-                  className="flex-1 py-4 bg-slate-800 text-slate-500 font-bold rounded-xl uppercase">
-                  Cancel
-                </button>
-                <button
-                  onClick={async () => {
-                    if (
-                      ["caught", "runout", "stumped"].includes(wicketType) &&
-                      !fielderName
-                    )
-                      return alert("Select Fielder");
-                    setIsWicketMenuOpen(false);
-                    if (isSyncing) return;
-                    triggerFeedback("wicket");
-                    setIsSyncing(true);
-                    await onBall("W", {
-                      isWicket: true,
-                      wicketType,
-                      fielderName,
-                      whoOut:
-                        whoOut === "striker" ? strikerName : nonStrikerName,
-                      nextStriker: null,
-                      isWide: extraType === "wides",
-                      isNoBall: extraType === "noBalls",
-                    });
-                  }}
-                  className="flex-[2] py-4 bg-red-900 text-white font-bold rounded-xl uppercase shadow-xl">
-                  Confirm OUT
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       )}

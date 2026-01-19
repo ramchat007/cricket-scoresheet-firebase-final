@@ -1,3 +1,4 @@
+// src/hooks/useScoring.js
 import {
   ballTransaction,
   undoLast,
@@ -7,18 +8,22 @@ import {
 import { syncMatchStatsToGlobalPlayers } from "../utils/statsSync";
 
 // Helper: Normalize keys
-const norm = (k) => String(k || "").trim().toLowerCase();
+const norm = (k) =>
+  String(k || "")
+    .trim()
+    .toLowerCase();
 
-// ✅ 1. SANITIZE SQUAD (Prevents Firestore Crash)
+// ✅ 1. SANITIZE SQUAD
 const sanitizeSquadImages = (squad) => {
   if (!Array.isArray(squad)) return [];
   return squad.map((p) => ({
     ...p,
-    photoURL: p.photoURL && p.photoURL.startsWith("data:image") ? "" : p.photoURL,
+    photoURL:
+      p.photoURL && p.photoURL.startsWith("data:image") ? "" : p.photoURL,
   }));
 };
 
-// ✅ 2. SNAPSHOT CREATOR (For RAM Undo Stack & Ball Context)
+// ✅ 2. SNAPSHOT CREATOR
 const createSnapshot = (inn) => {
   return JSON.parse(
     JSON.stringify({
@@ -37,13 +42,13 @@ const createSnapshot = (inn) => {
       awaitingNewBatsman: inn.awaitingNewBatsman || false,
       awaitingNewBowler: inn.awaitingNewBowler || false,
       completed: inn.completed || false,
-    })
+    }),
   );
 };
 
 /**
- * 🧠 3. ROBUST RECALCULATION ENGINE (Self-Healing)
- * Replays history with 100% accuracy.
+ * 🧠 3. ROBUST RECALCULATION ENGINE
+ * Handles Standard Rules + Legal Override + Extras Logic
  */
 function recalculateInningsState(inn) {
   if (!inn) return inn;
@@ -61,15 +66,25 @@ function recalculateInningsState(inn) {
   // B. Reset Stats
   inn.batsmenStats = inn.batsmenStats || {};
   inn.bowlerStats = inn.bowlerStats || {};
-  
+
   Object.values(inn.batsmenStats).forEach((p) => {
-    p.runs = 0; p.balls = 0; p.fours = 0; p.sixes = 0;
-    p.thirties = 0; p.fifties = 0; p.centuries = 0; // ✅ Reset Milestones
-    p.out = null; p.wicketType = null; p.fielderName = null; p.bowler = null; // Clear dismissal details
+    p.runs = 0;
+    p.balls = 0;
+    p.fours = 0;
+    p.sixes = 0;
+    p.thirties = 0;
+    p.fifties = 0;
+    p.centuries = 0;
+    p.out = null;
+    p.wicketType = null;
+    p.fielderName = null;
+    p.bowler = null;
   });
-  
+
   Object.values(inn.bowlerStats).forEach((b) => {
-    b.runs = 0; b.balls = 0; b.wickets = 0;
+    b.runs = 0;
+    b.balls = 0;
+    b.wickets = 0;
   });
 
   // C. Replay History
@@ -77,41 +92,91 @@ function recalculateInningsState(inn) {
 
   history.forEach((ball, index) => {
     let runVal = ball.runs || 0;
-    const { isWicket, isWide, isNoBall, isBye, isLegBye, batter, bowler } = ball;
+    const {
+      isWicket,
+      isWide,
+      isNoBall,
+      isBye,
+      isLegBye,
+      batter,
+      bowler,
+      isLegalOverride,
+    } = ball;
 
+    // Initialize stats
     if (batter && !inn.batsmenStats[batter])
-      inn.batsmenStats[batter] = { runs: 0, balls: 0, fours: 0, sixes: 0, thirties: 0, fifties: 0, centuries: 0 };
+      inn.batsmenStats[batter] = {
+        runs: 0,
+        balls: 0,
+        fours: 0,
+        sixes: 0,
+        thirties: 0,
+        fifties: 0,
+        centuries: 0,
+      };
     if (bowler && !inn.bowlerStats[bowler])
       inn.bowlerStats[bowler] = { runs: 0, balls: 0, wickets: 0 };
 
+    // --- 1. TEAM SCORE ---
     inn.score += runVal;
-    if (isWide) inn.extras.wides += runVal;
-    else if (isNoBall) inn.extras.noBalls += 1;
-    else if (isBye) inn.extras.byes += runVal;
-    else if (isLegBye) inn.extras.legByes += runVal;
 
-    // Batter Math
-    if (batter && inn.batsmenStats[batter]) {
-      const p = inn.batsmenStats[batter];
-      if (!isWide) p.balls += 1;
-      if (!isWide && !isBye && !isLegBye) {
-        const r = isNoBall ? Math.max(0, runVal - 1) : runVal;
-        p.runs += r;
-        if (r === 4) p.fours += 1;
-        if (r === 6) p.sixes += 1;
+    // --- 2. EXTRAS CALCULATION ---
+    if (isWide) {
+      inn.extras.wides += runVal;
+    } else if (isNoBall) {
+      inn.extras.noBalls += 1;
+      const physicalRuns = Math.max(0, runVal - 1);
+      if (isBye) inn.extras.byes += physicalRuns;
+      else if (isLegBye) inn.extras.legByes += physicalRuns;
+      else {
+        // Runs off bat on NB
+        if (batter && inn.batsmenStats[batter]) {
+          const p = inn.batsmenStats[batter];
+          p.runs += physicalRuns;
+          p.balls += 1;
+          if (physicalRuns === 4) p.fours += 1;
+          if (physicalRuns === 6) p.sixes += 1;
+        }
+      }
+    } else {
+      // Legal Delivery
+      if (isBye) inn.extras.byes += runVal;
+      else if (isLegBye) inn.extras.legByes += runVal;
+      else {
+        if (batter && inn.batsmenStats[batter]) {
+          const p = inn.batsmenStats[batter];
+          p.runs += runVal;
+          p.balls += 1;
+          if (runVal === 4) p.fours += 1;
+          if (runVal === 6) p.sixes += 1;
+        }
       }
     }
 
-    // Bowler Math (Pre-wicket check)
+    // --- 3. BOWLER STATS ---
     if (bowler && inn.bowlerStats[bowler]) {
       const b = inn.bowlerStats[bowler];
-      if (!isBye && !isLegBye) b.runs += runVal;
-      if (!isWide && !isNoBall) b.balls += 1;
+      let runsConceded = 0;
+
+      if (isWide) runsConceded = runVal;
+      else if (isNoBall) {
+        runsConceded = 1;
+        if (!isBye && !isLegBye) runsConceded += Math.max(0, runVal - 1);
+      } else if (!isBye && !isLegBye) {
+        runsConceded = runVal;
+      }
+      b.runs += runsConceded;
+
+      // Count ball if Legal OR Override (Underarm Rule)
+      const countBall = (!isWide && !isNoBall) || isLegalOverride;
+      if (countBall) b.balls += 1;
     }
 
-    // Over logic
+    // --- 4. OVER COUNT ---
+    const countBall = (!isWide && !isNoBall) || isLegalOverride;
     let isOverComplete = false;
-    if (!isWide && !isNoBall) {
+
+    if (countBall) {
       inn.overBallCount += 1;
       if (inn.overBallCount === 6) {
         inn.over += 1;
@@ -120,34 +185,43 @@ function recalculateInningsState(inn) {
       }
     }
 
-    // ☝️ WICKET ENGINE (Standardized for Overlay & Scorecard)
+    // --- 5. WICKET LOGIC ---
     if (isWicket && ball.wicketType !== "retiredhurt") {
-      inn.wickets += 1;
       const victim = ball.whoOut || batter;
       const wType = ball.wicketType || "out";
       const fielder = ball.fielderName || ball.fielder || "";
 
-      inn.fallOfWickets.push({
-        score: inn.score,
-        wicketNo: inn.wickets,
-        over: `${inn.over}.${inn.overBallCount}`,
-        batsman: victim,
-      });
+      if (wType !== "retiredhurt") {
+        inn.wickets += 1;
+        inn.fallOfWickets.push({
+          score: inn.score,
+          wicketNo: inn.wickets,
+          over: `${inn.over}.${inn.overBallCount}`,
+          batsman: victim,
+        });
+      }
 
       if (inn.batsmenStats[victim]) {
         inn.batsmenStats[victim].out = "out";
         inn.batsmenStats[victim].wicketType = wType;
         inn.batsmenStats[victim].fielderName = fielder;
-        
-        // Run outs/retired outs don't credit a bowler
-        if (!["runout", "retiredout"].includes(wType)) {
+
+        const creditToBowler = [
+          "bowled",
+          "caught",
+          "lbw",
+          "stumped",
+          "hitwicket",
+        ].includes(wType);
+
+        if (creditToBowler) {
           inn.batsmenStats[victim].bowler = bowler;
           if (inn.bowlerStats[bowler]) inn.bowlerStats[bowler].wickets += 1;
         }
       }
     }
 
-    // 🚨 STATE RECOVERY 🚨
+    // --- 6. STATE RECOVERY ---
     if (index === history.length - 1) {
       inn.striker = ball.nextStriker || inn.striker;
       inn.nonStriker = ball.nextNonStriker || inn.nonStriker;
@@ -157,12 +231,15 @@ function recalculateInningsState(inn) {
     }
   });
 
-  // ✅ FINAL MILESTONE CHECK (30s, 50s, 100s)
+  // Milestones
   Object.values(inn.batsmenStats).forEach((p) => {
     if (p.runs >= 100) {
-      p.centuries = 1; p.fifties = 0; p.thirties = 0;
+      p.centuries = 1;
+      p.fifties = 0;
+      p.thirties = 0;
     } else if (p.runs >= 50) {
-      p.fifties = 1; p.thirties = 0;
+      p.fifties = 1;
+      p.thirties = 0;
     } else if (p.runs >= 30) {
       p.thirties = 1;
     }
@@ -171,7 +248,7 @@ function recalculateInningsState(inn) {
   return inn;
 }
 
-// --- LOGIC: Apply New Ball with Snapshot Context ---
+// --- LOGIC: Apply New Ball (With Smart Survivor Logic) ---
 function applyBallLogic(s, code, extraData = {}, physicalRuns = 0) {
   const inn = s.innings?.[s.currentInnings || 0];
   if (!inn || inn.completed) return s;
@@ -185,40 +262,76 @@ function applyBallLogic(s, code, extraData = {}, physicalRuns = 0) {
 
   const isWD = code === "WD" || extraData.isWide;
   const isNB = code === "NB" || extraData.isNoBall;
-  const totalRuns = isWD || isNB ? 1 + physicalRuns : parseInt(code) || physicalRuns || 0;
+
+  // Calculate Total Runs (Penalty + Physical)
+  const totalRuns =
+    isWD || isNB ? 1 + physicalRuns : parseInt(code) || physicalRuns || 0;
 
   const newBall = {
     id: Date.now(),
-    code: code,
+    code,
     runs: totalRuns,
-    physicalRuns: physicalRuns,
+    physicalRuns,
     isWicket: code === "W" || extraData.isWicket,
     isWide: isWD,
     isNoBall: isNB,
+    isBye: extraData.isBye || false,
+    isLegBye: extraData.isLegBye || false,
     batter: inn.striker,
     bowler: inn.currentBowler,
+    isLegalOverride: extraData.isLegalOverride || false,
+    whoOut: extraData.whoOut, // Critical for survivor logic
     ...extraData,
   };
 
-  let nextS = inn.striker;
-  let nextNS = inn.nonStriker;
+  // 1. Determine positions AFTER running (crossing)
+  let tempStriker = inn.striker;
+  let tempNonStriker = inn.nonStriker;
 
-  let shouldSwap = (physicalRuns || (code !== "W" && parseInt(code))) % 2 !== 0;
-  if (shouldSwap) [nextS, nextNS] = [nextNS, nextS];
+  let runsForSwap = physicalRuns;
+  if (!isWD && !isNB && !isNaN(parseInt(code))) {
+    runsForSwap = parseInt(code);
+  }
 
-  const isLegal = !isWD && !isNB;
+  // Swap ends if odd runs
+  if (runsForSwap % 2 !== 0) {
+    [tempStriker, tempNonStriker] = [tempNonStriker, tempStriker];
+  }
+
+  // 2. Identify Survivor (If Wicket)
+  let nextS = tempStriker;
+  let nextNS = tempNonStriker;
+
+  if (newBall.isWicket) {
+    const victim = newBall.whoOut || tempStriker; // Fallback to current striker if undefined
+
+    // If the person currently at Striker end got out:
+    if (victim === tempStriker) {
+      nextS = null; // Striker slot empty (for new bat)
+      nextNS = tempNonStriker; // Non-striker survives
+    }
+    // If the person currently at Non-Striker end got out:
+    else {
+      nextS = tempStriker; // Striker survives
+      nextNS = null; // Non-striker slot empty (for new bat)
+    }
+  }
+
+  // 3. Handle Over End Logic
+  // Check legal or override
+  const isLegal = (!isWD && !isNB) || newBall.isLegalOverride;
   const overEnding = inn.overBallCount + (isLegal ? 1 : 0) === 6;
 
-  // Suspend over-end swap if wicket fell
-  if (overEnding && !newBall.isWicket) {
+  if (overEnding) {
+    // End of over: Swap ends.
+    // If wicket fell, we simply swap the calculated survivor slots
     [nextS, nextNS] = [nextNS, nextS];
   }
 
-  newBall.nextStriker = newBall.isWicket ? null : nextS;
+  newBall.nextStriker = nextS;
   newBall.nextNonStriker = nextNS;
   newBall.nextBowler = overEnding ? null : inn.currentBowler;
 
-  // ✅ SAFEGUARD: Ensure timeline exists
   inn.timeline = inn.timeline || [];
   inn.timeline.push(newBall);
 
@@ -325,6 +438,7 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
   return {
     handleBall: (code, extraData, physicalRuns) =>
       runScoringAction((s) => applyBallLogic(s, code, extraData, physicalRuns)),
+
     handleExtraBallRuns: (type, runs) =>
       runScoringAction((s) =>
         applyBallLogic(
@@ -334,21 +448,21 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
           runs,
         ),
       ),
+
     handleNewBatsman: (p) =>
       runScoringAction((s) => {
         const inn = s.innings[s.currentInnings];
         inn.striker = p;
         inn.awaitingNewBatsman = false;
-
-        // ✅ FIXED: Safe access to timeline
         if (inn.timeline && inn.timeline.length > 0) {
           const lastBall = inn.timeline[inn.timeline.length - 1];
-          if (
-            inn.overBallCount === 0 &&
-            inn.over > 0 &&
-            !lastBall.isWide &&
-            !lastBall.isNoBall
-          ) {
+
+          // Check legal override
+          const isLegal =
+            (!lastBall.isWide && !lastBall.isNoBall) ||
+            lastBall.isLegalOverride;
+
+          if (inn.overBallCount === 0 && inn.over > 0 && isLegal) {
             const currentS = inn.striker;
             inn.striker = inn.nonStriker;
             inn.nonStriker = currentS;
@@ -360,39 +474,42 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
         }
         return s;
       }),
+
     handleConfirmBowler: (p) =>
       runScoringAction((s) => {
         const inn = s.innings[s.currentInnings];
         inn.currentBowler = p;
         inn.awaitingNewBowler = false;
-        // ✅ FIXED: Safe access to timeline
         if (inn.timeline && inn.timeline.length > 0)
           inn.timeline[inn.timeline.length - 1].nextBowler = p;
         return s;
       }),
+
     handleChangeBowler: (p) =>
       runScoringAction((s) => {
         s.innings[s.currentInnings].currentBowler = p;
         return s;
       }),
+
     handleStrikeChange: (s, ns) =>
       runScoringAction((st) => {
         const inn = st.innings[st.currentInnings];
         inn.striker = s;
         inn.nonStriker = ns;
-        // ✅ FIXED: Safe access to timeline prevents crash on empty timeline
         if (inn.timeline && inn.timeline.length > 0) {
           inn.timeline[inn.timeline.length - 1].nextStriker = s;
           inn.timeline[inn.timeline.length - 1].nextNonStriker = ns;
         }
         return st;
       }),
+
     handleEndInnings: () =>
       runScoringAction((s) => {
         s.innings[s.currentInnings].completed = true;
         checkFinishAndSetResult(s, s.currentInnings);
         return s;
       }),
+
     handleUndo: () => {
       performOptimisticUpdate((s) => {
         const inn = s.innings?.[s.currentInnings || 0];
@@ -408,10 +525,12 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
       });
       undoLast(tournamentId, matchId);
     },
+
     handleFinishMatch: async (r) => {
       await finishMatch(tournamentId, matchId, match.meta?.teamA, r);
       await syncMatchStatsToGlobalPlayers(tournamentId, matchId, match);
     },
+
     handleDeleteMatch: () => deleteMatch(tournamentId, matchId),
   };
 }

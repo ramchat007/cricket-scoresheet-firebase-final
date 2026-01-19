@@ -72,7 +72,7 @@ function sanitizeForCommit(value, path = "root", seen = new WeakSet()) {
   if (value instanceof Date) return value.toISOString();
   if (t === "function" || t === "symbol" || t === "bigint") {
     console.warn(
-      `sanitizeForCommit: skipping non-serializable (${t}) at ${path}`
+      `sanitizeForCommit: skipping non-serializable (${t}) at ${path}`,
     );
     return undefined;
   }
@@ -127,8 +127,8 @@ export async function listMyEditableTournaments(userId) {
       or(
         where("ownerId", "==", userId),
         where("scorers", "array-contains", userId),
-        where("viewers", "array-contains", userId)
-      )
+        where("viewers", "array-contains", userId),
+      ),
     );
     const snaps = await getDocs(q);
     return snaps.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -188,8 +188,7 @@ export async function createMatch(tournamentId, matchId, payload) {
     throw new Error("createMatch needs tournamentId and matchId");
   }
 
-  const matchDate =
-    normalizeDate(payload?.meta?.date) || localDateString();
+  const matchDate = normalizeDate(payload?.meta?.date) || localDateString();
 
   const status =
     payload?.meta?.status ||
@@ -200,12 +199,12 @@ export async function createMatch(tournamentId, matchId, payload) {
    * 🔒 FREEZE SQUADS (IMMUTABLE SNAPSHOT)
    */
   const squads = {
-    teamA: (payload.squads?.teamA || []).map(p => ({
+    teamA: (payload.squads?.teamA || []).map((p) => ({
       id: p.id || null,
       name: p.name,
       role: p.role || null,
     })),
-    teamB: (payload.squads?.teamB || []).map(p => ({
+    teamB: (payload.squads?.teamB || []).map((p) => ({
       id: p.id || null,
       name: p.name,
       role: p.role || null,
@@ -239,7 +238,7 @@ export async function createMatch(tournamentId, matchId, payload) {
       createdAt: new Date().toISOString(),
     },
 
-    squads,               // ⭐ CRITICAL
+    squads, // ⭐ CRITICAL
     innings: [emptyInnings, emptyInnings],
     currentInnings: 0,
     undoStack: [],
@@ -250,7 +249,6 @@ export async function createMatch(tournamentId, matchId, payload) {
 
   await setDoc(ref, sanitizeForCommit(matchDoc));
 }
-
 
 export async function listTournaments() {
   const colRef = collection(db, "tournaments");
@@ -324,7 +322,7 @@ export const ballTransaction = async (tournamentId, matchId, updateFn) => {
           extras: currentInningsData.extras || {},
           ballsLog: currentInningsData.ballsLog || [],
           timeline: currentInningsData.timeline || [],
-        })
+        }),
       );
 
       // 2. Run the Scoring Logic (This mutates currentState)
@@ -419,7 +417,7 @@ export const deleteMatch = async (tournamentId, matchId) => {
 export const updateMatch = async (tournamentId, matchId, data) => {
   await updateDoc(
     doc(db, "tournaments", tournamentId, "matches", matchId),
-    data
+    data,
   );
 };
 
@@ -441,7 +439,7 @@ export async function addTeam(
   tournamentId,
   teamName,
   playersArray,
-  extraData = {}
+  extraData = {},
 ) {
   try {
     const teamsRef = collection(db, "tournaments", tournamentId, "teams");
@@ -462,7 +460,7 @@ export async function updateTeam(
   tournamentId,
   teamId,
   playersArray,
-  extraData = {}
+  extraData = {},
 ) {
   try {
     const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
@@ -525,7 +523,7 @@ export async function listMatchesForTeam(selectedTeam) {
       const tournamentName = tournamentData?.name || tournamentId;
 
       const matchesSnap = await getDocs(
-        collection(db, "tournaments", tournamentId, "matches")
+        collection(db, "tournaments", tournamentId, "matches"),
       );
 
       for (const m of matchesSnap.docs) {
@@ -745,36 +743,48 @@ export const createTournament = async (data, userId) => {
 };
 
 export const findUserByEmail = async (email) => {
-  const q = query(collection(db, "users"), where("email", "==", email));
-  const snapshot = await getDocs(q);
-  if (snapshot.empty) return null;
-  return snapshot.docs[0].id;
+  try {
+    const q = query(collection(db, "users"), where("email", "==", email));
+    const querySnapshot = await getDocs(q);
+
+    if (querySnapshot.empty) return null;
+
+    // Return the UID of the first match
+    return querySnapshot.docs[0].id;
+  } catch (error) {
+    console.error("Error finding user:", error);
+    throw error;
+  }
 };
 
+// ✅ 2. ADD SCORER
 export const addScorerToTournament = async (tournamentId, userId) => {
-  const ref = doc(db, "tournaments", tournamentId);
-  await updateDoc(ref, {
+  const tRef = doc(db, "tournaments", tournamentId);
+  await updateDoc(tRef, {
     scorers: arrayUnion(userId),
   });
 };
 
-export const removeScorerFromTournament = async (tournamentId, userId) => {
-  const ref = doc(db, "tournaments", tournamentId);
-  await updateDoc(ref, {
-    scorers: arrayRemove(userId),
-  });
-};
-
+// ✅ 3. ADD VIEWER
 export const addViewerToTournament = async (tournamentId, userId) => {
-  const ref = doc(db, "tournaments", tournamentId);
-  await updateDoc(ref, {
+  const tRef = doc(db, "tournaments", tournamentId);
+  await updateDoc(tRef, {
     viewers: arrayUnion(userId),
   });
 };
 
+// ✅ 4. REMOVE SCORER
+export const removeScorerFromTournament = async (tournamentId, userId) => {
+  const tRef = doc(db, "tournaments", tournamentId);
+  await updateDoc(tRef, {
+    scorers: arrayRemove(userId),
+  });
+};
+
+// ✅ 5. REMOVE VIEWER
 export const removeViewerFromTournament = async (tournamentId, userId) => {
-  const ref = doc(db, "tournaments", tournamentId);
-  await updateDoc(ref, {
+  const tRef = doc(db, "tournaments", tournamentId);
+  await updateDoc(tRef, {
     viewers: arrayRemove(userId),
   });
 };
