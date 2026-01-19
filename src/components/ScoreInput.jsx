@@ -298,21 +298,19 @@ const displayInsightText = useMemo(() => {
   if (m.awaitingNewBatsman) return "☝️ Wicket! Waiting for new batsman...";
   if (m.awaitingNewBowler) return `🥎 Over complete. Waiting for new bowler.`;
 
-  // 🤖 AI LOGIC: Get the latest ball's ID to check for AI commentary
+  // Check for AI commentary for the latest ball
   const timeline = m.timeline || [];
-  const latestBallIndex = timeline.length - 1;
-  const latestBallId = `${activeIndex}-${latestBallIndex}`;
+  const latestId = `${activeIndex}-${timeline.length - 1}`;
 
-  // If AI has generated a comment for this ball, show it!
-  if (aiComments && aiComments[latestBallId]) {
-    return `🤖 AI: ${aiComments[latestBallId]}`;
+  if (aiComments[latestId]) {
+    return `🤖 ${aiComments[latestId]}`;
   }
 
-  // Fallback to standard narrative
+  // Fallback narrative
   if (strikerName && currentBowlerName)
-    return `🏏 ${strikerName} is on strike facing ${currentBowlerName}.`;
+    return `🏏 ${strikerName} vs ${currentBowlerName}.`;
   
-  return "⚡ System ready. Awaiting next delivery...";
+  return "⚡ System ready.";
 }, [m, strikerName, currentBowlerName, matchContext, aiComments, activeIndex]);
 
   const hasSetup = strikerName && nonStrikerName && currentBowlerName;
@@ -651,27 +649,20 @@ const displayInsightText = useMemo(() => {
             );
           })}
         </div>
-        <div className={`${
-          displayInsightText.includes('🤖') 
-            ? "bg-indigo-900/10 border-indigo-900/20 shadow-[0_0_15px_rgba(99,102,241,0.1)]" 
-            : "bg-teal-900/10 border-teal-900/20"
-        } border rounded-xl p-3 min-h-[60px] flex items-center transition-all duration-500`}>
-        
-        <p className={`text-[11px] font-medium leading-snug animate-in fade-in slide-in-from-left duration-500 ${
-            displayInsightText.includes('🤖') ? "text-indigo-400" : "text-teal-600 italic"
-          }`}>
-          {displayInsightText}
-        </p>
-
-        {/* Optional: Add a small typing indicator if syncing is true */}
-        {isSyncing && !displayInsightText.includes('🤖') && (
-          <span className="ml-2 flex gap-1">
-            <span className="w-1 h-1 bg-teal-600 rounded-full animate-bounce"></span>
-            <span className="w-1 h-1 bg-teal-600 rounded-full animate-bounce [animation-delay:0.2s]"></span>
-            <span className="w-1 h-1 bg-teal-600 rounded-full animate-bounce [animation-delay:0.4s]"></span>
-          </span>
-        )}
-      </div>
+        <div className="bg-[#1C2128] p-0 mb-2">
+          <div className={`${
+              displayInsightText.includes('🤖') 
+                ? "bg-indigo-500/5 border-indigo-500/20" 
+                : "bg-teal-900/10 border-teal-900/20"
+            } border rounded-xl p-3 min-h-[55px] flex items-center transition-all duration-500`}>
+            
+            <p className={`text-[11px] font-medium leading-snug animate-in fade-in slide-in-from-left duration-500 ${
+                displayInsightText.includes('🤖') ? "text-indigo-300" : "text-teal-600 italic"
+              }`}>
+              {displayInsightText}
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* SECTION 5: KEYPAD */}
