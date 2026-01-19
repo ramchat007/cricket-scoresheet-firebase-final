@@ -1,10 +1,11 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { getMatchInsights } from "../utils/commentaryHelper";
-import { fetchAICommentary, fetchMatchAnalysis } from "../utils/gemini";
+import { fetchAICommentary } from "../utils/gemini";
 
 export default function MatchCommentary({ match }) {
   if (!match) return null;
 
+  // --- 1. DATA PREP ---
   const inningsArray = useMemo(() => {
     if (!match.innings) return [];
     const innData = Array.isArray(match.innings)
@@ -29,6 +30,46 @@ export default function MatchCommentary({ match }) {
   }, [match.currentInnings]);
 
   const inn = inningsArray[activeInningIndex];
+
+  // --- 🧠 CONTEXT LOGIC (Result & Target) ---
+  const matchContext = useMemo(() => {
+    const inn1 = inningsArray[0];
+    const inn2 = inningsArray[1];
+    
+    // Status & Result
+    const isFinished = match.status === "finished" || match.meta?.matchStatus === "finished";
+    let resultText = null;
+
+    if (isFinished && inn1 && inn2) {
+      if (inn1.score > inn2.score) {
+        const diff = inn1.score - inn2.score;
+        resultText = `${inn1.battingTeam} won by ${diff} run${diff !== 1 ? 's' : ''}`;
+      } else if (inn2.score > inn1.score) {
+        const totalWickets = parseInt(match.meta?.totalWickets || 10);
+        const diff = Math.max(0, totalWickets - inn2.wickets);
+        resultText = `${inn2.battingTeam} won by ${diff} wicket${diff !== 1 ? 's' : ''}`;
+      } else {
+        resultText = "Match Tied";
+      }
+    } else if (isFinished) {
+      resultText = match.meta?.result || "Match Completed";
+    }
+
+    // Target Equation (Only relevant if 2nd Innings exists)
+    const isSecondInnings = activeInningIndex === 1;
+    const target = inn1?.score !== undefined ? inn1.score + 1 : null;
+    
+    let chaseText = null;
+    if (isSecondInnings && !isFinished && inn2 && target) {
+      const runsNeeded = target - inn2.score;
+      const totalOvers = parseInt(match.meta?.overs || 20);
+      const ballsBowled = (inn2.over * 6) + inn2.overBallCount;
+      const ballsRemaining = Math.max(0, (totalOvers * 6) - ballsBowled);
+      chaseText = `Target: ${target} • Need ${runsNeeded} off ${ballsRemaining}`;
+    }
+
+    return { resultText, chaseText, isFinished };
+  }, [match, inningsArray, activeInningIndex]);
 
   // --- HELPERS ---
   const generateFallbackCommentary = (e) => {
@@ -168,9 +209,50 @@ export default function MatchCommentary({ match }) {
 
   const ruleBasedInsights = getMatchInsights(match, activeInningIndex);
 
+  // ✅ INTELLIGENT INSIGHT DISPLAY
+  // Priority: 1. AI Insight, 2. Match Result (if finished), 3. Rule-based Insight
+  const displayInsight = useMemo(() => {
+    if (aiInsight) {
+      return {
+        title: "Gemini Strategic Analysis",
+        text: aiInsight,
+        icon: "🤖",
+        color: "text-indigo-400",
+        border: "border-indigo-500/30",
+        bg: "bg-indigo-950/20",
+        badge: "LIVE ANALYSIS"
+      };
+    }
+    
+    // If match is finished, show the Result in the insight box (Gold Theme)
+    if (matchContext.isFinished && matchContext.resultText) {
+      return {
+        title: "Match Conclusion",
+        text: matchContext.resultText,
+        icon: "🏆",
+        color: "text-amber-400",
+        border: "border-amber-500/20",
+        bg: "bg-amber-900/10",
+        badge: "RESULT"
+      };
+    }
+
+    // Default Rule-based (Ongoing)
+    return {
+      title: ruleBasedInsights?.title || "Match Insight",
+      text: ruleBasedInsights?.text || "Synchronizing with the field...",
+      icon: "📊",
+      color: "text-gray-500",
+      border: "border-white/5",
+      bg: "bg-[#1C2128]",
+      badge: null
+    };
+  }, [aiInsight, matchContext, ruleBasedInsights]);
+
   return (
     <div className="flex flex-col gap-5 w-full max-w-4xl mx-auto">
-      {/* 1. INNINGS TABS (Small & Sticky) */}
+      
+      {/* 1. INNINGS TABS */}
       <div className="sticky top-0 z-20 bg-[#0F1115] py-2">
         <div className="flex bg-[#1C2128] border border-white/5 rounded-xl p-1 shadow-lg max-w-xs mx-auto">
           {inningsArray.map((_, idx) => (
@@ -184,37 +266,46 @@ export default function MatchCommentary({ match }) {
         </div>
       </div>
 
-      {/* 2. AI INSIGHT (Compact & Self-Contained) */}
+      {/* ✅ STATUS BANNER (Floating below Tabs) */}
+      {(matchContext.resultText || matchContext.chaseText) && (
+        <div className="flex justify-center -mt-3 mb-1 animate-in slide-in-from-top-2 duration-500">
+          {matchContext.resultText ? (
+            <div className="bg-amber-500/10 text-amber-400 border border-amber-500/20 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg backdrop-blur-md">
+              🏆 {matchContext.resultText}
+            </div>
+          ) : matchContext.chaseText ? (
+            <div className="bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg backdrop-blur-md">
+              🎯 {matchContext.chaseText}
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {/* ✅ 2. UNIFIED INSIGHT BOX */}
       <div
-        className={`group relative p-4 rounded-2xl border transition-all duration-500 overflow-visible ${aiInsight ? "bg-indigo-950/20 border-indigo-500/30 shadow-[0_0_20px_rgba(79,70,229,0.1)]" : "bg-[#1C2128] border-white/5"}`}>
-        {aiInsight && (
-          <div className="absolute -top-2 -right-2 bg-indigo-600 text-white text-[8px] font-black px-2 py-1 rounded-md shadow-lg animate-bounce">
-            LIVE ANALYSIS
+        className={`group relative p-4 rounded-2xl border transition-all duration-500 overflow-visible ${displayInsight.bg} ${displayInsight.border}`}>
+        {displayInsight.badge && (
+          <div className={`absolute -top-2 -right-2 text-[8px] font-black px-2 py-1 rounded-md shadow-lg animate-bounce ${displayInsight.color === 'text-amber-400' ? 'bg-amber-600 text-white' : 'bg-indigo-600 text-white'}`}>
+            {displayInsight.badge}
           </div>
         )}
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-lg shadow-inner">
-            {aiInsight ? "🤖" : "📊"}
+            {displayInsight.icon}
           </div>
           <div className="flex-1 min-w-0">
             <h4
-              className={`text-[10px] font-black uppercase tracking-[0.2em] mb-1 ${aiInsight ? "text-indigo-400" : "text-gray-500"}`}>
-              {aiInsight
-                ? "Gemini Strategic Analysis"
-                : ruleBasedInsights?.title || "Match Insight"}
+              className={`text-[10px] font-black uppercase tracking-[0.2em] mb-1 ${displayInsight.color}`}>
+              {displayInsight.title}
             </h4>
-            <div className="text-gray-300 text-sm leading-rezlaxed font-medium line-clamp-3 hover:line-clamp-none transition-all cursor-pointer">
-              "
-              {aiInsight ||
-                ruleBasedInsights?.text ||
-                "Synchronizing with the field..."}
-              "
+            <div className="text-gray-300 text-sm leading-relaxed font-medium line-clamp-3 hover:line-clamp-none transition-all cursor-pointer">
+              "{displayInsight.text}"
             </div>
           </div>
         </div>
       </div>
 
-      {/* 3. COMMENTARY FEED (Primary Page Scroll) */}
+      {/* 3. COMMENTARY FEED */}
       <div className="bg-[#1C2128] border border-white/5 rounded-3xl overflow-hidden shadow-2xl">
         <div className="bg-[#161920]/90 p-5 border-b border-white/5 flex justify-between items-center">
           <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">

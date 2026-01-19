@@ -1,3 +1,4 @@
+// src/components/LiveScoring.jsx
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { doc, getDoc } from "firebase/firestore";
@@ -8,7 +9,7 @@ import { useAuth } from "../hooks/useAuth";
 
 import ScoreInput from "../components/ScoreInput.jsx";
 import ScoreTable from "../components/ScoreTable.jsx";
-import ScoreSummary from "../components/ScoreSummary.jsx";
+import ScoreSummary from "../components/ScoreSummary.jsx"; // ✅ This component handles the logic you asked for
 import MatchCommentary from "../components/MatchCommentary.jsx";
 import MatchInfo from "../components/MatchInfo.jsx";
 import MatchCorrectionModal from "../components/MatchCorrectionModal.jsx";
@@ -73,7 +74,7 @@ export default function LiveScoring() {
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
   const [canScore, setCanScore] = useState(false);
 
-  // ✅ CHANGED: Toggle Broadcast Panel instead of Video
+  // Toggle Broadcast Panel
   const [showObsPanel, setShowObsPanel] = useState(false);
 
   // --- 1. DATA PROCESSING ---
@@ -82,7 +83,7 @@ export default function LiveScoring() {
     return { ...match, id: matchId };
   }, [match, matchId]);
 
-  // Check if Stream is Linked (Just for status, not for playing)
+  // Check if Stream is Linked
   const isStreamLinked = useMemo(() => {
     const url =
       processedMatch?.meta?.liveStreamUrl || processedMatch?.meta?.liveStreamId;
@@ -103,9 +104,8 @@ export default function LiveScoring() {
     [navigate, tournamentId],
   );
 
-  // ✅ COPY OBS LINK HANDLER
+  // COPY OBS LINK HANDLER
   const copyObsLink = () => {
-    // Generate link with ?clean=true for transparent background
     const url = `${window.location.origin}/overlay/${tournamentId}/${matchId}?clean=true`;
     navigator.clipboard.writeText(url);
     alert("✅ OBS Link Copied!\nPaste this as a 'Browser Source' in OBS.");
@@ -196,56 +196,58 @@ export default function LiveScoring() {
 
   return (
     <div className="h-screen w-full bg-black font-sans text-gray-100 flex flex-col overflow-hidden select-none touch-manipulation">
-      {/* 📡 BROADCAST TOOLS PANEL (Replacing Video Player) */}
-      <div
-        className={`flex-none bg-[#161920] border-b border-white/10 relative transition-all duration-300 ease-in-out overflow-hidden ${showObsPanel ? "h-auto py-4" : "h-0 py-0"}`}>
-        <div className="px-4">
-          <div className="flex justify-between items-center mb-3">
-            <h3 className="text-xs font-black text-slate-300 uppercase tracking-widest flex items-center gap-2">
-              <span className="text-purple-500 text-lg">📡</span> Broadcast
-              Tools
-            </h3>
-            {isStreamLinked ? (
-              <span className="text-[9px] bg-green-500/10 text-green-500 px-2 py-1 rounded border border-green-500/20 font-bold uppercase">
-                Stream Linked
-              </span>
-            ) : (
-              <span className="text-[9px] bg-red-500/10 text-red-500 px-2 py-1 rounded border border-red-500/20 font-bold uppercase">
-                No Stream URL
-              </span>
-            )}
-          </div>
-
-          <div className="bg-black/40 border border-white/10 rounded-xl p-3 flex gap-2 items-center">
-            <div className="flex-1 min-w-0">
-              <div className="text-[9px] text-slate-500 font-bold uppercase mb-1">
-                OBS Overlay URL (Transparent)
-              </div>
-              <div className="text-xs text-slate-300 truncate font-mono select-all bg-black/50 p-2 rounded border border-white/5">
-                {`${window.location.origin}/overlay/${tournamentId}/${matchId}?clean=true`}
-              </div>
+      {/* 📡 BROADCAST TOOLS PANEL */}
+      {canScore && (
+        <div
+          className={`flex-none bg-[#161920] border-b border-white/10 relative transition-all duration-300 ease-in-out overflow-hidden ${showObsPanel ? "h-auto py-4" : "h-0 py-0"}`}>
+          <div className="px-4">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-xs font-black text-slate-300 uppercase tracking-widest flex items-center gap-2">
+                <span className="text-purple-500 text-lg">📡</span> Broadcast
+                Tools
+              </h3>
+              {isStreamLinked ? (
+                <span className="text-[9px] bg-green-500/10 text-green-500 px-2 py-1 rounded border border-green-500/20 font-bold uppercase">
+                  Stream Linked
+                </span>
+              ) : (
+                <span className="text-[9px] bg-red-500/10 text-red-500 px-2 py-1 rounded border border-red-500/20 font-bold uppercase">
+                  No Stream URL
+                </span>
+              )}
             </div>
-            <button
-              onClick={copyObsLink}
-              className="bg-purple-600 hover:bg-purple-500 text-white p-3 rounded-xl transition-all active:scale-95 shadow-lg"
-              title="Copy URL">
-              📋
-            </button>
-            <a
-              href={`/overlay/${tournamentId}/${matchId}?clean=true`}
-              target="_blank"
-              rel="noreferrer"
-              className="bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-xl transition-all active:scale-95"
-              title="Test in New Tab">
-              ↗️
-            </a>
+
+            <div className="bg-black/40 border border-white/10 rounded-xl p-3 flex gap-2 items-center">
+              <div className="flex-1 min-w-0">
+                <div className="text-[9px] text-slate-500 font-bold uppercase mb-1">
+                  OBS Overlay URL (Transparent)
+                </div>
+                <div className="text-xs text-slate-300 truncate font-mono select-all bg-black/50 p-2 rounded border border-white/5">
+                  {`${window.location.origin}/overlay/${tournamentId}/${matchId}?clean=true`}
+                </div>
+              </div>
+              <button
+                onClick={copyObsLink}
+                className="bg-purple-600 hover:bg-purple-500 text-white p-3 rounded-xl transition-all active:scale-95 shadow-lg"
+                title="Copy URL">
+                📋
+              </button>
+              <a
+                href={`/overlay/${tournamentId}/${matchId}?clean=true`}
+                target="_blank"
+                rel="noreferrer"
+                className="bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-xl transition-all active:scale-95"
+                title="Test in New Tab">
+                ↗️
+              </a>
+            </div>
+            <p className="text-[9px] text-slate-500 mt-2 text-center">
+              Paste this URL into OBS as a "Browser Source" (1920x1080) to show
+              live scores.
+            </p>
           </div>
-          <p className="text-[9px] text-slate-500 mt-2 text-center">
-            Paste this URL into OBS as a "Browser Source" (1920x1080) to show
-            live scores.
-          </p>
         </div>
-      </div>
+      )}
 
       {/* HEADER */}
       <div className="flex-none bg-black/80 border-b border-white/5 px-4 h-14 flex items-center justify-between z-[60] backdrop-blur-xl">
@@ -268,7 +270,7 @@ export default function LiveScoring() {
           </div>
         </div>
 
-        {/* ✅ TOGGLE OBS PANEL BUTTON */}
+        {/* TOGGLE OBS PANEL BUTTON */}
         <button
           onClick={() => setShowObsPanel(!showObsPanel)}
           className={`w-10 h-10 rounded-xl border flex items-center justify-center text-lg active:scale-90 transition-transform ${
@@ -281,10 +283,10 @@ export default function LiveScoring() {
         </button>
       </div>
 
-      {/* CONTENT (Flex-1 ensures Keypad fits) */}
+      {/* CONTENT */}
       <div className="flex-1 relative flex flex-col min-h-0 overflow-hidden">
         {canScore ? (
-          // ✅ SCORING UI (Full Height)
+          // SCORING UI (Full Height)
           <div className="flex-1 flex flex-col h-full">
             <ScoreInput
               match={processedMatch}
@@ -307,12 +309,12 @@ export default function LiveScoring() {
             />
           </div>
         ) : (
-          // VIEW ONLY UI
+          // VIEW ONLY UI (For non-scorers/Admins viewing score)
           <div className="flex-1 overflow-y-auto p-4 space-y-6 no-scrollbar">
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
               <MemoizedScoreSummary match={processedMatch} />
             </div>
-            <div className="bg-gray-900/40 border border-white/5 rounded-[2rem] p-2">
+            <div className="border border-white/5 rounded-[2rem] p-2">
               <MemoizedScoreTable match={processedMatch} />
             </div>
           </div>
@@ -333,7 +335,7 @@ export default function LiveScoring() {
             </div>
             <div className="flex-1 overflow-y-auto p-4 no-scrollbar pb-32">
               {activeTab === "scorecard" && (
-                <div className="bg-gray-900/40 border border-white/5 rounded-[2rem] p-2">
+                <div className="border border-white/5 rounded-[2rem] p-2">
                   <MemoizedScoreTable match={processedMatch} />
                 </div>
               )}
