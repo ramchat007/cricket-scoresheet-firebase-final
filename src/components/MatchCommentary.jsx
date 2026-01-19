@@ -203,7 +203,7 @@ export default function MatchCommentary({ match }) {
                 ? "Gemini Strategic Analysis"
                 : ruleBasedInsights?.title || "Match Insight"}
             </h4>
-            <div className="text-gray-300 text-sm leading-relaxed font-medium line-clamp-3 hover:line-clamp-none transition-all cursor-pointer">
+            <div className="text-gray-300 text-sm leading-rezlaxed font-medium line-clamp-3 hover:line-clamp-none transition-all cursor-pointer">
               "
               {aiInsight ||
                 ruleBasedInsights?.text ||
