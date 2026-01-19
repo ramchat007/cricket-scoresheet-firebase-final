@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { doc, onSnapshot, getDoc } from "firebase/firestore";
 import { db } from "../utils/firebase";
@@ -7,6 +7,20 @@ import ScoreTable from "../components/ScoreTable";
 import MatchCommentary from "../components/MatchCommentary";
 import MatchInfo from "../components/MatchInfo";
 
+// --- HELPER: Extract YouTube ID ---
+const getYouTubeId = (url) => {
+  if (!url) return null;
+  const cleanUrl = url.trim();
+  if (/^[a-zA-Z0-9_-]{11}$/.test(cleanUrl)) return cleanUrl;
+  try {
+    const urlObj = new URL(cleanUrl.startsWith("http") ? cleanUrl : `https://${cleanUrl}`);
+    if (urlObj.hostname === "youtu.be") return urlObj.pathname.slice(1);
+    if (urlObj.searchParams.has("v")) return urlObj.searchParams.get("v");
+    if (urlObj.pathname.includes("/live/")) return urlObj.pathname.split("/live/")[1].split("?")[0];
+  } catch (e) { return null; }
+  return null;
+};
+
 export default function MatchScorecard() {
   const { tournamentId, matchId } = useParams();
   const [match, setMatch] = useState(null);
@@ -14,15 +28,14 @@ export default function MatchScorecard() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("scorecard");
-
-  // --- 1. REAL-TIME AUTO SYNC (Theater Mode) ---
+  
+  // --- 1. REAL-TIME AUTO SYNC ---
   useEffect(() => {
     if (!tournamentId || !matchId) return;
 
     setLoading(true);
     const matchRef = doc(db, "tournaments", tournamentId, "matches", matchId);
 
-    // ✅ High-End Sync: Listener remains active to catch every micro-update from the scorer
     const unsubscribe = onSnapshot(
       matchRef,
       (docSnap) => {
@@ -44,7 +57,27 @@ export default function MatchScorecard() {
     return () => unsubscribe();
   }, [tournamentId, matchId]);
 
-  // --- 2. MANUAL REFRESH (Visual Feedback Only) ---
+  // --- 2. CALCULATE VIDEO ID ---
+  const videoId = useMemo(() => {
+    return getYouTubeId(match?.meta?.liveStreamUrl || match?.meta?.liveStreamId);
+  }, [match?.meta?.liveStreamUrl, match?.meta?.liveStreamId]);
+
+  // --- 3. DYNAMIC TABS LIST ---
+  const tabs = useMemo(() => {
+    // Default tabs
+    const list = [
+      { id: "scorecard", label: "Scorecard" },
+      { id: "commentary", label: "Timeline" },
+      { id: "info", label: "Match Info" },
+    ];
+    // Prepend Stream tab if video is available
+    if (videoId) {
+      list.unshift({ id: "stream", label: "🔴 Live Stream" });
+    }
+    return list;
+  }, [videoId]);
+
+  // --- 4. MANUAL REFRESH ---
   const handleManualRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -54,7 +87,6 @@ export default function MatchScorecard() {
     } catch (e) {
       console.error(e);
     } finally {
-      // Small delay so the user sees the spinner "working"
       setTimeout(() => setRefreshing(false), 600);
     }
   }, [tournamentId, matchId]);
@@ -94,7 +126,8 @@ export default function MatchScorecard() {
 
   return (
     <div className="min-h-screen bg-[#0F1115] text-slate-300 font-sans pb-32 selection:bg-teal-500/30">
-      {/* 🏛 HEADER: GLASSMORPHISM STYLE */}
+      
+      {/* 🏛 HEADER (Sticky) */}
       <div className="bg-[#161920]/90 backdrop-blur-xl border-b border-white/5 sticky top-0 z-[100]">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <Link
@@ -133,46 +166,60 @@ export default function MatchScorecard() {
       </div>
 
       <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-8">
-        {/* MATCH SUMMARY (Authoritative State) */}
+        
+        {/* MATCH SUMMARY (Always Visible) */}
         <div className="animate-in fade-in slide-in-from-top-4 duration-700">
           <ScoreSummary match={match} />
         </div>
 
-        {/* 📑 TABS: HIGH-END BROADCAST STYLE */}
-        <div className="bg-[#1C2128] border border-white/10 p-1 rounded-2xl flex gap-1 shadow-2xl max-w-sm mx-auto sticky top-20 z-50 backdrop-blur-md">
-          {["scorecard", "commentary", "info"].map((tab) => (
+        {/* 📑 TABS: Dynamic List */}
+        <div className="bg-[#1C2128] border border-white/10 p-1 rounded-2xl flex gap-1 shadow-2xl max-w-lg mx-auto sticky top-20 z-50 backdrop-blur-md overflow-x-auto no-scrollbar">
+          {tabs.map((tab) => (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-tighter transition-all duration-300 ${
-                activeTab === tab
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex-1 py-3 px-4 rounded-xl text-[10px] font-black uppercase tracking-tighter whitespace-nowrap transition-all duration-300 ${
+                activeTab === tab.id
                   ? "bg-gradient-to-br from-teal-500 to-teal-700 text-white shadow-lg shadow-teal-900/40"
                   : "text-slate-500 hover:text-slate-300"
               }`}>
-              {tab === "info"
-                ? "Match Info"
-                : tab === "commentary"
-                  ? "Timeline"
-                  : "Scorecard"}
+              {tab.label}
             </button>
           ))}
         </div>
 
         {/* 📉 DYNAMIC CONTENT AREA */}
-        <div className="animate-in fade-in slide-in-from-bottom-6 duration-1000 min-h-[500px]">
+        <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 min-h-[500px]">
+          
+          {/* TAB: STREAM */}
+          {activeTab === "stream" && videoId && (
+            <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border border-white/10 relative group">
+              <iframe
+                className="w-full h-full"
+                src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0&modestbranding=1&playsinline=1`}
+                title="Live Match Stream"
+                frameBorder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              ></iframe>
+            </div>
+          )}
+
+          {/* TAB: SCORECARD */}
           {activeTab === "scorecard" && (
             <div className="space-y-6">
               <ScoreTable match={match} />
             </div>
           )}
 
+          {/* TAB: COMMENTARY */}
           {activeTab === "commentary" && (
             <div className="max-w-3xl mx-auto">
-              {/* Timeline is often the most requested feature during live games */}
               <MatchCommentary match={match} />
             </div>
           )}
 
+          {/* TAB: INFO */}
           {activeTab === "info" && (
             <div className="max-w-2xl mx-auto">
               <MatchInfo match={match} />

@@ -7,18 +7,14 @@ import {
 import { syncMatchStatsToGlobalPlayers } from "../utils/statsSync";
 
 // Helper: Normalize keys
-const norm = (k) =>
-  String(k || "")
-    .trim()
-    .toLowerCase();
+const norm = (k) => String(k || "").trim().toLowerCase();
 
 // ✅ 1. SANITIZE SQUAD (Prevents Firestore Crash)
 const sanitizeSquadImages = (squad) => {
   if (!Array.isArray(squad)) return [];
   return squad.map((p) => ({
     ...p,
-    photoURL:
-      p.photoURL && p.photoURL.startsWith("data:image") ? "" : p.photoURL,
+    photoURL: p.photoURL && p.photoURL.startsWith("data:image") ? "" : p.photoURL,
   }));
 };
 
@@ -41,7 +37,7 @@ const createSnapshot = (inn) => {
       awaitingNewBatsman: inn.awaitingNewBatsman || false,
       awaitingNewBowler: inn.awaitingNewBowler || false,
       completed: inn.completed || false,
-    }),
+    })
   );
 };
 
@@ -65,20 +61,15 @@ function recalculateInningsState(inn) {
   // B. Reset Stats
   inn.batsmenStats = inn.batsmenStats || {};
   inn.bowlerStats = inn.bowlerStats || {};
+  
   Object.values(inn.batsmenStats).forEach((p) => {
-    p.runs = 0;
-    p.balls = 0;
-    p.fours = 0;
-    p.sixes = 0;
-    p.out = null;
-    p.wicketType = null;
-    p.fielderName = null;
-    p.bowler = null; // Clear old dismissal data
+    p.runs = 0; p.balls = 0; p.fours = 0; p.sixes = 0;
+    p.thirties = 0; p.fifties = 0; p.centuries = 0; // ✅ Reset Milestones
+    p.out = null; p.wicketType = null; p.fielderName = null; p.bowler = null; // Clear dismissal details
   });
+  
   Object.values(inn.bowlerStats).forEach((b) => {
-    b.runs = 0;
-    b.balls = 0;
-    b.wickets = 0;
+    b.runs = 0; b.balls = 0; b.wickets = 0;
   });
 
   // C. Replay History
@@ -86,11 +77,10 @@ function recalculateInningsState(inn) {
 
   history.forEach((ball, index) => {
     let runVal = ball.runs || 0;
-    const { isWicket, isWide, isNoBall, isBye, isLegBye, batter, bowler } =
-      ball;
+    const { isWicket, isWide, isNoBall, isBye, isLegBye, batter, bowler } = ball;
 
     if (batter && !inn.batsmenStats[batter])
-      inn.batsmenStats[batter] = { runs: 0, balls: 0, fours: 0, sixes: 0 };
+      inn.batsmenStats[batter] = { runs: 0, balls: 0, fours: 0, sixes: 0, thirties: 0, fifties: 0, centuries: 0 };
     if (bowler && !inn.bowlerStats[bowler])
       inn.bowlerStats[bowler] = { runs: 0, balls: 0, wickets: 0 };
 
@@ -130,7 +120,7 @@ function recalculateInningsState(inn) {
       }
     }
 
-    // ☝️ WICKET ENGINE (Stores specific details for ScoreTable)
+    // ☝️ WICKET ENGINE (Standardized for Overlay & Scorecard)
     if (isWicket && ball.wicketType !== "retiredhurt") {
       inn.wickets += 1;
       const victim = ball.whoOut || batter;
@@ -148,6 +138,7 @@ function recalculateInningsState(inn) {
         inn.batsmenStats[victim].out = "out";
         inn.batsmenStats[victim].wicketType = wType;
         inn.batsmenStats[victim].fielderName = fielder;
+        
         // Run outs/retired outs don't credit a bowler
         if (!["runout", "retiredout"].includes(wType)) {
           inn.batsmenStats[victim].bowler = bowler;
@@ -163,6 +154,17 @@ function recalculateInningsState(inn) {
       inn.currentBowler = ball.nextBowler || inn.currentBowler;
       inn.awaitingNewBatsman = isWicket && !ball.nextStriker;
       inn.awaitingNewBowler = isOverComplete;
+    }
+  });
+
+  // ✅ FINAL MILESTONE CHECK (30s, 50s, 100s)
+  Object.values(inn.batsmenStats).forEach((p) => {
+    if (p.runs >= 100) {
+      p.centuries = 1; p.fifties = 0; p.thirties = 0;
+    } else if (p.runs >= 50) {
+      p.fifties = 1; p.thirties = 0;
+    } else if (p.runs >= 30) {
+      p.thirties = 1;
     }
   });
 
@@ -183,8 +185,7 @@ function applyBallLogic(s, code, extraData = {}, physicalRuns = 0) {
 
   const isWD = code === "WD" || extraData.isWide;
   const isNB = code === "NB" || extraData.isNoBall;
-  const totalRuns =
-    isWD || isNB ? 1 + physicalRuns : parseInt(code) || physicalRuns || 0;
+  const totalRuns = isWD || isNB ? 1 + physicalRuns : parseInt(code) || physicalRuns || 0;
 
   const newBall = {
     id: Date.now(),
@@ -217,6 +218,7 @@ function applyBallLogic(s, code, extraData = {}, physicalRuns = 0) {
   newBall.nextNonStriker = nextNS;
   newBall.nextBowler = overEnding ? null : inn.currentBowler;
 
+  // ✅ SAFEGUARD: Ensure timeline exists
   inn.timeline = inn.timeline || [];
   inn.timeline.push(newBall);
 
@@ -338,7 +340,8 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
         inn.striker = p;
         inn.awaitingNewBatsman = false;
 
-        if (inn.timeline.length > 0) {
+        // ✅ FIXED: Safe access to timeline
+        if (inn.timeline && inn.timeline.length > 0) {
           const lastBall = inn.timeline[inn.timeline.length - 1];
           if (
             inn.overBallCount === 0 &&
@@ -362,7 +365,8 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
         const inn = s.innings[s.currentInnings];
         inn.currentBowler = p;
         inn.awaitingNewBowler = false;
-        if (inn.timeline.length > 0)
+        // ✅ FIXED: Safe access to timeline
+        if (inn.timeline && inn.timeline.length > 0)
           inn.timeline[inn.timeline.length - 1].nextBowler = p;
         return s;
       }),
@@ -376,7 +380,8 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
         const inn = st.innings[st.currentInnings];
         inn.striker = s;
         inn.nonStriker = ns;
-        if (inn.timeline.length > 0) {
+        // ✅ FIXED: Safe access to timeline prevents crash on empty timeline
+        if (inn.timeline && inn.timeline.length > 0) {
           inn.timeline[inn.timeline.length - 1].nextStriker = s;
           inn.timeline[inn.timeline.length - 1].nextNonStriker = ns;
         }

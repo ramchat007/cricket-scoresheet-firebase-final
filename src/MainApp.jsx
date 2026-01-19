@@ -30,6 +30,7 @@ import MigrationTool from "./components/MigrationTool.jsx";
 import AuctionDashboard from "./components/AuctionDashboard.jsx";
 import GlobalPlayerRegistration from "./components/GlobalPlayerRegistration.jsx";
 import PastLeague from "./components/PastLeague.jsx";
+import MatchOverlay from "./components/MatchOverlay.jsx";
 
 export default function MainApp() {
   const navigate = useNavigate();
@@ -137,7 +138,7 @@ export default function MainApp() {
 
             {/* Quick Action Cards - Horizontal Scroll on Mobile */}
             <div className="grid grid-cols-2 gap-3">
-              <button
+              {/* <button
                 onClick={() => setMatchId("new")}
                 className="flex items-center gap-3 p-4 bg-gradient-to-br from-teal-900/20 to-teal-900/10 border border-teal-500/20 rounded-2xl hover:border-teal-400 transition-all active:scale-95 group shadow-lg"
               >
@@ -148,7 +149,7 @@ export default function MainApp() {
                    <h3 className="text-white font-black text-xs uppercase tracking-tight truncate">New Match</h3>
                    <p className="text-[9px] text-teal-400 font-bold uppercase tracking-wider truncate">Quick Setup</p>
                 </div>
-              </button>
+              </button> */}
 
               <button
                 onClick={() => {
@@ -219,6 +220,7 @@ export default function MainApp() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/create-tournament" element={<CreateTournament />} />
           <Route path="/tournaments/:id/auction" element={<AuctionDashboard />} />
+          <Route path="/overlay/:tournamentId/:matchId" element={<MatchOverlay />} />
           <Route
             path="/matches"
             element={<MatchesPage availableTournaments={availableTournaments} onSelect={handleMatchesPageSelect} readOnly={!user} />}
