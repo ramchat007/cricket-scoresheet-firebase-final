@@ -9,9 +9,7 @@ import MatchesTab from "./MatchesTab";
 import TeamsTab from "./TeamsTab";
 import PointsTab from "./PointsTab";
 import PlayerStatsTab from "./PlayerStatsTab";
-import MatchSetup from "../MatchSetup";
-import MatchScheduler from "../MatchScheduler";
-import TournamentSettings from "./TournamentSettings"; // ✅ Ensure this path is correct
+import TournamentSettings from "./TournamentSettings";
 
 export default function TournamentTabs({
   activeTab,
@@ -19,8 +17,8 @@ export default function TournamentTabs({
   tournamentId,
   tournamentData,
   tournamentName,
-  tournamentTeams,
-  matches,
+  tournamentTeams = [],
+  matches = [],
   canEdit,
   isOwner,
   isAuctionEnabled,
@@ -63,72 +61,40 @@ export default function TournamentTabs({
     };
   }, [matches]);
 
-  // --- 2. POINTS TABLE CALCULATION ---
-  const pointsTable = useMemo(() => {
-    const calculatedStats = calculatePointsTable(matches);
-    const statsMap = {};
-    calculatedStats.forEach((t) => {
-      if (t && t.name) statsMap[t.name] = t;
-    });
+  // --- 2. POINTS TABLE PREPARATION ---
+  const pointsTableData = useMemo(() => {
+    const hasDBStats = tournamentTeams.some(
+      (t) => t.stats && t.stats.played > 0,
+    );
 
-    const mergedTable = tournamentTeams.map((team) => {
-      const teamName = team.name || "Unknown Team";
-      if (statsMap[teamName]) return statsMap[teamName];
-      return {
-        name: teamName,
-        played: 0,
-        won: 0,
-        lost: 0,
-        points: 0,
-        nrr: "0.000",
-      };
-    });
-
-    return mergedTable.sort((a, b) => {
-      if (b.points !== a.points) return b.points - a.points;
-      if (parseFloat(b.nrr) !== parseFloat(a.nrr))
-        return parseFloat(b.nrr) - parseFloat(a.nrr);
-      return (a.name || "").localeCompare(b.name || "");
-    });
+    if (hasDBStats) {
+      return tournamentTeams
+        .map((t) => ({
+          id: t.id,
+          name: t.name,
+          logo: t.logoUrl,
+          ...t.stats,
+          history: t.history || [],
+        }))
+        .sort((a, b) => {
+          if (b.points !== a.points) return b.points - a.points;
+          if (b.won !== a.won) return b.won - a.won;
+          return parseFloat(b.nrr || 0) - parseFloat(a.nrr || 0);
+        });
+    }
+    return calculatePointsTable(matches);
   }, [matches, tournamentTeams]);
 
-  // --- 3. DETAILED PLAYER STATS ---
+  // --- 3. DETAILED PLAYER STATS (With SR Bonus) ---
   const { detailedStats, orangeCap, purpleCap, distinctTeams } = useMemo(() => {
     const players = {};
 
-    // A. Init players
-    tournamentTeams.forEach((team) => {
-      const teamName = team.name || "Unknown Team";
-      const memberNames = team.roster?.map((r) => r.name) || team.players || [];
-
-      memberNames.forEach((p) => {
-        const playerName = typeof p === "object" ? p.name : p;
-        if (playerName) {
-          players[playerName] = {
-            name: playerName,
-            team: teamName,
-            runs: 0,
-            balls: 0,
-            fours: 0,
-            sixes: 0,
-            innings: 0,
-            notOuts: 0,
-            hs: 0,
-            wickets: 0,
-            runsConceded: 0,
-            ballsBowled: 0,
-            history: [],
-            mvp: 0,
-          };
-        }
-      });
-    });
-
-    const initPlayer = (name, team) => {
+    const initPlayer = (rawName, team) => {
+      const name = String(rawName || "Unknown").trim();
       if (!players[name]) {
         players[name] = {
           name,
-          team,
+          team: team?.trim() || "Independent",
           runs: 0,
           balls: 0,
           fours: 0,
@@ -146,19 +112,29 @@ export default function TournamentTabs({
       return players[name];
     };
 
+    // A. Pre-initialize from Roster
+    tournamentTeams.forEach((team) => {
+      const teamName = (team.name || "Unknown Team").trim();
+      const roster = team.roster || team.players || [];
+      roster.forEach((p) => {
+        const pName = typeof p === "object" ? p.name : p;
+        if (pName) initPlayer(pName, teamName);
+      });
+    });
+
     // B. Process Matches
     matches.forEach((m) => {
-      let innList = [];
-      if (Array.isArray(m.innings)) innList = m.innings;
-      else if (m.innings && typeof m.innings === "object")
-        innList = Object.values(m.innings);
+      if (!m.innings) return;
+      const innList = Array.isArray(m.innings)
+        ? m.innings
+        : Object.values(m.innings);
 
       innList.forEach((inn) => {
         if (!inn) return;
-        const batTeam = inn.battingTeam;
-        const bowlTeam = inn.bowlingTeam;
+        const batTeam = (inn.battingTeam || "").trim();
+        const bowlTeam = (inn.bowlingTeam || "").trim();
 
-        // Batting
+        // 🏏 Batting
         if (inn.batsmenStats) {
           Object.entries(inn.batsmenStats).forEach(([name, s]) => {
             const p = initPlayer(name, batTeam);
@@ -175,7 +151,17 @@ export default function TournamentTabs({
               p.innings += 1;
               if (!s.out) p.notOuts += 1;
               if (r > p.hs) p.hs = r;
-              p.mvp += r + f + x * 2;
+
+              // --- MVP CALCULATION ---
+              // Base: Run=1, 4s=1, 6s=2
+              let inningMVP = r + f + x * 2;
+
+              // 🚀 Strike Rate Bonus: If SR > 200 (min 10 balls played), add 5 points
+              if (b >= 10 && (r / b) * 100 >= 200) {
+                inningMVP += 5;
+              }
+
+              p.mvp += inningMVP;
 
               p.history.push({
                 type: "bat",
@@ -184,32 +170,36 @@ export default function TournamentTabs({
                 opponent: bowlTeam,
                 runs: r,
                 balls: b,
+                notOut: !s.out,
               });
             }
           });
         }
 
-        // Bowling
+        // 🥎 Bowling
         if (inn.bowlerStats) {
           Object.entries(inn.bowlerStats).forEach(([name, s]) => {
             const p = initPlayer(name, bowlTeam);
             if (s.balls > 0) {
               const w = parseInt(s.wickets || 0);
-              const r = parseInt(s.runs || 0);
-              const b = parseInt(s.balls || 0);
+              const r_conceded = parseInt(s.runs || 0);
+              const b_bowled = parseInt(s.balls || 0);
 
               p.wickets += w;
-              p.runsConceded += r;
-              p.ballsBowled += b;
+              p.runsConceded += r_conceded;
+              p.ballsBowled += b_bowled;
+
+              // MVP Logic: 1 Wicket = 20 Pts
+              // Optional: Bonus for Maiden over could go here
               p.mvp += w * 20;
+
               p.history.push({
                 type: "bowl",
                 matchId: m.id,
                 date: m.date,
                 opponent: batTeam,
                 wickets: w,
-                runs: r,
-                overs: `${Math.floor(b / 6)}.${b % 6}`,
+                runs: r_conceded,
               });
             }
           });
@@ -225,21 +215,46 @@ export default function TournamentTabs({
       const batSR =
         p.balls > 0 ? ((p.runs / p.balls) * 100).toFixed(2) : "0.00";
       const overs = p.ballsBowled / 6;
+
+      // Calculate Economy safely
       const bowlEco = overs > 0 ? (p.runsConceded / overs).toFixed(2) : "0.00";
       const bowlAvg =
         p.wickets > 0 ? (p.runsConceded / p.wickets).toFixed(2) : "0.00";
+
+      p.history.sort((a, b) => new Date(b.date) - new Date(a.date));
+
       return { ...p, batAvg, batSR, bowlEco, bowlAvg };
     });
 
-    const orange = [...statsArray].sort((a, b) => b.runs - a.runs)[0];
-    const purple = [...statsArray].sort((a, b) => b.wickets - a.wickets)[0];
-    const teams = [...new Set(statsArray.map((p) => p.team).filter(Boolean))];
+    // --- SORTING LOGIC (STRICT) ---
+
+    // 🟠 Orange Cap: Runs > Strike Rate > Average
+    const orange = [...statsArray].sort((a, b) => {
+      if (b.runs !== a.runs) return b.runs - a.runs;
+      if (parseFloat(b.batSR) !== parseFloat(a.batSR))
+        return parseFloat(b.batSR) - parseFloat(a.batSR);
+      return parseFloat(b.batAvg) - parseFloat(a.batAvg);
+    })[0];
+
+    // 🟣 Purple Cap: Wickets > Economy (Low) > Strike Rate (Low)
+    const purple = [...statsArray].sort((a, b) => {
+      if (b.wickets !== a.wickets) return b.wickets - a.wickets;
+
+      if (a.ballsBowled > 0 && b.ballsBowled > 0) {
+        return parseFloat(a.bowlEco) - parseFloat(b.bowlEco);
+      }
+      return b.ballsBowled - a.ballsBowled;
+    })[0];
+
+    const teamList = [
+      ...new Set(statsArray.map((p) => p.team).filter(Boolean)),
+    ];
 
     return {
       detailedStats: statsArray,
       orangeCap: orange,
       purpleCap: purple,
-      distinctTeams: teams,
+      distinctTeams: teamList,
     };
   }, [matches, tournamentTeams]);
 
@@ -250,26 +265,35 @@ export default function TournamentTabs({
 
     return data.sort((a, b) => {
       if (statsTab === "bat") {
-        if (sortStyle === "most_runs") return b.runs - a.runs;
+        if (sortStyle === "most_runs")
+          return b.runs - a.runs || parseFloat(b.batSR) - parseFloat(a.batSR);
         if (sortStyle === "high_score") return b.hs - a.hs;
         if (sortStyle === "strike_rate")
           return parseFloat(b.batSR) - parseFloat(a.batSR);
         if (sortStyle === "most_sixes") return b.sixes - a.sixes;
       } else if (statsTab === "bowl") {
-        if (sortStyle === "most_wickets") return b.wickets - a.wickets;
-        if (sortStyle === "best_economy")
+        if (sortStyle === "most_wickets") {
+          if (b.wickets !== a.wickets) return b.wickets - a.wickets;
           return parseFloat(a.bowlEco) - parseFloat(b.bowlEco);
-      } else if (statsTab === "mvp") return b.mvp - a.mvp;
+        }
+        if (sortStyle === "best_economy") {
+          if (a.ballsBowled === 0) return 1;
+          if (b.ballsBowled === 0) return -1;
+          return parseFloat(a.bowlEco) - parseFloat(b.bowlEco);
+        }
+      } else if (statsTab === "mvp") {
+        return b.mvp - a.mvp; // Rank by MVP Points
+      }
       return 0;
     });
   }, [detailedStats, teamFilter, statsTab, sortStyle]);
 
-  // --- RENDER CONTENT ---
+  // --- RENDER ---
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 min-h-screen">
-      {/* MOBILE-OPTIMIZED TABS NAVIGATION */}
+      {/* TABS NAVIGATION */}
       <div className="sticky top-2 z-40 mb-6 mx-[-16px] px-4 md:mx-0 md:px-0">
-        <div className="bg-[#1C2128]/90 backdrop-blur-xl border border-white/10 p-1.5 rounded-2xl flex overflow-x-auto shadow-2xl custom-scrollbar snap-x snap-mandatory">
+        <div className="bg-[#1C2128]/90 backdrop-blur-xl border border-white/10 p-1.5 rounded-2xl flex overflow-x-auto shadow-2xl no-scrollbar snap-x snap-mandatory">
           {[
             { id: "matches", label: "Matches", icon: "🏟️" },
             { id: "teams", label: "Teams", icon: "👥" },
@@ -283,14 +307,9 @@ export default function TournamentTabs({
                 key={tab.id}
                 onClick={() => {
                   setActiveTab(tab.id);
-                  // Optional: smooth scroll to top when tab changes
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
-                className={`flex-shrink-0 flex-1 min-w-[90px] md:min-w-[120px] px-3 py-3 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider transition-all flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 snap-center ${
-                  activeTab === tab.id
-                    ? "bg-[#0F1115] text-white shadow-lg border border-white/10 scale-95 md:scale-100"
-                    : "text-slate-500 hover:text-slate-300 hover:bg-white/5 border border-transparent"
-                }`}>
+                className={`flex-shrink-0 flex-1 min-w-[90px] md:min-w-[120px] px-3 py-3 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider transition-all flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 snap-center ${activeTab === tab.id ? "bg-[#0F1115] text-white shadow-lg border border-white/10 scale-95 md:scale-100" : "text-slate-500 hover:text-slate-300 hover:bg-white/5 border border-transparent"}`}>
                 <span className="text-sm md:text-base">{tab.icon}</span>
                 <span>{tab.label}</span>
               </button>
@@ -298,8 +317,7 @@ export default function TournamentTabs({
         </div>
       </div>
 
-      {/* CONTENT AREA - with extra padding for bottom navigation on mobile if needed */}
-      <div className="pb-20 md:pb-0">
+      <div className="pb-24 md:pb-0">
         {activeTab === "matches" && (
           <MatchesTab
             liveMatches={liveMatches}
@@ -309,16 +327,23 @@ export default function TournamentTabs({
             canEdit={canEdit}
           />
         )}
-
         {activeTab === "teams" && (
           <TeamsTab
             tournamentTeams={tournamentTeams}
             tournamentName={tournamentName}
             isAuctionEnabled={isAuctionEnabled}
+            matches={matches}
           />
         )}
-
-        {activeTab === "points" && <PointsTab pointsTable={pointsTable} />}
+        {activeTab === "points" && (
+          <PointsTab
+            pointsTable={pointsTableData}
+            matches={matches}
+            teams={tournamentTeams}
+            tournamentId={tournamentId}
+            canEdit={canEdit}
+          />
+        )}
 
         {activeTab === "players" && (
           <PlayerStatsTab
@@ -338,10 +363,8 @@ export default function TournamentTabs({
           />
         )}
 
-        {/* ✅ FIXED ADMIN SECTION LAYOUT */}
         {activeTab === "admin" && (canEdit || isOwner) && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in zoom-in-95">
-            {/* COLUMN 1: Team Management */}
             <div className="bg-[#1C2128] border border-white/5 rounded-2xl p-6 shadow-xl relative overflow-hidden group">
               <h3 className="text-slate-100 font-bold text-lg mb-6 flex items-center gap-2">
                 <span className="text-cyan-500">🛡️</span> Team Management
@@ -353,14 +376,13 @@ export default function TournamentTabs({
                     Rosters Locked
                   </h4>
                   <p className="text-slate-500 text-sm mb-6">
-                    This is an Auction Tournament. Teams are managed in the
-                    Auction Console.
+                    Teams are managed in the Auction Console.
                   </p>
                   <button
                     onClick={() =>
                       navigate(`/tournaments/${tournamentId}/auction`)
                     }
-                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-lg shadow-purple-900/20">
+                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg">
                     Go to Auction Console
                   </button>
                 </div>
@@ -368,17 +390,13 @@ export default function TournamentTabs({
                 <TeamManager tournamentId={tournamentId} />
               )}
             </div>
-
-            {/* COLUMN 2: Admin Tools (Stacked) */}
             <div className="space-y-6">
-              {/* 1. Settings (Visible to Scorer AND Owner) */}
               {canEdit && (
                 <TournamentSettings
                   tournament={tournamentData}
                   tournamentId={tournamentId}
                 />
               )}
-              {/* 2. Access Manager (Strictly Owner Only) */}
               {isOwner && (
                 <TournamentAccessManager
                   tournamentData={tournamentData}
