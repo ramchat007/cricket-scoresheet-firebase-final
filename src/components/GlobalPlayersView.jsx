@@ -24,7 +24,7 @@ export default function GlobalPlayersView() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
 
-  // ✅ NEW: Role Filter State
+  // Role Filter State
   const [roleFilter, setRoleFilter] = useState("All");
 
   const [expandedPlayerId, setExpandedPlayerId] = useState(null);
@@ -82,18 +82,18 @@ export default function GlobalPlayersView() {
     loadRealTimeData();
   }, []);
 
-  // --- 2. LIVE STATS CALCULATION ENGINE ---
+  // --- 2. LIVE STATS CALCULATION ENGINE (OPTIMIZED) ---
   const { processedPlayers, orangeCap, purpleCap } = useMemo(() => {
     if (players.length === 0)
       return { processedPlayers: [], orangeCap: null, purpleCap: null };
 
-    // 1. Initialize Map with Raw Stats
+    // 1. Initialize Map
     const statsMap = {};
     players.forEach((p) => {
       statsMap[p.id] = {
         ...p,
         calculatedStats: {
-          matches: 0,
+          matches: 0, // Will be sync'd with history length
           runs: 0,
           ballsFaced: 0,
           fours: 0,
@@ -102,20 +102,20 @@ export default function GlobalPlayersView() {
           runsConceded: 0,
           ballsBowled: 0,
           highestScore: 0,
-          notOuts: 0, // Needed for Average
+          notOuts: 0,
           history: [],
         },
       };
     });
 
-    // 2. Identity Map (Name -> ID)
+    // 2. Identity Map
     const identityMap = {};
     players.forEach((p) => {
       identityMap[p.name.trim().toLowerCase()] = p.id;
       identityMap[p.id] = p.id;
     });
 
-    // 3. Process Matches (Aggregating Raw Data)
+    // 3. Process Matches
     allMatches.forEach((match) => {
       const status = (match.status || match.meta?.status || "").toLowerCase();
       if (!["finished", "completed"].includes(status)) return;
@@ -129,7 +129,7 @@ export default function GlobalPlayersView() {
         identityMap[(name || "").trim().toLowerCase()];
 
       inningsArray.forEach((inn) => {
-        // Batting Aggregation
+        // Batting Stats
         if (inn.batsmenStats) {
           Object.entries(inn.batsmenStats).forEach(([pName, s]) => {
             const gid = findGlobalId(pName);
@@ -140,7 +140,7 @@ export default function GlobalPlayersView() {
               const isOut = s.out;
 
               if (b > 0 || isOut) {
-                p.calculatedStats.matches += 1; // Simple match counter (refine logic if needed)
+                // Aggregates
                 p.calculatedStats.runs += r;
                 p.calculatedStats.ballsFaced += b;
                 p.calculatedStats.fours += Number(s.fours) || 0;
@@ -149,13 +149,30 @@ export default function GlobalPlayersView() {
                 if (r > p.calculatedStats.highestScore)
                   p.calculatedStats.highestScore = r;
 
-                // (History push logic omitted for brevity, keep your existing history push here)
+                // Match History (Merging logic)
+                const existingHist = p.calculatedStats.history.find(
+                  (h) => h.matchId === match.id,
+                );
+                if (existingHist) {
+                  existingHist.runs = r;
+                  existingHist.isNotOut = !isOut;
+                } else {
+                  p.calculatedStats.history.push({
+                    matchId: match.id,
+                    tournamentId: match.tournamentId,
+                    date: match.date || match.meta?.date,
+                    opponent: inn.bowlingTeam || "Opponent",
+                    runs: r,
+                    wickets: 0,
+                    isNotOut: !isOut,
+                  });
+                }
               }
             }
           });
         }
 
-        // Bowling Aggregation
+        // Bowling Stats
         if (inn.bowlerStats) {
           Object.entries(inn.bowlerStats).forEach(([pName, s]) => {
             const gid = findGlobalId(pName);
@@ -166,11 +183,26 @@ export default function GlobalPlayersView() {
               const bb = Number(s.balls) || 0;
 
               if (bb > 0) {
-                // Note: Don't increment matches again if they already batted in this game
-                // Logic simplifed for aggregate totals:
                 p.calculatedStats.wickets += w;
                 p.calculatedStats.runsConceded += rc;
                 p.calculatedStats.ballsBowled += bb;
+
+                const existingHist = p.calculatedStats.history.find(
+                  (h) => h.matchId === match.id,
+                );
+                if (existingHist) {
+                  existingHist.wickets = w;
+                } else {
+                  p.calculatedStats.history.push({
+                    matchId: match.id,
+                    tournamentId: match.tournamentId,
+                    date: match.date || match.meta?.date,
+                    opponent: inn.battingTeam || "Opponent",
+                    runs: 0,
+                    wickets: w,
+                    isNotOut: false,
+                  });
+                }
               }
             }
           });
@@ -178,71 +210,63 @@ export default function GlobalPlayersView() {
       });
     });
 
-    // 4. ✅ TRANSFORM RAW DATA TO CALCULATED METRICS
-    // This step creates the 'batSR', 'bowlEco', etc. needed for your sort logic
-    let statsArray = Object.values(statsMap).map((p) => {
-      const s = p.calculatedStats;
-
-      // Batting Metrics
-      // Avg = Runs / (Innings - NotOuts). Use Matches as proxy for Innings if needed
-      const dismissed = s.matches - s.notOuts; // Rough approximation or track actual innings
-      const batAvg =
-        dismissed > 0 ? (s.runs / dismissed).toFixed(2) : s.runs.toFixed(2);
-      const batSR =
-        s.ballsFaced > 0 ? ((s.runs / s.ballsFaced) * 100).toFixed(2) : "0.00";
-
-      // Bowling Metrics
-      const overs = s.ballsBowled / 6;
-      const bowlEco = overs > 0 ? (s.runsConceded / overs).toFixed(2) : "0.00";
-
-      return {
-        ...p,
-        // Attach these directly to root or inside calculatedStats,
-        // but for your sort function to work as written:
-        batAvg,
-        batSR,
-        bowlEco,
-        // Ensure raw stats are accessible for sorting too
-        runs: s.runs,
-        wickets: s.wickets,
-        ballsBowled: s.ballsBowled,
-      };
+    // 4. Final Sync (Fixes Match Count & Prepares List)
+    // Convert Map to Array here to define 'allStats' safely
+    const allStats = Object.values(statsMap).map((p) => {
+      // 🚀 FIX: Match count = Unique entries in history
+      p.calculatedStats.matches = p.calculatedStats.history.length;
+      return p;
     });
 
-    // 5. ✅ APPLY YOUR EXACT SORTING LOGIC
+    // 5. Cap Calculation (3-Level Professional Logic)
 
-    // 🟠 Orange Cap
-    const orange = [...statsArray].sort((a, b) => {
-      if (b.runs !== a.runs) return b.runs - a.runs;
-      if (parseFloat(b.batSR) !== parseFloat(a.batSR))
-        return parseFloat(b.batSR) - parseFloat(a.batSR);
-      return parseFloat(b.batAvg) - parseFloat(a.batAvg);
+    // 🟠 ORANGE CAP: Runs -> Strike Rate -> Average
+    const orange = [...allStats].sort((a, b) => {
+      // 1. Primary: Most Runs
+      if (b.calculatedStats.runs !== a.calculatedStats.runs) {
+        return b.calculatedStats.runs - a.calculatedStats.runs;
+      }
+
+      // Calculate Metrics
+      const srA =
+        a.calculatedStats.ballsFaced > 0
+          ? (a.calculatedStats.runs / a.calculatedStats.ballsFaced) * 100
+          : 0;
+      const srB =
+        b.calculatedStats.ballsFaced > 0
+          ? (b.calculatedStats.runs / b.calculatedStats.ballsFaced) * 100
+          : 0;
+
+      // 2. Secondary: Strike Rate (Higher is better)
+      if (srA !== srB) return srB - srA;
+
+      // 3. Tertiary: Average (Higher is better)
+      const disA =
+        a.calculatedStats.matches - (a.calculatedStats.notOuts || 0) || 1;
+      const disB =
+        b.calculatedStats.matches - (b.calculatedStats.notOuts || 0) || 1;
+      return b.calculatedStats.runs / disB - a.calculatedStats.runs / disA;
     })[0];
 
-    // 🟣 Purple Cap: Wickets > Economy (Low) > Strike Rate (Low)
+    // 🟣 PURPLE CAP: Wickets -> Economy -> Strike Rate
     const purple = [...allStats].sort((a, b) => {
-      // 1. PRIMARY: Most Wickets
+      // 1. Primary: Most Wickets
       if (b.calculatedStats.wickets !== a.calculatedStats.wickets) {
         return b.calculatedStats.wickets - a.calculatedStats.wickets;
       }
 
-      // 2. TIE-BREAKER: Economy Rate (Lower is better)
       const ballsA = a.calculatedStats.ballsBowled;
       const ballsB = b.calculatedStats.ballsBowled;
 
-      // Calculate Economy (Runs / Overs)
-      // Avoid division by zero
+      // 2. Secondary: Economy Rate (Lower is better)
       const ecoA =
-        ballsA > 0 ? a.calculatedStats.runsConceded / (ballsA / 6) : 999;
+        ballsA > 0 ? a.calculatedStats.runsConceded / (ballsA / 6) : 9999;
       const ecoB =
-        ballsB > 0 ? b.calculatedStats.runsConceded / (ballsB / 6) : 999;
+        ballsB > 0 ? b.calculatedStats.runsConceded / (ballsB / 6) : 9999;
 
-      if (ecoA !== ecoB) {
-        return ecoA - ecoB; // Lower Economy Wins
-      }
+      if (ecoA !== ecoB) return ecoA - ecoB;
 
-      // 3. TIE-BREAKER: Bowling Strike Rate (Balls / Wickets) - Lower is better
-      // Whoever took their wickets in FEWER balls wins
+      // 3. Tertiary: Strike Rate (Balls/Wicket) (Lower is better)
       const srA =
         a.calculatedStats.wickets > 0
           ? ballsA / a.calculatedStats.wickets
@@ -255,8 +279,8 @@ export default function GlobalPlayersView() {
       return srA - srB;
     })[0];
 
-    // 6. Final Filter & Sort for Table Display
-    let result = statsArray;
+    // 6. Filter & Sort Table Display
+    let result = [...allStats]; // Clone to prevent mutation issues
 
     if (searchTerm) {
       result = result.filter((p) =>
@@ -267,14 +291,18 @@ export default function GlobalPlayersView() {
       result = result.filter((p) => p.role === roleFilter);
     }
 
-    // Apply Table Sorting (using the config state)
     result.sort((a, b) => {
       let valA, valB;
-      // Handle the helper props we just created vs nested stats
-      if (["runs", "wickets", "highestScore"].includes(sortConfig.key)) {
+      if (
+        ["runs", "wickets", "highestScore", "matches"].includes(sortConfig.key)
+      ) {
         valA = a.calculatedStats[sortConfig.key] || 0;
         valB = b.calculatedStats[sortConfig.key] || 0;
-      } else if (["name", "role"].includes(sortConfig.key)) {
+      } else if (
+        ["name", "role", "battingStyle", "bowlingStyle"].includes(
+          sortConfig.key,
+        )
+      ) {
         valA = a[sortConfig.key];
         valB = b[sortConfig.key];
       } else {
@@ -292,8 +320,8 @@ export default function GlobalPlayersView() {
 
     return {
       processedPlayers: result,
-      orangeCap: orange?.runs > 0 ? orange : null, // Note: orange.runs is now at root
-      purpleCap: purple?.wickets > 0 ? purple : null, // Note: purple.wickets is now at root
+      orangeCap: orange?.calculatedStats.runs > 0 ? orange : null,
+      purpleCap: purple?.calculatedStats.wickets > 0 ? purple : null,
     };
   }, [players, allMatches, searchTerm, roleFilter, sortConfig]);
 
@@ -503,7 +531,7 @@ export default function GlobalPlayersView() {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
 
-            {/* ✅ NEW: Role Filter Dropdown */}
+            {/* Role Filter Dropdown */}
             <select
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value)}
