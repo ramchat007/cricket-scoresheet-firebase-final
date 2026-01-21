@@ -93,11 +93,17 @@ const MatchCorrectionModal = ({ match, tournamentId, onClose }) => {
 
   const handleEditClick = (index, ball) => {
     setEditingBallIndex(index);
-    setEditPayload(
-      typeof ball !== "object"
-        ? { runs: parseInt(ball) || 0, isWicket: ball === "W" }
-        : { ...ball },
-    );
+    if (typeof ball !== "object") {
+      // Legacy support
+      setEditPayload({
+        runs: parseInt(ball) || 0,
+        isWicket: ball === "W",
+        isWide: false,
+        isNoBall: false,
+      });
+    } else {
+      setEditPayload({ ...ball });
+    }
   };
 
   const handleTimelineSave = async () => {
@@ -289,8 +295,8 @@ const MatchCorrectionModal = ({ match, tournamentId, onClose }) => {
                                 Batter
                               </label>
                               <input
-                                className="w-full bg-black border border-white/10 p-2 text-sm rounded-lg"
-                                value={editPayload.batter}
+                                className="w-full bg-black border border-white/10 p-2 text-sm rounded-lg text-white"
+                                value={editPayload.batter || ""}
                                 onChange={(e) =>
                                   setEditPayload({
                                     ...editPayload,
@@ -304,8 +310,8 @@ const MatchCorrectionModal = ({ match, tournamentId, onClose }) => {
                                 Bowler
                               </label>
                               <input
-                                className="w-full bg-black border border-white/10 p-2 text-sm rounded-lg"
-                                value={editPayload.bowler}
+                                className="w-full bg-black border border-white/10 p-2 text-sm rounded-lg text-white"
+                                value={editPayload.bowler || ""}
                                 onChange={(e) =>
                                   setEditPayload({
                                     ...editPayload,
@@ -315,17 +321,89 @@ const MatchCorrectionModal = ({ match, tournamentId, onClose }) => {
                               />
                             </div>
                           </div>
+
+                          {/* NEW: Runs & Score Correction */}
+                          <div className="bg-black/40 p-3 rounded-xl border border-white/5 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-gray-400">
+                                Runs on this ball:
+                              </span>
+                              <input
+                                type="number"
+                                className="w-20 bg-black border border-cyan-500/30 p-1 text-center rounded font-bold text-cyan-400"
+                                value={editPayload.runs}
+                                onChange={(e) =>
+                                  setEditPayload({
+                                    ...editPayload,
+                                    runs: parseInt(e.target.value) || 0,
+                                  })
+                                }
+                              />
+                            </div>
+
+                            <div className="flex justify-around gap-2 pt-2 border-t border-white/5">
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={!!editPayload.isWide}
+                                  onChange={(e) =>
+                                    setEditPayload({
+                                      ...editPayload,
+                                      isWide: e.target.checked,
+                                    })
+                                  }
+                                  className="accent-cyan-500"
+                                />
+                                <span className="text-[10px] uppercase font-bold text-gray-400">
+                                  Wide
+                                </span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={!!editPayload.isNoBall}
+                                  onChange={(e) =>
+                                    setEditPayload({
+                                      ...editPayload,
+                                      isNoBall: e.target.checked,
+                                    })
+                                  }
+                                  className="accent-cyan-500"
+                                />
+                                <span className="text-[10px] uppercase font-bold text-gray-400">
+                                  No Ball
+                                </span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={!!editPayload.isWicket}
+                                  onChange={(e) =>
+                                    setEditPayload({
+                                      ...editPayload,
+                                      isWicket: e.target.checked,
+                                    })
+                                  }
+                                  className="accent-red-500"
+                                />
+                                <span className="text-[10px] uppercase font-bold text-red-400">
+                                  Wicket
+                                </span>
+                              </label>
+                            </div>
+                          </div>
+
                           <div className="flex justify-end gap-2">
                             <button
                               onClick={() => setEditingBallIndex(null)}
-                              className="px-3 py-1 text-xs text-gray-500">
+                              className="px-4 py-2 text-xs text-gray-500 font-bold uppercase">
                               Cancel
                             </button>
                             <button
                               onClick={handleTimelineSave}
                               disabled={loading}
-                              className="px-4 py-1 bg-cyan-600 text-white rounded text-xs font-bold uppercase shadow-lg">
-                              Save
+                              className="px-6 py-2 bg-cyan-600 text-white rounded-lg text-xs font-black uppercase shadow-lg active:scale-95 transition-all">
+                              {loading ? "Saving..." : "Update Ball"}
                             </button>
                           </div>
                         </div>

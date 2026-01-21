@@ -152,24 +152,21 @@ export default function TournamentTabs({
               if (!s.out) p.notOuts += 1;
               if (r > p.hs) p.hs = r;
 
-              // --- MVP CALCULATION ---
-              // Base: Run=1, 4s=1, 6s=2
               let inningMVP = r + f + x * 2;
-
-              // 🚀 Strike Rate Bonus: If SR > 200 (min 10 balls played), add 5 points
-              if (b >= 10 && (r / b) * 100 >= 200) {
-                inningMVP += 5;
-              }
-
+              if (b >= 10 && (r / b) * 100 >= 200) inningMVP += 5;
               p.mvp += inningMVP;
 
+              // ✅ ENHANCED HISTORY DATA
               p.history.push({
                 type: "bat",
                 matchId: m.id,
-                date: m.date,
+                date: m.date || m.meta?.date || new Date().toISOString(),
                 opponent: bowlTeam,
                 runs: r,
                 balls: b,
+                fours: f, // Now passing explicitly
+                sixes: x, // Now passing explicitly
+                wickets: 0, // Default for bat entry
                 notOut: !s.out,
               });
             }
@@ -188,18 +185,19 @@ export default function TournamentTabs({
               p.wickets += w;
               p.runsConceded += r_conceded;
               p.ballsBowled += b_bowled;
-
-              // MVP Logic: 1 Wicket = 20 Pts
-              // Optional: Bonus for Maiden over could go here
               p.mvp += w * 20;
 
+              // ✅ ENHANCED HISTORY DATA
               p.history.push({
                 type: "bowl",
                 matchId: m.id,
                 date: m.date,
                 opponent: batTeam,
                 wickets: w,
-                runs: r_conceded,
+                runs: 0, // We set runs to 0 here because this is conceded runs
+                runsConceded: r_conceded,
+                fours: 0,
+                sixes: 0,
               });
             }
           });
@@ -359,6 +357,7 @@ export default function TournamentTabs({
             orangeCap={orangeCap}
             purpleCap={purpleCap}
             distinctTeams={distinctTeams}
+            matches={matches}
             id={tournamentId}
           />
         )}

@@ -322,6 +322,9 @@ function applyBallLogic(s, code, extraData = {}, physicalRuns = 0) {
   const isLegal = (!isWD && !isNB) || newBall.isLegalOverride;
   const overEnding = inn.overBallCount + (isLegal ? 1 : 0) === 6;
 
+  const maxOvers = parseInt(s.meta?.overs || 20);
+  const isInningsFinishedByOvers = overEnding && (inn.over + 1 >= maxOvers);
+
   if (overEnding) {
     // End of over: Swap ends.
     // If wicket fell, we simply swap the calculated survivor slots
@@ -331,6 +334,8 @@ function applyBallLogic(s, code, extraData = {}, physicalRuns = 0) {
   newBall.nextStriker = nextS;
   newBall.nextNonStriker = nextNS;
   newBall.nextBowler = overEnding ? null : inn.currentBowler;
+
+  newBall.nextBowler = (overEnding && !isInningsFinishedByOvers) ? null : inn.currentBowler;
 
   inn.timeline = inn.timeline || [];
   inn.timeline.push(newBall);
@@ -356,6 +361,7 @@ function checkFinishAndSetResult(s, idx) {
 
   if (inn.wickets >= maxWickets || inn.over >= maxOvers || inn.completed) {
     inn.completed = true;
+    inn.awaitingNewBowler = false;
     if (idx === 0) {
       s.meta.target = inn.score + 1;
       initializeSecondInnings(s);

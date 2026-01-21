@@ -24,11 +24,10 @@ const KeyButton = React.memo(
     <button
       onClick={onClick}
       disabled={disabled || loading}
-      className={`${color} h-14 text-lg font-bold flex items-center justify-center rounded-xl active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed touch-manipulation border shadow-sm select-none relative`}
-    >
+      className={`${color} h-14 text-lg font-bold flex items-center justify-center rounded-xl active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed touch-manipulation border shadow-sm select-none relative`}>
       {val}
     </button>
-  )
+  ),
 );
 
 export default function ScoreInput({
@@ -108,22 +107,46 @@ export default function ScoreInput({
     return innArr[activeIndex] || {};
   }, [match, activeIndex]);
 
+  const battingFirstTeam = useMemo(() => {
+    const inn1 = match?.innings?.[0];
+    if (inn1) return inn1.battingTeam;
+
+    // Fallback to toss logic if inn1 isn't initialized yet
+    const tossWinner = match?.meta?.toss?.winner;
+    const tossChoice = match?.meta?.toss?.decision;
+    if (tossWinner && tossChoice) {
+      if (tossChoice === "Bat") return tossWinner;
+      return tossWinner === match.meta.teamA
+        ? match.meta.teamB
+        : match.meta.teamA;
+    }
+    return match?.meta?.teamA;
+  }, [match]);
+
+  const battingSecondTeam =
+    battingFirstTeam === match?.meta?.teamA
+      ? match?.meta?.teamB
+      : match?.meta?.teamA;
+
+  const isInning2 = activeIndex === 1;
+
   // --- 🧠 NEW CONTEXT LOGIC (Side-by-Side, CRR, Standard Result) ---
   const matchContext = useMemo(() => {
     const inn1 = match?.innings?.[0];
     const inn2 = match?.innings?.[1];
-    const isFinished = match?.status === "finished" || match?.meta?.matchStatus === "finished";
+    const isFinished =
+      match?.status === "finished" || match?.meta?.matchStatus === "finished";
 
     // ✅ STANDARD RESULT LOGIC
     let resultText = null;
     if (isFinished && inn1 && inn2) {
       if (inn1.score > inn2.score) {
         const margin = inn1.score - inn2.score;
-        resultText = `${inn1.battingTeam} won by ${margin} run${margin > 1 ? 's' : ''}`;
+        resultText = `${inn1.battingTeam} won by ${margin} run${margin > 1 ? "s" : ""}`;
       } else if (inn2.score > inn1.score) {
-        const totalWickets = parseInt(match.meta?.totalWickets || 10); 
+        const totalWickets = parseInt(match.meta?.totalWickets || 10);
         const margin = Math.max(0, totalWickets - inn2.wickets);
-        resultText = `${inn2.battingTeam} won by ${margin} wicket${margin > 1 ? 's' : ''}`;
+        resultText = `${inn2.battingTeam} won by ${margin} wicket${margin > 1 ? "s" : ""}`;
       } else {
         resultText = "Match Tied";
       }
@@ -131,21 +154,30 @@ export default function ScoreInput({
       resultText = match?.meta?.result || "Match Completed";
     }
 
-    const target = (inn1 && inn1.score !== undefined) ? inn1.score + 1 : null;
+    const target = inn1 && inn1.score !== undefined ? inn1.score + 1 : null;
     const runsNeeded = target && inn2 ? target - inn2.score : 0;
     const totalOvers = parseInt(match?.meta?.overs || 0);
-    const currentBalls = inn2 ? (inn2.over * 6) + inn2.overBallCount : 0;
-    const remainingBalls = Math.max(0, (totalOvers * 6) - currentBalls);
+    const currentBalls = inn2 ? inn2.over * 6 + inn2.overBallCount : 0;
+    const remainingBalls = Math.max(0, totalOvers * 6 - currentBalls);
 
     const getCRR = (inn) => {
-      if(!inn) return "0.00";
-      const totalLegalBalls = (inn.over * 6) + inn.overBallCount;
-      return totalLegalBalls > 0 ? ((inn.score / totalLegalBalls) * 6).toFixed(2) : "0.00";
+      if (!inn) return "0.00";
+      const totalLegalBalls = inn.over * 6 + inn.overBallCount;
+      return totalLegalBalls > 0
+        ? ((inn.score / totalLegalBalls) * 6).toFixed(2)
+        : "0.00";
     };
 
-    return { 
-      inn1, inn2, target, runsNeeded, remainingBalls, resultText, isFinished,
-      crr1: getCRR(inn1), crr2: getCRR(inn2) 
+    return {
+      inn1,
+      inn2,
+      target,
+      runsNeeded,
+      remainingBalls,
+      resultText,
+      isFinished,
+      crr1: getCRR(inn1),
+      crr2: getCRR(inn2),
     };
   }, [match, activeIndex]);
 
@@ -162,8 +194,8 @@ export default function ScoreInput({
       !p
         ? ""
         : typeof p === "object"
-        ? p.name || p.playerName || ""
-        : String(p).trim(),
+          ? p.name || p.playerName || ""
+          : String(p).trim(),
     [],
   );
 
@@ -219,31 +251,29 @@ export default function ScoreInput({
     [currentBowlingSquad, getPlayerName],
   );
 
-  
-
   // ✅ Trigger AI Commentary for the latest ball
-useEffect(() => {
-  const timeline = m.timeline || [];
-  if (timeline.length === 0 || matchContext.isFinished) return;
+  useEffect(() => {
+    const timeline = m.timeline || [];
+    if (timeline.length === 0 || matchContext.isFinished) return;
 
-  const latestBallIndex = timeline.length - 1;
-  const latestBallId = `${activeIndex}-${latestBallIndex}`;
-  const latestBall = timeline[latestBallIndex];
+    const latestBallIndex = timeline.length - 1;
+    const latestBallId = `${activeIndex}-${latestBallIndex}`;
+    const latestBall = timeline[latestBallIndex];
 
-  // Only fetch if we don't have a comment for this ball yet
-  if (latestBall && !aiComments[latestBallId]) {
-    fetchAICommentary({
-      ...latestBall,
-      batter: latestBall.batter || strikerName,
-      bowler: latestBall.bowler || currentBowlerName,
-      matchSituation: `${m.score}/${m.wickets} in ${m.over}.${m.overBallCount}`,
-    }).then((text) => {
-      if (text) {
-        setAiComments((prev) => ({ ...prev, [latestBallId]: text }));
-      }
-    });
-  }
-}, [m.timeline?.length, activeIndex]); // Runs whenever the ball count changes
+    // Only fetch if we don't have a comment for this ball yet
+    if (latestBall && !aiComments[latestBallId]) {
+      fetchAICommentary({
+        ...latestBall,
+        batter: latestBall.batter || strikerName,
+        bowler: latestBall.bowler || currentBowlerName,
+        matchSituation: `${m.score}/${m.wickets} in ${m.over}.${m.overBallCount}`,
+      }).then((text) => {
+        if (text) {
+          setAiComments((prev) => ({ ...prev, [latestBallId]: text }));
+        }
+      });
+    }
+  }, [m.timeline?.length, activeIndex]); // Runs whenever the ball count changes
 
   // --- ⚡️ CORE SCORING HANDLER ---
   const handleSubmitBall = useCallback(
@@ -293,25 +323,32 @@ useEffect(() => {
   }, [m.timeline]);
 
   // ✅ UPDATED LIVE NARRATIVE LOGIC
-const displayInsightText = useMemo(() => {
-  if (matchContext.isFinished) return `🏆 ${matchContext.resultText}`;
-  if (m.awaitingNewBatsman) return "☝️ Wicket! Waiting for new batsman...";
-  if (m.awaitingNewBowler) return `🥎 Over complete. Waiting for new bowler.`;
+  const displayInsightText = useMemo(() => {
+    if (matchContext.isFinished) return `🏆 ${matchContext.resultText}`;
+    if (m.awaitingNewBatsman) return "☝️ Wicket! Waiting for new batsman...";
+    if (m.awaitingNewBowler) return `🥎 Over complete. Waiting for new bowler.`;
 
-  // Check for AI commentary for the latest ball
-  const timeline = m.timeline || [];
-  const latestId = `${activeIndex}-${timeline.length - 1}`;
+    // Check for AI commentary for the latest ball
+    const timeline = m.timeline || [];
+    const latestId = `${activeIndex}-${timeline.length - 1}`;
 
-  if (aiComments[latestId]) {
-    return `🤖 ${aiComments[latestId]}`;
-  }
+    if (aiComments[latestId]) {
+      return `🤖 ${aiComments[latestId]}`;
+    }
 
-  // Fallback narrative
-  if (strikerName && currentBowlerName)
-    return `🏏 ${strikerName} vs ${currentBowlerName}.`;
-  
-  return "⚡ System ready.";
-}, [m, strikerName, currentBowlerName, matchContext, aiComments, activeIndex]);
+    // Fallback narrative
+    if (strikerName && currentBowlerName)
+      return `🏏 ${strikerName} vs ${currentBowlerName}.`;
+
+    return "⚡ System ready.";
+  }, [
+    m,
+    strikerName,
+    currentBowlerName,
+    matchContext,
+    aiComments,
+    activeIndex,
+  ]);
 
   const hasSetup = strikerName && nonStrikerName && currentBowlerName;
   const disableBallEntry =
@@ -390,72 +427,89 @@ const displayInsightText = useMemo(() => {
     );
   }
 
+  // const showPlayerSelector =
+  //   (m.awaitingNewBatsman || m.awaitingNewBowler) && !localOverlayDismissed;
+  const maxOvers = parseInt(match?.meta?.overs || 0);
+  const isLastOverOfInnings = m.over >= maxOvers;
+
   const showPlayerSelector =
-    (m.awaitingNewBatsman || m.awaitingNewBowler) && !localOverlayDismissed;
+    (m.awaitingNewBatsman || (m.awaitingNewBowler && !isLastOverOfInnings)) &&
+    !localOverlayDismissed;
 
   return (
-    <div className="flex flex-col h-full bg-[#0F1115] text-slate-300 overflow-y-auto no-scrollbar relative pb-32">
-      
-      {/* SECTION 1: SIDE-BY-SIDE SCORE SUMMARY */}
-      <div className="flex-none bg-[#161920] border-b border-white/5 px-4 py-3 relative">
-        <div className="grid grid-cols-2 gap-4 items-start">
-          
-          {/* LEFT: 1st Innings */}
-          <div className={`text-left transition-opacity ${activeIndex === 0 ? 'opacity-100' : 'opacity-60'}`}>
-            <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wide truncate">
-              {matchContext.inn1 ? matchContext.inn1.battingTeam : match.meta.teamA}
+    <div className="flex flex-col gap-4 p-4 bg-[#0F1115] text-slate-300 overflow-y-auto no-scrollbar relative pb-32">
+      {/* SECTION 1: SIDE-BY-SIDE SCORE SUMMARY (Standard Professional Layout) */}
+      <div className="flex-none bg-[#161920] border-b border-white/5 px-4 py-4 relative shadow-lg">
+        <div className="flex justify-between items-start gap-4">
+          {/* LEFT SIDE: 1st Innings Team (The Target Setter) */}
+          <div className="flex-1 text-left border-r border-white/10 pr-3">
+            <div className="text-[10px] text-slate-500 font-black uppercase tracking-widest truncate mb-1">
+              {battingFirstTeam}
             </div>
             {matchContext.inn1 ? (
               <>
-                <div className="text-xl font-black text-white leading-none mt-0.5">
+                <div className="text-2xl font-black text-slate-200 leading-none">
                   {matchContext.inn1.score}/{matchContext.inn1.wickets}
-                  <span className="text-xs text-slate-500 font-medium ml-1">
-                    ({matchContext.inn1.over}.{matchContext.inn1.overBallCount})
+                  <span className="text-xs font-medium text-slate-500 ml-1">
+                    ({matchContext.inn1.over}.{matchContext.inn1.overBallCount}{" "}
+                    / {maxOvers} ov)
                   </span>
                 </div>
-                <div className="text-[9px] text-slate-600 font-mono mt-0.5 uppercase tracking-tighter">CRR: {matchContext.crr1}</div>
+                {/* Target Placement: Stays under the team that set it */}
+                {isInning2 && !matchContext.isFinished && (
+                  <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-yellow-500/10 border border-yellow-500/20 text-[10px] font-black text-yellow-500 uppercase tracking-tighter">
+                    Target: {matchContext.target}
+                  </div>
+                )}
               </>
             ) : (
-              <div className="text-xs text-slate-600 font-bold italic">Yet to bat</div>
+              <div className="text-xs text-slate-600 font-bold italic">
+                Waiting...
+              </div>
             )}
           </div>
 
-          {/* RIGHT: 2nd Innings */}
-          <div className={`text-right transition-opacity ${activeIndex === 1 ? 'opacity-100' : 'opacity-60'}`}>
-            <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wide truncate">
-              {matchContext.inn2 ? matchContext.inn2.battingTeam : match.meta.teamB}
+          {/* RIGHT SIDE: 2nd Innings Team (The Live Chaser) */}
+          <div className="flex-1 text-right pl-3">
+            <div
+              className={`text-[10px] font-black uppercase tracking-widest truncate mb-1 ${isInning2 ? "text-teal-400" : "text-slate-500"}`}>
+              {battingSecondTeam}{" "}
+              {isInning2 && !matchContext.isFinished && (
+                <span className="animate-pulse ml-1 text-[8px]">LIVE</span>
+              )}
             </div>
             {matchContext.inn2 ? (
               <>
-                <div className="text-xl font-black text-white leading-none mt-0.5">
+                <div
+                  className={`text-3xl font-black leading-none ${isInning2 ? "text-white" : "text-slate-600"}`}>
                   {matchContext.inn2.score}/{matchContext.inn2.wickets}
-                  <span className="text-xs text-slate-500 font-medium ml-1">
-                    ({matchContext.inn2.over}.{matchContext.inn2.overBallCount})
+                  <span className="text-sm font-medium text-slate-400 ml-1">
+                    ({matchContext.inn2.over}.{matchContext.inn2.overBallCount}{" "}
+                    / {maxOvers} ov)
                   </span>
                 </div>
-                <div className="text-[9px] text-slate-600 font-mono mt-0.5 uppercase tracking-tighter">CRR: {matchContext.crr2}</div>
+                {/* Equation Placement: Under the chasing team */}
+                {isInning2 && !matchContext.isFinished && (
+                  <div className="mt-2 text-[11px] font-bold text-teal-500 uppercase tracking-tighter">
+                    Need {matchContext.runsNeeded} in{" "}
+                    {matchContext.remainingBalls} balls
+                  </div>
+                )}
               </>
             ) : (
-              <div className="text-xs text-slate-600 font-bold italic">Yet to bat</div>
+              <div className="text-2xl font-black text-slate-800">0/0</div>
             )}
           </div>
         </div>
 
-        {/* BOTTOM CENTER: RESULT / EQUATION */}
-        <div className="mt-4 text-center border-t border-white/5 pt-3">
-          {matchContext.resultText ? (
-            <>
-              <span className="text-teal-400 text-lg font-black uppercase tracking-wider drop-shadow-md animate-in zoom-in duration-500">🏆 {matchContext.resultText}</span>
-              <div className="text-[10px] text-slate-500 mt-1 font-bold uppercase">Final Target was {matchContext.target}</div>
-            </>
-          ) : activeIndex === 1 ? (
-            <span className="text-xs font-bold text-yellow-400 animate-pulse">
-              Target: {matchContext.target} <span className="text-slate-600 mx-1">|</span> Need {matchContext.runsNeeded} off {matchContext.remainingBalls}
+        {/* BOTTOM CENTER: FINAL RESULT OVERLAY */}
+        {matchContext.isFinished && (
+          <div className="mt-4 text-center border-t border-white/5 pt-3 animate-in fade-in zoom-in duration-500">
+            <span className="text-teal-400 text-lg font-black uppercase tracking-wider drop-shadow-md">
+              🏆 {matchContext.resultText}
             </span>
-          ) : (
-            <span className="text-[12px] font-bold text-slate-600 uppercase tracking-widest">1st Innings in Progress</span>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* SECTION 2: STATS BAR */}
@@ -625,11 +679,17 @@ const displayInsightText = useMemo(() => {
             }
 
             // Over Divider Logic
-            const showDivider = i > 0 && b.over !== undefined && arr[i-1].over !== undefined && b.over !== arr[i-1].over;
+            const showDivider =
+              i > 0 &&
+              b.over !== undefined &&
+              arr[i - 1].over !== undefined &&
+              b.over !== arr[i - 1].over;
 
             return (
               <React.Fragment key={i}>
-                {showDivider && <div className="w-px h-4 bg-slate-600/50 mx-1"></div>}
+                {showDivider && (
+                  <div className="w-px h-4 bg-slate-600/50 mx-1"></div>
+                )}
                 <span
                   key={i}
                   className={`h-6 px-2 min-w-[36px] rounded flex items-center justify-center text-[10px] font-bold whitespace-nowrap border border-white/5 ${
@@ -650,14 +710,17 @@ const displayInsightText = useMemo(() => {
           })}
         </div>
         <div className="bg-[#1C2128] p-0 mb-2">
-          <div className={`${
-              displayInsightText.includes('🤖') 
-                ? "bg-indigo-500/5 border-indigo-500/20" 
+          <div
+            className={`${
+              displayInsightText.includes("🤖")
+                ? "bg-indigo-500/5 border-indigo-500/20"
                 : "bg-teal-900/10 border-teal-900/20"
             } border rounded-xl p-3 min-h-[55px] flex items-center transition-all duration-500`}>
-            
-            <p className={`text-[11px] font-medium leading-snug animate-in fade-in slide-in-from-left duration-500 ${
-                displayInsightText.includes('🤖') ? "text-indigo-300" : "text-teal-600 italic"
+            <p
+              className={`text-[11px] font-medium leading-snug animate-in fade-in slide-in-from-left duration-500 ${
+                displayInsightText.includes("🤖")
+                  ? "text-indigo-300"
+                  : "text-teal-600 italic"
               }`}>
               {displayInsightText}
             </p>
@@ -1002,21 +1065,21 @@ const displayInsightText = useMemo(() => {
               <option value="">Choose Member</option>
               {m.awaitingNewBatsman
                 ? battingOptions.map((n) => {
-                  const isOut = m.batsmenStats?.[n]?.out;
-                  const isOnCrease =
-                    n === strikerName || n === nonStrikerName;
-                  return (
-                    <option key={n} value={n} disabled={isOut || isOnCrease}>
-                      {n} {isOut ? "(Out)" : ""}{" "}
-                      {isOnCrease ? "(Playing)" : ""}
-                    </option>
-                  );
-                })
+                    const isOut = m.batsmenStats?.[n]?.out;
+                    const isOnCrease =
+                      n === strikerName || n === nonStrikerName;
+                    return (
+                      <option key={n} value={n} disabled={isOut || isOnCrease}>
+                        {n} {isOut ? "(Out)" : ""}{" "}
+                        {isOnCrease ? "(Playing)" : ""}
+                      </option>
+                    );
+                  })
                 : fieldingTeamPlayers.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
             </select>
             <button
               onClick={() => {

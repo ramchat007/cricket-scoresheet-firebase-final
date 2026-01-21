@@ -87,6 +87,45 @@ export default function MatchScorecard() {
     return getYouTubeId(matchUrl) || getYouTubeId(globalUrl);
   }, [match, tournament]);
 
+  // --- 🧠 NEW STANDARDIZED TEAM LOGIC (MOVE TO HERE) ---
+  const { battingFirstTeam, battingSecondTeam } = useMemo(() => {
+    // If data isn't here yet, return empty
+    if (!match || !match.meta)
+      return { battingFirstTeam: "", battingSecondTeam: "" };
+
+    // 1. Try to get team from the first innings record (most reliable)
+    const inn1 =
+      match.innings?.[0] || (match.innings && Object.values(match.innings)[0]);
+
+    if (inn1 && inn1.battingTeam) {
+      const first = inn1.battingTeam;
+      // Determine the other team by checking meta
+      const second =
+        first === match.meta.teamA ? match.meta.teamB : match.meta.teamA;
+      return { battingFirstTeam: first, battingSecondTeam: second };
+    }
+
+    // 2. Fallback: If no innings yet, use the Toss Decision
+    const tossWinner = match.meta.toss?.winner;
+    const decision = match.meta.toss?.decision; // "Bat" or "Bowl"
+
+    if (tossWinner && decision) {
+      const otherTeam =
+        tossWinner === match.meta.teamA ? match.meta.teamB : match.meta.teamA;
+      if (decision === "Bat") {
+        return { battingFirstTeam: tossWinner, battingSecondTeam: otherTeam };
+      } else {
+        return { battingFirstTeam: otherTeam, battingSecondTeam: tossWinner };
+      }
+    }
+
+    // 3. Last Resort: Use meta order
+    return {
+      battingFirstTeam: match.meta.teamA,
+      battingSecondTeam: match.meta.teamB,
+    };
+  }, [match]);
+
   // --- 4. DYNAMIC TABS ---
   const tabs = useMemo(() => {
     const list = [
@@ -96,10 +135,25 @@ export default function MatchScorecard() {
     ];
 
     // 🔒 HIDDEN: Video Stream Tab (Code preserved for future use)
-    /* if (videoId) {
+     if (videoId) {
       list.unshift({ id: "stream", label: "🔴 Live Stream" });
     }
-    */
+    
+
+    // --- EARLY RETURNS (Wait until hooks are done) ---
+    if (loading)
+      return (
+        <div className="min-h-screen bg-[#0F1115] flex items-center justify-center text-teal-500">
+          Loading Arena...
+        </div>
+      );
+    if (error)
+      return (
+        <div className="min-h-screen bg-[#0F1115] flex items-center justify-center text-red-500">
+          {error}
+        </div>
+      );
+    if (!match) return null;
 
     return list;
   }, [videoId]);
@@ -123,8 +177,9 @@ export default function MatchScorecard() {
     );
   if (!match) return null;
 
-  const matchTitle = match.meta
-    ? `${match.meta.teamA} vs ${match.meta.teamB}`
+  // Now update the title variable using the memoized values
+  const matchTitle = battingFirstTeam
+    ? `${battingFirstTeam} vs ${battingSecondTeam}`
     : "Live Match";
   const isLive = ["ongoing", "live", "in-progress"].includes(
     (match.status || "").toLowerCase(),
@@ -189,7 +244,7 @@ export default function MatchScorecard() {
         {/* CONTENT AREA */}
         <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 min-h-[500px]">
           {/* 🔴 STREAM TAB (HIDDEN: Code preserved) */}
-          {/* {activeTab === "stream" && videoId && (
+          {activeTab === "stream" && videoId && (
             <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border border-white/10 relative">
               <iframe
                 className="w-full h-full"
@@ -205,7 +260,7 @@ export default function MatchScorecard() {
               )}
             </div>
           )}
-          */}
+         
 
           {activeTab === "scorecard" && (
             <div className="space-y-6">

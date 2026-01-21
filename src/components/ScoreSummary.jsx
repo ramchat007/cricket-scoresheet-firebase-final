@@ -10,7 +10,7 @@ export default function ScoreSummary({ match }) {
       </div>
     );
 
-  // --- 1. DATA EXTRACTION ---
+  // --- 1. DATA EXTRACTION & STANDARDIZATION ---
   const inningsList = Array.isArray(match.innings)
     ? match.innings
     : [match.innings?.[0], match.innings?.[1]].filter(Boolean);
@@ -20,13 +20,39 @@ export default function ScoreSummary({ match }) {
 
   const currentInningIndex =
     typeof match.currentInnings === "number" ? match.currentInnings : 0;
-
-  // 🔥 GET TOTAL OVERS (Meta or Default)
-  const totalOvers = parseInt(match.meta?.overs || 20);
-
   const currentInning = inningsList[currentInningIndex];
-  const inn1 = inningsList[0];
-  const inn2 = inningsList[1];
+  // const inn1 = inningsList[0];
+  // const inn2 = inningsList[1];
+
+  // 🔥 DETERMINING TEAM ORDER (Left = Bat 1st, Right = Bat 2nd)
+  const { battingFirstTeam, battingSecondTeam, inn1, inn2 } = useMemo(() => {
+    const firstInn = inningsList[0];
+    const secondInn = inningsList[1];
+
+    if (firstInn?.battingTeam) {
+      const first = firstInn.battingTeam;
+      // Find the second team by looking at meta or the other inning
+      const second =
+        secondInn?.battingTeam ||
+        (first === match.meta?.teamA ? match.meta?.teamB : match.meta?.teamA);
+      return {
+        battingFirstTeam: first,
+        battingSecondTeam: second,
+        inn1: firstInn,
+        inn2: secondInn,
+      };
+    }
+
+    // Fallback if innings not started
+    return {
+      battingFirstTeam: match.meta?.teamA,
+      battingSecondTeam: match.meta?.teamB,
+      inn1: null,
+      inn2: null,
+    };
+  }, [match, inningsList]);
+
+  const totalOvers = parseInt(match.meta?.overs || 20);
 
   // --- 2. CALCULATE STANDARD RESULT TEXT 🏆 ---
   const resultText = useMemo(() => {
@@ -37,14 +63,12 @@ export default function ScoreSummary({ match }) {
     if (inn1 && inn2) {
       if (inn1.score > inn2.score) {
         const diff = inn1.score - inn2.score;
-        return `${inn1.battingTeam} won by ${diff} run${diff !== 1 ? 's' : ''}`;
-      } 
-      else if (inn2.score > inn1.score) {
+        return `${inn1.battingTeam} won by ${diff} run${diff !== 1 ? "s" : ""}`;
+      } else if (inn2.score > inn1.score) {
         const totalWickets = parseInt(match.meta?.totalWickets || 10);
         const diff = Math.max(0, totalWickets - inn2.wickets);
-        return `${inn2.battingTeam} won by ${diff} wicket${diff !== 1 ? 's' : ''}`;
-      } 
-      else if (inn1.score === inn2.score) {
+        return `${inn2.battingTeam} won by ${diff} wicket${diff !== 1 ? "s" : ""}`;
+      } else if (inn1.score === inn2.score) {
         return "Match Tied";
       }
     }
@@ -58,7 +82,6 @@ export default function ScoreSummary({ match }) {
     );
   }, [status, inn1, inn2, match]);
 
-
   // --- 3. HELPERS ---
   const cleanName = (p) => {
     if (!p) return "";
@@ -71,8 +94,9 @@ export default function ScoreSummary({ match }) {
   const bowlerName = cleanName(currentInning?.currentBowler) || "Bowler";
 
   // --- 4. TARGET & CHASE LOGIC 🧠 ---
-  const isSecondInnings = currentInningIndex === 1 || (inn2 && status === "finished");
-  
+  const isSecondInnings =
+    currentInningIndex === 1 || (inn2 && status === "finished");
+
   // Calculate Target: Explicitly from Meta OR derived from Innings 1
   const targetScore = match.meta?.target || (inn1 ? inn1.score + 1 : 0);
 
@@ -150,7 +174,7 @@ export default function ScoreSummary({ match }) {
           {/* Team A */}
           <div className="text-left w-5/12">
             <div className="text-base md:text-lg font-bold text-slate-300 mb-1 truncate leading-tight">
-              {match.meta?.teamA || "Team A"}
+              {/* {match.meta?.teamA || "Team A"} */} {battingFirstTeam}
             </div>
             {inn1 ? (
               <div className="text-slate-100 font-mono font-black text-3xl md:text-4xl leading-none tracking-tighter">
@@ -166,14 +190,16 @@ export default function ScoreSummary({ match }) {
             )}
           </div>
 
-          <div className="text-slate-700 font-black text-2xl italic opacity-20 select-none">
+          <div className="text-slate-700 font-black text-xl italic opacity-20 select-none">
             VS
           </div>
 
           {/* Team B */}
           <div className="text-right w-5/12">
             <div className="text-base md:text-lg font-bold text-slate-300 mb-1 truncate leading-tight">
-              {match.meta?.teamB || "Team B"}
+              {/* {match.meta?.teamB || "Team B"} */}
+              {battingSecondTeam}{" "}
+              {currentInningIndex === 1 && status !== "finished" && "●"}
             </div>
             {inn2 ? (
               <div className="text-slate-100 font-mono font-black text-3xl md:text-4xl leading-none tracking-tighter">
@@ -197,9 +223,9 @@ export default function ScoreSummary({ match }) {
               🏆 {resultText}
             </span>
             {isSecondInnings && status === "finished" && (
-                <div className="text-xs text-slate-500 mt-1 uppercase font-bold">
-                  Target was {targetScore}
-                </div>
+              <div className="text-xs text-slate-500 mt-1 uppercase font-bold">
+                Target was {targetScore}
+              </div>
             )}
           </div>
         )}
@@ -212,12 +238,9 @@ export default function ScoreSummary({ match }) {
               <span className="text-white text-base">{targetScore}</span>
             </div>
             {(() => {
-              const ballsBowled = (inn2.over * 6) + inn2.overBallCount;
-              const ballsRemaining = Math.max(
-                0,
-                totalOvers * 6 - ballsBowled,
-              );
-              const remainingRuns = Math.max(0, targetScore - inn2.score); 
+              const ballsBowled = inn2.over * 6 + inn2.overBallCount;
+              const ballsRemaining = Math.max(0, totalOvers * 6 - ballsBowled);
+              const remainingRuns = Math.max(0, targetScore - inn2.score);
               const rrr =
                 ballsRemaining > 0
                   ? (remainingRuns / (ballsRemaining / 6)).toFixed(2)

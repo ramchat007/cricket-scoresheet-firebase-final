@@ -195,7 +195,7 @@ export default function LiveScoring() {
   };
 
   return (
-    <div className="h-screen w-full bg-black font-sans text-gray-100 flex flex-col overflow-hidden select-none touch-manipulation">
+    <div className="h-screen h-[100dvh] w-full bg-black font-sans text-gray-100 flex flex-col overflow-hidden select-none touch-manipulation">
       {/* 📡 BROADCAST TOOLS PANEL */}
       {canScore && (
         <div
@@ -287,7 +287,7 @@ export default function LiveScoring() {
       <div className="flex-1 relative flex flex-col min-h-0 overflow-hidden">
         {canScore ? (
           // SCORING UI (Full Height)
-          <div className="flex-1 flex flex-col h-full">
+          <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar">
             <ScoreInput
               match={processedMatch}
               onBall={handleBall}
@@ -322,7 +322,7 @@ export default function LiveScoring() {
 
         {/* TABS MODAL (Viewers/Admins Checking Info) */}
         {activeTab !== "summary" && (
-          <div className="absolute inset-0 bg-black z-50 flex flex-col animate-in slide-in-from-bottom duration-300">
+          <div className="absolute inset-0 bg-black z-50 flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-300">
             <div className="flex justify-between items-center p-4 border-b border-white/5 bg-black/90 backdrop-blur-md">
               <h3 className="text-cyan-500 font-black uppercase text-xs tracking-[0.3em]">
                 {activeTab} View
@@ -333,7 +333,7 @@ export default function LiveScoring() {
                 ✕
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto no-scrollbar">
+            <div className="flex-1 overflow-y-auto no-scrollbar pb-20">
               {activeTab === "scorecard" && (
                 <div className="border border-white/5 rounded-[2rem] p-2">
                   <MemoizedScoreTable match={processedMatch} />
