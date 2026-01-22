@@ -9,7 +9,7 @@ import { useAuth } from "../hooks/useAuth.jsx";
 import { doc, updateDoc } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import MatchCorrectionModal from "./MatchCorrectionModal.jsx";
-import { getMatchInsights } from "../utils/commentaryHelper";
+import { getMatchInsights, getDeterministicCommentary } from "../utils/commentaryHelper";
 import { fetchAICommentary } from "../utils/gemini";
 
 // --- SUB-COMPONENT: EYE-FRIENDLY BUTTON (Memoized) ---
@@ -252,6 +252,29 @@ export default function ScoreInput({
   );
 
   // ✅ Trigger AI Commentary for the latest ball
+  // useEffect(() => {
+  //   const timeline = m.timeline || [];
+  //   if (timeline.length === 0 || matchContext.isFinished) return;
+
+  //   const latestBallIndex = timeline.length - 1;
+  //   const latestBallId = `${activeIndex}-${latestBallIndex}`;
+  //   const latestBall = timeline[latestBallIndex];
+
+  //   // Only fetch if we don't have a comment for this ball yet
+  //   if (latestBall && !aiComments[latestBallId]) {
+  //     fetchAICommentary({
+  //       ...latestBall,
+  //       batter: latestBall.batter || strikerName,
+  //       bowler: latestBall.bowler || currentBowlerName,
+  //       matchSituation: `${m.score}/${m.wickets} in ${m.over}.${m.overBallCount}`,
+  //     }).then((text) => {
+  //       if (text) {
+  //         setAiComments((prev) => ({ ...prev, [latestBallId]: text }));
+  //       }
+  //     });
+  //   }
+  // }, [m.timeline?.length, activeIndex]); // Runs whenever the ball count changes
+
   useEffect(() => {
     const timeline = m.timeline || [];
     if (timeline.length === 0 || matchContext.isFinished) return;
@@ -260,20 +283,39 @@ export default function ScoreInput({
     const latestBallId = `${activeIndex}-${latestBallIndex}`;
     const latestBall = timeline[latestBallIndex];
 
-    // Only fetch if we don't have a comment for this ball yet
-    if (latestBall && !aiComments[latestBallId]) {
+    // 1. GENERATE INSTANT COMMENTARY (Local)
+    // We pass the last 6 balls so the engine can detect "Maiden Overs" or "Expensive Overs"
+    const last6 = timeline.slice(-6);
+    const localComment = getDeterministicCommentary(latestBall, last6, strikerName, currentBowlerName);
+
+    // If no comment exists yet, set the local one immediately
+    if (!aiComments[latestBallId]) {
+      setAiComments((prev) => ({ ...prev, [latestBallId]: localComment }));
+    }
+
+    // 2. CHECK FOR HIGH-IMPACT MOMENTS (Trigger AI)
+    // Trigger on: Wicket OR End of Over
+    const isOverEnd = latestBall.overBallCount === 0 && !latestBall.isWide && !latestBall.isNoBall;
+    const needsAI = latestBall.isWicket || (isOverEnd && latestBall.over > 0);
+
+    // Only fetch AI if we haven't already fetched it (to save costs)
+    const hasAiComment = aiComments[latestBallId] && aiComments[latestBallId].includes("🤖");
+
+    if (needsAI && !hasAiComment) {
+      // Optional: Show a loading state or just keep the local text while loading
       fetchAICommentary({
         ...latestBall,
-        batter: latestBall.batter || strikerName,
-        bowler: latestBall.bowler || currentBowlerName,
+        type: latestBall.isWicket ? "WICKET_ANALYSIS" : "OVER_SUMMARY",
         matchSituation: `${m.score}/${m.wickets} in ${m.over}.${m.overBallCount}`,
-      }).then((text) => {
-        if (text) {
-          setAiComments((prev) => ({ ...prev, [latestBallId]: text }));
+        last6Balls: last6,
+      }).then((aiText) => {
+        if (aiText) {
+          // Prefix with robot icon so the UI knows to highlight it in Purple
+          setAiComments((prev) => ({ ...prev, [latestBallId]: `🤖 ${aiText}` }));
         }
       });
     }
-  }, [m.timeline?.length, activeIndex]); // Runs whenever the ball count changes
+  }, [m.timeline?.length, activeIndex]);
 
   // --- ⚡️ CORE SCORING HANDLER ---
   const handleSubmitBall = useCallback(
