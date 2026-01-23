@@ -316,26 +316,37 @@ export const undoLast = async (tournamentId, matchId) => {
 /* ---------------------- Match Management ---------------------- */
 
 /**
- * ✅ FINISH MATCH: Updates Team Stats & Triggers Global Player Sync
+ * ✅ FINISH MATCH: Calculates Winner Server-Side to prevent data errors
  */
-export const finishMatch = async (tournamentId, matchId, winner, reason) => {
+export const finishMatch = async (
+  tournamentId,
+  matchId,
+  manualWinner = null,
+  manualReason = null,
+) => {
   if (!tournamentId || !matchId) throw new Error("Missing IDs");
 
   const matchRef = doc(db, "tournaments", tournamentId, "matches", matchId);
+  const tournamentRef = doc(db, "tournaments", tournamentId);
   const teamsColRef = collection(db, "tournaments", tournamentId, "teams");
 
   // 1. Transaction: Update Match Status & Team Stats (Points Table)
   await runTransaction(db, async (transaction) => {
+    // Fetch Match & Tournament Rules
     const matchDoc = await transaction.get(matchRef);
+    const tournamentDoc = await transaction.get(tournamentRef);
+
     if (!matchDoc.exists()) throw "Match does not exist!";
     const match = matchDoc.data();
-
     if (match.status === "finished") throw "Match is already finished!";
+
+    // Get Rule (Default to Compulsory Chase if missing)
+    const tieRule = tournamentDoc.data()?.rules?.tieRule || "COMPULSORY_CHASE";
 
     const inn1 = match.innings[0];
     const inn2 = match.innings[1];
-    const t1Name = inn1.battingTeam;
-    const t2Name = inn2.battingTeam;
+    const t1Name = inn1.battingTeam; // Defending
+    const t2Name = inn2.battingTeam; // Chasing
 
     const q1 = query(teamsColRef, where("name", "==", t1Name));
     const q2 = query(teamsColRef, where("name", "==", t2Name));
@@ -343,19 +354,49 @@ export const finishMatch = async (tournamentId, matchId, winner, reason) => {
 
     if (t1Snap.empty || t2Snap.empty) {
       console.warn("Teams not found, updating status only.");
+      // Just update status if teams aren't linked properly
       transaction.update(matchRef, {
         status: "finished",
         "meta.matchStatus": "finished",
-        winner,
-        "meta.result": `${winner} won (${reason})`,
+        winner: manualWinner || "UNKNOWN",
+        "meta.result": manualWinner
+          ? `${manualWinner} won (${manualReason})`
+          : "Match Concluded",
       });
-      return; // Exit transaction
+      return;
     }
 
     const t1Doc = t1Snap.docs[0];
     const t2Doc = t2Snap.docs[0];
     const t1Data = t1Doc.data();
     const t2Data = t2Doc.data();
+
+    // 2. 🧠 CALCULATE WINNER (Do not trust client side blindly)
+    let calculatedWinner = null;
+    let resultReason = "";
+
+    if (inn1.score > inn2.score) {
+      calculatedWinner = t1Name;
+      resultReason = `${t1Name} won by ${inn1.score - inn2.score} runs`;
+    } else if (inn2.score > inn1.score) {
+      calculatedWinner = t2Name;
+      resultReason = `${t2Name} won by ${10 - inn2.wickets} wickets`;
+    } else {
+      // === TIE SCENARIO ===
+      if (tieRule === "COMPULSORY_CHASE") {
+        calculatedWinner = t1Name; // Defending team wins
+        resultReason = `${t1Name} won (Compulsory Chase)`;
+      } else if (tieRule === "SHARED_POINTS") {
+        calculatedWinner = "TIE";
+        resultReason = "Match Tied";
+      } else {
+        // SUPER_OVER: Here we trust the manual input from UI
+        calculatedWinner = manualWinner || "TIE";
+        resultReason = manualWinner
+          ? `${manualWinner} won (Super Over)`
+          : "Match Tied";
+      }
+    }
 
     // Helper: Calculate Team Stats Update
     const calculateNewStats = (
@@ -382,6 +423,7 @@ export const finishMatch = async (tournamentId, matchId, winner, reason) => {
       const history = currentData.history || [];
 
       stats.played = (stats.played || 0) + 1;
+
       let resultChar = "L";
       if (isWinner) {
         stats.won = (stats.won || 0) + 1;
@@ -422,21 +464,23 @@ export const finishMatch = async (tournamentId, matchId, winner, reason) => {
     // Calculate NRR inputs
     const totalOvers = parseInt(match.meta?.overs || 20);
     const totalBallsQuota = totalOvers * 6;
+
     const t1BallsFaced =
       inn1.wickets >= 10 || inn1.isAllOut
         ? totalBallsQuota
         : inn1.over * 6 + inn1.overBallCount;
+
     const t2BallsFaced =
       inn2.wickets >= 10 || inn2.isAllOut
         ? totalBallsQuota
         : inn2.over * 6 + inn2.overBallCount;
 
-    const isTie = winner === "Tie" || winner === "TIE";
+    const isTieGame = calculatedWinner === "TIE";
 
     const t1Updates = calculateNewStats(
       t1Data,
-      winner === t1Name,
-      isTie,
+      calculatedWinner === t1Name,
+      isTieGame,
       inn1.score,
       t1BallsFaced,
       inn2.score,
@@ -444,8 +488,8 @@ export const finishMatch = async (tournamentId, matchId, winner, reason) => {
     );
     const t2Updates = calculateNewStats(
       t2Data,
-      winner === t2Name,
-      isTie,
+      calculatedWinner === t2Name,
+      isTieGame,
       inn2.score,
       t2BallsFaced,
       inn1.score,
@@ -462,12 +506,13 @@ export const finishMatch = async (tournamentId, matchId, winner, reason) => {
     });
 
     transaction.update(matchRef, {
+      status: "finished",
       "meta.matchStatus": "finished",
       "meta.status": "finished",
-      "meta.result": `${winner} won (${reason})`,
-      "meta.winner": winner,
+      "meta.result": resultReason,
+      "meta.winner": calculatedWinner,
       status: "finished",
-      winner: winner,
+      winner: calculatedWinner,
       lastUpdate: Date.now(),
     });
   });
@@ -534,14 +579,10 @@ export async function createMatchAuto(tournamentId, payload = {}) {
 
 /* ---------------------- Recalculate Tool ---------------------- */
 
-/**
- * 🔄 RECALCULATE TOURNAMENT STATS (Sync Button Tool)
- */
 export const recalculateTournamentStats = async (tournamentId) => {
   if (!tournamentId) throw new Error("Tournament ID required");
   console.log(`🔄 Starting Sync for Tournament: ${tournamentId}`);
 
-  // 1. Fetch Tournament Settings & Collections
   const tournamentRef = doc(db, "tournaments", tournamentId);
   const teamsRef = collection(db, "tournaments", tournamentId, "teams");
   const matchesRef = collection(db, "tournaments", tournamentId, "matches");
@@ -552,9 +593,6 @@ export const recalculateTournamentStats = async (tournamentId) => {
     getDocs(matchesRef),
   ]);
 
-  // 2. Determine Rule Set
-  // Options: 'COMPULSORY_CHASE', 'SHARED_POINTS', 'SUPER_OVER'
-  // Defaulting to 'COMPULSORY_CHASE' as requested
   const tournamentData = tournamentSnap.exists() ? tournamentSnap.data() : {};
   const tieRule = tournamentData.rules?.tieRule || "COMPULSORY_CHASE";
 
@@ -583,11 +621,11 @@ export const recalculateTournamentStats = async (tournamentId) => {
     };
   });
 
+  const batch = writeBatch(db);
   let processedCount = 0;
+
   matchesSnap.forEach((doc) => {
     const match = doc.data();
-
-    // Only process finished matches
     if (match.status !== "finished" && match.meta?.matchStatus !== "finished")
       return;
 
@@ -595,8 +633,8 @@ export const recalculateTournamentStats = async (tournamentId) => {
     const inn2 = match.innings?.[1];
     if (!inn1 || !inn2) return;
 
-    const t1Name = (inn1.battingTeam || "").trim(); // Defending Team
-    const t2Name = (inn2.battingTeam || "").trim(); // Chasing Team
+    const t1Name = (inn1.battingTeam || "").trim(); // Batting 1st (Defending)
+    const t2Name = (inn2.battingTeam || "").trim(); // Batting 2nd (Chasing)
     const s1 = teamDataMap[t1Name];
     const s2 = teamDataMap[t2Name];
 
@@ -608,40 +646,54 @@ export const recalculateTournamentStats = async (tournamentId) => {
 
     // --- 🏆 WINNER DETERMINATION ---
     let winnerName = null;
+    let resultReason = "";
 
     if (inn1.score > inn2.score) {
       winnerName = t1Name;
+      resultReason = `${t1Name} won by ${inn1.score - inn2.score} runs`;
     } else if (inn2.score > inn1.score) {
       winnerName = t2Name;
+      resultReason = `${t2Name} won by ${10 - inn2.wickets} wickets`;
     } else {
-      // === SCORES ARE TIED ===
-      const dbWinner = (
-        match.winner ||
-        match.meta?.result?.winner ||
-        ""
-      ).trim();
-
-      // If a manual winner is set in DB (e.g., from Super Over input), respect it ALWAYS
-      if (dbWinner === t1Name || dbWinner === t2Name) {
-        winnerName = dbWinner;
+      // === TIE SCENARIO ===
+      if (tieRule === "COMPULSORY_CHASE") {
+        // FORCE WIN for Defending Team (Inn 1)
+        winnerName = t1Name;
+        resultReason = `${t1Name} won (Compulsory Chase)`;
+        console.log(`⚡ Force Fix: Awarding Tie to ${t1Name}`);
+      } else if (tieRule === "SHARED_POINTS") {
+        winnerName = "TIE";
+        resultReason = "Match Tied";
       } else {
-        // Apply Tournament Rule
-        if (tieRule === "COMPULSORY_CHASE") {
-          // Defending team (Innings 1) wins
-          winnerName = t1Name;
-        } else if (tieRule === "SHARED_POINTS") {
-          // No winner, points split
-          winnerName = "TIE";
-        } else {
-          // Default fallback (e.g. SUPER_OVER logic not yet handled manually)
-          winnerName = "TIE";
-        }
+        // Trust DB or Default to Tie
+        const dbWinner = (
+          match.winner ||
+          match.meta?.result?.winner ||
+          ""
+        ).trim();
+        winnerName =
+          dbWinner === t1Name || dbWinner === t2Name ? dbWinner : "TIE";
+        resultReason =
+          winnerName === "TIE"
+            ? "Match Tied"
+            : `${winnerName} won (Super Over)`;
       }
     }
 
+    // ⚡ VITAL FIX: Update the Match Document itself if the winner is wrong
+    // This fixes the "Match Tied" label in your dashboard list
+    if (match.winner !== winnerName && winnerName !== "TIE") {
+      const matchRef = doc.ref;
+      batch.update(matchRef, {
+        winner: winnerName,
+        "meta.result": resultReason,
+        "meta.winner": winnerName,
+      });
+    }
+
+    // --- Update Team Stats ---
     const date = match.date || match.meta?.date || new Date().toISOString();
 
-    // 3. Update Stats based on Winner
     if (winnerName === t1Name) {
       s1.stats.won++;
       s1.stats.points += 2;
@@ -655,7 +707,6 @@ export const recalculateTournamentStats = async (tournamentId) => {
       s1.stats.lost++;
       s1.history.push({ result: "L", matchId: doc.id, date, tournamentId });
     } else {
-      // DRAW / TIE / SHARED POINTS
       s1.stats.tied++;
       s1.stats.points += 1;
       s1.history.push({ result: "T", matchId: doc.id, date, tournamentId });
@@ -664,7 +715,7 @@ export const recalculateTournamentStats = async (tournamentId) => {
       s2.history.push({ result: "T", matchId: doc.id, date, tournamentId });
     }
 
-    // 4. Calculate NRR Inputs (Standard for all rules)
+    // --- NRR Logic ---
     const totalOvers = parseInt(match.meta?.overs || 20);
     const getBalls = (w, ao, o, b) =>
       w >= 10 || ao ? totalOvers * 6 : parseInt(o || 0) * 6 + parseInt(b || 0);
@@ -686,15 +737,13 @@ export const recalculateTournamentStats = async (tournamentId) => {
     s1.stats.totalBalls += t1Balls;
     s1.stats.totalRunsConceded += inn2.score;
     s1.stats.totalBallsBowled += t2Balls;
-
     s2.stats.totalRuns += inn2.score;
     s2.stats.totalBalls += t2Balls;
     s2.stats.totalRunsConceded += inn1.score;
     s2.stats.totalBallsBowled += t1Balls;
   });
 
-  // 5. Commit Updates
-  const batch = writeBatch(db);
+  // Final Commit
   Object.values(teamDataMap).forEach((team) => {
     const s = team.stats;
     const rf = s.totalBalls > 0 ? (s.totalRuns / s.totalBalls) * 6 : 0;
@@ -707,7 +756,7 @@ export const recalculateTournamentStats = async (tournamentId) => {
   });
 
   await batch.commit();
-  console.log(`✅ Synced ${processedCount} matches using rule: ${tieRule}`);
+  console.log(`✅ Synced ${processedCount} matches.`);
 };
 
 /* ---------------------- Teams & Players ---------------------- */

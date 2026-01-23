@@ -1081,7 +1081,7 @@ export default function ScoreInput({
 
       {/* OVERLAYS: New Batsman/Bowler */}
       {showPlayerSelector && (
-        <div className="absolute inset-0 z-[100] bg-[#0F1115]/95 backdrop-blur-md flex flex-col justify-end p-6 pb-20 animate-in slide-in-from-bottom duration-300">
+        <div className="absolute inset-0 z-[100] bg-[#0F1115]/95 backdrop-blur-md flex flex-col justify-start p-6 pb-20 animate-in slide-in-from-bottom duration-300">
           <div className="bg-[#1C2128] border border-white/10 p-8 rounded-3xl shadow-2xl relative">
             <button
               onClick={() => {
