@@ -9,7 +9,10 @@ import { useAuth } from "../hooks/useAuth.jsx";
 import { doc, updateDoc } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import MatchCorrectionModal from "./MatchCorrectionModal.jsx";
-import { getMatchInsights, getDeterministicCommentary } from "../utils/commentaryHelper";
+import {
+  getMatchInsights,
+  getDeterministicCommentary,
+} from "../utils/commentaryHelper";
 import { fetchAICommentary } from "../utils/gemini";
 
 // --- SUB-COMPONENT: EYE-FRIENDLY BUTTON (Memoized) ---
@@ -286,7 +289,12 @@ export default function ScoreInput({
     // 1. GENERATE INSTANT COMMENTARY (Local)
     // We pass the last 6 balls so the engine can detect "Maiden Overs" or "Expensive Overs"
     const last6 = timeline.slice(-6);
-    const localComment = getDeterministicCommentary(latestBall, last6, strikerName, currentBowlerName);
+    const localComment = getDeterministicCommentary(
+      latestBall,
+      last6,
+      strikerName,
+      currentBowlerName,
+    );
 
     // If no comment exists yet, set the local one immediately
     if (!aiComments[latestBallId]) {
@@ -295,11 +303,15 @@ export default function ScoreInput({
 
     // 2. CHECK FOR HIGH-IMPACT MOMENTS (Trigger AI)
     // Trigger on: Wicket OR End of Over
-    const isOverEnd = latestBall.overBallCount === 0 && !latestBall.isWide && !latestBall.isNoBall;
+    const isOverEnd =
+      latestBall.overBallCount === 0 &&
+      !latestBall.isWide &&
+      !latestBall.isNoBall;
     const needsAI = latestBall.isWicket || (isOverEnd && latestBall.over > 0);
 
     // Only fetch AI if we haven't already fetched it (to save costs)
-    const hasAiComment = aiComments[latestBallId] && aiComments[latestBallId].includes("🤖");
+    const hasAiComment =
+      aiComments[latestBallId] && aiComments[latestBallId].includes("🤖");
 
     if (needsAI && !hasAiComment) {
       // Optional: Show a loading state or just keep the local text while loading
@@ -311,7 +323,10 @@ export default function ScoreInput({
       }).then((aiText) => {
         if (aiText) {
           // Prefix with robot icon so the UI knows to highlight it in Purple
-          setAiComments((prev) => ({ ...prev, [latestBallId]: `🤖 ${aiText}` }));
+          setAiComments((prev) => ({
+            ...prev,
+            [latestBallId]: `🤖 ${aiText}`,
+          }));
         }
       });
     }
@@ -702,55 +717,59 @@ export default function ScoreInput({
         <div className="bg-slate-900/50 rounded-xl p-2 flex items-center gap-2 overflow-x-auto no-scrollbar border border-white/5 h-10 shadow-inner">
           {(m.timeline || []).slice(-12).map((b, i, arr) => {
             let displayVal = b.runs;
-            let isExtra = false;
+            let colorClass = "bg-slate-800 text-slate-500 border-white/5"; // Default
 
+            // Logic to style the ball based on event type
             if (b.isWicket) {
               displayVal = "W";
+              colorClass = "bg-red-900/40 text-red-400 border-red-500/20";
             } else if (b.isNoBall) {
-              isExtra = true;
               const extraRuns = b.runs - 1;
               displayVal = extraRuns > 0 ? `NB+${extraRuns}` : "NB";
+              colorClass = "bg-amber-900/40 text-amber-400 border-amber-500/20";
             } else if (b.isWide) {
-              isExtra = true;
               const extraRuns = b.runs - 1;
               displayVal = extraRuns > 0 ? `WD+${extraRuns}` : "WD";
+              colorClass = "bg-amber-900/40 text-amber-400 border-amber-500/20";
             } else if (b.isLegBye) {
               displayVal = `${b.runs}LB`;
             } else if (b.isBye) {
               displayVal = `${b.runs}B`;
+            } else if (b.runs === 4) {
+              colorClass =
+                "bg-emerald-900/40 text-emerald-400 border-emerald-500/20";
+            } else if (b.runs === 6) {
+              colorClass =
+                "bg-indigo-900/40 text-indigo-400 border-indigo-500/20";
+            } else if (b.runs > 0) {
+              colorClass = "bg-slate-700 text-slate-200 border-white/10";
             }
 
             // Over Divider Logic
+            // Check if 'over' number changed from previous ball
             const showDivider =
               i > 0 &&
               b.over !== undefined &&
-              arr[i - 1].over !== undefined &&
+              arr[i - 1]?.over !== undefined &&
               b.over !== arr[i - 1].over;
 
             return (
               <React.Fragment key={i}>
                 {showDivider && (
-                  <div className="w-px h-4 bg-slate-600/50 mx-1"></div>
+                  // ✅ FIXED: Clearer Divider, Removed 'mx-1' (Gap handles it)
+                  <div className="w-[2px] h-5 bg-slate-600 rounded-full flex-shrink-0 opacity-50"></div>
                 )}
+
                 <span
-                  key={i}
-                  className={`h-6 px-2 min-w-[36px] rounded flex items-center justify-center text-[10px] font-bold whitespace-nowrap border border-white/5 ${
-                    b.isWicket
-                      ? "bg-red-900/40 text-red-400 border-red-500/20"
-                      : isExtra
-                        ? "bg-amber-900/40 text-amber-400 border-amber-500/20"
-                        : b.runs === 4 || (b.runs >= 4 && !isExtra)
-                          ? "bg-emerald-900/40 text-emerald-400 border-emerald-500/20"
-                          : b.runs === 6
-                            ? "bg-indigo-900/40 text-indigo-400 border-indigo-500/20"
-                            : "bg-slate-800 text-slate-500"
-                  }`}>
+                  className={`h-6 px-2 min-w-[36px] rounded flex items-center justify-center text-[10px] font-bold whitespace-nowrap border ${colorClass} flex-shrink-0`}>
                   {displayVal}
                 </span>
               </React.Fragment>
             );
           })}
         </div>
+
+        {/* COMMENTARY BOX */}
         <div className="bg-[#1C2128] p-0 mb-2">
           <div
             className={`${
@@ -1104,7 +1123,7 @@ export default function ScoreInput({
                   ? setIncoming(e.target.value)
                   : setNewBowler(e.target.value)
               }>
-              <option value="">Choose Member</option>
+              <option value="">Choose Batsman</option>
               {m.awaitingNewBatsman
                 ? battingOptions.map((n) => {
                     const isOut = m.batsmenStats?.[n]?.out;

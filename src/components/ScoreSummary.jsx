@@ -140,6 +140,13 @@ export default function ScoreSummary({ match }) {
     return { runs, balls };
   }, [currentInning]);
 
+  const recentTimeline = useMemo(() => {
+    if (!currentInning) return [];
+    const timeline = currentInning.timeline || currentInning.ballsLog || [];
+    // Take last 12 balls for context (scrollable)
+    return timeline.slice(-12);
+  }, [currentInning]);
+
   // ✨ NEW: Last ball summary
   const lastBall =
     currentInning?.timeline?.[currentInning.timeline.length - 1] ||
@@ -273,31 +280,7 @@ export default function ScoreSummary({ match }) {
       {/* 2. ON THE CREASE (Active Match) */}
       {status !== "finished" && currentInning && (
         <div className="bg-[#1C2128] border border-white/5 rounded-2xl p-5 shadow-lg">
-          <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-3">
-            <div className="text-[12px] text-slate-500 uppercase font-black tracking-widest">
-              Current Partnership
-            </div>
-            {partnership && (
-              <div className="text-xs font-bold text-teal-400 bg-teal-900/20 px-3 py-1 rounded-full border border-teal-500/20">
-                <span className="text-white text-base mr-1">
-                  {partnership.runs}
-                </span>
-                <span className="text-slate-400">({partnership.balls})</span>
-              </div>
-            )}
-          </div>
-
-          {/* ✨ NEW: Last Ball */}
-          {lastBallText && (
-            <div className="mb-3 text-center text-xs text-slate-400">
-              Last ball:{" "}
-              <span className="text-white font-bold px-2 py-0.5 bg-white/5 rounded">
-                {lastBallText}
-              </span>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 pb-3">
             {/* Striker Card */}
             <div className="bg-[#0F1115] p-4 rounded-xl border border-teal-500/30 relative overflow-hidden group shadow-lg">
               <div className="absolute top-0 right-0 bg-teal-600/20 text-teal-400 text-[11px] font-bold px-2 py-1 rounded-bl-lg">
@@ -327,6 +310,83 @@ export default function ScoreSummary({ match }) {
               </div>
             </div>
           </div>
+          <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-3">
+            <div className="text-[12px] text-slate-500 uppercase font-black tracking-widest">
+              Current Partnership
+            </div>
+            {partnership && (
+              <div className="text-xs font-bold text-teal-400 bg-teal-900/20 px-3 py-1 rounded-full border border-teal-500/20">
+                <span className="text-white text-base mr-1">
+                  {partnership.runs}
+                </span>
+                <span className="text-slate-400">({partnership.balls})</span>
+              </div>
+            )}
+          </div>
+
+          {/* ✨ NEW: RECENT BALLS TIMELINE (Fixed) */}
+          {recentTimeline.length > 0 && (
+            <div className="mb-5">
+              <div className="text-[10px] text-slate-600 uppercase font-bold mb-2 pl-1">
+                Recent Balls
+              </div>
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2 h-12">
+                {recentTimeline.map((ball, i, arr) => {
+                  // Safety: Ensure ball is an object
+                  if (!ball || typeof ball !== "object") return null;
+
+                  // 1. Divider Logic
+                  // We show a divider if the 'over' number changes between this ball and the previous one
+                  const showDivider =
+                    i > 0 &&
+                    ball.over !== undefined &&
+                    arr[i - 1]?.over !== undefined &&
+                    ball.over !== arr[i - 1].over;
+
+                  // 2. Styling Logic
+                  let val = ball.runs;
+                  let colorClass = "bg-slate-800 text-slate-400 border-white/5";
+
+                  if (ball.isWicket) {
+                    val = "W";
+                    colorClass =
+                      "bg-red-900/40 text-red-400 border-red-500/30 font-black shadow-[0_0_10px_rgba(239,68,68,0.2)]";
+                  } else if (ball.runs === 4) {
+                    colorClass =
+                      "bg-teal-900/40 text-teal-400 border-teal-500/30 font-black";
+                  } else if (ball.runs === 6) {
+                    colorClass =
+                      "bg-indigo-900/40 text-indigo-400 border-indigo-500/30 font-black shadow-[0_0_10px_rgba(99,102,241,0.2)]";
+                  } else if (ball.isWide) {
+                    val = "WD";
+                    colorClass =
+                      "bg-amber-900/40 text-amber-400 border-amber-500/30";
+                  } else if (ball.isNoBall) {
+                    val = "NB";
+                    colorClass =
+                      "bg-amber-900/40 text-amber-400 border-amber-500/30";
+                  } else if (ball.runs > 0) {
+                    colorClass = "bg-slate-700 text-slate-200 border-white/10";
+                  }
+
+                  return (
+                    <React.Fragment key={i}>
+                      {/* Vertical Divider Line */}
+                      {showDivider && (
+                        <div className="w-[2px] h-5 bg-slate-600 rounded-full mx-0.5 flex-shrink-0 opacity-50"></div>
+                      )}
+
+                      {/* Ball Circle */}
+                      <div
+                        className={`w-9 h-9 rounded-full flex flex-shrink-0 items-center justify-center text-xs border ${colorClass} transition-all`}>
+                        {val}
+                      </div>
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Bowler Card */}
           <div className="mt-3 bg-[#161920] p-4 rounded-xl border border-white/5 flex justify-between items-center">
