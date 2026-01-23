@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { recalculateTournamentStats } from "../../utils/matchService"; // ✅ Updated Path
+import { recalculateTournamentStats } from "../../utils/matchService";
 
 // --- NRR Helper ---
 const calculateNRR = (runsScored, oversFaced, runsConceded, oversBowled) => {
@@ -10,7 +10,7 @@ const calculateNRR = (runsScored, oversFaced, runsConceded, oversBowled) => {
   return (runRateFor - runRateAgainst).toFixed(3);
 };
 
-// --- Fallback Processor ---
+// --- Fallback Processor (Client Side Calculation) ---
 const processStandings = (teams, matches) => {
   const standings = {};
   teams.forEach((t) => {
@@ -22,6 +22,7 @@ const processStandings = (teams, matches) => {
       played: 0,
       won: 0,
       lost: 0,
+      tied: 0, // Track ties specifically if needed
       points: 0,
       nrr: "0.000",
       history: [],
@@ -33,12 +34,15 @@ const processStandings = (teams, matches) => {
   });
 
   matches.forEach((m) => {
-    if (m.status !== "finished") return;
+    // Only process finished matches
+    if (m.status !== "finished" && m.meta?.matchStatus !== "finished") return;
+
     const inn1 = m.innings?.[0];
     const inn2 = m.innings?.[1];
     if (!inn1 || !inn2) return;
-    const t1 = inn1.battingTeam.trim();
-    const t2 = inn2.battingTeam.trim();
+
+    const t1 = inn1.battingTeam.trim(); // Defending Team
+    const t2 = inn2.battingTeam.trim(); // Chasing Team
 
     // Safety check
     if (!standings[t1])
@@ -51,12 +55,26 @@ const processStandings = (teams, matches) => {
     s1.played++;
     s2.played++;
 
+    // --- 🏆 WINNER LOGIC (With Compulsory Chase Rule) ---
     let winner = null;
-    if (inn1.score > inn2.score) winner = t1;
-    else if (inn2.score > inn1.score) winner = t2;
-    else {
+
+    // 1. Check Runs
+    if (inn1.score > inn2.score) {
+      winner = t1;
+    } else if (inn2.score > inn1.score) {
+      winner = t2;
+    } else {
+      // 2. Scores Level (TIE)
       const dbWinner = (m.winner || m.meta?.result?.winner || "").trim();
-      winner = dbWinner === t1 || dbWinner === t2 ? dbWinner : "TIE";
+
+      if (dbWinner) {
+        // Respect manual overwrite from DB
+        winner = dbWinner;
+      } else {
+        // ⚡ COMPULSORY CHASE RULE:
+        // If scores are tied, Defending Team (t1) wins.
+        winner = t1;
+      }
     }
 
     const tId = m.tournamentId;
@@ -85,10 +103,13 @@ const processStandings = (teams, matches) => {
       s1.lost++;
       pushHist(s1, "L", t2);
     } else {
+      // Use this ONLY if you explicitly want a Draw (1pt each)
       s1.points++;
       s2.points++;
+      s1.tied = (s1.tied || 0) + 1;
+      s2.tied = (s2.tied || 0) + 1;
       pushHist(s1, "T", t2);
-      pushHist(s2, "T", t1); // ✅ Fixed: Was incorrectly calling .push directly
+      pushHist(s2, "T", t1);
     }
 
     const getOvers = (o, b) => parseFloat(o) + parseFloat(b) / 6;
@@ -96,6 +117,7 @@ const processStandings = (teams, matches) => {
     s1.oversFaced += getOvers(inn1.over, inn1.overBallCount);
     s2.runsConceded += inn1.score;
     s2.oversBowled += getOvers(inn1.over, inn1.overBallCount);
+
     s2.runsScored += inn2.score;
     s2.oversFaced += getOvers(inn2.over, inn2.overBallCount);
     s1.runsConceded += inn2.score;
@@ -112,12 +134,22 @@ const processStandings = (teams, matches) => {
         t.oversBowled,
       ),
     }))
-    .sort(
-      (a, b) =>
-        b.points - a.points ||
-        b.won - a.won ||
-        parseFloat(b.nrr) - parseFloat(a.nrr),
-    );
+    .sort((a, b) => {
+      // 1. Points (Higher is better)
+      if (b.points !== a.points) return b.points - a.points;
+
+      // 2. Wins (Higher is better)
+      if (b.won !== a.won) return b.won - a.won;
+
+      // 3. NRR (Higher is better)
+      const nrrA = parseFloat(a.nrr);
+      const nrrB = parseFloat(b.nrr);
+      if (nrrB !== nrrA) return nrrB - nrrA;
+
+      // 4. Matches Played (Lower is better for 0-point ties)
+      // This pushes teams with 0 games above teams that lost games but kept 0.000 NRR
+      return a.played - b.played;
+    });
 };
 
 export default function PointsTab({
@@ -132,7 +164,14 @@ export default function PointsTab({
   const [expandedTeamId, setExpandedTeamId] = useState(null);
 
   const tableData = useMemo(() => {
-    // 1. Prioritize DB Stats
+    // ⚠️ NOTE: If 'pointsTable' from DB has data, it might override this calculation.
+    // If you want to force the new logic, temporarily rely on 'processStandings' by commenting out the check below,
+    // OR click the "Sync Stats" button to update the backend.
+
+    // Fallback Calculation (Client Side) - This now contains the fix
+    if (matches && matches.length > 0) return processStandings(teams, matches);
+
+    // Default to DB data if matches not loaded yet
     if (
       pointsTable &&
       pointsTable.length > 0 &&
@@ -140,14 +179,12 @@ export default function PointsTab({
     ) {
       return pointsTable;
     }
-    // 2. Fallback Calculation
-    if (matches && matches.length > 0) return processStandings(teams, matches);
     return [];
   }, [pointsTable, matches, teams]);
 
   const handleSync = async () => {
     if (!tournamentId) return alert("Missing Tournament ID");
-    if (!window.confirm("Recalculate Table?")) return;
+    if (!window.confirm("Recalculate Table using latest rules?")) return;
     setIsSyncing(true);
     try {
       await recalculateTournamentStats(tournamentId);

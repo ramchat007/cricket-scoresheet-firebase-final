@@ -541,12 +541,24 @@ export const recalculateTournamentStats = async (tournamentId) => {
   if (!tournamentId) throw new Error("Tournament ID required");
   console.log(`🔄 Starting Sync for Tournament: ${tournamentId}`);
 
+  // 1. Fetch Tournament Settings & Collections
+  const tournamentRef = doc(db, "tournaments", tournamentId);
   const teamsRef = collection(db, "tournaments", tournamentId, "teams");
   const matchesRef = collection(db, "tournaments", tournamentId, "matches");
-  const [teamsSnap, matchesSnap] = await Promise.all([
+
+  const [tournamentSnap, teamsSnap, matchesSnap] = await Promise.all([
+    getDoc(tournamentRef),
     getDocs(teamsRef),
     getDocs(matchesRef),
   ]);
+
+  // 2. Determine Rule Set
+  // Options: 'COMPULSORY_CHASE', 'SHARED_POINTS', 'SUPER_OVER'
+  // Defaulting to 'COMPULSORY_CHASE' as requested
+  const tournamentData = tournamentSnap.exists() ? tournamentSnap.data() : {};
+  const tieRule = tournamentData.rules?.tieRule || "COMPULSORY_CHASE";
+
+  console.log(`📜 Applied Tie Rule: ${tieRule}`);
 
   const teamDataMap = {};
   teamsSnap.forEach((doc) => {
@@ -574,6 +586,8 @@ export const recalculateTournamentStats = async (tournamentId) => {
   let processedCount = 0;
   matchesSnap.forEach((doc) => {
     const match = doc.data();
+
+    // Only process finished matches
     if (match.status !== "finished" && match.meta?.matchStatus !== "finished")
       return;
 
@@ -581,8 +595,8 @@ export const recalculateTournamentStats = async (tournamentId) => {
     const inn2 = match.innings?.[1];
     if (!inn1 || !inn2) return;
 
-    const t1Name = (inn1.battingTeam || "").trim();
-    const t2Name = (inn2.battingTeam || "").trim();
+    const t1Name = (inn1.battingTeam || "").trim(); // Defending Team
+    const t2Name = (inn2.battingTeam || "").trim(); // Chasing Team
     const s1 = teamDataMap[t1Name];
     const s2 = teamDataMap[t2Name];
 
@@ -592,20 +606,42 @@ export const recalculateTournamentStats = async (tournamentId) => {
     s1.stats.played++;
     s2.stats.played++;
 
-    let winnerName = "TIE";
-    if (inn1.score > inn2.score) winnerName = t1Name;
-    else if (inn2.score > inn1.score) winnerName = t2Name;
-    else {
+    // --- 🏆 WINNER DETERMINATION ---
+    let winnerName = null;
+
+    if (inn1.score > inn2.score) {
+      winnerName = t1Name;
+    } else if (inn2.score > inn1.score) {
+      winnerName = t2Name;
+    } else {
+      // === SCORES ARE TIED ===
       const dbWinner = (
         match.winner ||
         match.meta?.result?.winner ||
         ""
       ).trim();
-      if (dbWinner === t1Name || dbWinner === t2Name) winnerName = dbWinner;
+
+      // If a manual winner is set in DB (e.g., from Super Over input), respect it ALWAYS
+      if (dbWinner === t1Name || dbWinner === t2Name) {
+        winnerName = dbWinner;
+      } else {
+        // Apply Tournament Rule
+        if (tieRule === "COMPULSORY_CHASE") {
+          // Defending team (Innings 1) wins
+          winnerName = t1Name;
+        } else if (tieRule === "SHARED_POINTS") {
+          // No winner, points split
+          winnerName = "TIE";
+        } else {
+          // Default fallback (e.g. SUPER_OVER logic not yet handled manually)
+          winnerName = "TIE";
+        }
+      }
     }
 
     const date = match.date || match.meta?.date || new Date().toISOString();
 
+    // 3. Update Stats based on Winner
     if (winnerName === t1Name) {
       s1.stats.won++;
       s1.stats.points += 2;
@@ -619,6 +655,7 @@ export const recalculateTournamentStats = async (tournamentId) => {
       s1.stats.lost++;
       s1.history.push({ result: "L", matchId: doc.id, date, tournamentId });
     } else {
+      // DRAW / TIE / SHARED POINTS
       s1.stats.tied++;
       s1.stats.points += 1;
       s1.history.push({ result: "T", matchId: doc.id, date, tournamentId });
@@ -627,6 +664,7 @@ export const recalculateTournamentStats = async (tournamentId) => {
       s2.history.push({ result: "T", matchId: doc.id, date, tournamentId });
     }
 
+    // 4. Calculate NRR Inputs (Standard for all rules)
     const totalOvers = parseInt(match.meta?.overs || 20);
     const getBalls = (w, ao, o, b) =>
       w >= 10 || ao ? totalOvers * 6 : parseInt(o || 0) * 6 + parseInt(b || 0);
@@ -648,12 +686,14 @@ export const recalculateTournamentStats = async (tournamentId) => {
     s1.stats.totalBalls += t1Balls;
     s1.stats.totalRunsConceded += inn2.score;
     s1.stats.totalBallsBowled += t2Balls;
+
     s2.stats.totalRuns += inn2.score;
     s2.stats.totalBalls += t2Balls;
     s2.stats.totalRunsConceded += inn1.score;
     s2.stats.totalBallsBowled += t1Balls;
   });
 
+  // 5. Commit Updates
   const batch = writeBatch(db);
   Object.values(teamDataMap).forEach((team) => {
     const s = team.stats;
@@ -667,7 +707,7 @@ export const recalculateTournamentStats = async (tournamentId) => {
   });
 
   await batch.commit();
-  console.log(`✅ Synced ${processedCount} matches.`);
+  console.log(`✅ Synced ${processedCount} matches using rule: ${tieRule}`);
 };
 
 /* ---------------------- Teams & Players ---------------------- */
