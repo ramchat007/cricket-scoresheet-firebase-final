@@ -1,61 +1,164 @@
 // src/utils/commentaryHelper.js
 
-// --- 1. SMART COMMENTARY GENERATOR ---
-export const generateCommentary = (ball, batter, bowler) => {
+// --- 0. COMMENTARY SLANG DICTIONARY ---
+const SLANG = {
+  boundary: [
+    "CRACKED!",
+    "TIMED TO PERFECTION!",
+    "TOP SHOT!",
+    "PIERCED THE GAP!",
+    "RACING AWAY!",
+    "BEAUTIFUL STROKE!"
+  ],
+  six: [
+    "ALL THE WAY!",
+    "HUGE!",
+    "OUT OF THE PARK!",
+    "MAJESTIC!",
+    "INTO THE STANDS!",
+    "MAXIMUM!"
+  ],
+  dot: [
+    "Solid defense.",
+    "No run.",
+    "Straight to the fielder.",
+    "Beaten!",
+    "Good line and length.",
+    "Respect shown to the bowler."
+  ],
+  wicket: [
+    "GONE!",
+    "BITES THE DUST!",
+    "BIG WICKET!",
+    "HUGE BLOW!",
+    "WALKING BACK!",
+    "CLEANED HIM UP!"
+  ],
+  maiden: [
+    "Maiden over! What a spell!",
+    "Six dots in a row! Pressure is building!",
+    "Absolute gold dust in this format!",
+    "The batter had no answers there."
+  ],
+  expensive: [
+    "Expensive over! The batter is shifting gears!",
+    "Costly one for the bowler.",
+    "Big over! Momentum shifting to the batting side!",
+    "Leakage of runs here!"
+  ],
+  running: [
+    "Good running!",
+    "Quick single.",
+    "They push hard for it.",
+    "Excellent communication between the wickets."
+  ]
+};
+
+const getRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+// --- 1. DETERMINISTIC COMMENTARY ENGINE (The Brain) ---
+/**
+ * Generates instant commentary based on the ball data and recent history.
+ * @param {Object} ball - Current ball object
+ * @param {Array} last6Balls - (Optional) Array of last 6 balls for momentum checks
+ * @param {String} batterName - Name of striker
+ * @param {String} bowlerName - Name of bowler
+ */
+export const getDeterministicCommentary = (ball, last6Balls = [], batterName = null, bowlerName = null) => {
   if (!ball) return "";
 
-  // Handle Object structure from new engine
+  // 1. Data Normalization
+  const batter = batterName || ball.batter || "The batter";
+  const bowler = bowlerName || ball.bowler || "The bowler";
   const runs = ball.runs || 0;
-  // Fallback to 0 if physicalRuns isn't set (legacy support)
-  const physical = (ball.physicalRuns !== undefined) ? ball.physicalRuns : 0;
+  const physical = (ball.physicalRuns !== undefined) ? ball.physicalRuns : (runs - (ball.isWide || ball.isNoBall ? 1 : 0));
   
-  const isWicket = ball.isWicket;
-  const isWide = ball.isWide;
-  const isNB = ball.isNoBall;
-  const isB = ball.isBye;
-  const isLB = ball.isLegBye;
+  const { isWicket, isWide, isNoBall, isBye, isLegBye, wicketType } = ball;
 
-  // --- WICKET SCENARIOS ---
+  // --- 2. MOMENTUM CHECKS (End of Over) ---
+  // If this ball completes an over (overBallCount === 0), check the context
+  if (ball.overBallCount === 0 && last6Balls && last6Balls.length >= 6) {
+    // Grab strictly the last 6 balls (the current over)
+    const validBalls = last6Balls.slice(-6); 
+    const totalRunsInOver = validBalls.reduce((acc, b) => acc + (b.runs || 0), 0);
+    const wicketsInOver = validBalls.filter(b => b.isWicket).length;
+    const isMaiden = totalRunsInOver === 0 && !validBalls.some(b => b.isWide || b.isNoBall);
+
+    // Maiden Over
+    if (isMaiden) {
+      return `${getRandom(SLANG.maiden)} ${bowler} has tied them down completely.`;
+    }
+    // Double Wicket Over
+    if (wicketsInOver >= 2) {
+      return `Double strike! ${bowler} turns the game on its head with ${wicketsInOver} wickets in this over!`;
+    }
+    // Expensive Over (15+ runs)
+    if (totalRunsInOver >= 15) {
+      return `${getRandom(SLANG.expensive)} ${totalRunsInOver} runs off the over. ${batter} is on fire!`;
+    }
+  }
+
+  // --- 3. WICKET EVENTS ---
   if (isWicket) {
-    if (isNB) return `NO BALL! But disaster strikes! There's a RUN OUT! ${batter} has to walk back.`;
-    if (isWide) return `WIDE ball, but the batsmen get mixed up... RUN OUT! ${batter} is gone!`;
-    if (ball.wicketType === "bowled") return `BOWLED HIM! ${bowler} crashes through the defenses of ${batter}!`;
-    if (ball.wicketType === "caught") return `EDGED AND TAKEN! ${bowler} gets the wicket of ${batter}.`;
-    if (ball.wicketType === "lbw") return `Up goes the finger! ${batter} is trapped LBW by ${bowler}.`;
-    return `OUT! ${bowler} strikes! ${batter} is walking back to the pavilion.`;
+    const prefix = getRandom(SLANG.wicket);
+    if (isWide || isNoBall) {
+      return `DRAMA! ${isWide ? "Wide" : "No Ball"} called, but there's a RUN OUT! ${batter} falls amidst the confusion.`;
+    }
+    switch (wicketType) {
+      case 'bowled': return `${prefix} Clean bowled! ${bowler} crashes through the defenses of ${batter}!`;
+      case 'caught': return `${prefix} ${batter} tries to clear the field but finds the fielder! Simple catch.`;
+      case 'runout': return `${prefix} Sharp work in the field! ${batter} is caught short of the crease.`;
+      case 'lbw': return `${prefix} Plumb in front! Up goes the finger. ${bowler} gets the breakthrough.`;
+      case 'stumped': return `${prefix} Deceived in flight! The keeper whips the bails off. ${batter} is gone.`;
+      default: return `${prefix} ${batter} has to walk back. Big wicket for ${bowler}!`;
+    }
   }
 
-  // --- NO BALL SCENARIOS ---
-  if (isNB) {
-    if (physical === 6) return `NO BALL! And ${batter} punishes it! Massive SIX over the ropes! (7 runs total)`;
+  // --- 4. EXTRAS ---
+  if (isNoBall) {
+    if (physical === 6) return `NO BALL! And ${batter} punishes it! Massive SIX over the ropes! Free hit coming up.`;
     if (physical === 4) return `NO BALL! ${batter} finds the gap for FOUR! Costly error by ${bowler}.`;
-    if (physical > 0) return `NO BALL! They scramble for ${physical} run${physical > 1 ? 's' : ''} off the extra delivery.`;
-    return `NO BALL! ${bowler} oversteps. Free hit coming up.`;
+    return `Front foot over the line! No ball called. Free hit loading...`;
   }
 
-  // --- WIDE SCENARIOS ---
   if (isWide) {
-    if (physical >= 4) return `WIDE! And it races away to the boundary for ${physical} byes! 5 runs to the total.`;
-    if (physical > 0) return `WIDE! It beats the keeper and they steal ${physical} extra run${physical > 1 ? 's' : ''}.`;
-    return `Wide ball. ${bowler} loses their line outside off.`;
+    if (physical >= 4) return `WIDE! And it races away to the boundary for ${physical} runs! Bonus runs for the batting side.`;
+    return `Wide ball. ${bowler} loses their radar outside off.`;
   }
 
-  // --- BYES / LEG BYES ---
-  if (isB || isLB) {
-    const type = isB ? "Byes" : "Leg Byes";
-    if (physical >= 4) return `The keeper misses it! ${physical} ${type} to the boundary.`;
+  if (isBye || isLegBye) {
+    const type = isBye ? "Byes" : "Leg Byes";
+    if (physical >= 4) return `The keeper misses it! ${physical} ${type} down to the boundary.`;
     return `${physical} ${type} taken. Good alertness by the batsmen.`;
   }
 
-  // --- STANDARD RUNS ---
-  if (runs === 6) return `MAXIMUM! ${batter} launches ${bowler} into the stands! What a shot!`;
-  if (runs === 4) return `FOUR! Beautifully timed by ${batter}, it races away to the fence.`;
-  if (runs === 3) return `Good running! They push hard and come back for a three.`;
-  if (runs === 2) return `Played into the gap, easy two runs for ${batter}.`;
-  if (runs === 1) return `Single taken. ${batter} rotates the strike.`;
-  if (runs === 0) return `Good length delivery from ${bowler}, played defensively. Dot ball.`;
+  // --- 5. STANDARD RUNS (With Slang) ---
+  if (runs === 0) {
+    return `${getRandom(SLANG.dot)} ${bowler} keeping things tight.`;
+  }
+  if (runs === 1) {
+    return `Tucked away for a single. ${batter} rotates the strike.`;
+  }
+  if (runs === 2) {
+    return `${getRandom(SLANG.running)} ${batter} pushes hard and gets back for two.`;
+  }
+  if (runs === 3) {
+    return `Great placement! Deep fielders have to chase, and they come back for three.`;
+  }
+  if (runs === 4) {
+    return `${getRandom(SLANG.boundary)} ${batter} finds the rope with a beautiful stroke!`;
+  }
+  if (runs === 6) {
+    return `${getRandom(SLANG.six)} ${batter} launches that over the boundary! What a hit!`;
+  }
 
+  // Fallback
   return `${runs} run${runs > 1 ? "s" : ""} added to the score.`;
+};
+
+// --- LEGACY WRAPPER (To prevent breaking existing imports) ---
+export const generateCommentary = (ball, batter, bowler) => {
+  return getDeterministicCommentary(ball, [], batter, bowler);
 };
 
 // --- 2. LIVE UI NARRATIVE (Preserved) ---
@@ -66,13 +169,17 @@ export const getLiveNarrative = (match, m) => {
     return `📢 ${match.meta.toss.winner} won the toss and elected to ${match.meta.toss.decision} first.`;
   }
 
+  if (match.status === "finished") {
+    return `🏆 Match Concluded. ${match.meta?.result || "Check scorecard for details."}`;
+  }
+
   if (!m.striker || !m.nonStriker) return "🏏 Waiting for batsmen to take position...";
   if (!m.currentBowler) return "🥎 Setting up the bowler for the next over...";
 
   if (m.awaitingNewBatsman) return `☝️ Wicket! A big blow for ${m.battingTeam}. Waiting for the new batsman...`;
   if (m.awaitingNewBowler) return `🥎 Over complete. ${m.currentBowler} finishes a good over. Change of ends...`;
 
-  return `🏏 ${m.striker} is on strike, ${m.nonStriker} at the non-striker's end. ${m.currentBowler} is ready to bowl.`;
+  return `🏏 ${m.striker} is on strike, ${m.nonStriker} at non-striker's end. ${m.currentBowler} bowling.`;
 };
 
 // --- 3. MATCH INSIGHTS & FORECASTING (Preserved) ---
