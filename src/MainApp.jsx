@@ -30,7 +30,7 @@ import MigrationTool from "./components/MigrationTool.jsx";
 import AuctionDashboard from "./components/AuctionDashboard.jsx";
 import GlobalPlayerRegistration from "./components/GlobalPlayerRegistration.jsx";
 import PastLeague from "./components/PastLeague.jsx";
-import MatchOverlay from "./components/MatchOverlay.jsx";
+import MatchOverlay from "./components/Overlay/MatchOverlay.jsx";
 
 export default function MainApp() {
   const navigate = useNavigate();

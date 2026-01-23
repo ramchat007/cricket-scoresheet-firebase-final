@@ -945,6 +945,25 @@ export default function ScoreInput({
         </button>
       </div>
 
+      {/* SECTION 6: SCORER FOOTER */}
+      <div className="mt-6 mb-12 text-center border-t border-white/5 pt-4">
+        <div className="inline-flex flex-col items-center gap-1 bg-slate-900/50 px-4 py-2 rounded-xl border border-white/5">
+          <div className="text-[10px] text-slate-500 uppercase font-black tracking-widest">
+            Current Scorer
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></div>
+            <span className="text-xs font-bold text-slate-300 font-mono">
+              {user?.email || "Guest User"}
+            </span>
+          </div>
+          {/* Optional: Show Match ID for tech support */}
+          <div className="text-[9px] text-slate-600 font-mono mt-1 select-all">
+            ID: {match?.id}
+          </div>
+        </div>
+      </div>
+
       {/* WICKET MODAL */}
       {isWicketMenuOpen && (
         <div className="fixed inset-0 z-[100] flex items-end justify-center bg-[#0F1115]/90 backdrop-blur-md">
