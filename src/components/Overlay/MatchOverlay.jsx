@@ -5,24 +5,39 @@ import { db } from "../../utils/firebase";
 import ScoreTicker from "./ScoreTicker";
 import BroadcastSummaryCard from "./BroadcastSummaryCard";
 
-// --- ANIMATION COMPONENT (TV Style) ---
+// --- ANIMATION COMPONENT (Capsule Style) ---
 const EventAnimation = ({ type }) => {
   if (!type) return null;
   const styles = {
-    FOUR: { bg: "bg-green-600", text: "4", sub: "BOUNDARY" },
-    SIX: { bg: "bg-indigo-600", text: "6", sub: "MAXIMUM" },
-    WICKET: { bg: "bg-red-600", text: "OUT", sub: "WICKET" },
+    FOUR: {
+      bg: "bg-green-600",
+      border: "border-green-400",
+      text: "4",
+      sub: "BOUNDARY",
+    },
+    SIX: {
+      bg: "bg-[#e91e63]",
+      border: "border-pink-400",
+      text: "6",
+      sub: "MAXIMUM",
+    },
+    WICKET: {
+      bg: "bg-red-600",
+      border: "border-red-400",
+      text: "OUT",
+      sub: "WICKET",
+    },
   };
   const current = styles[type];
 
   return (
     <div className="absolute top-[200px] left-1/2 -translate-x-1/2 z-[100] animate-in zoom-in duration-300">
       <div
-        className={`relative ${current.bg} border-4 border-white shadow-[0_10px_40px_rgba(0,0,0,0.5)] transform -skew-x-12 px-20 py-8`}>
-        <div className="text-white font-black text-[10rem] leading-none italic drop-shadow-lg text-center skew-x-12">
+        className={`relative ${current.bg} border-4 ${current.border} shadow-[0_20px_60px_rgba(0,0,0,0.6)] rounded-[3rem] px-24 py-6 flex flex-col items-center`}>
+        <div className="text-white font-black text-[12rem] leading-none drop-shadow-lg text-center">
           {current.text}
         </div>
-        <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-black text-white px-8 py-1 font-bold text-2xl uppercase tracking-[0.3em] skew-x-12 whitespace-nowrap border-2 border-white">
+        <div className="absolute -bottom-6 bg-white text-slate-900 px-10 py-2 font-black text-3xl uppercase tracking-[0.3em] rounded-full border-4 border-slate-200 shadow-lg whitespace-nowrap">
           {current.sub}
         </div>
       </div>
@@ -33,6 +48,7 @@ const EventAnimation = ({ type }) => {
 export default function MatchOverlay() {
   const { tournamentId, matchId } = useParams();
   const [match, setMatch] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   // States
   const [showPopup, setShowPopup] = useState(false);
@@ -45,13 +61,11 @@ export default function MatchOverlay() {
   const prevWicketsRef = useRef(0);
   const prevTimelineLength = useRef(0);
 
-  // 1. 📏 TV SCALING LOGIC (Crucial for Mobile View)
+  // 1. 📏 TV SCALING LOGIC
   useLayoutEffect(() => {
     const handleResize = () => {
-      // Design Target: 1920x1080
       const scaleX = window.innerWidth / 1920;
       const scaleY = window.innerHeight / 1080;
-      // Fit to screen while maintaining aspect ratio
       setScale(Math.min(scaleX, scaleY));
     };
     handleResize();
@@ -66,6 +80,11 @@ export default function MatchOverlay() {
       doc(db, "tournaments", tournamentId, "matches", matchId),
       (doc) => {
         if (doc.exists()) setMatch({ id: doc.id, ...doc.data() });
+        setLoading(false);
+      },
+      (err) => {
+        console.error("Firebase Error:", err);
+        setLoading(false);
       },
     );
     return () => unsub();
@@ -73,10 +92,11 @@ export default function MatchOverlay() {
 
   // 3. 🤖 AUTOMATION LOGIC
   const currentInn = match?.innings?.[match?.currentInnings || 0];
+
   useEffect(() => {
     if (!currentInn) return;
 
-    // Auto Popup on Over End
+    // Auto Popup
     const over = currentInn.over || 0;
     const balls = currentInn.overBallCount || 0;
     if (balls === 0 && over > 0 && over !== prevOverRef.current) {
@@ -86,7 +106,7 @@ export default function MatchOverlay() {
       prevOverRef.current = over;
     }
 
-    // Auto Animation on Events
+    // Auto Animation
     const timeline = currentInn.timeline || [];
     if (timeline.length > prevTimelineLength.current) {
       const lastBall = timeline[timeline.length - 1];
@@ -94,7 +114,6 @@ export default function MatchOverlay() {
         if (lastBall.isWicket) {
           setAnimationType("WICKET");
           setTimeout(() => setAnimationType(null), 4000);
-          // Also show card
           setPopupType("WICKET");
           setShowPopup(true);
           setTimeout(() => setShowPopup(false), 12000);
@@ -110,11 +129,51 @@ export default function MatchOverlay() {
     }
   }, [currentInn]);
 
-  if (!match || !currentInn)
-    return <div className="bg-black w-screen h-screen"></div>;
+  // --- VIEWS ---
 
+  if (loading) return <div className="bg-black w-screen h-screen"></div>;
+  if (!match)
+    return (
+      <div className="bg-black text-white w-screen h-screen flex items-center justify-center">
+        Match Not Found
+      </div>
+    );
+
+  // Pre-Match Screen
+  if (!currentInn) {
+    return (
+      <div className="w-screen h-screen bg-slate-900/10 flex items-center justify-center overflow-hidden">
+        <div
+          style={{
+            width: 1920,
+            height: 1080,
+            transform: `scale(${scale})`,
+            transformOrigin: "center center",
+          }}
+          className="relative">
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#1a1b4b]/95">
+            <h2 className="text-[#00bcd4] text-4xl font-black uppercase tracking-[0.5em] mb-6">
+              Upcoming Match
+            </h2>
+            <h1 className="text-white text-9xl font-black uppercase drop-shadow-2xl">
+              {match.meta?.teamA || "Team A"}{" "}
+              <span className="text-white/30 text-7xl align-middle px-4">
+                vs
+              </span>{" "}
+              {match.meta?.teamB || "Team B"}
+            </h1>
+            <div className="mt-12 bg-white/10 px-8 py-3 rounded-full text-white/80 text-3xl animate-pulse font-bold border border-white/20">
+              Waiting for Toss...
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Live Overlay
   return (
-    <div className="w-screen h-screen overflow-hidden flex items-center justify-center">
+    <div className="w-screen h-screen bg-slate-900/10 flex items-center justify-center overflow-hidden">
       {/* 📺 SCALED 1920x1080 CONTAINER */}
       <div
         style={{
@@ -132,12 +191,11 @@ export default function MatchOverlay() {
           <BroadcastSummaryCard match={match} type={popupType} />
         </div>
 
-        {/* BOTTOM TICKER (Hides when popup is open) */}
+        {/* ✅ CENTERED TICKER LAYER */}
+        {/* Changed from left-0/right-0 to w-full + flex justify-center */}
         <div
-          className={`absolute bottom-[50px] left-0 right-0 z-10 transition-all duration-500 ${showPopup ? "translate-y-[200px]" : "translate-y-0"}`}>
-          <div className="w-[1800px] mx-auto">
-            <ScoreTicker match={match} />
-          </div>
+          className={`absolute bottom-[50px] w-full z-10 flex justify-center transition-all duration-500 ${showPopup ? "translate-y-[200px] opacity-0" : "translate-y-0 opacity-100"}`}>
+          <ScoreTicker match={match} />
         </div>
       </div>
     </div>
