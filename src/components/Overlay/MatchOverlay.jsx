@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
+import { getDatabase, ref, push, set, onDisconnect, serverTimestamp } from "firebase/database";
 import { useParams } from "react-router-dom";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../../utils/firebase";
@@ -9,31 +10,15 @@ import BroadcastSummaryCard from "./BroadcastSummaryCard";
 const EventAnimation = ({ type }) => {
   if (!type) return null;
   const styles = {
-    FOUR: {
-      bg: "bg-green-600",
-      border: "border-green-400",
-      text: "4",
-      sub: "BOUNDARY",
-    },
-    SIX: {
-      bg: "bg-[#e91e63]",
-      border: "border-pink-400",
-      text: "6",
-      sub: "MAXIMUM",
-    },
-    WICKET: {
-      bg: "bg-red-600",
-      border: "border-red-400",
-      text: "OUT",
-      sub: "WICKET",
-    },
+    FOUR: { bg: "bg-green-600", border: "border-green-400", text: "4", sub: "BOUNDARY" },
+    SIX: { bg: "bg-[#e91e63]", border: "border-pink-400", text: "6", sub: "MAXIMUM" },
+    WICKET: { bg: "bg-red-600", border: "border-red-400", text: "OUT", sub: "WICKET" },
   };
   const current = styles[type];
 
   return (
     <div className="absolute top-[200px] left-1/2 -translate-x-1/2 z-[100] animate-in zoom-in duration-300">
-      <div
-        className={`relative ${current.bg} border-4 ${current.border} shadow-[0_20px_60px_rgba(0,0,0,0.6)] rounded-[3rem] px-24 py-6 flex flex-col items-center`}>
+      <div className={`relative ${current.bg} border-4 ${current.border} shadow-[0_20px_60px_rgba(0,0,0,0.6)] rounded-[3rem] px-24 py-6 flex flex-col items-center`}>
         <div className="text-white font-black text-[12rem] leading-none drop-shadow-lg text-center">
           {current.text}
         </div>
@@ -58,10 +43,41 @@ export default function MatchOverlay() {
 
   // Refs
   const prevOverRef = useRef(0);
-  const prevWicketsRef = useRef(0);
   const prevTimelineLength = useRef(0);
 
-  // 1. 📏 TV SCALING LOGIC
+  // ✅ 1. FORCE TRANSPARENCY (The Fix for OBS White BG)
+  useLayoutEffect(() => {
+    // This forces the browser body to be transparent, overriding any CSS defaults
+    document.body.style.backgroundColor = "transparent";
+    document.documentElement.style.backgroundColor = "transparent";
+    
+    return () => {
+      // Cleanup: revert to white/dark if you leave this page (optional)
+      document.body.style.backgroundColor = ""; 
+      document.documentElement.style.backgroundColor = "";
+    };
+  }, []);
+
+  // 2. LIVE VIEWERS TRACKING
+  useEffect(() => {
+    if (!matchId) return;
+    const rtdb = getDatabase();
+    // Create a reference specifically for this session
+    const viewerRef = push(ref(rtdb, `match_viewers/${matchId}`));
+    
+    // Set presence
+    set(viewerRef, { timestamp: serverTimestamp(), type: 'overlay' });
+    
+    // Auto-remove on disconnect (closing OBS/Browser)
+    onDisconnect(viewerRef).remove();
+    
+    return () => {
+      // Manual cleanup if component unmounts
+      set(viewerRef, null).catch(console.error);
+    };
+  }, [matchId]);
+
+  // 3. 📏 TV SCALING LOGIC
   useLayoutEffect(() => {
     const handleResize = () => {
       const scaleX = window.innerWidth / 1920;
@@ -73,7 +89,7 @@ export default function MatchOverlay() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // 2. 📡 LIVE DATA
+  // 4. 📡 LIVE DATA
   useEffect(() => {
     if (!matchId || !tournamentId) return;
     const unsub = onSnapshot(
@@ -85,18 +101,18 @@ export default function MatchOverlay() {
       (err) => {
         console.error("Firebase Error:", err);
         setLoading(false);
-      },
+      }
     );
     return () => unsub();
   }, [tournamentId, matchId]);
 
-  // 3. 🤖 AUTOMATION LOGIC
+  // 5. 🤖 AUTOMATION LOGIC
   const currentInn = match?.innings?.[match?.currentInnings || 0];
 
   useEffect(() => {
     if (!currentInn) return;
 
-    // Auto Popup
+    // Auto Popup (End of Over)
     const over = currentInn.over || 0;
     const balls = currentInn.overBallCount || 0;
     if (balls === 0 && over > 0 && over !== prevOverRef.current) {
@@ -106,7 +122,7 @@ export default function MatchOverlay() {
       prevOverRef.current = over;
     }
 
-    // Auto Animation
+    // Auto Animation (Boundaries/Wickets)
     const timeline = currentInn.timeline || [];
     if (timeline.length > prevTimelineLength.current) {
       const lastBall = timeline[timeline.length - 1];
@@ -131,36 +147,24 @@ export default function MatchOverlay() {
 
   // --- VIEWS ---
 
-  if (loading) return <div className="bg-black w-screen h-screen"></div>;
+  if (loading) return <div className="bg-transparent w-screen h-screen"></div>; // Changed from bg-black to bg-transparent
+  
   if (!match)
     return (
-      <div className="bg-black text-white w-screen h-screen flex items-center justify-center">
+      <div className="bg-black/80 text-white w-screen h-screen flex items-center justify-center">
         Match Not Found
       </div>
     );
 
-  // Pre-Match Screen
+  // Pre-Match Screen (Still opaque, as you want to hide the camera before match starts)
   if (!currentInn) {
     return (
-      <div className="w-screen h-screen bg-slate-900/10 flex items-center justify-center overflow-hidden">
-        <div
-          style={{
-            width: 1920,
-            height: 1080,
-            transform: `scale(${scale})`,
-            transformOrigin: "center center",
-          }}
-          className="relative">
+      <div className="w-screen h-screen flex items-center justify-center overflow-hidden bg-[#1a1b4b]">
+        <div style={{ width: 1920, height: 1080, transform: `scale(${scale})`, transformOrigin: "center center" }} className="relative">
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#1a1b4b]/95">
-            <h2 className="text-[#00bcd4] text-4xl font-black uppercase tracking-[0.5em] mb-6">
-              Upcoming Match
-            </h2>
+            <h2 className="text-[#00bcd4] text-4xl font-black uppercase tracking-[0.5em] mb-6">Upcoming Match</h2>
             <h1 className="text-white text-9xl font-black uppercase drop-shadow-2xl">
-              {match.meta?.teamA || "Team A"}{" "}
-              <span className="text-white/30 text-7xl align-middle px-4">
-                vs
-              </span>{" "}
-              {match.meta?.teamB || "Team B"}
+              {match.meta?.teamA || "Team A"} <span className="text-white/30 text-7xl align-middle px-4">vs</span> {match.meta?.teamB || "Team B"}
             </h1>
             <div className="mt-12 bg-white/10 px-8 py-3 rounded-full text-white/80 text-3xl animate-pulse font-bold border border-white/20">
               Waiting for Toss...
@@ -171,9 +175,11 @@ export default function MatchOverlay() {
     );
   }
 
-  // Live Overlay
+  // ✅ Live Overlay (Transparent Background)
   return (
-    <div className="w-screen h-screen bg-slate-900/10 flex items-center justify-center overflow-hidden">
+    // 'bg-transparent' here combined with the useLayoutEffect above guarantees transparency
+    <div className="w-screen h-screen flex items-center justify-center overflow-hidden bg-transparent">
+      
       {/* 📺 SCALED 1920x1080 CONTAINER */}
       <div
         style={{
@@ -182,19 +188,17 @@ export default function MatchOverlay() {
           transform: `scale(${scale})`,
           transformOrigin: "center center",
         }}
-        className="relative bg-transparent font-sans">
+        className="relative bg-transparent font-sans" // Ensure inner container is also transparent
+      >
         <EventAnimation type={animationType} />
 
         {/* POPUP LAYER */}
-        <div
-          className={`absolute inset-0 z-50 flex items-center justify-center transition-all duration-500 ${showPopup ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}>
+        <div className={`absolute inset-0 z-50 flex items-center justify-center transition-all duration-500 ${showPopup ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}>
           <BroadcastSummaryCard match={match} type={popupType} />
         </div>
 
-        {/* ✅ CENTERED TICKER LAYER */}
-        {/* Changed from left-0/right-0 to w-full + flex justify-center */}
-        <div
-          className={`absolute bottom-[50px] w-full z-10 flex justify-center transition-all duration-500 ${showPopup ? "translate-y-[200px] opacity-0" : "translate-y-0 opacity-100"}`}>
+        {/* TICKER LAYER */}
+        <div className={`absolute bottom-[50px] w-full z-10 flex justify-center transition-all duration-500 ${showPopup ? "translate-y-[200px] opacity-0" : "translate-y-0 opacity-100"}`}>
           <ScoreTicker match={match} />
         </div>
       </div>

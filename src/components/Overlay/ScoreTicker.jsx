@@ -51,7 +51,7 @@ export default function ScoreTicker({ match }) {
   const rightLogo = match?.meta?.teamBLogo || match?.teamB_Image || defaultLogo;
 
   return (
-    <div className="w-full flex items-center justify-center font-sans px-10 pb-8">
+    <div className="w-full flex items-center justify-center font-sans px-10">
       {/* 1. LEFT TEAM LOGO (Added back to your layout) */}
       <div className="w-24 h-24 flex-shrink-0 rounded-full bg-[#1C2128] border-4 border-[#1C2128] shadow-2xl z-20 flex items-center justify-center overflow-hidden relative -mr-6">
         <img

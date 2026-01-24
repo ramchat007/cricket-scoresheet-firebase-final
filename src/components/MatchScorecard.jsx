@@ -87,7 +87,7 @@ export default function MatchScorecard() {
     return getYouTubeId(matchUrl) || getYouTubeId(globalUrl);
   }, [match, tournament]);
 
-  // --- 🧠 NEW STANDARDIZED TEAM LOGIC (MOVE TO HERE) ---
+  // --- 🧠 STANDARDIZED TEAM LOGIC ---
   const { battingFirstTeam, battingSecondTeam } = useMemo(() => {
     // If data isn't here yet, return empty
     if (!match || !match.meta)
@@ -99,7 +99,6 @@ export default function MatchScorecard() {
 
     if (inn1 && inn1.battingTeam) {
       const first = inn1.battingTeam;
-      // Determine the other team by checking meta
       const second =
         first === match.meta.teamA ? match.meta.teamB : match.meta.teamA;
       return { battingFirstTeam: first, battingSecondTeam: second };
@@ -126,7 +125,7 @@ export default function MatchScorecard() {
     };
   }, [match]);
 
-  // --- 4. DYNAMIC TABS ---
+  // --- 4. DYNAMIC TABS (Corrected: Only returns Array) ---
   const tabs = useMemo(() => {
     const list = [
       { id: "scorecard", label: "Scorecard" },
@@ -135,25 +134,9 @@ export default function MatchScorecard() {
     ];
 
     // 🔒 HIDDEN: Video Stream Tab (Code preserved for future use)
-     if (videoId) {
+    if (videoId) {
       list.unshift({ id: "stream", label: "🔴 Live Stream" });
     }
-    
-
-    // --- EARLY RETURNS (Wait until hooks are done) ---
-    if (loading)
-      return (
-        <div className="min-h-screen bg-[#0F1115] flex items-center justify-center text-teal-500">
-          Loading Arena...
-        </div>
-      );
-    if (error)
-      return (
-        <div className="min-h-screen bg-[#0F1115] flex items-center justify-center text-red-500">
-          {error}
-        </div>
-      );
-    if (!match) return null;
 
     return list;
   }, [videoId]);
@@ -161,20 +144,23 @@ export default function MatchScorecard() {
   const handleManualRefresh = useCallback(async () => {
     setRefreshing(true);
     setTimeout(() => setRefreshing(false), 600);
-  }, [tournamentId, matchId]);
+  }, []);
 
+  // --- 5. RENDER GUARDS (Moved OUT of useMemo) ---
   if (loading)
     return (
       <div className="min-h-screen bg-[#0F1115] flex items-center justify-center text-teal-500">
         Loading Arena...
       </div>
     );
+
   if (error)
     return (
       <div className="min-h-screen bg-[#0F1115] flex items-center justify-center text-red-500">
         {error}
       </div>
     );
+
   if (!match) return null;
 
   // Now update the title variable using the memoized values
@@ -260,7 +246,6 @@ export default function MatchScorecard() {
               )}
             </div>
           )}
-         
 
           {activeTab === "scorecard" && (
             <div className="space-y-6">

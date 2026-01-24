@@ -1,6 +1,35 @@
 import React, { useMemo } from "react";
+import { getDatabase, ref, onValue, onDisconnect, set, push, serverTimestamp } from "firebase/database";
+import { useState, useEffect } from "react";
 
 export default function ScoreSummary({ match }) {
+  const [liveViewers, setLiveViewers] = useState(1);
+  // ✅ 3. Add this Effect for Presence
+  useEffect(() => {
+    if (!match?.id) return;
+
+    const rtdb = getDatabase();
+    const matchViewersRef = ref(rtdb, `match_viewers/${match.id}`);
+    
+    // A. Add myself as a viewer
+    const myViewerRef = push(matchViewersRef);
+    set(myViewerRef, { timestamp: serverTimestamp(), type: 'scorecard' });
+    onDisconnect(myViewerRef).remove();
+
+    // B. Listen to total count
+    const unsubscribe = onValue(matchViewersRef, (snapshot) => {
+      setLiveViewers(snapshot.size || 0);
+    });
+
+    return () => {
+      set(myViewerRef, null); // Remove on unmount
+      unsubscribe();
+    };
+  }, [match?.id]);
+
+  // Helper function for display
+  const formatLiveCount = (n) => n >= 1000 ? (n/1000).toFixed(1) + "k" : n;
+
   if (!match)
     return (
       <div className="bg-[#161920] border border-white/5 rounded-2xl p-8 text-center animate-pulse shadow-xl">
@@ -173,7 +202,7 @@ export default function ScoreSummary({ match }) {
                 ? "bg-teal-900/30 text-teal-400 border-teal-500/30"
                 : "bg-red-900/30 text-red-400 border-red-500/30 animate-pulse"
             }`}>
-            {status === "finished" ? "FINISHED" : "● LIVE"}
+            {formatLiveCount(liveViewers)} {status === "finished" ? "FINISHED" : "● LIVE"}
           </span>
         </div>
 
