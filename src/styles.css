@@ -3,14 +3,6 @@
 @tailwind utilities;
 /* ===== Base Theme Variables ===== */
 
-body, html, #root {
-  background-color: transparent !important;
-  /* OR use RGBA for safety */
-  background-color: rgba(0, 0, 0, 0) !important;
-  margin: 0;
-  padding: 0;
-  overflow: hidden; /* Prevents scrollbars in OBS */
-}
 
 :root {
   --bg: #fff;
