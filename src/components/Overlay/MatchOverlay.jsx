@@ -45,18 +45,6 @@ export default function MatchOverlay() {
   const prevOverRef = useRef(0);
   const prevTimelineLength = useRef(0);
 
-  // ✅ 1. FORCE TRANSPARENCY (The Fix for OBS White BG)
-  useLayoutEffect(() => {
-    // This forces the browser body to be transparent, overriding any CSS defaults
-    document.body.style.backgroundColor = "transparent";
-    document.documentElement.style.backgroundColor = "transparent";
-    
-    return () => {
-      // Cleanup: revert to white/dark if you leave this page (optional)
-      document.body.style.backgroundColor = ""; 
-      document.documentElement.style.backgroundColor = "";
-    };
-  }, []);
 
   // 2. LIVE VIEWERS TRACKING
   useEffect(() => {
@@ -159,7 +147,7 @@ export default function MatchOverlay() {
   // Pre-Match Screen (Still opaque, as you want to hide the camera before match starts)
   if (!currentInn) {
     return (
-      <div className="w-screen h-screen flex items-center justify-center overflow-hidden bg-[#1a1b4b]">
+      <div className="flex items-center justify-center overflow-hidden bg-[#1a1b4b]" style={{ width: 1920, height: 1080, overflow: 'hidden' }}>
         <div style={{ width: 1920, height: 1080, transform: `scale(${scale})`, transformOrigin: "center center" }} className="relative">
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#1a1b4b]/95">
             <h2 className="text-[#00bcd4] text-4xl font-black uppercase tracking-[0.5em] mb-6">Upcoming Match</h2>
@@ -185,8 +173,6 @@ export default function MatchOverlay() {
         style={{
           width: 1920,
           height: 1080,
-          transform: `scale(${scale})`,
-          transformOrigin: "center center",
         }}
         className="relative bg-transparent font-sans" // Ensure inner container is also transparent
       >
