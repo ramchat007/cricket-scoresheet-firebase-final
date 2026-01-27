@@ -586,6 +586,7 @@ export default function TeamsTab({
       <PlayerProfileModal
         player={selectedPlayer}
         isOpen={!!selectedPlayer}
+        matches={matches}
         onClose={() => setSelectedPlayer(null)}
       />
       {/* ✅ ALL TEAMS PASSED HERE */}
