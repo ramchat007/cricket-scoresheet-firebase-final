@@ -1,28 +1,51 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { getDatabase, ref, push, set, onDisconnect, serverTimestamp } from "firebase/database";
 import { useParams } from "react-router-dom";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, getDoc } from "firebase/firestore";
 import { db } from "../../utils/firebase";
 import ScoreTicker from "./ScoreTicker";
 import BroadcastSummaryCard from "./BroadcastSummaryCard";
 
-// --- ANIMATION COMPONENT ---
+// --- ANIMATION COMPONENT (Updated Colors) ---
 const EventAnimation = ({ type }) => {
   if (!type) return null;
+  
+  // New Broadcast Theme Colors
   const styles = {
-    FOUR: { bg: "bg-green-600", border: "border-green-400", text: "4", sub: "BOUNDARY" },
-    SIX: { bg: "bg-[#e91e63]", border: "border-pink-400", text: "6", sub: "MAXIMUM" },
-    WICKET: { bg: "bg-red-600", border: "border-red-400", text: "OUT", sub: "WICKET" },
+    FOUR: { 
+        bg: "bg-gradient-to-br from-[#00b4d8] to-[#0077b6]", 
+        border: "border-cyan-200", 
+        text: "4", 
+        sub: "BOUNDARY",
+        shadow: "shadow-[0_0_50px_rgba(0,180,216,0.6)]"
+    },
+    SIX: { 
+        bg: "bg-gradient-to-br from-[#eab308] to-[#a16207]", 
+        border: "border-yellow-200", 
+        text: "6", 
+        sub: "MAXIMUM",
+        shadow: "shadow-[0_0_50px_rgba(234,179,8,0.6)]"
+    },
+    WICKET: { 
+        bg: "bg-gradient-to-br from-[#ef4444] to-[#991b1b]", 
+        border: "border-red-200", 
+        text: "OUT", 
+        sub: "WICKET",
+        shadow: "shadow-[0_0_50px_rgba(239,68,68,0.6)]"
+    },
   };
   const current = styles[type];
 
   return (
     <div className="absolute top-[200px] left-1/2 -translate-x-1/2 z-[100] animate-in zoom-in duration-300">
-      <div className={`relative ${current.bg} border-4 ${current.border} shadow-[0_20px_60px_rgba(0,0,0,0.6)] rounded-[3rem] px-24 py-6 flex flex-col items-center`}>
-        <div className="text-white font-black text-[12rem] leading-none drop-shadow-lg text-center">
+      <div className={`relative ${current.bg} border-4 ${current.border} ${current.shadow} rounded-[3rem] px-24 py-10 flex flex-col items-center transform scale-110`}>
+        {/* Glossy Overlay */}
+        <div className="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent rounded-[2.8rem] pointer-events-none"></div>
+        
+        <div className="text-white font-black text-[14rem] leading-none drop-shadow-xl text-center italic tracking-tighter">
           {current.text}
         </div>
-        <div className="absolute -bottom-6 bg-white text-slate-900 px-10 py-2 font-black text-3xl uppercase tracking-[0.3em] rounded-full border-4 border-slate-200 shadow-lg whitespace-nowrap">
+        <div className="absolute -bottom-8 bg-[#0b0f19] text-white px-12 py-3 font-black text-4xl uppercase tracking-[0.3em] rounded-full border-4 border-white/20 shadow-2xl whitespace-nowrap">
           {current.sub}
         </div>
       </div>
@@ -40,12 +63,13 @@ export default function MatchOverlay() {
   const [popupType, setPopupType] = useState("SUMMARY");
   const [animationType, setAnimationType] = useState(null);
   const [scale, setScale] = useState(1);
+  const [tournamentName, setTournamentName] = useState("Tournament");
 
   // Refs
   const prevOverRef = useRef(0);
   const prevTimelineLength = useRef(0);
   const matchEndTriggered = useRef(false);
-  const tossShownRef = useRef(false); // Track if we showed toss at start of match
+  const tossShownRef = useRef(false); 
 
   // 2. LIVE VIEWERS TRACKING
   useEffect(() => {
@@ -77,7 +101,6 @@ export default function MatchOverlay() {
       (doc) => {
         if (doc.exists()) {
             const data = { id: doc.id, ...doc.data() };
-            // console.log("Overlay Data:", data); // ✅ Debug: Check console for 'toss' object
             setMatch(data);
         }
         setLoading(false);
@@ -97,15 +120,12 @@ export default function MatchOverlay() {
     if (!currentInn) return;
 
     // --- A. START OF MATCH (Toss Popup) ---
-    // If it's the very first ball (0.0) and we haven't shown toss yet
     const isFirstOver = currentInn.over === 0 && currentInn.overBallCount === 0;
     if (isFirstOver && match.toss && !tossShownRef.current) {
         setPopupType("TOSS");
         setShowPopup(true);
-        tossShownRef.current = true; // Mark as shown so it doesn't pop up again
-        // Keep toss visible for a while or until manually closed? 
-        // For now, let's keep it up until the first ball is bowled (handled by End of Over logic overwriting it) or timeout
-        setTimeout(() => setShowPopup(false), 20000); // Hide after 20s
+        tossShownRef.current = true;
+        setTimeout(() => setShowPopup(false), 20000); 
     }
 
     // --- B. MATCH END DETECTION ---
@@ -126,7 +146,6 @@ export default function MatchOverlay() {
     const over = currentInn.over || 0;
     const balls = currentInn.overBallCount || 0;
     
-    // Only trigger end of over if it's NOT the start of the match (0.0)
     if (balls === 0 && over > 0 && over !== prevOverRef.current) {
       if (!isCompleted) {
           setPopupType("SUMMARY");
@@ -141,7 +160,6 @@ export default function MatchOverlay() {
     if (timeline.length > prevTimelineLength.current) {
       const lastBall = timeline[timeline.length - 1];
       if (lastBall) {
-        // ... (Animation logic same as before) ...
         if (lastBall.isWicket) {
           setAnimationType("WICKET");
           setTimeout(() => setAnimationType(null), 4000);
@@ -162,14 +180,25 @@ export default function MatchOverlay() {
     }
   }, [currentInn, match]);
 
+  useEffect(() => {
+      if (!tournamentId) return;
+      const fetchData = async () => {
+        const tourRef = doc(db, "tournaments", tournamentId);
+        const tourSnap = await getDoc(tourRef);
+        if (tourSnap.exists()) {
+          setTournamentName(tourSnap.data().name || "Tournament");
+        }
+      };
+      fetchData();
+    }, [tournamentId]);
+
   // --- VIEWS ---
 
   if (loading) return <div className="bg-transparent w-screen h-screen"></div>;
-  if (!match) return <div className="bg-black/80 text-white w-screen h-screen flex items-center justify-center">Match Not Found</div>;
+  if (!match) return <div className="bg-black/90 text-white w-screen h-screen flex items-center justify-center font-black text-4xl uppercase">Match Not Found</div>;
 
-  // 🔴 PRE-MATCH SCREEN (No Innings yet)
+  // 🔴 PRE-MATCH SCREEN (Updated Design)
   if (!currentInn) {
-    // ✅ FIX: Relaxed check. If 'toss' exists in DB, show the card.
     if (match.toss && match.toss.winner) {
         return (
             <div className="w-screen h-screen flex items-center justify-center overflow-hidden bg-transparent">
@@ -182,16 +211,30 @@ export default function MatchOverlay() {
         );
     }
 
-    // Still waiting for toss
+    // Still waiting for toss (NEW DESIGN)
     return (
-      <div className="flex items-center justify-center overflow-hidden bg-[#1a1b4b]" style={{ width: 1920, height: 1080, overflow: 'hidden' }}>
-        <div style={{ width: 1920, height: 1080, transform: `scale(${scale})`, transformOrigin: "center center" }} className="relative">
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#1a1b4b]/95">
-            <h2 className="text-[#00bcd4] text-4xl font-black uppercase tracking-[0.5em] mb-6">Upcoming Match</h2>
-            <h1 className="text-white text-9xl font-black uppercase drop-shadow-2xl">
-              {match.meta?.teamA || "Team A"} <span className="text-white/30 text-7xl align-middle px-4">vs</span> {match.meta?.teamB || "Team B"}
+      <div className="flex items-center justify-center overflow-hidden bg-[#0b0f19]" style={{ width: 1920, height: 1080, overflow: 'hidden' }}>
+        {/* Background Texture */}
+        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20 mix-blend-overlay"></div>
+        <div className="absolute inset-0 bg-gradient-to-br from-[#002855] to-[#0b0f19] opacity-90"></div>
+
+        <div style={{ width: 1920, height: 1080, transform: `scale(${scale})`, transformOrigin: "center center" }} className="relative z-10">
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            
+            {/* Tournament Label */}
+            <div className="bg-[#00b4d8]/10 border border-[#00b4d8]/30 px-8 py-2 rounded-full mb-8 backdrop-blur-md">
+                <h2 className="text-[#00b4d8] text-3xl font-black uppercase tracking-[0.4em] drop-shadow-md">{tournamentName}</h2>
+            </div>
+
+            {/* Matchup */}
+            <h1 className="text-white text-9xl font-black uppercase drop-shadow-2xl italic tracking-tighter flex items-center gap-12">
+              <span className="drop-shadow-[0_0_30px_rgba(255,255,255,0.2)]">{match.meta?.teamA || "Team A"}</span> 
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-amber-600 text-8xl font-serif italic transform -skew-x-12">VS</span> 
+              <span className="drop-shadow-[0_0_30px_rgba(255,255,255,0.2)]">{match.meta?.teamB || "Team B"}</span>
             </h1>
-            <div className="mt-12 bg-white/10 px-8 py-3 rounded-full text-white/80 text-3xl animate-pulse font-bold border border-white/20">
+
+            {/* Waiting Pill */}
+            <div className="mt-20 bg-gradient-to-r from-[#002855] to-[#004e9a] px-12 py-4 rounded-full text-white text-4xl animate-pulse font-black border-2 border-[#00b4d8] shadow-[0_0_40px_rgba(0,180,216,0.4)] tracking-widest uppercase">
               Waiting for Toss...
             </div>
           </div>
@@ -209,7 +252,7 @@ export default function MatchOverlay() {
 
         {/* POPUP LAYER */}
         <div className={`absolute inset-0 z-50 flex items-center justify-center transition-all duration-500 ${showPopup ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20"}`}>
-          <BroadcastSummaryCard match={match} type={popupType} />
+          <BroadcastSummaryCard tournamentName={tournamentName} match={match} type={popupType} />
         </div>
 
         {/* TICKER LAYER */}
