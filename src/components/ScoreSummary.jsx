@@ -1,31 +1,64 @@
-import React, { useMemo } from "react";
-import { getDatabase, ref, onValue, onDisconnect, set, push, serverTimestamp } from "firebase/database";
-import { useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect } from "react";
+// ✅ FIXED: Using Firestore imports instead of Realtime Database
+import { 
+  collection, 
+  onSnapshot, 
+  addDoc, 
+  deleteDoc, 
+  doc, 
+  serverTimestamp 
+} from "firebase/firestore";
+import { db } from "../utils/firebase";
 
 export default function ScoreSummary({ match }) {
   const [liveViewers, setLiveViewers] = useState(1);
-  // ✅ 3. Add this Effect for Presence
+
+  // ✅ 3. LIVE VIEWERS (FIRESTORE VERSION)
   useEffect(() => {
     if (!match?.id) return;
 
-    const rtdb = getDatabase();
-    const matchViewersRef = ref(rtdb, `match_viewers/${match.id}`);
-    
-    // A. Add myself as a viewer
-    const myViewerRef = push(matchViewersRef);
-    set(myViewerRef, { timestamp: serverTimestamp(), type: 'scorecard' });
-    onDisconnect(myViewerRef).remove();
+    // We need tournamentId to find the correct path in Firestore
+    const tournamentId = match.meta?.tournament || match.tournamentId;
+    if (!tournamentId) return;
 
-    // B. Listen to total count
-    const unsubscribe = onValue(matchViewersRef, (snapshot) => {
-      setLiveViewers(snapshot.size || 0);
-    });
+    let viewerDocId = null;
+    let unsubscribe = () => {};
 
-    return () => {
-      set(myViewerRef, null); // Remove on unmount
-      unsubscribe();
+    const trackViewer = async () => {
+      try {
+        // Reference to: tournaments/{tid}/matches/{mid}/viewers
+        const viewersRef = collection(db, "tournaments", tournamentId, "matches", match.id, "viewers");
+
+        // A. Add myself as a viewer
+        const docRef = await addDoc(viewersRef, {
+          timestamp: serverTimestamp(),
+          type: 'scorecard', // Mark as scorecard viewer
+          userAgent: navigator.userAgent
+        });
+        viewerDocId = docRef.id;
+
+        // B. Listen to total count in real-time
+        unsubscribe = onSnapshot(viewersRef, (snapshot) => {
+          setLiveViewers(snapshot.size || 1);
+        });
+
+      } catch (err) {
+        // Fail silently if permissions block it (e.g. strict security rules)
+        console.warn("Viewer tracking disabled:", err.message);
+      }
     };
-  }, [match?.id]);
+
+    trackViewer();
+
+    // Cleanup: Remove my viewer doc when I leave the page
+    return () => {
+      unsubscribe();
+      if (viewerDocId) {
+        const docToDelete = doc(db, "tournaments", tournamentId, "matches", match.id, "viewers", viewerDocId);
+        deleteDoc(docToDelete).catch(e => {}); 
+      }
+    };
+  }, [match?.id, match?.meta?.tournament, match?.tournamentId]);
 
   // Helper function for display
   const formatLiveCount = (n) => n >= 1000 ? (n/1000).toFixed(1) + "k" : n;
@@ -50,8 +83,6 @@ export default function ScoreSummary({ match }) {
   const currentInningIndex =
     typeof match.currentInnings === "number" ? match.currentInnings : 0;
   const currentInning = inningsList[currentInningIndex];
-  // const inn1 = inningsList[0];
-  // const inn2 = inningsList[1];
 
   // 🔥 DETERMINING TEAM ORDER (Left = Bat 1st, Right = Bat 2nd)
   const { battingFirstTeam, battingSecondTeam, inn1, inn2 } = useMemo(() => {
@@ -60,7 +91,6 @@ export default function ScoreSummary({ match }) {
 
     if (firstInn?.battingTeam) {
       const first = firstInn.battingTeam;
-      // Find the second team by looking at meta or the other inning
       const second =
         secondInn?.battingTeam ||
         (first === match.meta?.teamA ? match.meta?.teamB : match.meta?.teamA);
@@ -85,10 +115,8 @@ export default function ScoreSummary({ match }) {
 
   // --- 2. CALCULATE STANDARD RESULT TEXT 🏆 ---
   const resultText = useMemo(() => {
-    // If not finished, return null
     if (status !== "finished") return null;
 
-    // 1. Try to calculate mathematically for standard format
     if (inn1 && inn2) {
       if (inn1.score > inn2.score) {
         const diff = inn1.score - inn2.score;
@@ -102,7 +130,6 @@ export default function ScoreSummary({ match }) {
       }
     }
 
-    // 2. Fallback to existing meta string if calculation fails
     return (
       match.meta?.result ||
       match.result?.text ||
@@ -126,7 +153,6 @@ export default function ScoreSummary({ match }) {
   const isSecondInnings =
     currentInningIndex === 1 || (inn2 && status === "finished");
 
-  // Calculate Target: Explicitly from Meta OR derived from Innings 1
   const targetScore = match.meta?.target || (inn1 ? inn1.score + 1 : 0);
 
   // --- 5. PARTNERSHIP LOGIC ---
@@ -151,11 +177,10 @@ export default function ScoreSummary({ match }) {
 
       if (typeof ball === "object") {
         runVal = ball.runs || 0;
-        // 🔧 FIX: Only wides are illegal balls (NB counts as ball in your engine)
         if (ball.isWide) isLegal = false;
       } else {
         const s = String(ball);
-        if (s.includes("WD")) isLegal = false; // 🔧 FIX
+        if (s.includes("WD")) isLegal = false;
         runVal = parseInt(s) || 0;
         if (s.includes("WD") || s.includes("NB")) {
           const extra = parseInt(s.replace(/\D/g, "")) || 0;
@@ -172,23 +197,8 @@ export default function ScoreSummary({ match }) {
   const recentTimeline = useMemo(() => {
     if (!currentInning) return [];
     const timeline = currentInning.timeline || currentInning.ballsLog || [];
-    // Take last 12 balls for context (scrollable)
     return timeline.slice(-12);
   }, [currentInning]);
-
-  // ✨ NEW: Last ball summary
-  const lastBall =
-    currentInning?.timeline?.[currentInning.timeline.length - 1] ||
-    currentInning?.ballsLog?.[currentInning.ballsLog.length - 1];
-
-  const lastBallText = (() => {
-    if (!lastBall) return null;
-    if (typeof lastBall === "string") return lastBall;
-    if (lastBall.isWicket) return "WICKET";
-    if (lastBall.isWide) return "WIDE";
-    if (lastBall.isNoBall) return "NO BALL";
-    return `${lastBall.runs || 0} run${lastBall.runs === 1 ? "" : "s"}`;
-  })();
 
   return (
     <div className="flex flex-col gap-4 w-full max-w-3xl mx-auto">
@@ -210,7 +220,7 @@ export default function ScoreSummary({ match }) {
           {/* Team A */}
           <div className="text-left w-5/12">
             <div className="text-base md:text-lg font-bold text-slate-300 mb-1 truncate leading-tight">
-              {/* {match.meta?.teamA || "Team A"} */} {battingFirstTeam}
+              {battingFirstTeam}
             </div>
             {inn1 ? (
               <div className="text-slate-100 font-mono font-black text-3xl md:text-4xl leading-none tracking-tighter">
@@ -233,7 +243,6 @@ export default function ScoreSummary({ match }) {
           {/* Team B */}
           <div className="text-right w-5/12">
             <div className="text-base md:text-lg font-bold text-slate-300 mb-1 truncate leading-tight">
-              {/* {match.meta?.teamB || "Team B"} */}
               {battingSecondTeam}{" "}
               {currentInningIndex === 1 && status !== "finished" && "●"}
             </div>
@@ -266,7 +275,7 @@ export default function ScoreSummary({ match }) {
           </div>
         )}
 
-        {/* Chase Target (Equation) - Only show if match NOT finished */}
+        {/* Chase Target */}
         {status !== "finished" && isSecondInnings && inn2 && (
           <div className="mt-6 bg-indigo-900/20 border border-indigo-500/20 rounded-xl p-3 text-center">
             <div className="text-indigo-300 text-[12px] uppercase font-bold tracking-widest mb-1">
@@ -294,7 +303,6 @@ export default function ScoreSummary({ match }) {
                     </span>{" "}
                     balls
                   </div>
-                  {/* ✨ NEW: Required Run Rate */}
                   <div className="text-[11px] text-indigo-300 mt-1 font-mono">
                     Required RR:{" "}
                     <span className="text-white font-bold">{rrr}</span>
@@ -353,7 +361,7 @@ export default function ScoreSummary({ match }) {
             )}
           </div>
 
-          {/* ✨ NEW: RECENT BALLS TIMELINE (Fixed) */}
+          {/* RECENT BALLS TIMELINE */}
           {recentTimeline.length > 0 && (
             <div className="mb-5">
               <div className="text-[10px] text-slate-600 uppercase font-bold mb-2 pl-1">
@@ -361,18 +369,14 @@ export default function ScoreSummary({ match }) {
               </div>
               <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2 h-12">
                 {recentTimeline.map((ball, i, arr) => {
-                  // Safety: Ensure ball is an object
                   if (!ball || typeof ball !== "object") return null;
 
-                  // 1. Divider Logic
-                  // We show a divider if the 'over' number changes between this ball and the previous one
                   const showDivider =
                     i > 0 &&
                     ball.over !== undefined &&
                     arr[i - 1]?.over !== undefined &&
                     ball.over !== arr[i - 1].over;
 
-                  // 2. Styling Logic
                   let val = ball.runs;
                   let colorClass = "bg-slate-800 text-slate-400 border-white/5";
 
@@ -400,12 +404,9 @@ export default function ScoreSummary({ match }) {
 
                   return (
                     <React.Fragment key={i}>
-                      {/* Vertical Divider Line */}
                       {showDivider && (
                         <div className="w-[2px] h-5 bg-slate-600 rounded-full mx-0.5 flex-shrink-0 opacity-50"></div>
                       )}
-
-                      {/* Ball Circle */}
                       <div
                         className={`w-9 h-9 rounded-full flex flex-shrink-0 items-center justify-center text-xs border ${colorClass} transition-all`}>
                         {val}
@@ -472,7 +473,7 @@ export default function ScoreSummary({ match }) {
             label: "Fours",
             value: Object.values(currentInning?.batsmenStats || {}).reduce(
               (acc, p) => acc + (p.fours || 0),
-              0,
+              0
             ),
             color: "text-emerald-400",
           },
@@ -480,7 +481,7 @@ export default function ScoreSummary({ match }) {
             label: "Sixes",
             value: Object.values(currentInning?.batsmenStats || {}).reduce(
               (acc, p) => acc + (p.sixes || 0),
-              0,
+              0
             ),
             color: "text-indigo-400",
           },
