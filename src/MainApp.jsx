@@ -31,6 +31,7 @@ import AuctionDashboard from "./components/AuctionDashboard.jsx";
 import GlobalPlayerRegistration from "./components/GlobalPlayerRegistration.jsx";
 import PastLeague from "./components/PastLeague.jsx";
 import MatchOverlay from "./components/Overlay/MatchOverlay.jsx";
+import TournamentBanner from "./components/Overlay/TournamentBanner.jsx";
 
 export default function MainApp() {
   const navigate = useNavigate();
@@ -258,6 +259,7 @@ export default function MainApp() {
             path="/overlay/:tournamentId/:matchId"
             element={<MatchOverlay />}
           />
+          <Route path="/tournament-banner/:tournamentId" element={<TournamentBanner />} />
 
           <Route
             path="/matches"
