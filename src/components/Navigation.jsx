@@ -3,6 +3,9 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { auth, db } from "../utils/firebase";
 import { doc, getDoc, onSnapshot } from "firebase/firestore";
+// 1. IMPORT THEME HOOK & ICONS
+import { useTheme } from "../context/ThemeContext";
+import { Sun, Moon } from "lucide-react";
 
 export default function Navigation() {
   const [isOpen, setIsOpen] = useState(false);
@@ -11,6 +14,9 @@ export default function Navigation() {
   const location = useLocation();
   const [profileData, setProfileData] = useState(null);
   const [isAuctionEnabled, setIsAuctionEnabled] = useState(false);
+
+  // 2. CONSUME THEME
+  const { theme, toggleTheme, lightMode } = useTheme();
 
   // --- Fetch Profile Logic ---
   useEffect(() => {
@@ -29,7 +35,7 @@ export default function Navigation() {
     fetchProfileData();
   }, [user]);
 
-  // --- Dynamic Links Logic (Extract ID) ---
+  // --- Dynamic Links Logic ---
   const pathSegments = location.pathname.split("/");
   const tournamentIndex = pathSegments.indexOf("tournaments");
   const tournamentId =
@@ -37,19 +43,18 @@ export default function Navigation() {
       ? pathSegments[tournamentIndex + 1]
       : null;
 
-  // --- NEW: Check if Auction is Enabled for current tournament ---
+  // --- Auction Logic ---
   useEffect(() => {
     if (tournamentId && tournamentId !== "auction") {
       const unsub = onSnapshot(
         doc(db, "tournaments", tournamentId),
         (docSnap) => {
           if (docSnap.exists()) {
-            // Check the flag in the database
             setIsAuctionEnabled(docSnap.data().isAuction === true);
           } else {
             setIsAuctionEnabled(false);
           }
-        }
+        },
       );
       return () => unsub();
     } else {
@@ -57,7 +62,7 @@ export default function Navigation() {
     }
   }, [tournamentId]);
 
-  // Block body scroll when menu is open
+  // Block scroll on mobile menu
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden";
@@ -74,18 +79,14 @@ export default function Navigation() {
 
   const displayImage = profileData?.photoURL || user?.photoURL || null;
 
-  // 1. Base Public Links
+  // Links Array
   const links = [
     { name: "Home", path: "/" },
     { name: "Global Stats", path: "/players" },
   ];
 
-  // 2. Contextual Links (Only if inside a tournament)
   if (tournamentId && tournamentId !== "auction") {
-    // Public tournament view
     links.push({ name: "Tournament", path: `/tournaments/${tournamentId}` });
-
-    // ✅ Protected: Only show Auction Room if logged in AND Auction is Enabled
     if (user && isAuctionEnabled) {
       links.push({
         name: "Auction Room",
@@ -94,7 +95,6 @@ export default function Navigation() {
     }
   }
 
-  // 3. Authenticated User Links
   if (user) {
     links.push({ name: "Dashboard", path: "/dashboard" });
   }
@@ -116,7 +116,8 @@ export default function Navigation() {
         <span className="text-white text-lg font-bold">⚡</span>
       </div>
       <div className="flex flex-col leading-none">
-        <span className="text-white font-black text-xl tracking-tighter uppercase">
+        <span
+          className={`font-black text-xl tracking-tighter uppercase ${lightMode ? "text-gray-900" : "text-white"}`}>
           CRIC
         </span>
         <span className="text-cyan-500 font-black text-[10px] tracking-[0.3em] uppercase ml-0.5">
@@ -128,8 +129,14 @@ export default function Navigation() {
 
   return (
     <>
-      {/* 1. MAIN NAVBAR CONTAINER */}
-      <nav className="bg-black/90 border-b border-white/5 sticky top-0 z-[100] backdrop-blur-xl h-16 flex items-center shadow-2xl">
+      {/* 1. MAIN NAVBAR CONTAINER (Dynamic Colors) */}
+      <nav
+        className={`sticky top-0 z-[100] backdrop-blur-xl h-16 flex items-center shadow-sm border-b transition-colors duration-300
+        ${
+          lightMode
+            ? "bg-white/90 border-gray-200 text-gray-900"
+            : "bg-black/90 border-white/5 text-white"
+        }`}>
         <div className="container mx-auto px-5 flex justify-between items-center">
           <Logo />
 
@@ -140,18 +147,32 @@ export default function Navigation() {
                 to={link.path}
                 className={`text-[11px] font-black uppercase tracking-widest transition-all ${
                   isActive(link.path)
-                    ? "text-cyan-400"
-                    : "text-gray-500 hover:text-white"
+                    ? "text-cyan-500"
+                    : lightMode
+                      ? "text-gray-500 hover:text-black"
+                      : "text-gray-500 hover:text-white"
                 }`}>
                 {link.name}
               </Link>
             ))}
 
+            {/* --- DESKTOP THEME TOGGLE --- */}
+            <button
+              onClick={toggleTheme}
+              className={`p-2 rounded-full transition-all active:scale-95 ${
+                lightMode
+                  ? "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  : "bg-white/5 text-gray-400 hover:text-white hover:bg-white/10"
+              }`}>
+              {lightMode ? <Moon size={18} /> : <Sun size={18} />}
+            </button>
+
             {user ? (
-              <div className="flex items-center gap-5 border-l border-white/10 pl-5">
+              <div
+                className={`flex items-center gap-5 border-l pl-5 ${lightMode ? "border-gray-300" : "border-white/10"}`}>
                 <Link
                   to="/profile"
-                  className="w-9 h-9 rounded-full border border-white/10 overflow-hidden hover:border-cyan-500 transition-all shadow-lg">
+                  className={`w-9 h-9 rounded-full border overflow-hidden hover:border-cyan-500 transition-all shadow-lg ${lightMode ? "border-gray-200" : "border-white/10"}`}>
                   {displayImage ? (
                     <img
                       src={displayImage}
@@ -174,12 +195,14 @@ export default function Navigation() {
               <div className="flex items-center gap-4">
                 <Link
                   to="/register-player"
-                  className="text-[10px] font-black uppercase text-gray-400 hover:text-white transition-colors">
+                  className={`text-[10px] font-black uppercase transition-colors ${lightMode ? "text-gray-500 hover:text-black" : "text-gray-400 hover:text-white"}`}>
                   Register Player
                 </Link>
                 <Link
                   to="/login"
-                  className="bg-white text-black text-[11px] font-black uppercase px-6 py-2 rounded-full hover:bg-cyan-500 hover:text-white transition-all">
+                  className={`text-[11px] font-black uppercase px-6 py-2 rounded-full hover:bg-cyan-500 hover:text-white transition-all ${
+                    lightMode ? "bg-black text-white" : "bg-white text-black"
+                  }`}>
                   Login
                 </Link>
               </div>
@@ -188,7 +211,11 @@ export default function Navigation() {
 
           <button
             onClick={() => setIsOpen(true)}
-            className="md:hidden w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white active:scale-90 transition-transform">
+            className={`md:hidden w-10 h-10 rounded-xl border flex items-center justify-center active:scale-90 transition-transform ${
+              lightMode
+                ? "bg-gray-100 border-gray-200 text-black"
+                : "bg-white/5 border-white/10 text-white"
+            }`}>
             <svg
               className="w-6 h-6"
               fill="none"
@@ -213,29 +240,53 @@ export default function Navigation() {
             onClick={() => setIsOpen(false)}
           />
 
-          <div className="absolute inset-y-0 right-0 w-full bg-black border-l border-white/10 shadow-2xl flex flex-col animate-in slide-in-from-right duration-500">
-            <div className="flex justify-between items-center px-6 h-20 border-b border-white/5 bg-black">
+          <div
+            className={`absolute inset-y-0 right-0 w-full border-l shadow-2xl flex flex-col animate-in slide-in-from-right duration-500 ${
+              lightMode
+                ? "bg-white border-gray-200 text-gray-900"
+                : "bg-black border-white/10 text-white"
+            }`}>
+            <div
+              className={`flex justify-between items-center px-6 h-20 border-b ${lightMode ? "border-gray-200" : "border-white/5 bg-black"}`}>
               <Logo />
-              <button
-                onClick={() => setIsOpen(false)}
-                className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white transition-all active:scale-90">
-                <svg
-                  className="w-6 h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={3}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
+
+              <div className="flex gap-3">
+                {/* --- MOBILE THEME TOGGLE --- */}
+                <button
+                  onClick={toggleTheme}
+                  className={`w-12 h-12 rounded-2xl border flex items-center justify-center transition-all active:scale-90 ${
+                    lightMode
+                      ? "bg-gray-100 border-gray-200 text-gray-600"
+                      : "bg-white/5 border-white/10 text-white"
+                  }`}>
+                  {lightMode ? <Moon size={20} /> : <Sun size={20} />}
+                </button>
+
+                <button
+                  onClick={() => setIsOpen(false)}
+                  className={`w-12 h-12 rounded-2xl border flex items-center justify-center transition-all active:scale-90 ${
+                    lightMode
+                      ? "bg-gray-100 border-gray-200 text-gray-900"
+                      : "bg-white/5 border-white/10 text-white"
+                  }`}>
+                  <svg
+                    className="w-6 h-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={3}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 flex flex-col">
-              <label className="text-[10px] font-black text-gray-600 uppercase tracking-[0.4em] mb-8 block">
+              <label className="text-[10px] font-black text-gray-500 uppercase tracking-[0.4em] mb-8 block">
                 Navigation
               </label>
 
@@ -248,7 +299,9 @@ export default function Navigation() {
                     className={`flex items-center justify-between p-6 rounded-[2rem] text-xl font-black uppercase tracking-tighter transition-all active:scale-95 ${
                       isActive(link.path)
                         ? "bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-xl shadow-cyan-500/20"
-                        : "bg-white/5 border border-white/5 text-gray-400"
+                        : lightMode
+                          ? "bg-gray-100 border border-gray-200 text-gray-600"
+                          : "bg-white/5 border border-white/5 text-gray-400"
                     }`}>
                     {link.name}
                     {isActive(link.path) && (
@@ -264,13 +317,21 @@ export default function Navigation() {
                     <Link
                       to="/register-player"
                       onClick={() => setIsOpen(false)}
-                      className="w-full py-5 rounded-[2rem] bg-white/5 border border-white/10 text-white text-center font-black uppercase tracking-widest text-xs">
+                      className={`w-full py-5 rounded-[2rem] border text-center font-black uppercase tracking-widest text-xs ${
+                        lightMode
+                          ? "bg-gray-100 border-gray-200 text-gray-900"
+                          : "bg-white/5 border-white/10 text-white"
+                      }`}>
                       Register Player
                     </Link>
                     <Link
                       to="/login"
                       onClick={() => setIsOpen(false)}
-                      className="w-full py-5 rounded-[2rem] bg-white text-black text-center font-black uppercase tracking-widest text-sm shadow-xl">
+                      className={`w-full py-5 rounded-[2rem] text-center font-black uppercase tracking-widest text-sm shadow-xl ${
+                        lightMode
+                          ? "bg-black text-white"
+                          : "bg-white text-black"
+                      }`}>
                       Login
                     </Link>
                   </div>
@@ -279,7 +340,11 @@ export default function Navigation() {
                     <Link
                       to="/profile"
                       onClick={() => setIsOpen(false)}
-                      className="flex flex-col items-center justify-center gap-2 p-6 rounded-[2.5rem] bg-white/5 border border-white/10 transition-colors active:bg-white/10">
+                      className={`flex flex-col items-center justify-center gap-2 p-6 rounded-[2.5rem] border transition-colors ${
+                        lightMode
+                          ? "bg-gray-100 border-gray-200 text-gray-900 active:bg-gray-200"
+                          : "bg-white/5 border-white/10 text-white active:bg-white/10"
+                      }`}>
                       <span className="text-2xl">👤</span>
                       <span className="text-[10px] font-black text-gray-500 uppercase">
                         Profile

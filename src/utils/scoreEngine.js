@@ -1,5 +1,10 @@
 // src/utils/scoreEngine.js
 
+/**
+ * 🧠 THE CORE CALCULATION ENGINE
+ * This function takes the full history (timeline) and calculates the exact score,
+ * stats, and current match state from scratch.
+ */
 export const calculateMatchStats = (timeline, matchMeta) => {
   const stats = {
     score: 0,
@@ -66,8 +71,9 @@ export const calculateMatchStats = (timeline, matchMeta) => {
     } = ballData;
 
     // ✅ CRITICAL: Replay the history using the batter/bowler recorded at the time
-    const currentStriker = ballData.batter || stats.striker;
-    const currentBowler = ballData.bowler || stats.currentBowler;
+    // If not found in ball data, fall back to current calculated state
+    const currentStriker = ballData.striker?.name || ballData.batter || (typeof stats.striker === 'object' ? stats.striker.name : stats.striker);
+    const currentBowler = ballData.bowler?.name || ballData.bowler || (typeof stats.currentBowler === 'object' ? stats.currentBowler.name : stats.currentBowler);
 
     initBat(currentStriker);
     initBowl(currentBowler);
@@ -140,12 +146,12 @@ export const calculateMatchStats = (timeline, matchMeta) => {
 
     // 5. Strike Rotation Logic (The "Heart" Fix)
     // We only perform rotation if it's NOT the last ball, OR if we have the explicit next states
-    if (ballData.nextStriker !== undefined) {
-      stats.striker = ballData.nextStriker;
-      stats.nonStriker = ballData.nextNonStriker;
-      stats.currentBowler = ballData.nextBowler || currentBowler;
-    } else {
-      // Fallback for logic without explicit snapshots
+    if (ballData.nextStriker) stats.striker = ballData.nextStriker;
+    if (ballData.nextNonStriker) stats.nonStriker = ballData.nextNonStriker;
+    if (ballData.nextBowler) stats.currentBowler = ballData.nextBowler;
+    
+    // Fallback: If no explicit next state, calculate based on runs
+    if (!ballData.nextStriker && !ballData.nextNonStriker) {
       let shouldSwap = (physicalRuns || batterRuns) % 2 !== 0;
       if (shouldSwap) {
         const temp = stats.striker;
@@ -162,8 +168,7 @@ export const calculateMatchStats = (timeline, matchMeta) => {
         stats.overBallCount = 0;
 
         // ✅ Only rotate strike on over end if NO wicket fell on this ball
-        // If a wicket fell, the rotation happens when the new batsman is confirmed
-        if (!isWicket && ballData.nextStriker === undefined) {
+        if (!isWicket && !ballData.nextStriker) {
           const temp = stats.striker;
           stats.striker = stats.nonStriker;
           stats.nonStriker = temp;
@@ -180,4 +185,34 @@ export const calculateMatchStats = (timeline, matchMeta) => {
   });
 
   return stats;
+};
+
+
+/**
+ * 🛠️ DATA HELPER
+ * Standardizes the Ball Object before it goes into the timeline.
+ * This is used by ScoreInput.jsx to keep data clean.
+ */
+export const createBallObject = (data, currentContext) => {
+    return {
+        // Core Scoring Data
+        runs: data.runs || 0,
+        extras: data.extras || 0,
+        isWide: data.isWide || false,
+        isNoBall: data.isNoBall || false,
+        extraType: data.extraType || null,
+        
+        // Wicket Data
+        isWicket: data.isWicket || false,
+        wicketType: data.wicketType || null,
+        playerOutId: data.playerOutId || null,
+        
+        // Context Snapshots (Who did what)
+        striker: currentContext.striker, 
+        nonStriker: currentContext.nonStriker,
+        bowler: currentContext.bowler,
+        
+        // Timestamps & Meta
+        timestamp: new Date().toISOString()
+    };
 };

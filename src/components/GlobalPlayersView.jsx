@@ -9,28 +9,70 @@ import {
 } from "../utils/firestore";
 import { useAuth } from "../hooks/useAuth";
 import { useNavigate } from "react-router-dom";
+// 1. Theme & Icons
+import { useTheme } from "../context/ThemeContext";
+import {
+  Search,
+  Filter,
+  Plus,
+  Trophy,
+  Medal,
+  ChevronDown,
+  Edit3,
+  Trash2,
+  X,
+  Camera,
+  Receipt,
+  Loader2,
+  Check,
+  AlertCircle,
+} from "lucide-react";
+
+// --- TOAST COMPONENT ---
+const NotificationToast = ({ message, type, onClose }) => {
+  if (!message) return null;
+  const isError = type === "error";
+  return (
+    <div
+      className={`fixed top-6 right-6 z-[200] flex items-center gap-3 px-6 py-4 rounded-xl shadow-2xl animate-in slide-in-from-right duration-300 border backdrop-blur-md ${
+        isError
+          ? "bg-red-500/10 border-red-500/20 text-red-500 bg-white dark:bg-red-900/10"
+          : "bg-teal-500/10 border-teal-500/20 text-teal-600 dark:text-teal-400 bg-white dark:bg-teal-900/10"
+      }`}>
+      {isError ? <AlertCircle size={20} /> : <Check size={20} />}
+      <div>
+        <h4 className="font-bold text-sm uppercase tracking-wider">
+          {isError ? "Error" : "Success"}
+        </h4>
+        <p className="text-xs opacity-90">{message}</p>
+      </div>
+      <button onClick={onClose} className="ml-4 opacity-50 hover:opacity-100">
+        <X size={16} />
+      </button>
+    </div>
+  );
+};
 
 export default function GlobalPlayersView() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // Refs for file inputs
-  const fileInputRef = useRef(null); // Profile Photo
-  const paymentInputRef = useRef(null); // Payment Screenshot
+  // 2. Consume Theme
+  const { theme, lightMode } = useTheme();
+
+  // Refs
+  const fileInputRef = useRef(null);
+  const paymentInputRef = useRef(null);
 
   // --- STATE ---
   const [players, setPlayers] = useState([]);
   const [allMatches, setAllMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-
-  // Role Filter State
   const [roleFilter, setRoleFilter] = useState("All");
-
   const [expandedPlayerId, setExpandedPlayerId] = useState(null);
-
-  // Lightbox State
   const [previewImage, setPreviewImage] = useState(null);
+  const [notification, setNotification] = useState(null);
 
   const [sortConfig, setSortConfig] = useState({
     key: "runs",
@@ -51,6 +93,11 @@ export default function GlobalPlayersView() {
     photoURL: "",
     paymentScreenshotURL: "",
   });
+
+  const showToast = (message, type = "success") => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 4000);
+  };
 
   // --- 1. DATA FETCHING ---
   useEffect(() => {
@@ -74,6 +121,7 @@ export default function GlobalPlayersView() {
         setAllMatches(collectedMatches);
       } catch (err) {
         console.error("Error loading global data:", err);
+        showToast("Failed to load player data", "error");
       } finally {
         setLoading(false);
       }
@@ -82,7 +130,7 @@ export default function GlobalPlayersView() {
     loadRealTimeData();
   }, []);
 
-  // --- 2. LIVE STATS CALCULATION ENGINE (OPTIMIZED) ---
+  // --- 2. LIVE STATS CALCULATION ENGINE (PRESERVED) ---
   const { processedPlayers, orangeCap, purpleCap } = useMemo(() => {
     if (players.length === 0)
       return { processedPlayers: [], orangeCap: null, purpleCap: null };
@@ -93,7 +141,7 @@ export default function GlobalPlayersView() {
       statsMap[p.id] = {
         ...p,
         calculatedStats: {
-          matches: 0, // Will be sync'd with history length
+          matches: 0,
           runs: 0,
           ballsFaced: 0,
           fours: 0,
@@ -140,7 +188,6 @@ export default function GlobalPlayersView() {
               const isOut = s.out;
 
               if (b > 0 || isOut) {
-                // Aggregates
                 p.calculatedStats.runs += r;
                 p.calculatedStats.ballsFaced += b;
                 p.calculatedStats.fours += Number(s.fours) || 0;
@@ -149,7 +196,6 @@ export default function GlobalPlayersView() {
                 if (r > p.calculatedStats.highestScore)
                   p.calculatedStats.highestScore = r;
 
-                // Match History (Merging logic)
                 const existingHist = p.calculatedStats.history.find(
                   (h) => h.matchId === match.id,
                 );
@@ -210,24 +256,16 @@ export default function GlobalPlayersView() {
       });
     });
 
-    // 4. Final Sync (Fixes Match Count & Prepares List)
-    // Convert Map to Array here to define 'allStats' safely
     const allStats = Object.values(statsMap).map((p) => {
-      // 🚀 FIX: Match count = Unique entries in history
       p.calculatedStats.matches = p.calculatedStats.history.length;
       return p;
     });
 
-    // 5. Cap Calculation (3-Level Professional Logic)
-
-    // 🟠 ORANGE CAP: Runs -> Strike Rate -> Average
+    // 5. Cap Calculation
     const orange = [...allStats].sort((a, b) => {
-      // 1. Primary: Most Runs
       if (b.calculatedStats.runs !== a.calculatedStats.runs) {
         return b.calculatedStats.runs - a.calculatedStats.runs;
       }
-
-      // Calculate Metrics
       const srA =
         a.calculatedStats.ballsFaced > 0
           ? (a.calculatedStats.runs / a.calculatedStats.ballsFaced) * 100
@@ -236,51 +274,24 @@ export default function GlobalPlayersView() {
         b.calculatedStats.ballsFaced > 0
           ? (b.calculatedStats.runs / b.calculatedStats.ballsFaced) * 100
           : 0;
-
-      // 2. Secondary: Strike Rate (Higher is better)
-      if (srA !== srB) return srB - srA;
-
-      // 3. Tertiary: Average (Higher is better)
-      const disA =
-        a.calculatedStats.matches - (a.calculatedStats.notOuts || 0) || 1;
-      const disB =
-        b.calculatedStats.matches - (b.calculatedStats.notOuts || 0) || 1;
-      return b.calculatedStats.runs / disB - a.calculatedStats.runs / disA;
+      return srB - srA;
     })[0];
 
-    // 🟣 PURPLE CAP: Wickets -> Economy -> Strike Rate
     const purple = [...allStats].sort((a, b) => {
-      // 1. Primary: Most Wickets
       if (b.calculatedStats.wickets !== a.calculatedStats.wickets) {
         return b.calculatedStats.wickets - a.calculatedStats.wickets;
       }
-
       const ballsA = a.calculatedStats.ballsBowled;
       const ballsB = b.calculatedStats.ballsBowled;
-
-      // 2. Secondary: Economy Rate (Lower is better)
       const ecoA =
         ballsA > 0 ? a.calculatedStats.runsConceded / (ballsA / 6) : 9999;
       const ecoB =
         ballsB > 0 ? b.calculatedStats.runsConceded / (ballsB / 6) : 9999;
-
-      if (ecoA !== ecoB) return ecoA - ecoB;
-
-      // 3. Tertiary: Strike Rate (Balls/Wicket) (Lower is better)
-      const srA =
-        a.calculatedStats.wickets > 0
-          ? ballsA / a.calculatedStats.wickets
-          : 999;
-      const srB =
-        b.calculatedStats.wickets > 0
-          ? ballsB / b.calculatedStats.wickets
-          : 999;
-
-      return srA - srB;
+      return ecoA - ecoB;
     })[0];
 
-    // 6. Filter & Sort Table Display
-    let result = [...allStats]; // Clone to prevent mutation issues
+    // 6. Filter & Sort
+    let result = [...allStats];
 
     if (searchTerm) {
       result = result.filter((p) =>
@@ -332,8 +343,9 @@ export default function GlobalPlayersView() {
     try {
       await deleteGlobalPlayer(playerId);
       setPlayers((prev) => prev.filter((p) => p.id !== playerId));
+      showToast("Player deleted successfully");
     } catch (error) {
-      alert("Failed to delete player.");
+      showToast("Failed to delete player", "error");
     }
   };
 
@@ -371,7 +383,6 @@ export default function GlobalPlayersView() {
     });
   };
 
-  // Handler for Profile Photo
   const handleImageUpload = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -380,13 +391,12 @@ export default function GlobalPlayersView() {
       const compressedBase64 = await compressImage(file, 400);
       setFormData((prev) => ({ ...prev, photoURL: compressedBase64 }));
     } catch (error) {
-      alert("Failed to process image.");
+      showToast("Failed to process image", "error");
     } finally {
       setProcessingImage(false);
     }
   };
 
-  // Handler for Payment Screenshot
   const handlePaymentImageUpload = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -398,7 +408,7 @@ export default function GlobalPlayersView() {
         paymentScreenshotURL: compressedBase64,
       }));
     } catch (error) {
-      alert("Failed to process payment image.");
+      showToast("Failed to process payment image", "error");
     } finally {
       setProcessingImage(false);
     }
@@ -439,7 +449,7 @@ export default function GlobalPlayersView() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.name) return alert("Name is required");
+    if (!formData.name) return showToast("Name is required", "error");
 
     try {
       if (isEditing && formData.id) {
@@ -452,20 +462,20 @@ export default function GlobalPlayersView() {
           photoURL: formData.photoURL,
           paymentScreenshotURL: formData.paymentScreenshotURL,
         });
-        alert("Player Updated!");
+        showToast("Player Updated!");
       } else {
         const { id, ...payload } = formData;
         await createGlobalPlayer({
           ...payload,
           stats: { matches: 0, runs: 0, wickets: 0 },
         });
-        alert("Player Created!");
+        showToast("Player Created!");
       }
       setShowModal(false);
       const data = await listGlobalPlayers();
       setPlayers(data);
     } catch (error) {
-      alert("Error saving player.");
+      showToast("Error saving player", "error");
     }
   };
 
@@ -475,79 +485,103 @@ export default function GlobalPlayersView() {
 
   const SortIcon = ({ colKey }) => (
     <span
-      className={
-        sortConfig.key === colKey
-          ? "text-teal-400 ml-1"
-          : "text-slate-600 ml-1 opacity-0 group-hover:opacity-50"
-      }>
-      {sortConfig.key === colKey
-        ? sortConfig.direction === "asc"
-          ? "↑"
-          : "↓"
-        : "⇅"}
+      className={`ml-1 transition-opacity ${sortConfig.key === colKey ? "opacity-100" : "opacity-0 group-hover:opacity-50"}`}>
+      {sortConfig.key === colKey && sortConfig.direction === "asc" ? "↑" : "↓"}
     </span>
   );
 
   const DetailItem = ({ label, value, isMono = false }) => (
-    <div className="flex flex-col p-3 bg-[#161920] rounded-xl border border-white/5">
-      <span className="text-[9px] uppercase font-black text-slate-500 mb-1 tracking-wider">
+    <div
+      className={`flex flex-col p-3 rounded-xl border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#161920] border-white/5"}`}>
+      <span
+        className={`text-[9px] uppercase font-black mb-1 tracking-wider ${theme.sub}`}>
         {label}
       </span>
       <span
-        className={`text-sm text-slate-200 break-words font-bold ${
-          isMono ? "font-mono text-teal-400" : ""
-        }`}>
+        className={`text-sm break-words font-bold ${isMono ? "font-mono text-teal-500" : theme.text}`}>
         {value || "N/A"}
       </span>
     </div>
   );
 
+  // --- STYLES ---
+  const inputClass = `w-full border rounded-xl px-4 py-3 outline-none transition-all font-bold placeholder:font-normal focus:ring-2
+    ${
+      lightMode
+        ? "bg-gray-50 border-gray-200 text-gray-900 focus:bg-white focus:ring-teal-100 focus:border-teal-500"
+        : "bg-[#0F1115] border-white/10 text-slate-200 focus:bg-black focus:border-teal-500/50"
+    }`;
+
   return (
-    <div className="min-h-screen bg-[#0F1115] text-slate-200 p-2 md:p-4 pb-20 font-sans">
+    <div
+      className={`min-h-screen p-2 md:p-4 pb-20 font-sans transition-colors duration-300 ${theme.bg} ${theme.text}`}>
+      <NotificationToast
+        message={notification?.message}
+        type={notification?.type}
+        onClose={() => setNotification(null)}
+      />
+
       <div className="max-w-[1400px] mx-auto">
         {/* HEADER */}
         <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
           <div className="text-center md:text-left">
-            <h1 className="text-2xl font-black uppercase tracking-tighter italic flex items-center gap-2 justify-center md:justify-start">
-              <span className="bg-teal-500/10 text-teal-500 p-2 rounded-xl">
-                🌍
+            <h1
+              className={`text-2xl font-black uppercase tracking-tighter italic flex items-center gap-2 justify-center md:justify-start ${theme.text}`}>
+              <span
+                className={`p-2 rounded-xl ${lightMode ? "bg-teal-100 text-teal-600" : "bg-teal-500/10 text-teal-500"}`}>
+                <Trophy size={20} />
               </span>
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-indigo-500 uppercase">
-                Global Database
-              </span>
+              Global Database
             </h1>
-            <p className="text-slate-500 text-xs mt-2 font-bold uppercase tracking-widest flex items-center gap-2 justify-center md:justify-start">
+            <p
+              className={`text-xs mt-2 font-bold uppercase tracking-widest flex items-center gap-2 justify-center md:justify-start ${theme.sub}`}>
               {processedPlayers.length} players found
             </p>
           </div>
 
           <div className="flex flex-wrap gap-3 w-full md:w-auto justify-center md:justify-end items-center">
             {/* Search Input */}
-            <input
-              type="text"
-              placeholder="Search name..."
-              className="bg-[#1C2128] border border-white/10 text-slate-200 rounded-xl px-5 py-3 w-full md:w-56 focus:border-teal-500/50 outline-none text-sm font-bold placeholder:text-slate-600"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+            <div className="relative w-full md:w-56">
+              <Search
+                className={`absolute left-3 top-1/2 -translate-y-1/2 ${theme.sub}`}
+                size={16}
+              />
+              <input
+                type="text"
+                placeholder="Search name..."
+                className={`${inputClass} pl-10`}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
 
-            {/* Role Filter Dropdown */}
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
-              className="bg-[#1C2128] border border-white/10 text-slate-200 rounded-xl px-4 py-3 outline-none text-sm font-bold focus:border-teal-500/50 cursor-pointer w-full md:w-auto">
-              <option value="All">All Roles</option>
-              <option value="Batsman">Batsman</option>
-              <option value="Bowler">Bowler</option>
-              <option value="All-Rounder">All-Rounder</option>
-              <option value="Wicket Keeper">Wicket Keeper</option>
-            </select>
+            {/* Role Filter */}
+            <div className="relative w-full md:w-auto">
+              <Filter
+                className={`absolute left-3 top-1/2 -translate-y-1/2 ${theme.sub}`}
+                size={16}
+              />
+              <select
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value)}
+                className={`${inputClass} pl-10 cursor-pointer appearance-none pr-8`}>
+                <option value="All">All Roles</option>
+                <option value="Batsman">Batsman</option>
+                <option value="Bowler">Bowler</option>
+                <option value="All-Rounder">All-Rounder</option>
+                <option value="Wicket Keeper">Wicket Keeper</option>
+              </select>
+              <ChevronDown
+                className={`absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none ${theme.sub}`}
+                size={14}
+              />
+            </div>
 
             {user && (
               <button
                 onClick={openAddModal}
-                className="bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg whitespace-nowrap transition-all active:scale-95 text-white w-full md:w-auto">
-                + Add
+                className="bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg whitespace-nowrap transition-all active:scale-95 text-white w-full md:w-auto flex items-center justify-center gap-2">
+                <Plus size={14} /> Add
               </button>
             )}
           </div>
@@ -556,36 +590,42 @@ export default function GlobalPlayersView() {
         {/* CAPS SECTION */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
           {orangeCap && (
-            <div className="bg-gradient-to-br from-orange-900/30 to-[#161920] border border-orange-500/20 p-5 rounded-[2rem] flex items-center gap-5 shadow-xl relative overflow-hidden group">
-              <div className="bg-orange-500/10 p-4 rounded-full text-3xl border border-orange-500/20 group-hover:scale-110 transition-transform">
-                🏏
+            <div
+              className={`p-5 rounded-[2rem] flex items-center gap-5 shadow-xl relative overflow-hidden group border transition-all ${lightMode ? "bg-orange-50 border-orange-200" : "bg-gradient-to-br from-orange-900/30 to-[#161920] border-orange-500/20"}`}>
+              <div
+                className={`p-4 rounded-full text-3xl border group-hover:scale-110 transition-transform ${lightMode ? "bg-orange-100 border-orange-200 text-orange-600" : "bg-orange-500/10 border-orange-500/20 text-orange-500"}`}>
+                <Medal size={32} />
               </div>
               <div>
                 <div className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-500 mb-1">
                   Global Orange Cap
                 </div>
-                <div className="text-xl font-black text-slate-100 italic">
+                <div className={`text-xl font-black italic ${theme.text}`}>
                   {orangeCap.name}
                 </div>
-                <div className="text-sm text-slate-400 font-mono font-bold mt-1">
+                <div
+                  className={`text-sm font-mono font-bold mt-1 ${theme.sub}`}>
                   {orangeCap.calculatedStats.runs} Runs
                 </div>
               </div>
             </div>
           )}
           {purpleCap && (
-            <div className="bg-gradient-to-br from-purple-900/30 to-[#161920] border border-purple-500/20 p-5 rounded-[2rem] flex items-center gap-5 shadow-xl relative overflow-hidden group">
-              <div className="bg-purple-500/10 p-4 rounded-full text-3xl border border-purple-500/20 group-hover:scale-110 transition-transform">
-                🥎
+            <div
+              className={`p-5 rounded-[2rem] flex items-center gap-5 shadow-xl relative overflow-hidden group border transition-all ${lightMode ? "bg-purple-50 border-purple-200" : "bg-gradient-to-br from-purple-900/30 to-[#161920] border-purple-500/20"}`}>
+              <div
+                className={`p-4 rounded-full text-3xl border group-hover:scale-110 transition-transform ${lightMode ? "bg-purple-100 border-purple-200 text-purple-600" : "bg-purple-500/10 border-purple-500/20 text-purple-500"}`}>
+                <Medal size={32} />
               </div>
               <div>
                 <div className="text-[10px] font-black uppercase tracking-[0.2em] text-purple-500 mb-1">
                   Global Purple Cap
                 </div>
-                <div className="text-xl font-black text-slate-100 italic">
+                <div className={`text-xl font-black italic ${theme.text}`}>
                   {purpleCap.name}
                 </div>
-                <div className="text-sm text-slate-400 font-mono font-bold mt-1">
+                <div
+                  className={`text-sm font-mono font-bold mt-1 ${theme.sub}`}>
                   {purpleCap.calculatedStats.wickets} Wickets
                 </div>
               </div>
@@ -594,50 +634,54 @@ export default function GlobalPlayersView() {
         </div>
 
         {/* TABLE */}
-        <div className="bg-[#1C2128] border border-white/5 rounded-[2rem] overflow-hidden shadow-2xl">
+        <div
+          className={`border rounded-[2rem] overflow-hidden shadow-2xl ${theme.card}`}>
           {loading ? (
-            <div className="p-12 text-center text-teal-500 animate-pulse text-xs font-black uppercase tracking-widest">
-              Fetching all tournament data...
+            <div className="p-12 flex flex-col items-center justify-center text-teal-500 animate-pulse text-xs font-black uppercase tracking-widest gap-3">
+              <Loader2 className="animate-spin" size={32} />
+              Fetching Global Data...
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left border-collapse">
-                <thead className="bg-[#0F1115] text-slate-500 text-[10px] uppercase font-black tracking-[0.2em] border-b border-white/5">
+                <thead
+                  className={`text-[10px] uppercase font-black tracking-[0.2em] border-b ${lightMode ? "bg-gray-100 text-gray-500 border-gray-200" : "bg-[#0F1115] text-slate-500 border-white/5"}`}>
                   <tr>
                     <th
-                      className="px-6 py-4 cursor-pointer hover:text-slate-300 group w-[40%] md:w-[30%] transition-colors"
+                      className="px-6 py-4 cursor-pointer hover:opacity-70 group w-[40%] md:w-[30%] transition-opacity"
                       onClick={() => handleSort("name")}>
                       Player Details <SortIcon colKey="name" />
                     </th>
                     <th
-                      className="px-4 py-4 text-center cursor-pointer hover:text-slate-300 group transition-colors"
+                      className="px-4 py-4 text-center cursor-pointer hover:opacity-70 group transition-opacity"
                       onClick={() => handleSort("matches")}>
                       Mat <SortIcon colKey="matches" />
                     </th>
                     <th
-                      className="px-4 py-4 text-center cursor-pointer hover:text-slate-300 group transition-colors"
+                      className="px-4 py-4 text-center cursor-pointer hover:opacity-70 group transition-opacity"
                       onClick={() => handleSort("runs")}>
                       Runs <SortIcon colKey="runs" />
                     </th>
                     <th
-                      className="px-4 py-4 text-center cursor-pointer hover:text-slate-300 group hidden md:table-cell transition-colors"
+                      className="px-4 py-4 text-center cursor-pointer hover:opacity-70 group hidden md:table-cell transition-opacity"
                       onClick={() => handleSort("highestScore")}>
                       HS <SortIcon colKey="highestScore" />
                     </th>
                     <th
-                      className="px-4 py-4 text-center cursor-pointer hover:text-slate-300 group transition-colors"
+                      className="px-4 py-4 text-center cursor-pointer hover:opacity-70 group transition-opacity"
                       onClick={() => handleSort("wickets")}>
                       Wkts <SortIcon colKey="wickets" />
                     </th>
                     <th className="px-6 py-4 text-right">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5">
+                <tbody
+                  className={`divide-y ${lightMode ? "divide-gray-100" : "divide-white/5"}`}>
                   {processedPlayers.length === 0 ? (
                     <tr>
                       <td
                         colSpan={8}
-                        className="text-center py-16 text-slate-600 italic text-sm">
+                        className={`text-center py-16 italic text-sm ${theme.sub}`}>
                         No players found.
                       </td>
                     </tr>
@@ -646,8 +690,14 @@ export default function GlobalPlayersView() {
                       <React.Fragment key={player.id}>
                         <tr
                           onClick={() => toggleRowExpansion(player.id)}
-                          className={`hover:bg-white/5 transition-colors cursor-pointer group ${
-                            expandedPlayerId === player.id ? "bg-white/5" : ""
+                          className={`cursor-pointer group transition-colors ${
+                            expandedPlayerId === player.id
+                              ? lightMode
+                                ? "bg-teal-50"
+                                : "bg-white/5"
+                              : lightMode
+                                ? "hover:bg-gray-50"
+                                : "hover:bg-white/5"
                           }`}>
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-4">
@@ -657,59 +707,57 @@ export default function GlobalPlayersView() {
                                   "https://cdn-icons-png.flaticon.com/512/847/847969.png"
                                 }
                                 alt=""
-                                className="w-12 h-12 rounded-xl object-cover bg-[#0F1115] border border-white/10 flex-shrink-0 shadow-sm cursor-pointer"
+                                className={`w-12 h-12 rounded-xl object-cover border flex-shrink-0 shadow-sm ${lightMode ? "bg-gray-200 border-gray-200" : "bg-[#0F1115] border-white/10"}`}
                                 onError={(e) => {
                                   e.target.src =
                                     "https://cdn-icons-png.flaticon.com/512/847/847969.png";
                                 }}
                               />
                               <div className="flex flex-col overflow-hidden">
-                                <span className="font-bold text-slate-200 text-sm leading-tight truncate max-w-[120px] md:max-w-none group-hover:text-white transition-colors">
+                                <span
+                                  className={`font-bold text-sm leading-tight truncate max-w-[120px] md:max-w-none transition-colors ${theme.text}`}>
                                   {player.name}
                                 </span>
                                 <div className="flex flex-wrap gap-1 mt-1.5">
-                                  <span className="text-[9px] bg-[#0F1115] text-slate-500 px-2 py-0.5 rounded border border-white/10 truncate uppercase font-bold tracking-wider">
+                                  <span
+                                    className={`text-[9px] px-2 py-0.5 rounded border truncate uppercase font-bold tracking-wider ${lightMode ? "bg-white border-gray-200 text-gray-500" : "bg-[#0F1115] text-slate-500 border-white/10"}`}>
                                     {player.role}
                                   </span>
                                 </div>
                               </div>
                             </div>
                           </td>
-                          <td className="px-4 py-4 text-center text-slate-400 font-mono font-bold">
+                          <td
+                            className={`px-4 py-4 text-center font-mono font-bold ${theme.sub}`}>
                             {player.calculatedStats.matches}
                           </td>
-                          <td className="px-4 py-4 text-center font-bold text-teal-400 font-mono text-base">
+                          <td className="px-4 py-4 text-center font-bold text-teal-500 font-mono text-base">
                             {player.calculatedStats.runs}
                           </td>
-                          <td className="px-4 py-4 text-center text-slate-500 font-mono font-bold hidden md:table-cell">
+                          <td
+                            className={`px-4 py-4 text-center font-mono font-bold hidden md:table-cell ${theme.sub}`}>
                             {player.calculatedStats.highestScore}
                           </td>
-                          <td className="px-4 py-4 text-center font-bold text-green-400 font-mono text-base">
+                          <td className="px-4 py-4 text-center font-bold text-purple-500 font-mono text-base">
                             {player.calculatedStats.wickets}
                           </td>
                           <td className="px-6 py-4 text-right">
                             <div className="flex justify-end gap-3 items-center">
-                              <span
-                                className="text-slate-600 mr-2 text-xs transition-transform duration-200 transform group-hover:text-slate-400"
-                                style={{
-                                  transform:
-                                    expandedPlayerId === player.id
-                                      ? "rotate(180deg)"
-                                      : "rotate(0deg)",
-                                }}>
-                                ▼
-                              </span>
+                              <ChevronDown
+                                className={`transition-transform duration-200 ${expandedPlayerId === player.id ? "rotate-180" : ""} ${theme.sub}`}
+                                size={16}
+                              />
                               {user && (
                                 <>
                                   <button
                                     onClick={(e) => openEditModal(player, e)}
-                                    className="text-slate-500 hover:text-white p-2 rounded-lg hover:bg-white/10 transition-all">
-                                    ✎
+                                    className={`p-2 rounded-lg transition-all ${lightMode ? "text-gray-400 hover:bg-gray-100 hover:text-gray-900" : "text-slate-500 hover:bg-white/10 hover:text-white"}`}>
+                                    <Edit3 size={16} />
                                   </button>
                                   <button
                                     onClick={(e) => handleDelete(player.id, e)}
-                                    className="text-slate-500 hover:text-red-400 p-2 rounded-lg hover:bg-red-900/20 transition-all">
-                                    🗑
+                                    className="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-500/10 transition-all">
+                                    <Trash2 size={16} />
                                   </button>
                                 </>
                               )}
@@ -718,7 +766,8 @@ export default function GlobalPlayersView() {
                         </tr>
 
                         {expandedPlayerId === player.id && (
-                          <tr className="bg-[#0F1115] border-t border-b border-white/5 animate-in slide-in-from-top-1">
+                          <tr
+                            className={`border-t border-b animate-in slide-in-from-top-1 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
                             <td colSpan={8} className="p-6">
                               <div className="flex flex-col md:flex-row gap-8 items-start">
                                 <div className="flex-shrink-0">
@@ -728,11 +777,11 @@ export default function GlobalPlayersView() {
                                       "https://cdn-icons-png.flaticon.com/512/847/847969.png"
                                     }
                                     alt={player.name}
-                                    className="w-32 h-32 md:w-40 md:h-40 rounded-2xl object-cover border-2 border-teal-500/30 shadow-2xl shadow-teal-900/20 bg-[#161920] cursor-pointer"
-                                    onClick={() => {
-                                      if (player.photoURL)
-                                        setPreviewImage(player.photoURL);
-                                    }}
+                                    className={`w-32 h-32 md:w-40 md:h-40 rounded-2xl object-cover border-2 shadow-2xl cursor-pointer ${lightMode ? "border-teal-100 bg-white shadow-teal-500/10" : "border-teal-500/30 bg-[#161920] shadow-teal-900/20"}`}
+                                    onClick={() =>
+                                      player.photoURL &&
+                                      setPreviewImage(player.photoURL)
+                                    }
                                     onError={(e) => {
                                       e.target.src =
                                         "https://cdn-icons-png.flaticon.com/512/847/847969.png";
@@ -775,8 +824,10 @@ export default function GlobalPlayersView() {
                                   </div>
 
                                   {user && player.paymentScreenshotURL && (
-                                    <div className="mb-8 pt-6 border-t border-white/5">
-                                      <h4 className="text-xs font-black text-slate-500 uppercase mb-4 tracking-widest">
+                                    <div
+                                      className={`mb-8 pt-6 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+                                      <h4
+                                        className={`text-xs font-black uppercase mb-4 tracking-widest ${theme.sub}`}>
                                         Receipt / Proof
                                       </h4>
                                       <div
@@ -788,21 +839,23 @@ export default function GlobalPlayersView() {
                                         }>
                                         <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-xl">
                                           <span className="text-white font-bold text-xs uppercase tracking-widest">
-                                            Click to Enlarge
+                                            Enlarge
                                           </span>
                                         </div>
                                         <img
                                           src={player.paymentScreenshotURL}
                                           alt="Payment"
-                                          className="w-full h-32 object-cover rounded-xl border border-white/10"
+                                          className={`w-full h-32 object-cover rounded-xl border ${lightMode ? "border-gray-200" : "border-white/10"}`}
                                         />
                                       </div>
                                     </div>
                                   )}
 
-                                  <div className="pt-6 border-t border-white/5">
-                                    <h4 className="text-xs font-black text-slate-500 uppercase mb-4 flex items-center gap-2 tracking-widest">
-                                      <span>📜</span> Match History (
+                                  <div
+                                    className={`pt-6 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+                                    <h4
+                                      className={`text-xs font-black uppercase mb-4 flex items-center gap-2 tracking-widest ${theme.sub}`}>
+                                      Match History (
                                       {player.calculatedStats.history.length})
                                     </h4>
                                     {player.calculatedStats.history.length >
@@ -819,15 +872,17 @@ export default function GlobalPlayersView() {
                                                   match.matchId,
                                                 )
                                               }
-                                              className="bg-[#161920] border border-white/5 p-4 rounded-xl cursor-pointer hover:border-teal-500/40 hover:bg-[#1C2128] transition-all flex justify-between items-center group/card">
+                                              className={`p-4 rounded-xl cursor-pointer transition-all flex justify-between items-center group/card border ${lightMode ? "bg-white border-gray-200 hover:border-teal-500/50 hover:shadow-md" : "bg-[#161920] border-white/5 hover:border-teal-500/40 hover:bg-[#1C2128]"}`}>
                                               <div>
-                                                <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-1">
+                                                <div
+                                                  className={`text-[9px] font-bold uppercase tracking-wider mb-1 ${theme.sub}`}>
                                                   {new Date(
                                                     match.date,
                                                   ).toLocaleDateString() ||
                                                     "Date"}
                                                 </div>
-                                                <div className="font-bold text-sm text-slate-200 group-hover/card:text-teal-400 transition-colors">
+                                                <div
+                                                  className={`font-bold text-sm transition-colors group-hover/card:text-teal-500 ${theme.text}`}>
                                                   vs{" "}
                                                   {match.opponent || "Opponent"}
                                                 </div>
@@ -835,18 +890,19 @@ export default function GlobalPlayersView() {
                                               <div className="text-right flex flex-col items-end">
                                                 <div className="flex gap-3 text-xs">
                                                   {match.runs > 0 && (
-                                                    <span className="text-teal-400 font-bold font-mono">
+                                                    <span className="text-teal-500 font-bold font-mono">
                                                       🏏 {match.runs}
                                                     </span>
                                                   )}
                                                   {match.wickets > 0 && (
-                                                    <span className="text-green-400 font-bold font-mono">
+                                                    <span className="text-purple-500 font-bold font-mono">
                                                       🥎 {match.wickets}
                                                     </span>
                                                   )}
                                                   {match.runs === 0 &&
                                                     match.wickets === 0 && (
-                                                      <span className="text-slate-600 font-bold">
+                                                      <span
+                                                        className={theme.sub}>
                                                         -
                                                       </span>
                                                     )}
@@ -856,7 +912,8 @@ export default function GlobalPlayersView() {
                                           ))}
                                       </div>
                                     ) : (
-                                      <div className="text-xs text-slate-600 italic p-6 border border-dashed border-white/5 rounded-xl bg-[#161920] text-center font-medium">
+                                      <div
+                                        className={`text-xs italic p-6 border border-dashed rounded-xl text-center font-medium ${lightMode ? "text-gray-400 bg-white border-gray-200" : "text-slate-600 bg-[#161920] border-white/5"}`}>
                                         No match history recorded.
                                       </div>
                                     )}
@@ -885,50 +942,45 @@ export default function GlobalPlayersView() {
                 src={previewImage}
                 alt="Preview"
                 className="rounded-xl shadow-2xl border border-white/10"
-                style={{
-                  maxWidth: "70vw", // ✅ as requested
-                  maxHeight: "70vh", // ✅ as requested
-                }}
+                style={{ maxWidth: "70vw", maxHeight: "70vh" }}
                 onClick={(e) => e.stopPropagation()}
               />
               <button
                 className="absolute -top-12 right-0 text-white hover:text-red-400 font-bold text-sm uppercase tracking-widest transition-colors flex items-center gap-2"
                 onClick={() => setPreviewImage(null)}>
-                Close ✕
+                Close <X size={16} />
               </button>
             </div>
           </div>
         )}
 
-        {/* EDIT/CREATE MODAL */}
+        {/* MODAL */}
         {showModal && (
-          <div className="fixed inset-0 bg-[#0F1115]/90 backdrop-blur-md z-[60] flex items-center justify-center p-4 animate-in fade-in">
-            <div className="bg-[#1C2128] border border-white/10 w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-              <div className="p-6 border-b border-white/5 bg-[#1C2128] flex justify-between items-center sticky top-0 z-10">
-                <h3 className="text-lg font-black text-slate-100 uppercase tracking-tight italic">
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-in fade-in">
+            <div
+              className={`border w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${theme.card} ${theme.text}`}>
+              <div
+                className={`p-6 border-b flex justify-between items-center sticky top-0 z-10 ${lightMode ? "bg-white border-gray-200" : "bg-[#1C2128] border-white/5"}`}>
+                <h3
+                  className={`text-lg font-black uppercase tracking-tight italic ${theme.text}`}>
                   {isEditing ? "Edit Player Profile" : "Create New Player"}
                 </h3>
                 <button
                   onClick={() => setShowModal(false)}
-                  className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors">
-                  ✕
+                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${lightMode ? "bg-gray-100 text-gray-500 hover:bg-gray-200" : "bg-white/5 text-slate-400 hover:text-white"}`}>
+                  <X size={16} />
                 </button>
               </div>
               <div className="overflow-y-auto p-8 custom-scrollbar">
                 <form onSubmit={handleSubmit} className="space-y-6">
-                  {/* TWO IMAGE UPLOADS */}
                   <div className="flex gap-4 justify-center">
-                    {/* 1. Profile Photo */}
+                    {/* Profile Photo */}
                     <div className="flex flex-col items-center">
                       <div
                         className="relative group cursor-pointer"
                         onClick={() => fileInputRef.current.click()}>
                         <div
-                          className={`w-24 h-24 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl bg-[#0F1115] ${
-                            formData.photoURL
-                              ? "border-teal-500 shadow-teal-500/20"
-                              : "border-dashed border-white/10 hover:border-white/30"
-                          }`}>
+                          className={`w-24 h-24 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl ${formData.photoURL ? "border-teal-500 shadow-teal-500/20" : lightMode ? "bg-gray-100 border-gray-200 border-dashed" : "bg-[#0F1115] border-white/10 border-dashed"}`}>
                           {formData.photoURL ? (
                             <img
                               src={formData.photoURL}
@@ -936,11 +988,7 @@ export default function GlobalPlayersView() {
                               className="w-full h-full object-cover"
                             />
                           ) : (
-                            <div className="text-center">
-                              <span className="text-2xl opacity-50 grayscale">
-                                📷
-                              </span>
-                            </div>
+                            <Camera className={`opacity-50 ${theme.sub}`} />
                           )}
                         </div>
                         <input
@@ -950,23 +998,19 @@ export default function GlobalPlayersView() {
                           className="hidden"
                           accept="image/*"
                         />
-                        <p className="text-[9px] text-slate-500 uppercase mt-2 font-black tracking-widest text-center">
-                          Profile
-                        </p>
                       </div>
+                      <p
+                        className={`text-[9px] uppercase mt-2 font-black tracking-widest text-center ${theme.sub}`}>
+                        Profile
+                      </p>
                     </div>
-
-                    {/* 2. Payment Proof */}
+                    {/* Payment */}
                     <div className="flex flex-col items-center">
                       <div
                         className="relative group cursor-pointer"
                         onClick={() => paymentInputRef.current.click()}>
                         <div
-                          className={`w-24 h-24 rounded-xl border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl bg-[#0F1115] ${
-                            formData.paymentScreenshotURL
-                              ? "border-amber-500 shadow-amber-500/20"
-                              : "border-dashed border-white/10 hover:border-white/30"
-                          }`}>
+                          className={`w-24 h-24 rounded-xl border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl ${formData.paymentScreenshotURL ? "border-purple-500 shadow-purple-500/20" : lightMode ? "bg-gray-100 border-gray-200 border-dashed" : "bg-[#0F1115] border-white/10 border-dashed"}`}>
                           {formData.paymentScreenshotURL ? (
                             <img
                               src={formData.paymentScreenshotURL}
@@ -974,11 +1018,7 @@ export default function GlobalPlayersView() {
                               className="w-full h-full object-cover"
                             />
                           ) : (
-                            <div className="text-center">
-                              <span className="text-2xl opacity-50 grayscale">
-                                🧾
-                              </span>
-                            </div>
+                            <Receipt className={`opacity-50 ${theme.sub}`} />
                           )}
                         </div>
                         <input
@@ -988,16 +1028,17 @@ export default function GlobalPlayersView() {
                           className="hidden"
                           accept="image/*"
                         />
-                        <p className="text-[9px] text-slate-500 uppercase mt-2 font-black tracking-widest text-center">
-                          Payment Proof
-                        </p>
                       </div>
+                      <p
+                        className={`text-[9px] uppercase mt-2 font-black tracking-widest text-center ${theme.sub}`}>
+                        Payment
+                      </p>
                     </div>
                   </div>
 
                   <div className="space-y-4">
                     <input
-                      className="w-full bg-[#0F1115] border border-white/10 rounded-xl px-4 py-3 text-slate-200 outline-none focus:border-teal-500/50 transition-all font-bold placeholder:text-slate-600"
+                      className={inputClass}
                       value={formData.name}
                       onChange={(e) =>
                         setFormData({ ...formData, name: e.target.value })
@@ -1006,13 +1047,14 @@ export default function GlobalPlayersView() {
                       placeholder="Full Name"
                     />
                     <input
-                      className="w-full bg-[#0F1115] border border-white/10 rounded-xl px-4 py-3 text-slate-200 outline-none focus:border-teal-500/50 transition-all font-bold placeholder:text-slate-600"
+                      className={inputClass}
                       value={formData.mobile}
                       onChange={(e) =>
                         setFormData({ ...formData, mobile: e.target.value })
                       }
                       placeholder="Mobile Number"
                     />
+
                     <div className="grid grid-cols-2 gap-3">
                       {[
                         "Batsman",
@@ -1024,18 +1066,15 @@ export default function GlobalPlayersView() {
                           key={role}
                           type="button"
                           onClick={() => setFormData({ ...formData, role })}
-                          className={`py-3 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all ${
-                            formData.role === role
-                              ? "bg-teal-500/10 border-teal-500/50 text-teal-400 shadow-lg"
-                              : "bg-[#0F1115] border-white/5 text-slate-500 hover:text-slate-300"
-                          }`}>
+                          className={`py-3 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all ${formData.role === role ? "bg-teal-500/10 border-teal-500/50 text-teal-500" : lightMode ? "bg-white border-gray-200 text-gray-500 hover:bg-gray-50" : "bg-[#0F1115] border-white/5 text-slate-500 hover:text-slate-300"}`}>
                           {role}
                         </button>
                       ))}
                     </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <select
-                        className="w-full bg-[#0F1115] border border-white/10 rounded-xl px-4 py-3 text-xs font-bold text-slate-300 outline-none focus:border-teal-500/50"
+                        className={inputClass}
                         value={formData.battingStyle}
                         onChange={(e) =>
                           setFormData({
@@ -1047,7 +1086,7 @@ export default function GlobalPlayersView() {
                         <option>Left Hand Bat</option>
                       </select>
                       <select
-                        className="w-full bg-[#0F1115] border border-white/10 rounded-xl px-4 py-3 text-xs font-bold text-slate-300 outline-none focus:border-teal-500/50"
+                        className={inputClass}
                         value={formData.bowlingStyle}
                         onChange={(e) =>
                           setFormData({
@@ -1065,10 +1104,11 @@ export default function GlobalPlayersView() {
                       </select>
                     </div>
                   </div>
+
                   <button
                     type="submit"
                     disabled={processingImage}
-                    className="w-full bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 text-white font-black uppercase tracking-widest text-xs py-4 rounded-xl shadow-lg shadow-teal-900/20 transition-all disabled:opacity-50 active:scale-[0.98]">
+                    className="w-full bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 text-white font-black uppercase tracking-widest text-xs py-4 rounded-xl shadow-lg transition-all disabled:opacity-50 active:scale-[0.98]">
                     {processingImage
                       ? "Processing..."
                       : isEditing

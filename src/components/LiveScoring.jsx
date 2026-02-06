@@ -7,12 +7,28 @@ import { subscribeMatch } from "../utils/firestore";
 import { useScoring } from "../hooks/useScoring";
 import { useAuth } from "../hooks/useAuth";
 
+// Components
 import ScoreInput from "../components/ScoreInput.jsx";
 import ScoreTable from "../components/ScoreTable.jsx";
-import ScoreSummary from "../components/ScoreSummary.jsx"; // ✅ This component handles the logic you asked for
+import ScoreSummary from "../components/ScoreSummary.jsx";
 import MatchCommentary from "../components/MatchCommentary.jsx";
 import MatchInfo from "../components/MatchInfo.jsx";
 import MatchCorrectionModal from "../components/MatchCorrectionModal.jsx";
+
+// Icons & Theme
+import {
+  Home,
+  Radio,
+  Copy,
+  ExternalLink,
+  Moon,
+  Sun,
+  Wrench,
+  ArrowLeft,
+  X, // ✅ Added Missing Import
+  Loader2, // ✅ Added Missing Import
+} from "lucide-react";
+import { useTheme } from "../context/ThemeContext";
 
 // --- MEMOIZED NAV BUTTON ---
 const NavBtn = React.memo(({ active, onClick, icon, label }) => (
@@ -26,7 +42,7 @@ const NavBtn = React.memo(({ active, onClick, icon, label }) => (
       {icon}
     </span>
     <span
-      className={`text-[10px] font-black uppercase mt-1 tracking-widest transition-all ${active ? "opacity-100" : "opacity-40"}`}>
+      className={`text-[10px]  uppercase mt-1 tracking-widest transition-all ${active ? "font-white opacity-100" : "font-black opacity-40"}`}>
       {label}
     </span>
     {active && (
@@ -63,9 +79,13 @@ const getLocalMatch = (tId, mId) => {
 };
 
 export default function LiveScoring() {
+  // 1. HOOKS FIRST (Including Theme)
   const { tournamentId, matchId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+
+  // ✅ Theme must be defined here before any return statements
+  const { theme, toggleTheme, lightMode } = useTheme();
 
   const [match, setMatch] = useState(() =>
     getLocalMatch(tournamentId, matchId),
@@ -77,7 +97,7 @@ export default function LiveScoring() {
   // Toggle Broadcast Panel
   const [showObsPanel, setShowObsPanel] = useState(false);
 
-  // --- 1. DATA PROCESSING ---
+  // --- 2. DATA PROCESSING ---
   const processedMatch = useMemo(() => {
     if (!match) return null;
     return { ...match, id: matchId };
@@ -90,7 +110,7 @@ export default function LiveScoring() {
     return !!url;
   }, [processedMatch?.meta?.liveStreamUrl, processedMatch?.meta?.liveStreamId]);
 
-  // --- 2. HANDLERS ---
+  // --- 3. HANDLERS ---
   const handleTabSummary = useCallback(() => setActiveTab("summary"), []);
   const handleTabCard = useCallback(() => setActiveTab("scorecard"), []);
   const handleTabLogs = useCallback(() => setActiveTab("commentary"), []);
@@ -105,13 +125,17 @@ export default function LiveScoring() {
   );
 
   // COPY OBS LINK HANDLER
+  const obsUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/overlay/${tournamentId}/${matchId}?clean=true`
+      : "";
+
   const copyObsLink = () => {
-    const url = `${window.location.origin}/overlay/${tournamentId}/${matchId}?clean=true`;
-    navigator.clipboard.writeText(url);
+    navigator.clipboard.writeText(obsUrl);
     alert("✅ OBS Link Copied!\nPaste this as a 'Browser Source' in OBS.");
   };
 
-  // --- 3. PERMISSIONS & INITIAL SETUP ---
+  // --- 4. PERMISSIONS & INITIAL SETUP ---
   useEffect(() => {
     async function checkPermissions() {
       if (tournamentId === "generic") {
@@ -137,7 +161,7 @@ export default function LiveScoring() {
     checkPermissions();
   }, [tournamentId, user]);
 
-  // --- 4. DATA SUBSCRIPTION ---
+  // --- 5. DATA SUBSCRIPTION ---
   useEffect(() => {
     if (!tournamentId || !matchId) return;
     const unsub = subscribeMatch(tournamentId, matchId, (data) => {
@@ -155,7 +179,7 @@ export default function LiveScoring() {
     return () => unsub && unsub();
   }, [tournamentId, matchId]);
 
-  // --- 5. SCORING HOOK ---
+  // --- 6. SCORING HOOK ---
   const scoring =
     useScoring({
       tournamentId,
@@ -177,9 +201,11 @@ export default function LiveScoring() {
     handleDeleteMatch,
   } = scoring;
 
+  // --- 7. LOADING STATE (Safely uses theme now) ---
   if (!processedMatch) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-black text-cyan-500">
+      <div
+        className={`flex flex-col items-center justify-center h-screen ${theme.bg} ${theme.text}`}>
         <div className="w-16 h-16 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin mb-6"></div>
         <div className="text-[10px] font-black tracking-[0.3em] uppercase opacity-50">
           Synchronizing Arena...
@@ -195,69 +221,20 @@ export default function LiveScoring() {
   };
 
   return (
-    <div className="h-screen h-[100dvh] w-full bg-black font-sans text-gray-100 flex flex-col overflow-hidden select-none touch-manipulation">
-      {/* 📡 BROADCAST TOOLS PANEL */}
-      {canScore && (
-        <div
-          className={`flex-none bg-[#161920] border-b border-white/10 relative transition-all duration-300 ease-in-out overflow-hidden ${showObsPanel ? "h-auto py-4" : "h-0 py-0"}`}>
-          <div className="px-4">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="text-xs font-black text-slate-300 uppercase tracking-widest flex items-center gap-2">
-                <span className="text-purple-500 text-lg">📡</span> Broadcast
-                Tools
-              </h3>
-              {isStreamLinked ? (
-                <span className="text-[9px] bg-green-500/10 text-green-500 px-2 py-1 rounded border border-green-500/20 font-bold uppercase">
-                  Stream Linked
-                </span>
-              ) : (
-                <span className="text-[9px] bg-red-500/10 text-red-500 px-2 py-1 rounded border border-red-500/20 font-bold uppercase">
-                  No Stream URL
-                </span>
-              )}
-            </div>
-
-            <div className="bg-black/40 border border-white/10 rounded-xl p-3 flex gap-2 items-center">
-              <div className="flex-1 min-w-0">
-                <div className="text-[9px] text-slate-500 font-bold uppercase mb-1">
-                  OBS Overlay URL (Transparent)
-                </div>
-                <div className="text-xs text-slate-300 truncate font-mono select-all bg-black/50 p-2 rounded border border-white/5">
-                  {`${window.location.origin}/overlay/${tournamentId}/${matchId}?clean=true`}
-                </div>
-              </div>
-              <button
-                onClick={copyObsLink}
-                className="bg-purple-600 hover:bg-purple-500 text-white p-3 rounded-xl transition-all active:scale-95 shadow-lg"
-                title="Copy URL">
-                📋
-              </button>
-              <a
-                href={`/overlay/${tournamentId}/${matchId}?clean=true`}
-                target="_blank"
-                rel="noreferrer"
-                className="bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-xl transition-all active:scale-95"
-                title="Test in New Tab">
-                ↗️
-              </a>
-            </div>
-            <p className="text-[9px] text-slate-500 mt-2 text-center">
-              Paste this URL into OBS as a "Browser Source" (1920x1080) to show
-              live scores.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* HEADER */}
-      <div className="flex-none bg-black/80 border-b border-white/5 px-4 h-14 flex items-center justify-between z-[60] backdrop-blur-xl">
+    <div
+      className={`h-screen h-[100dvh] w-full font-sans flex flex-col overflow-hidden select-none touch-manipulation transition-colors duration-300 ${theme.bg} ${theme.text}`}>
+      {/* --- HEADER --- */}
+      <div
+        className={`flex-none px-4 h-14 flex items-center justify-between z-[60] border-b ${theme.card} backdrop-blur-xl`}>
         <button
           onClick={handleHomeClick}
-          className="w-10 h-10 rounded-xl bg-white/5 border border-white/5 flex items-center justify-center text-lg active:scale-90 transition-transform">
-          🏠
+          className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg active:scale-90 transition-transform ${theme.btnBase}`}>
+          <ArrowLeft size={18} />
         </button>
+
         <div className="flex flex-col items-center text-center">
-          <span className="text-[10px] font-black text-white uppercase tracking-tight truncate max-w-[200px] italic">
+          <span
+            className={`text-[10px] font-black uppercase tracking-tight truncate max-w-[200px] italic ${theme.text}`}>
             {getMatchTitle()}
           </span>
           <div className="flex items-center gap-1.5 mt-0.5">
@@ -270,24 +247,109 @@ export default function LiveScoring() {
           </div>
         </div>
 
-        {/* TOGGLE OBS PANEL BUTTON */}
-        <button
-          onClick={() => setShowObsPanel(!showObsPanel)}
-          className={`w-10 h-10 rounded-xl border flex items-center justify-center text-lg active:scale-90 transition-transform ${
-            showObsPanel
-              ? "bg-purple-500/10 border-purple-500/20 text-purple-500"
-              : "bg-white/5 border-white/10 text-slate-400 hover:text-white"
-          }`}
-          title={showObsPanel ? "Close Tools" : "Broadcast Tools"}>
-          {showObsPanel ? "✕" : "📡"}
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Broadcast Toggle (Only for Scorers) */}
+          {canScore && (
+            <button
+              onClick={() => setShowObsPanel(!showObsPanel)}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-transform active:scale-90 ${
+                showObsPanel
+                  ? lightMode
+                    ? "bg-purple-100 text-purple-600"
+                    : "bg-purple-900/30 text-purple-400 border border-purple-500/30"
+                  : theme.btnBase
+              }`}>
+              <Radio
+                size={18}
+                className={showObsPanel ? "animate-pulse" : ""}
+              />
+            </button>
+          )}
+
+          {/* Theme Toggle */}
+          <button
+            onClick={toggleTheme}
+            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-transform active:scale-90 ${theme.btnBase}`}>
+            {lightMode ? <Moon size={18} /> : <Sun size={18} />}
+          </button>
+        </div>
       </div>
 
-      {/* CONTENT */}
+      {/* --- 📡 BROADCAST TOOLS PANEL (Collapsible) --- */}
+      {canScore && (
+        <div
+          className={`flex-none border-b relative transition-all duration-300 ease-in-out overflow-hidden ${
+            theme.card
+          } ${showObsPanel ? "h-auto py-3" : "h-0 py-0 border-0"}`}>
+          <div className="px-4">
+            <div className="flex justify-between items-center mb-2">
+              <h3
+                className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-2 ${theme.sub}`}>
+                <span className="text-purple-500 text-sm">📡</span> Broadcast
+                Overlay
+              </h3>
+              {isStreamLinked ? (
+                <span className="text-[9px] bg-green-500/10 text-green-500 px-2 py-0.5 rounded border border-green-500/20 font-bold uppercase">
+                  Linked
+                </span>
+              ) : (
+                <span className="text-[9px] bg-red-500/10 text-red-500 px-2 py-0.5 rounded border border-red-500/20 font-bold uppercase">
+                  No Stream
+                </span>
+              )}
+            </div>
+
+            <div
+              className={`border rounded-xl p-2 flex gap-2 items-center ${
+                lightMode
+                  ? "bg-gray-50 border-gray-200"
+                  : "bg-black/20 border-white/5"
+              }`}>
+              <div className="flex-1 min-w-0">
+                <div
+                  className={`text-[8px] font-bold uppercase mb-1 ${theme.sub}`}>
+                  OBS Browser Source URL
+                </div>
+                <div
+                  className={`text-[10px] truncate font-mono select-all p-1.5 rounded border ${
+                    lightMode
+                      ? "bg-white border-gray-200 text-gray-600"
+                      : "bg-black/50 border-white/5 text-slate-300"
+                  }`}>
+                  {obsUrl}
+                </div>
+              </div>
+              <button
+                onClick={copyObsLink}
+                className="bg-purple-600 hover:bg-purple-500 text-white p-2 rounded-lg transition-all active:scale-95 shadow-md"
+                title="Copy URL">
+                <Copy size={16} />
+              </button>
+              <a
+                href={obsUrl}
+                target="_blank"
+                rel="noreferrer"
+                className={`p-2 rounded-lg transition-all active:scale-95 border ${
+                  lightMode
+                    ? "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                    : "bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700"
+                }`}
+                title="Test in New Tab">
+                <ExternalLink size={16} />
+              </a>
+            </div>
+            <p className={`text-[9px] mt-2 text-center ${theme.sub}`}>
+              Paste into OBS as "Browser Source" (1920x1080) for live graphics.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* --- CONTENT AREA --- */}
       <div className="flex-1 relative flex flex-col min-h-0 overflow-hidden">
         {canScore ? (
           // SCORING UI (Full Height)
-          <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar">
+          <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar pb-20">
             <ScoreInput
               match={processedMatch}
               onBall={handleBall}
@@ -310,11 +372,11 @@ export default function LiveScoring() {
           </div>
         ) : (
           // VIEW ONLY UI (For non-scorers/Admins viewing score)
-          <div className="flex-1 overflow-y-auto p-4 space-y-6 no-scrollbar">
+          <div className="flex-1 overflow-y-auto p-4 space-y-6 no-scrollbar pb-24">
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
               <MemoizedScoreSummary match={processedMatch} />
             </div>
-            <div className="border border-white/5 rounded-[2rem] p-2">
+            <div className={`border rounded-[2rem] p-2 ${theme.card}`}>
               <MemoizedScoreTable match={processedMatch} />
             </div>
           </div>
@@ -322,20 +384,22 @@ export default function LiveScoring() {
 
         {/* TABS MODAL (Viewers/Admins Checking Info) */}
         {activeTab !== "summary" && (
-          <div className="absolute inset-0 bg-black z-50 flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-300">
-            <div className="flex justify-between items-center p-4 border-b border-white/5 bg-black/90 backdrop-blur-md">
+          <div
+            className={`absolute inset-0 z-50 flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-300 ${theme.bg}`}>
+            <div
+              className={`flex justify-between items-center p-4 border-b backdrop-blur-md ${theme.card}`}>
               <h3 className="text-cyan-500 font-black uppercase text-xs tracking-[0.3em]">
                 {activeTab} View
               </h3>
               <button
                 onClick={handleTabSummary}
-                className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-white text-xs active:scale-90 transition-transform">
-                ✕
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-xs active:scale-90 transition-transform ${theme.btnBase}`}>
+                <X size={16} /> {/* ✅ X Icon is now properly imported */}
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto no-scrollbar pb-20">
+            <div className="flex-1 overflow-y-auto no-scrollbar pb-24">
               {activeTab === "scorecard" && (
-                <div className="border border-white/5 rounded-[2rem] p-2">
+                <div className={`border rounded-[2rem] p-2 m-2 ${theme.card}`}>
                   <MemoizedScoreTable match={processedMatch} />
                 </div>
               )}
@@ -349,7 +413,12 @@ export default function LiveScoring() {
       </div>
 
       {/* NAV */}
-      <nav className="fixed bottom-0 left-0 w-full h-16 bg-black/95 backdrop-blur-lg border-t border-white/5 grid grid-cols-4 items-center px-2 pb-1 shadow-[0_-10px_30px_rgba(0,0,0,0.8)] z-[70]">
+      <nav
+        className={`fixed bottom-0 left-0 w-full h-16 backdrop-blur-lg border-t grid grid-cols-4 items-center px-2 pb-1 shadow-[0_-10px_30px_rgba(0,0,0,0.2)] z-[70] transition-colors duration-300 ${
+          lightMode
+            ? "bg-white/90 border-gray-200"
+            : "bg-black/95 border-white/5"
+        }`}>
         <NavBtn
           active={activeTab === "summary"}
           onClick={handleTabSummary}

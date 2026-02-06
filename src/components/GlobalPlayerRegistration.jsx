@@ -12,9 +12,50 @@ import {
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { useAuth } from "../hooks/useAuth";
+// 1. Theme & Icons
+import { useTheme } from "../context/ThemeContext";
+import {
+  Camera,
+  Upload,
+  Check,
+  AlertCircle,
+  X,
+  Loader2,
+  User,
+  Phone,
+  Receipt,
+} from "lucide-react";
+
+// --- INTERNAL TOAST COMPONENT ---
+const NotificationToast = ({ message, type, onClose }) => {
+  if (!message) return null;
+  const isError = type === "error";
+  return (
+    <div
+      className={`fixed top-6 right-6 z-[200] flex items-center gap-3 px-6 py-4 rounded-xl shadow-2xl animate-in slide-in-from-right duration-300 border backdrop-blur-md ${
+        isError
+          ? "bg-red-500/10 border-red-500/20 text-red-500 bg-white dark:bg-red-900/10"
+          : "bg-teal-500/10 border-teal-500/20 text-teal-600 dark:text-teal-400 bg-white dark:bg-teal-900/10"
+      }`}>
+      {isError ? <AlertCircle size={20} /> : <Check size={20} />}
+      <div>
+        <h4 className="font-bold text-sm uppercase tracking-wider">
+          {isError ? "Error" : "Success"}
+        </h4>
+        <p className="text-xs opacity-90">{message}</p>
+      </div>
+      <button onClick={onClose} className="ml-4 opacity-50 hover:opacity-100">
+        <X size={16} />
+      </button>
+    </div>
+  );
+};
 
 export default function GlobalPlayerRegistration() {
   const { user } = useAuth();
+
+  // 2. Consume Theme
+  const { theme, lightMode } = useTheme();
 
   const [formData, setFormData] = useState({
     name: "",
@@ -32,10 +73,12 @@ export default function GlobalPlayerRegistration() {
 
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("idle");
-  const [errorMessage, setErrorMessage] = useState("");
+  const [notification, setNotification] = useState(null); // Replaces errorMessage
 
-  // NO LONGER FETCHING SCORER EMAILS DYNAMICALLY
-  // Removed scorers state and useEffect logic for scorers
+  const showToast = (message, type = "success") => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 4000);
+  };
 
   const compressImage = (file, maxWidth = 300) => {
     return new Promise((resolve) => {
@@ -86,27 +129,28 @@ export default function GlobalPlayerRegistration() {
     setExistingPlayerId(docId);
     setIsEditing(true);
     setStatus("idle");
+    showToast("Profile loaded for editing", "success");
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setStatus("checking");
-    setErrorMessage("");
+    setNotification(null);
 
     const cleanMobile = formData.mobile.trim().replace(/\D/g, "");
 
     if (cleanMobile.length < 10) {
       setLoading(false);
       setStatus("idle");
-      alert("Please enter a valid 10-digit mobile number.");
+      showToast("Please enter a valid 10-digit mobile number.", "error");
       return;
     }
 
     if (!photoBase64 || !paymentBase64) {
       setLoading(false);
       setStatus("idle");
-      alert("⚠️ Profile Photo and Payment Screenshot are mandatory.");
+      showToast("Profile Photo and Payment Screenshot are mandatory.", "error");
       return;
     }
 
@@ -137,7 +181,7 @@ export default function GlobalPlayerRegistration() {
           if (isUserAdmin) {
             if (
               window.confirm(
-                "⚠️ Admin Access: This mobile number is already registered. Load for editing?"
+                "⚠️ Admin Access: This mobile number is already registered. Load for editing?",
               )
             ) {
               loadExistingPlayer(docSnap.data(), docSnap.id);
@@ -169,36 +213,48 @@ export default function GlobalPlayerRegistration() {
     } catch (error) {
       console.error("Error registering:", error);
       setStatus("error");
-      setErrorMessage(error.message);
+      showToast(error.message, "error");
     } finally {
       setLoading(false);
     }
   };
 
+  // --- Styles ---
+  const inputClass = `w-full border rounded-xl px-5 py-4 outline-none transition-all font-bold placeholder:font-normal focus:ring-2
+    ${
+      lightMode
+        ? "bg-gray-50 border-gray-200 text-gray-900 focus:bg-white focus:border-teal-500 focus:ring-teal-100"
+        : "bg-[#0F1115] border-white/10 text-slate-200 focus:border-teal-500/50 focus:bg-black"
+    }`;
+
+  // --- SUCCESS VIEW ---
   if (status === "success" || status === "updated") {
     return (
-      <div className="min-h-screen bg-[#0F1115] flex items-center justify-center p-4 font-sans">
-        <div className="bg-[#1C2128] border border-green-500/30 p-8 rounded-3xl max-w-md w-full text-center shadow-2xl animate-in zoom-in-95">
-          <div className="w-20 h-20 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center text-4xl mx-auto mb-6 border border-green-500/20">
-            ✓
+      <div
+        className={`min-h-screen flex items-center justify-center p-4 font-sans ${theme.bg}`}>
+        <div
+          className={`border p-8 rounded-3xl max-w-md w-full text-center shadow-2xl animate-in zoom-in-95 ${theme.card}`}>
+          <div className="w-20 h-20 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center text-4xl mx-auto mb-6 border border-green-500/20 shadow-lg shadow-green-500/10">
+            <Check size={40} strokeWidth={3} />
           </div>
-          <h2 className="text-2xl font-black text-slate-100 mb-2 uppercase tracking-tight italic">
+          <h2
+            className={`text-2xl font-black mb-2 uppercase tracking-tight italic ${theme.text}`}>
             {status === "updated"
               ? "Profile Updated!"
               : "Registration Complete!"}
           </h2>
-          <p className="text-slate-500 mb-8 text-sm font-medium">
+          <p className={`mb-8 text-sm font-medium ${theme.sub}`}>
             Your profile has been{" "}
             {status === "updated" ? "updated" : "submitted"} for review.
           </p>
           <button
             onClick={() => window.location.reload()}
-            className="block w-full bg-[#2D3339] hover:bg-[#363D45] text-white font-bold py-4 rounded-xl transition-all mb-4 text-xs uppercase tracking-widest">
+            className={`block w-full font-bold py-4 rounded-xl transition-all mb-4 text-xs uppercase tracking-widest ${theme.btnBase}`}>
             Back to Form
           </button>
           <Link
             to="/"
-            className="block text-xs font-bold text-slate-500 hover:text-white uppercase tracking-widest transition-colors">
+            className={`block text-xs font-bold uppercase tracking-widest transition-colors ${theme.sub} hover:text-teal-500`}>
             Back to Home
           </Link>
         </div>
@@ -206,8 +262,16 @@ export default function GlobalPlayerRegistration() {
     );
   }
 
+  // --- FORM VIEW ---
   return (
-    <div className="min-h-screen bg-[#0F1115] text-slate-200 p-4 flex flex-col items-center justify-center font-sans">
+    <div
+      className={`min-h-screen p-4 flex flex-col items-center justify-center font-sans ${theme.bg} ${theme.text}`}>
+      <NotificationToast
+        message={notification?.message}
+        type={notification?.type}
+        onClose={() => setNotification(null)}
+      />
+
       <div className="relative z-10 w-full max-w-lg">
         <div className="text-center mb-10">
           <h1 className="text-4xl font-black italic tracking-tighter mb-2">
@@ -215,48 +279,48 @@ export default function GlobalPlayerRegistration() {
               {isEditing ? "Update Profile" : "Player Registration"}
             </span>
           </h1>
-          <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">
+          <p
+            className={`text-xs font-bold uppercase tracking-widest ${theme.sub}`}>
             {isEditing
               ? "Modify your details below"
               : "Join the league • Create your profile"}
           </p>
         </div>
 
-        <div className="bg-[#1C2128] border border-white/5 rounded-[2.5rem] p-8 shadow-2xl backdrop-blur-md">
-          {/* ✅ SIMPLIFIED: PROFILE EXISTS SECTION */}
+        <div
+          className={`border rounded-[2.5rem] p-8 shadow-2xl backdrop-blur-md ${theme.card}`}>
+          {/* EXISTS ERROR */}
           {status === "exists" && (
-            <div className="bg-amber-900/30 border border-amber-500/50 p-6 rounded-3xl mb-8 animate-in shake">
+            <div
+              className={`border p-6 rounded-3xl mb-8 animate-in shake ${lightMode ? "bg-amber-50 border-amber-200" : "bg-amber-900/30 border-amber-500/50"}`}>
               <div className="flex items-center gap-3 mb-3">
-                <span className="text-2xl">⚠️</span>
-                <h4 className="text-amber-200 font-black uppercase text-sm italic tracking-tight">
+                <AlertCircle className="text-amber-500" />
+                <h4
+                  className={`font-black uppercase text-sm italic tracking-tight ${lightMode ? "text-amber-800" : "text-amber-200"}`}>
                   Profile Already Registered
                 </h4>
               </div>
-              <p className="text-slate-200 text-xs leading-relaxed mb-4 font-bold">
+              <p
+                className={`text-xs leading-relaxed mb-4 font-bold ${lightMode ? "text-amber-700" : "text-slate-200"}`}>
                 This mobile number is already registered in our global
                 directory.
               </p>
-              <div className="bg-[#0F1115] p-4 rounded-xl border border-white/5 text-center">
-                <p className="text-teal-400 text-[10px] font-black uppercase tracking-widest">
-                  Please contact the Admin or Organizers to update your existing
-                  profile.
+              <div
+                className={`p-4 rounded-xl border text-center ${lightMode ? "bg-white border-amber-100" : "bg-[#0F1115] border-white/5"}`}>
+                <p className="text-teal-500 text-[10px] font-black uppercase tracking-widest">
+                  Please contact the Admin to update your profile.
                 </p>
               </div>
               <button
                 onClick={() => setStatus("idle")}
-                className="mt-6 w-full py-2 text-[9px] font-black uppercase text-slate-500 hover:text-white transition-colors border-t border-white/5 pt-4">
+                className={`mt-6 w-full py-2 text-[9px] font-black uppercase transition-colors border-t pt-4 ${lightMode ? "text-amber-600 border-amber-200 hover:text-amber-800" : "text-slate-500 border-white/5 hover:text-white"}`}>
                 Register a different number
               </button>
             </div>
           )}
 
-          {status === "error" && (
-            <div className="bg-red-900/20 border border-red-500/30 text-red-200 p-4 rounded-xl mb-8 text-sm text-center font-bold">
-              Error: {errorMessage}
-            </div>
-          )}
-
           <form onSubmit={handleSubmit} className="space-y-8">
+            {/* PHOTO UPLOAD */}
             <div className="flex flex-col items-center">
               <div className="relative group cursor-pointer">
                 <input
@@ -268,12 +332,16 @@ export default function GlobalPlayerRegistration() {
                 />
                 <label
                   htmlFor="profile-upload"
-                  className="cursor-pointer group">
+                  className="cursor-pointer group relative block">
+                  {/* Circle Container */}
                   <div
-                    className={`w-32 h-32 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl ${
+                    className={`w-32 h-32 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl relative z-10 
+                    ${
                       photoBase64
                         ? "border-teal-500 shadow-teal-500/20"
-                        : "border-dashed border-white/10 group-hover:border-white/30 bg-[#0F1115]"
+                        : lightMode
+                          ? "border-dashed border-gray-300 bg-gray-50 group-hover:bg-white"
+                          : "border-dashed border-white/10 bg-[#0F1115] group-hover:border-white/30"
                     }`}>
                     {photoBase64 ? (
                       <img
@@ -283,44 +351,62 @@ export default function GlobalPlayerRegistration() {
                       />
                     ) : (
                       <div className="text-center">
-                        <span className="text-3xl opacity-50 grayscale transition-all">
-                          📷
-                        </span>
-                        <p className="text-[9px] text-slate-500 uppercase mt-2 font-black tracking-widest">
-                          Upload Photo
+                        <Camera
+                          className={`w-8 h-8 mx-auto mb-2 opacity-50 ${theme.sub}`}
+                        />
+                        <p
+                          className={`text-[9px] uppercase font-black tracking-widest ${theme.sub}`}>
+                          Upload
                         </p>
                       </div>
                     )}
+                  </div>
+                  {/* Edit Badge */}
+                  <div className="absolute bottom-1 right-1 z-20 bg-teal-500 text-white rounded-full p-2 shadow-lg border-2 border-white dark:border-black">
+                    <Upload size={14} />
                   </div>
                 </label>
               </div>
             </div>
 
             <div className="space-y-5">
-              <input
-                required
-                type="text"
-                placeholder="Full Name *"
-                className="w-full bg-[#0F1115] border border-white/10 rounded-xl px-5 py-4 text-slate-200 outline-none focus:border-teal-500/50 transition-all placeholder:text-slate-600 font-bold"
-                value={formData.name}
-                onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
-              />
-              <input
-                required
-                type="tel"
-                placeholder="Mobile Number *"
-                maxLength={10}
-                disabled={isEditing}
-                className={`w-full bg-[#0F1115] border border-white/10 rounded-xl px-5 py-4 text-slate-200 outline-none focus:border-teal-500/50 transition-all placeholder:text-slate-600 font-bold ${
-                  isEditing ? "opacity-50 cursor-not-allowed" : ""
-                }`}
-                value={formData.mobile}
-                onChange={(e) =>
-                  setFormData({ ...formData, mobile: e.target.value })
-                }
-              />
+              <div className="relative">
+                <User
+                  className={`absolute left-4 top-1/2 -translate-y-1/2 ${theme.sub}`}
+                  size={18}
+                />
+                <input
+                  required
+                  type="text"
+                  placeholder="Full Name *"
+                  className={`${inputClass} pl-12`}
+                  value={formData.name}
+                  onChange={(e) =>
+                    setFormData({ ...formData, name: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="relative">
+                <Phone
+                  className={`absolute left-4 top-1/2 -translate-y-1/2 ${theme.sub}`}
+                  size={18}
+                />
+                <input
+                  required
+                  type="tel"
+                  placeholder="Mobile Number *"
+                  maxLength={10}
+                  disabled={isEditing}
+                  className={`${inputClass} pl-12 ${isEditing ? "opacity-50 cursor-not-allowed" : ""}`}
+                  value={formData.mobile}
+                  onChange={(e) =>
+                    setFormData({ ...formData, mobile: e.target.value })
+                  }
+                />
+              </div>
+
+              {/* Roles Grid */}
               <div className="grid grid-cols-2 gap-3">
                 {["Batsman", "Bowler", "All-Rounder", "Wicket Keeper"].map(
                   (role) => (
@@ -330,17 +416,18 @@ export default function GlobalPlayerRegistration() {
                       onClick={() => setFormData({ ...formData, role })}
                       className={`py-4 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all ${
                         formData.role === role
-                          ? "bg-teal-500/10 border-teal-500/50 text-teal-400 shadow-lg"
-                          : "bg-[#0F1115] border-white/5 text-slate-500 hover:text-slate-300"
+                          ? "bg-teal-500/10 border-teal-500/50 text-teal-600 dark:text-teal-400 shadow-lg"
+                          : theme.btnBase
                       }`}>
                       {role}
                     </button>
-                  )
+                  ),
                 )}
               </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <select
-                  className="w-full bg-[#0F1115] border border-white/10 rounded-xl px-4 py-4 text-xs font-bold text-slate-300 outline-none focus:border-teal-500/50"
+                  className={`${inputClass} text-xs`}
                   value={formData.battingStyle}
                   onChange={(e) =>
                     setFormData({ ...formData, battingStyle: e.target.value })
@@ -349,7 +436,7 @@ export default function GlobalPlayerRegistration() {
                   <option>Left Hand Bat</option>
                 </select>
                 <select
-                  className="w-full bg-[#0F1115] border border-white/10 rounded-xl px-4 py-4 text-xs font-bold text-slate-300 outline-none focus:border-teal-500/50"
+                  className={`${inputClass} text-xs`}
                   value={formData.bowlingStyle}
                   onChange={(e) =>
                     setFormData({ ...formData, bowlingStyle: e.target.value })
@@ -365,8 +452,15 @@ export default function GlobalPlayerRegistration() {
               </div>
             </div>
 
-            <div className="bg-[#0F1115] p-6 rounded-2xl border border-dashed border-white/10 hover:border-white/20 transition-colors group">
-              <label className="block text-[10px] font-black text-slate-500 uppercase mb-4 text-center tracking-[0.2em]">
+            {/* PAYMENT UPLOAD */}
+            <div
+              className={`p-6 rounded-2xl border border-dashed transition-colors group ${
+                lightMode
+                  ? "bg-gray-50 border-gray-300 hover:bg-white"
+                  : "bg-[#0F1115] border-white/10 hover:border-white/20"
+              }`}>
+              <label
+                className={`block text-[10px] font-black uppercase mb-4 text-center tracking-[0.2em] ${theme.sub}`}>
                 Payment Screenshot *
               </label>
               <input
@@ -380,17 +474,27 @@ export default function GlobalPlayerRegistration() {
                 htmlFor="payment-upload"
                 className="cursor-pointer block w-full">
                 {paymentBase64 ? (
-                  <img
-                    src={paymentBase64}
-                    alt="Proof"
-                    className="w-full h-48 object-cover rounded-xl border border-white/10 shadow-lg"
-                  />
+                  <div className="relative">
+                    <img
+                      src={paymentBase64}
+                      alt="Proof"
+                      className="w-full h-48 object-cover rounded-xl border shadow-lg"
+                    />
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity rounded-xl">
+                      <span className="text-white font-bold text-xs uppercase">
+                        Change Image
+                      </span>
+                    </div>
+                  </div>
                 ) : (
-                  <div className="h-32 flex flex-col items-center justify-center bg-[#161920] rounded-xl transition-colors">
-                    <span className="text-3xl mb-3 opacity-30 grayscale transition-all">
-                      🧾
-                    </span>
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">
+                  <div
+                    className={`h-32 flex flex-col items-center justify-center rounded-xl transition-colors ${lightMode ? "bg-white border" : "bg-[#161920]"}`}>
+                    <Receipt
+                      className={`mb-3 opacity-30 ${theme.text}`}
+                      size={32}
+                    />
+                    <span
+                      className={`text-xs font-bold uppercase tracking-wide ${theme.sub}`}>
                       Click to upload proof
                     </span>
                   </div>
@@ -401,18 +505,20 @@ export default function GlobalPlayerRegistration() {
             <button
               disabled={loading}
               type="submit"
-              className="w-full bg-gradient-to-r from-teal-600 to-indigo-600 hover:from-teal-500 hover:to-indigo-500 text-white font-black uppercase tracking-widest text-xs py-5 rounded-2xl shadow-xl shadow-teal-900/20 transition-all disabled:opacity-50 active:scale-[0.98]">
+              className="w-full bg-gradient-to-r from-teal-600 to-indigo-600 hover:from-teal-500 hover:to-indigo-500 text-white font-black uppercase tracking-widest text-xs py-5 rounded-2xl shadow-xl shadow-teal-900/20 transition-all disabled:opacity-50 active:scale-[0.98] flex items-center justify-center gap-2">
+              {loading && <Loader2 className="animate-spin" />}
               {loading
                 ? "Processing..."
                 : isEditing
-                ? "Update Profile"
-                : "Submit Registration"}
+                  ? "Update Profile"
+                  : "Submit Registration"}
             </button>
+
             {isEditing && (
               <button
                 type="button"
                 onClick={() => window.location.reload()}
-                className="w-full text-slate-500 text-xs font-bold uppercase tracking-widest hover:text-white transition-colors">
+                className={`w-full text-xs font-bold uppercase tracking-widest transition-colors ${theme.sub} hover:text-teal-500`}>
                 Cancel Edit
               </button>
             )}

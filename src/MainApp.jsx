@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
 
+// --- COMPONENTS ---
 import Navigation from "./components/Navigation.jsx";
 import TournamentSelector from "./components/TournamentSelector.jsx";
 import MatchSelector from "./components/MatchSelector.jsx";
@@ -18,14 +19,6 @@ import MatchScorecard from "./components/MatchScorecard.jsx";
 import Dashboard from "./components/Dashboard.jsx";
 import CreateTournament from "./components/CreateTournament.jsx";
 import GlobalPlayersView from "./components/GlobalPlayersView.jsx";
-
-import {
-  createMatchAuto,
-  listMatches,
-  listTournaments,
-  listAllTeams,
-} from "./utils/firestore.js";
-import { useAuth } from "./hooks/useAuth.jsx";
 import MigrationTool from "./components/MigrationTool.jsx";
 import AuctionDashboard from "./components/AuctionDashboard.jsx";
 import GlobalPlayerRegistration from "./components/GlobalPlayerRegistration.jsx";
@@ -33,10 +26,29 @@ import PastLeague from "./components/PastLeague.jsx";
 import MatchOverlay from "./components/Overlay/MatchOverlay.jsx";
 import TournamentBanner from "./components/Overlay/TournamentBanner";
 
-export default function MainApp() {
+// --- UTILS & HOOKS ---
+import {
+  createMatchAuto,
+  listMatches,
+  listTournaments,
+  listAllTeams,
+} from "./utils/firestore.js";
+import { useAuth } from "./hooks/useAuth.jsx";
+
+// --- 🎨 IMPORT THEME CONTEXT ---
+import { ThemeProvider, useTheme } from "./context/ThemeContext";
+
+
+// ----------------------------------------------------------------------
+// 1. INNER COMPONENT (Contains your existing logic + Theme Consumption)
+// ----------------------------------------------------------------------
+function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
+
+  // ✅ Consume Theme
+  const { theme, lightMode } = useTheme();
 
   const [tournamentId, setTournamentId] = useState("");
   const [matchId, setMatchId] = useState(null);
@@ -110,7 +122,7 @@ export default function MainApp() {
     navigateToScoring(tournament, matchIdSelected);
   }
 
-  // ✅ CONDITIONAL RENDER: If Overlay, return plain wrapper with Routes only
+  // ✅ CONDITIONAL RENDER: If Overlay, return plain wrapper (Ignore Theme Background)
   if (isOverlay) {
     return (
       <div className="w-full h-screen bg-transparent font-sans overflow-hidden">
@@ -128,35 +140,55 @@ export default function MainApp() {
     );
   }
 
-  // ✅ STANDARD APP LAYOUT (For all other pages)
+  // ✅ STANDARD APP LAYOUT
+  // Note: We replaced 'bg-black text-gray-200' with dynamic 'theme.bg theme.text'
   return (
-    <div className="min-h-screen bg-black text-gray-200 font-sans selection:bg-cyan-500/30">
+    <div
+      className={`min-h-screen ${theme.bg} ${theme.text} font-sans selection:bg-cyan-500/30 transition-colors duration-300`}>
       <Navigation />
 
       <div className="container mx-auto px-4 pb-24 md:pb-10 pt-4">
         {/* --- MOBILE-OPTIMIZED ADMIN COMMAND CENTER --- */}
         {isMatchesPage && user && (
-          <div className="bg-gray-900/50 border border-white/5 rounded-3xl p-5 mb-8 shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-4 duration-500">
+          <div
+            className={`${theme.card} rounded-3xl p-5 mb-8 shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-4 duration-500`}>
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-2">
+              <h2
+                className={`text-sm font-black ${theme.text} uppercase tracking-widest flex items-center gap-2`}>
                 <span className="flex h-2 w-2 rounded-full bg-cyan-500 animate-pulse"></span>
                 Admin Console
               </h2>
-              <span className="text-[10px] text-gray-500 font-bold bg-white/5 px-2 py-1 rounded-full uppercase">
+              <span
+                className={`text-[10px] ${theme.sub} font-bold bg-white/5 px-2 py-1 rounded-full uppercase border ${lightMode ? "border-gray-200" : "border-white/5"}`}>
                 Live Sync
               </span>
             </div>
 
             {/* Selectors Section */}
             <div className="grid grid-cols-1 gap-3 mb-6">
-              <div className="bg-black/40 p-1 rounded-2xl border border-white/5">
+              {/* 👇 UPDATED CLASS HERE 
+         Dark: bg-black/40
+         Light: bg-gray-50 (Clean separation from the white card)
+      */}
+              <div
+                className={`p-1 rounded-2xl border ${
+                  lightMode
+                    ? "bg-gray-50 border-gray-200"
+                    : "bg-black/40 border-white/5"
+                }`}>
                 <TournamentSelector
                   tournamentId={tournamentId}
                   setTournamentId={setTournamentId}
                   availableTournaments={availableTournaments}
                 />
               </div>
-              <div className="bg-black/40 p-1 rounded-2xl border border-white/5">
+
+              <div
+                className={`p-1 rounded-2xl border ${
+                  lightMode
+                    ? "bg-gray-50 border-gray-200"
+                    : "bg-black/40 border-white/5"
+                }`}>
                 <MatchSelector
                   matchId={matchId}
                   setMatchId={(id) => {
@@ -175,12 +207,17 @@ export default function MainApp() {
                   if (tournamentId) navigate(`/tournaments/${tournamentId}`);
                   else alert("Select a tournament first.");
                 }}
-                className="flex items-center gap-3 p-4 bg-gradient-to-br from-indigo-900/20 to-indigo-900/10 border border-indigo-500/20 rounded-2xl hover:border-indigo-400 transition-all active:scale-95 group shadow-lg">
-                <div className="bg-indigo-600 shadow-[0_0_15px_rgba(99,102,241,0.4)] w-10 h-10 rounded-xl flex items-center justify-center text-xl group-hover:rotate-12 transition-transform">
+                className={`flex items-center gap-3 p-4 border rounded-2xl transition-all active:scale-95 group shadow-lg ${
+                  lightMode
+                    ? "bg-indigo-50 border-indigo-100 hover:border-indigo-300"
+                    : "bg-gradient-to-br from-indigo-900/20 to-indigo-900/10 border-indigo-500/20 hover:border-indigo-400"
+                }`}>
+                <div className="bg-indigo-600 shadow-[0_0_15px_rgba(99,102,241,0.4)] w-10 h-10 rounded-xl flex items-center justify-center text-xl group-hover:rotate-12 transition-transform text-white">
                   📊
                 </div>
                 <div className="text-left overflow-hidden">
-                  <h3 className="text-white font-black text-xs uppercase tracking-tight truncate">
+                  <h3
+                    className={`font-black text-xs uppercase tracking-tight truncate ${lightMode ? "text-indigo-900" : "text-white"}`}>
                     Analytics
                   </h3>
                   <p className="text-[9px] text-indigo-400 font-bold uppercase tracking-wider truncate">
@@ -202,20 +239,22 @@ export default function MainApp() {
                   <div className="animate-in fade-in zoom-in duration-300 max-w-2xl mx-auto">
                     <div className="flex justify-between items-end mb-6 px-2">
                       <div>
-                        <h2 className="text-3xl font-black text-white uppercase tracking-tighter italic">
+                        <h2
+                          className={`text-3xl font-black ${theme.text} uppercase tracking-tighter italic`}>
                           Match Setup
                         </h2>
-                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
+                        <p
+                          className={`text-[10px] ${theme.sub} font-bold uppercase tracking-widest`}>
                           Configuration Phase
                         </p>
                       </div>
                       <button
                         onClick={() => setMatchId(null)}
-                        className="bg-white/5 hover:bg-white/10 text-white px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest border border-white/10 transition-all">
+                        className={`bg-white/5 hover:bg-white/10 ${theme.text} px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest border border-white/10 transition-all`}>
                         Cancel
                       </button>
                     </div>
-                    <div className="bg-gray-900/40 border border-white/5 rounded-[2.5rem] p-2">
+                    <div className={`${theme.card} rounded-[2.5rem] p-2`}>
                       <MatchSetup
                         onCreate={handleCreate}
                         tournamentId={tournamentId}
@@ -226,14 +265,17 @@ export default function MainApp() {
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center min-h-[40vh] text-center space-y-6">
-                    <div className="w-20 h-20 bg-gray-900 rounded-3xl border border-white/5 flex items-center justify-center text-3xl animate-bounce shadow-2xl">
+                    <div
+                      className={`w-20 h-20 ${theme.card} rounded-3xl flex items-center justify-center text-3xl animate-bounce shadow-2xl`}>
                       🚀
                     </div>
                     <div>
-                      <h3 className="text-white font-black uppercase tracking-tighter text-lg">
+                      <h3
+                        className={`font-black uppercase tracking-tighter text-lg ${theme.text}`}>
                         System Ready
                       </h3>
-                      <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">
+                      <p
+                        className={`text-[10px] ${theme.sub} font-bold uppercase tracking-widest mt-1`}>
                         Select an action above to start scoring
                       </p>
                     </div>
@@ -255,13 +297,6 @@ export default function MainApp() {
           <Route
             path="/tournaments/:id/auction"
             element={<AuctionDashboard />}
-          />
-
-          {/* Note: Overlay route is technically handled above in the early return, 
-              but leaving it here doesn't hurt if logic changes later */}
-          <Route
-            path="/overlay/:tournamentId/:matchId"
-            element={<MatchOverlay />}
           />
 
           <Route
@@ -293,5 +328,16 @@ export default function MainApp() {
         </Routes>
       </div>
     </div>
+  );
+}
+
+// ----------------------------------------------------------------------
+// 2. MAIN EXPORT (Wraps Everything in ThemeProvider)
+// ----------------------------------------------------------------------
+export default function MainApp() {
+  return (
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
   );
 }
