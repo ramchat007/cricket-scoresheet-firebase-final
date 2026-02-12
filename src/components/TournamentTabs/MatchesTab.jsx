@@ -1,5 +1,7 @@
 import React from "react";
 import MatchCard from "./MatchCard";
+import { useTheme } from "../../context/ThemeContext";
+import { CalendarX, Radio } from "lucide-react";
 
 export default function MatchesTab({
   liveMatches = [],
@@ -9,16 +11,18 @@ export default function MatchesTab({
   tournamentId,
   canEdit,
 }) {
+  const { theme, lightMode } = useTheme();
+
   // --- SORTING HELPER ---
   const sortMatches = (list, direction = "asc") => {
     return [...list].sort((a, b) => {
       // 1. Extract Time (ISO String -> Timestamp)
       // Checks: meta.startAt -> root.startAt -> root.date -> default
       const timeA = new Date(
-        a.meta?.startAt || a.startAt || a.date || 0
+        a.meta?.startAt || a.startAt || a.date || 0,
       ).getTime();
       const timeB = new Date(
-        b.meta?.startAt || b.startAt || b.date || 0
+        b.meta?.startAt || b.startAt || b.date || 0,
       ).getTime();
 
       // 2. Extract Match Number
@@ -43,29 +47,39 @@ export default function MatchesTab({
   const sortedFinished = sortMatches(finishedMatches, "desc"); // Match #15 -> #1
 
   const renderSection = (title, matches, type) => {
+    // Hide empty sections except for "Upcoming" which acts as a default placeholder if nothing else exists
     if (matches.length === 0 && type !== "upcoming") return null;
 
     return (
       <section className="mb-12">
         <div className="flex items-center gap-4 mb-6">
           {type === "live" && (
-            <span className="relative flex h-3 w-3">
+            <div className="relative flex items-center justify-center w-6 h-6">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-600"></span>
-            </span>
+              <Radio size={16} className="relative z-10 text-red-600" />
+            </div>
           )}
           <h3
             className={`text-xs font-black uppercase tracking-[0.3em] ${
-              type === "live" ? "text-white" : "text-slate-500"
+              type === "live" ? "text-red-600" : theme.sub
             }`}>
             {title}
           </h3>
-          <div className="h-px bg-white/5 flex-1"></div>
+          <div
+            className={`h-px flex-1 ${lightMode ? "bg-gray-200" : "bg-white/5"}`}></div>
         </div>
 
         {matches.length === 0 ? (
-          <div className="text-slate-600 bg-[#161920]/50 border border-dashed border-white/5 rounded-[2rem] p-12 text-center italic text-sm">
-            No matches found in this category.
+          <div
+            className={`border border-dashed rounded-[2rem] p-12 flex flex-col items-center justify-center gap-3 text-center transition-colors ${
+              lightMode
+                ? "bg-gray-50 border-gray-200 text-gray-400"
+                : "bg-[#161920]/50 border-white/5 text-slate-600"
+            }`}>
+            <CalendarX size={32} className="opacity-50" />
+            <span className="text-sm italic font-medium">
+              No matches found in this category.
+            </span>
           </div>
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-3 md:grid-cols-2 gap-6">

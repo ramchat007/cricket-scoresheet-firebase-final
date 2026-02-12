@@ -2,6 +2,20 @@ import React, { useState, useMemo } from "react";
 import { formatCurrency } from "../../utils/helpers";
 import PlayerProfileModal from "./PlayerProfileModal";
 import TeamPosterModal from "./TeamPosterModal";
+import { useTheme } from "../../context/ThemeContext";
+import {
+  Shield,
+  Users,
+  Trophy,
+  X,
+  Calendar,
+  BarChart2,
+  Crown,
+  Wallet,
+  Coins,
+  CreditCard,
+  Share2,
+} from "lucide-react";
 
 // --- 🛠️ HELPER: STANDARDIZED COMPARISON ---
 const normalize = (str) =>
@@ -14,7 +28,6 @@ const isSameTeam = (n1, n2) => normalize(n1) === normalize(n2);
 const getTeamMatchList = (teamName, allMatches = []) => {
   if (!teamName || !allMatches.length) return [];
 
-  // 1. Filter matches involving this team
   const rawMatches = allMatches.filter((m) => {
     const names = [
       m.meta?.teamA,
@@ -25,7 +38,6 @@ const getTeamMatchList = (teamName, allMatches = []) => {
     return names.some((n) => isSameTeam(n, teamName));
   });
 
-  // 2. Process each match
   return rawMatches
     .map((m) => {
       const meta = m.meta || {};
@@ -34,9 +46,7 @@ const getTeamMatchList = (teamName, allMatches = []) => {
       const status = normalize(m.status || meta.matchStatus || meta.status);
       const isFinished = status === "finished" || status === "completed";
 
-      // --- A. Venue & Date Logic (Updated to match MatchCard) ---
       const venue = m.venue || meta.venue || "Venue TBD";
-
       let formattedDateTime = "Date TBD";
       const rawDate = m.date || meta.date;
       const rawTime = m.time || meta.time;
@@ -48,10 +58,8 @@ const getTeamMatchList = (teamName, allMatches = []) => {
           month: "short",
         });
         let timePart = "";
-
         if (rawTime) {
           try {
-            // Check if time is HH:MM
             const [hours, minutes] = rawTime.split(":");
             const timeObj = new Date();
             timeObj.setHours(hours);
@@ -68,7 +76,6 @@ const getTeamMatchList = (teamName, allMatches = []) => {
         formattedDateTime = timePart ? `${datePart}, ${timePart}` : datePart;
       }
 
-      // --- B. Determine Opponent ---
       const possibleOpponents = [
         meta.teamA,
         meta.teamB,
@@ -79,7 +86,6 @@ const getTeamMatchList = (teamName, allMatches = []) => {
         possibleOpponents.find((n) => n && !isSameTeam(n, teamName)) ||
         "Opponent";
 
-      // --- C. Determine Result ---
       let resultStatus = "PENDING";
       let resultDescription =
         meta.result || (isFinished ? "Match Ended" : "Scheduled");
@@ -87,14 +93,11 @@ const getTeamMatchList = (teamName, allMatches = []) => {
       if (inn1 && inn2 && isFinished) {
         const s1 = Number(inn1.score || 0);
         const s2 = Number(inn2.score || 0);
-
-        // Math-First Winner Detection
         let winningTeam = "";
         if (s1 > s2) winningTeam = inn1.battingTeam;
         else if (s2 > s1) winningTeam = inn2.battingTeam;
         else winningTeam = "Tie";
 
-        // Generate "Won by..." text
         if (s1 > s2) {
           const diff = s1 - s2;
           resultDescription = `${inn1.battingTeam} won by ${diff} run${diff !== 1 ? "s" : ""}`;
@@ -106,7 +109,6 @@ const getTeamMatchList = (teamName, allMatches = []) => {
           resultDescription = "Match Tied";
         }
 
-        // Set W/L Status
         if (isSameTeam(winningTeam, teamName)) resultStatus = "WON";
         else if (isSameTeam(winningTeam, "tie")) resultStatus = "TIE";
         else resultStatus = "LOST";
@@ -132,6 +134,8 @@ const TeamStatsModal = ({
   isOpen,
   onClose,
 }) => {
+  const { theme, lightMode } = useTheme();
+
   if (!isOpen || !team) return null;
 
   const [activeTab, setActiveTab] = useState("squad");
@@ -159,42 +163,50 @@ const TeamStatsModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-[#0F1115]/95 backdrop-blur-xl animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
       <div className="absolute inset-0" onClick={onClose}></div>
-      <div className="relative bg-[#1C2128] border border-white/10 w-full max-w-4xl rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+      <div
+        className={`relative w-full max-w-4xl rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col max-h-[90vh] transition-colors duration-300 ${theme.card} ${lightMode ? "border border-gray-200" : "border border-white/10"}`}>
         {/* HEADER */}
-        <div className="bg-[#161920] p-6 border-b border-white/5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div
+          className={`p-6 border-b flex flex-col md:flex-row justify-between items-start md:items-center gap-4 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#161920] border-white/5"}`}>
           <div className="flex items-center gap-4">
             {team.logoUrl ? (
               <img
                 src={team.logoUrl}
-                className="w-14 h-14 md:w-16 md:h-16 rounded-2xl object-cover bg-black border border-white/10"
+                className={`w-14 h-14 md:w-16 md:h-16 rounded-2xl object-cover border shadow-sm ${lightMode ? "bg-white border-gray-200" : "bg-black border-white/10"}`}
                 alt=""
               />
             ) : (
-              <div className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-slate-800 flex items-center justify-center text-2xl">
-                🛡️
+              <div
+                className={`w-14 h-14 md:w-16 md:h-16 rounded-2xl flex items-center justify-center text-2xl border ${lightMode ? "bg-white border-gray-200" : "bg-slate-800 border-white/10"}`}>
+                <Shield size={28} className="text-gray-400" />
               </div>
             )}
             <div>
-              <h2 className="text-xl md:text-2xl font-black text-white uppercase italic leading-tight">
+              <h2
+                className={`text-xl md:text-2xl font-black uppercase italic leading-tight ${theme.text}`}>
                 {team.name}
               </h2>
               <div className="flex items-center gap-3 mt-1">
-                <span className="text-xs text-amber-500 font-bold tracking-tight">
-                  👑 {team.ownerName || "No Owner"}
+                <span
+                  className={`text-xs font-bold tracking-tight flex items-center gap-1 ${lightMode ? "text-amber-600" : "text-amber-500"}`}>
+                  <Crown size={12} /> {team.ownerName || "No Owner"}
                 </span>
                 <div className="flex gap-1">
-                  <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-mono font-bold border border-white/10">
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold border ${lightMode ? "bg-gray-200 text-gray-600 border-gray-300" : "bg-slate-800 text-slate-300 border-white/10"}`}>
                     P:{dbStats.played}
                   </span>
                   {dbStats.won > 0 && (
-                    <span className="text-[10px] bg-teal-900/40 text-teal-400 px-2 py-0.5 rounded font-bold border border-teal-500/20">
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded font-bold border ${lightMode ? "bg-teal-100 text-teal-700 border-teal-200" : "bg-teal-900/40 text-teal-400 border-teal-500/20"}`}>
                       W:{dbStats.won}
                     </span>
                   )}
                   {dbStats.lost > 0 && (
-                    <span className="text-[10px] bg-red-900/40 text-red-400 px-2 py-0.5 rounded font-bold border border-red-500/20">
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded font-bold border ${lightMode ? "bg-red-100 text-red-700 border-red-200" : "bg-red-900/40 text-red-400 border-red-500/20"}`}>
                       L:{dbStats.lost}
                     </span>
                   )}
@@ -203,23 +215,32 @@ const TeamStatsModal = ({
             </div>
           </div>
 
-          <div className="flex bg-black/20 p-1 rounded-xl border border-white/5 w-full md:w-auto">
+          <div
+            className={`flex p-1 rounded-xl border w-full md:w-auto ${lightMode ? "bg-gray-100 border-gray-200" : "bg-black/20 border-white/5"}`}>
             <button
               onClick={() => setActiveTab("squad")}
-              className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-xs font-black uppercase transition-all ${activeTab === "squad" ? "bg-teal-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-300"}`}>
-              Squad
+              className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-xs font-black uppercase transition-all flex items-center justify-center gap-2 ${
+                activeTab === "squad"
+                  ? "bg-teal-600 text-white shadow-lg"
+                  : `text-slate-500 hover:text-slate-400`
+              }`}>
+              <Users size={14} /> Squad
             </button>
             <button
               onClick={() => setActiveTab("matches")}
-              className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-xs font-black uppercase transition-all ${activeTab === "matches" ? "bg-teal-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-300"}`}>
-              Matches ({history.length})
+              className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-xs font-black uppercase transition-all flex items-center justify-center gap-2 ${
+                activeTab === "matches"
+                  ? "bg-teal-600 text-white shadow-lg"
+                  : `text-slate-500 hover:text-slate-400`
+              }`}>
+              <BarChart2 size={14} /> Matches ({history.length})
             </button>
           </div>
 
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 md:static w-8 h-8 rounded-full bg-white/5 text-slate-400 font-bold hover:bg-white/10 transition-colors">
-            ✕
+            className={`absolute top-4 right-4 md:static w-8 h-8 rounded-full flex items-center justify-center transition-colors ${lightMode ? "bg-gray-200 text-gray-500 hover:bg-gray-300" : "bg-white/5 text-slate-400 hover:bg-white/10"}`}>
+            <X size={16} />
           </button>
         </div>
 
@@ -228,17 +249,29 @@ const TeamStatsModal = ({
           {activeTab === "squad" && (
             <div className="animate-in slide-in-from-right-4 duration-300 space-y-8">
               <div className="grid grid-cols-3 gap-2 md:gap-4">
-                <StatCard label="Purse" value={formatCurrency(purse)} />
+                <StatCard
+                  label="Purse"
+                  value={formatCurrency(purse)}
+                  icon={Wallet}
+                  lightMode={lightMode}
+                  theme={theme}
+                />
                 <StatCard
                   label="Spent"
                   value={formatCurrency(spent)}
-                  color="text-red-400"
+                  icon={CreditCard}
+                  color={lightMode ? "text-red-600" : "text-red-400"}
+                  lightMode={lightMode}
+                  theme={theme}
                 />
                 <StatCard
                   label="Remaining"
                   value={formatCurrency(remaining)}
-                  color="text-green-400"
+                  icon={Coins}
+                  color={lightMode ? "text-emerald-600" : "text-green-400"}
                   isBorder
+                  lightMode={lightMode}
+                  theme={theme}
                 />
               </div>
 
@@ -247,11 +280,13 @@ const TeamStatsModal = ({
                   (role) => (
                     <div
                       key={role}
-                      className="bg-white/5 p-3 rounded-xl border border-white/5 flex flex-col items-center justify-center group hover:bg-white/10 transition-colors">
-                      <span className="text-[8px] md:text-[10px] font-bold text-slate-500 uppercase tracking-tighter">
+                      className={`p-3 rounded-xl border flex flex-col items-center justify-center group transition-colors ${lightMode ? "bg-gray-50 border-gray-200 hover:bg-gray-100" : "bg-white/5 border-white/5 hover:bg-white/10"}`}>
+                      <span
+                        className={`text-[8px] md:text-[10px] font-bold uppercase tracking-tighter ${theme.sub}`}>
                         {role}
                       </span>
-                      <span className="text-lg md:text-xl font-black text-teal-500">
+                      <span
+                        className={`text-lg md:text-xl font-black ${lightMode ? "text-teal-600" : "text-teal-500"}`}>
                         {roleCounts[role] || 0}
                       </span>
                     </div>
@@ -259,42 +294,51 @@ const TeamStatsModal = ({
                 )}
               </div>
 
-              <div className="bg-[#0F1115] rounded-3xl border border-white/5 overflow-hidden shadow-inner">
+              <div
+                className={`rounded-3xl border overflow-hidden shadow-inner ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-white/5 text-[10px] font-black uppercase text-slate-500">
+                  <thead
+                    className={`text-[10px] font-black uppercase ${lightMode ? "bg-gray-100 text-gray-500" : "bg-white/5 text-slate-500"}`}>
                     <tr>
                       <th className="p-4">Player</th>
                       <th className="p-4 hidden sm:table-cell">Role</th>
                       <th className="p-4 text-right">Sold Price</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-white/5 text-slate-300">
+                  <tbody
+                    className={`divide-y ${lightMode ? "divide-gray-200 text-gray-700" : "divide-white/5 text-slate-300"}`}>
                     {roster.map((p, i) => (
                       <tr
                         key={i}
-                        className="hover:bg-white/5 transition-colors group">
+                        className={
+                          lightMode ? "hover:bg-white" : "hover:bg-white/5"
+                        }>
                         <td className="p-3 md:p-4 flex items-center gap-3">
                           <img
                             src={
                               p.photoURL ||
                               `https://ui-avatars.com/api/?name=${p.name}`
                             }
-                            className="w-8 h-8 rounded-lg object-cover bg-black border border-white/5"
+                            className={`w-8 h-8 rounded-lg object-cover border ${lightMode ? "bg-white border-gray-200" : "bg-black border-white/5"}`}
                             alt=""
                           />
                           <div className="flex flex-col">
-                            <span className="font-bold text-slate-100 text-xs md:text-sm group-hover:text-teal-400 transition-colors">
+                            <span
+                              className={`font-bold text-xs md:text-sm transition-colors ${lightMode ? "text-gray-900 group-hover:text-teal-600" : "text-slate-100 group-hover:text-teal-400"}`}>
                               {p.name}
                             </span>
-                            <span className="text-[9px] text-slate-500 uppercase sm:hidden font-bold">
+                            <span
+                              className={`text-[9px] uppercase sm:hidden font-bold ${theme.sub}`}>
                               {p.role}
                             </span>
                           </div>
                         </td>
-                        <td className="p-4 text-xs font-bold uppercase text-slate-500 hidden sm:table-cell">
+                        <td
+                          className={`p-4 text-xs font-bold uppercase hidden sm:table-cell ${theme.sub}`}>
                           {p.role}
                         </td>
-                        <td className="p-4 text-right font-mono text-teal-400 font-bold">
+                        <td
+                          className={`p-4 text-right font-mono font-bold ${lightMode ? "text-teal-600" : "text-teal-400"}`}>
                           {formatCurrency(p.soldPrice || p.price || 0)}
                         </td>
                       </tr>
@@ -313,30 +357,42 @@ const TeamStatsModal = ({
                   {history.map((m, idx) => {
                     const resultColor =
                       m.computedResult === "WON"
-                        ? "border-teal-500/30 bg-teal-500/5"
+                        ? lightMode
+                          ? "border-teal-200 bg-teal-50"
+                          : "border-teal-500/30 bg-teal-500/5"
                         : m.computedResult === "LOST"
-                          ? "border-red-500/30 bg-red-500/5"
-                          : "border-slate-500/30 bg-[#0F1115]";
+                          ? lightMode
+                            ? "border-red-200 bg-red-50"
+                            : "border-red-500/30 bg-red-500/5"
+                          : lightMode
+                            ? "border-gray-200 bg-white"
+                            : "border-slate-500/30 bg-[#0F1115]";
+
                     const statusBadge =
                       m.computedResult === "WON"
-                        ? "text-teal-400"
+                        ? lightMode
+                          ? "text-teal-700"
+                          : "text-teal-400"
                         : m.computedResult === "LOST"
-                          ? "text-red-400"
-                          : "text-slate-400";
+                          ? lightMode
+                            ? "text-red-700"
+                            : "text-red-400"
+                          : theme.sub;
+
                     const opLogo = getOpponentLogo(m.computedOpponent);
 
                     return (
                       <div
                         key={idx}
                         className={`p-4 rounded-2xl border ${resultColor} relative overflow-hidden group`}>
-                        {/* Top Row: Date & Status */}
                         <div className="flex justify-between items-center mb-3">
                           <div className="flex flex-col">
-                            <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">
+                            <span
+                              className={`text-[10px] font-bold uppercase tracking-wider ${theme.text}`}>
                               {m.displayDateTime}
                             </span>
                             <span
-                              className="text-[9px] text-slate-500 font-medium truncate max-w-[120px]"
+                              className={`text-[9px] font-medium truncate max-w-[120px] ${theme.sub}`}
                               title={m.displayVenue}>
                               📍 {m.displayVenue}
                             </span>
@@ -347,19 +403,21 @@ const TeamStatsModal = ({
                               {m.computedResult}
                             </span>
                           ) : (
-                            <span className="text-[9px] font-black bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded border border-blue-500/20 uppercase">
+                            <span
+                              className={`text-[9px] font-black px-2 py-0.5 rounded border uppercase ${lightMode ? "bg-blue-50 text-blue-600 border-blue-200" : "bg-blue-500/10 text-blue-400 border-blue-500/20"}`}>
                               Upcoming
                             </span>
                           )}
                         </div>
 
-                        {/* Middle Row: VS Opponent */}
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                              <div className="text-[10px] text-slate-500 font-bold uppercase">
-                                Vs
-                              </div>
-                            <div className="w-10 h-10 rounded-xl bg-[#0F1115] border border-white/10 flex items-center justify-center overflow-hidden">
+                            <div
+                              className={`text-[10px] font-bold uppercase ${theme.sub}`}>
+                              Vs
+                            </div>
+                            <div
+                              className={`w-10 h-10 rounded-xl border flex items-center justify-center overflow-hidden ${lightMode ? "bg-white border-gray-200" : "bg-[#0F1115] border-white/10"}`}>
                               {opLogo ? (
                                 <img
                                   src={opLogo}
@@ -367,20 +425,20 @@ const TeamStatsModal = ({
                                   alt=""
                                 />
                               ) : (
-                                <span className="text-sm">🛡️</span>
+                                <Shield size={16} className="text-gray-400" />
                               )}
                             </div>
-                            <div>
-                              <div className="text-sm font-bold text-white leading-none">
-                                {m.computedOpponent}
-                              </div>
+                            <div
+                              className={`text-sm font-bold leading-none ${theme.text}`}>
+                              {m.computedOpponent}
                             </div>
                           </div>
                         </div>
 
-                        {/* Bottom Row: Result Text */}
-                        <div className="mt-3 pt-3 border-t border-white/5 text-right">
-                          <p className="text-xs font-mono text-slate-300 italic">
+                        <div
+                          className={`mt-3 pt-3 border-t text-right ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+                          <p
+                            className={`text-xs font-mono italic ${theme.sub}`}>
                             {m.computedResultText}
                           </p>
                         </div>
@@ -389,7 +447,9 @@ const TeamStatsModal = ({
                   })}
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center py-20 text-slate-500 border border-dashed border-white/10 rounded-3xl bg-[#0F1115]">
+                <div
+                  className={`flex flex-col items-center justify-center py-20 border border-dashed rounded-3xl ${lightMode ? "border-gray-200 bg-gray-50 text-gray-400" : "border-white/10 bg-[#0F1115] text-slate-500"}`}>
+                  <Calendar size={32} className="mb-2 opacity-50" />
                   <p className="text-sm italic">
                     No matches recorded for this team.
                   </p>
@@ -403,13 +463,29 @@ const TeamStatsModal = ({
   );
 };
 
-const StatCard = ({ label, value, color = "text-white", isBorder = false }) => (
+// --- STAT CARD COMPONENT ---
+const StatCard = ({
+  label,
+  value,
+  icon: Icon,
+  color,
+  isBorder = false,
+  lightMode,
+  theme,
+}) => (
   <div
-    className={`bg-[#0F1115] p-3 md:p-5 rounded-2xl md:rounded-3xl border border-white/5 ${isBorder ? "border-b-4 border-b-green-500 md:border-b-0 md:border-l-4 md:border-l-green-500" : ""} text-center md:text-left shadow-lg`}>
-    <p className="text-[8px] md:text-[10px] text-slate-500 uppercase font-black tracking-widest mb-1">
-      {label}
-    </p>
-    <p className={`text-sm md:text-2xl font-mono font-bold truncate ${color}`}>
+    className={`p-3 md:p-5 rounded-2xl md:rounded-3xl border text-center md:text-left shadow-lg ${
+      lightMode ? "bg-white border-gray-200" : "bg-[#0F1115] border-white/5"
+    } ${isBorder ? "border-b-4 border-b-green-500 md:border-b-0 md:border-l-4 md:border-l-green-500" : ""}`}>
+    <div className="flex items-center gap-2 mb-1 justify-center md:justify-start opacity-70">
+      {Icon && <Icon size={12} className={theme.sub} />}
+      <p
+        className={`text-[8px] md:text-[10px] uppercase font-black tracking-widest ${theme.sub}`}>
+        {label}
+      </p>
+    </div>
+    <p
+      className={`text-sm md:text-2xl font-mono font-bold truncate ${color || theme.text}`}>
       {value}
     </p>
   </div>
@@ -422,6 +498,7 @@ export default function TeamsTab({
   isAuctionEnabled,
   matches = [],
 }) {
+  const { theme, lightMode } = useTheme();
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [viewingTeamStats, setViewingTeamStats] = useState(null);
   const [posterTeam, setPosterTeam] = useState(null);
@@ -430,7 +507,8 @@ export default function TeamsTab({
 
   if (!tournamentTeams.length)
     return (
-      <div className="text-center py-20 text-slate-600 bg-[#161920] rounded-3xl border border-dashed border-white/5 italic">
+      <div
+        className={`text-center py-20 rounded-3xl border border-dashed italic ${lightMode ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-[#161920] text-slate-600 border-white/5"}`}>
         No teams found in this tournament.
       </div>
     );
@@ -446,26 +524,22 @@ export default function TeamsTab({
         return (
           <div
             key={team.id}
-            className="bg-[#1C2128] border border-white/5 rounded-[2rem] overflow-hidden shadow-xl hover:border-teal-500/30 transition-all flex flex-col h-full group relative">
+            className={`border rounded-[2rem] overflow-hidden shadow-xl transition-all flex flex-col h-full group relative ${
+              lightMode
+                ? "bg-white border-gray-200 hover:border-teal-300"
+                : "bg-[#1C2128] border-white/5 hover:border-teal-500/30"
+            }`}>
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 setPosterTeam(team);
               }}
-              className="absolute top-5 right-5 z-20 w-8 h-8 flex items-center justify-center bg-white/5 hover:bg-teal-600 rounded-full transition-all text-slate-400 hover:text-white border border-white/5 active:scale-95 shadow-lg">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
-                />
-              </svg>
+              className={`absolute top-5 right-5 z-20 w-8 h-8 flex items-center justify-center rounded-full transition-all border active:scale-95 shadow-lg ${
+                lightMode
+                  ? "bg-white hover:bg-teal-600 text-gray-400 hover:text-white border-gray-200"
+                  : "bg-white/5 hover:bg-teal-600 text-slate-400 hover:text-white border-white/5"
+              }`}>
+              <Share2 size={14} />
             </button>
 
             <div className="p-6 pb-4 flex items-center gap-4">
@@ -473,36 +547,42 @@ export default function TeamsTab({
                 {team.logoUrl ? (
                   <img
                     src={team.logoUrl}
-                    className="w-16 h-16 rounded-2xl object-cover bg-black border border-white/5 shadow-2xl"
+                    className={`w-16 h-16 rounded-2xl object-cover border shadow-2xl ${lightMode ? "bg-white border-gray-200" : "bg-black border-white/5"}`}
                     alt=""
                   />
                 ) : (
-                  <div className="w-16 h-16 rounded-2xl bg-slate-800 flex items-center justify-center text-2xl border border-white/10 text-slate-500 shadow-inner">
-                    🛡️
+                  <div
+                    className={`w-16 h-16 rounded-2xl flex items-center justify-center text-2xl border shadow-inner ${lightMode ? "bg-gray-100 border-gray-200" : "bg-slate-800 border-white/10"}`}>
+                    <Shield size={32} className="text-gray-400" />
                   </div>
                 )}
-                <div className="absolute -bottom-1 -right-1 bg-teal-500 text-black text-[10px] font-black px-1.5 py-0.5 rounded-md shadow-md border border-teal-400/50">
+                <div className="absolute -bottom-1 -right-1 bg-teal-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-md shadow-md border border-teal-400/50">
                   {team.roster?.length || 0}
                 </div>
               </div>
               <div className="flex-1 min-w-0 pr-6">
-                <h3 className="text-xl font-black text-slate-100 truncate italic uppercase tracking-tight leading-tight">
+                <h3
+                  className={`text-xl font-black truncate italic uppercase tracking-tight leading-tight ${theme.text}`}>
                   {team.name}
                 </h3>
-                <p className="text-xs font-bold text-amber-500/80 truncate mt-0.5 flex items-center gap-1.5">
-                  👑 {team.ownerName || "No Owner"}
+                <p
+                  className={`text-xs font-bold truncate mt-0.5 flex items-center gap-1.5 ${lightMode ? "text-amber-600" : "text-amber-500/80"}`}>
+                  <Crown size={12} /> {team.ownerName || "No Owner"}
                 </p>
                 <div className="flex gap-2 mt-2">
-                  <span className="text-[9px] bg-white/5 text-slate-400 border border-white/5 px-2 py-0.5 rounded font-mono shadow-sm">
+                  <span
+                    className={`text-[9px] border px-2 py-0.5 rounded font-mono shadow-sm ${lightMode ? "bg-gray-100 text-gray-600 border-gray-200" : "bg-white/5 text-slate-400 border-white/5"}`}>
                     P: {dbStats.played}
                   </span>
                   {dbStats.won > 0 && (
-                    <span className="text-[9px] bg-teal-900/30 text-teal-400 px-2 py-0.5 rounded font-bold border border-teal-500/20 shadow-sm shadow-teal-500/10">
+                    <span
+                      className={`text-[9px] px-2 py-0.5 rounded font-bold border shadow-sm ${lightMode ? "bg-teal-100 text-teal-700 border-teal-200" : "bg-teal-900/30 text-teal-400 border-teal-500/20"}`}>
                       W: {dbStats.won}
                     </span>
                   )}
                   {dbStats.lost > 0 && (
-                    <span className="text-[9px] bg-red-900/30 text-red-400 px-2 py-0.5 rounded font-bold border border-red-500/20 shadow-sm shadow-red-500/10">
+                    <span
+                      className={`text-[9px] px-2 py-0.5 rounded font-bold border shadow-sm ${lightMode ? "bg-red-100 text-red-700 border-red-200" : "bg-red-900/30 text-red-400 border-red-500/20"}`}>
                       L: {dbStats.lost}
                     </span>
                   )}
@@ -513,15 +593,16 @@ export default function TeamsTab({
             {isAuctionEnabled && (
               <div className="px-6 py-2">
                 <div className="flex justify-between text-[10px] font-black uppercase mb-1 tracking-widest">
-                  <span className="text-slate-600">Auction Budget</span>
+                  <span className={theme.sub}>Auction Budget</span>
                   <span
                     className={
-                      remaining < 0 ? "text-red-400" : "text-teal-400"
+                      remaining < 0 ? "text-red-500" : "text-teal-500"
                     }>
                     {Math.round(spentPercentage)}%
                   </span>
                 </div>
-                <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden flex shadow-inner">
+                <div
+                  className={`h-1.5 w-full rounded-full overflow-hidden flex shadow-inner ${lightMode ? "bg-gray-200" : "bg-white/5"}`}>
                   <div
                     className="h-full bg-gradient-to-r from-teal-500 to-emerald-400 transition-all duration-1000 shadow-[0_0_10px_rgba(20,184,166,0.3)]"
                     style={{ width: `${spentPercentage}%` }}
@@ -542,7 +623,7 @@ export default function TeamsTab({
                         player.photoURL ||
                         `https://ui-avatars.com/api/?name=${player.name}`
                       }
-                      className="w-10 h-10 rounded-xl object-cover border border-white/10 grayscale group-hover/player:grayscale-0 transition-all duration-300"
+                      className={`w-10 h-10 rounded-xl object-cover border grayscale group-hover/player:grayscale-0 transition-all duration-300 ${lightMode ? "bg-white border-gray-200" : "bg-black border-white/10"}`}
                       alt=""
                     />
                     <div className="absolute -top-1.5 -right-1.5 flex gap-0.5">
@@ -562,18 +643,19 @@ export default function TeamsTab({
                 {team.roster?.length > 6 && (
                   <div
                     onClick={() => setViewingTeamStats(team)}
-                    className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-[10px] font-bold text-slate-500 cursor-pointer hover:bg-white/10 transition-colors shadow-md">
+                    className={`w-10 h-10 rounded-xl border flex items-center justify-center text-[10px] font-bold cursor-pointer transition-colors shadow-md ${lightMode ? "bg-gray-100 border-gray-200 text-gray-500 hover:bg-gray-200" : "bg-white/5 border-white/10 text-slate-500 hover:bg-white/10"}`}>
                     +{team.roster.length - 6}
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="p-4 bg-[#161920] mt-auto flex justify-center border-t border-white/5 group-hover:bg-[#1c2128] transition-colors">
+            <div
+              className={`p-4 mt-auto flex justify-center border-t transition-colors ${lightMode ? "bg-gray-50 border-gray-200 group-hover:bg-gray-100" : "bg-[#161920] border-white/5 group-hover:bg-[#1c2128]"}`}>
               <button
                 onClick={() => setViewingTeamStats(team)}
-                className="text-[10px] font-black text-slate-500 uppercase tracking-widest hover:text-white transition-all flex items-center gap-2 group/btn">
-                View Team Analysis{" "}
+                className={`text-[10px] font-black uppercase tracking-widest hover:text-teal-500 transition-all flex items-center gap-2 group/btn ${theme.sub}`}>
+                View Team Analysis
                 <span className="text-teal-500 group-hover/btn:translate-x-1 transition-transform inline-block">
                   →
                 </span>
@@ -589,7 +671,6 @@ export default function TeamsTab({
         matches={matches}
         onClose={() => setSelectedPlayer(null)}
       />
-      {/* ✅ ALL TEAMS PASSED HERE */}
       <TeamStatsModal
         team={viewingTeamStats}
         matches={matches}

@@ -11,8 +11,34 @@ import { db } from "../utils/firebase";
 import MatchCorrectionModal from "./MatchCorrectionModal.jsx";
 import { getDeterministicCommentary } from "../utils/commentaryHelper";
 import { fetchAICommentary } from "../utils/gemini";
-import { RotateCcw, Wrench, Menu, Settings } from "lucide-react";
+import {
+  RotateCcw,
+  Wrench,
+  Menu,
+  Settings,
+  AlertTriangle,
+  Trophy,
+  ArrowRightCircle,
+} from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
+
+// --- SUB-COMPONENT: EYE-FRIENDLY BUTTON (Memoized) ---
+const KeyButton = React.memo(
+  ({
+    val,
+    onClick,
+    color = "bg-slate-800/40 border-slate-700/50 text-slate-300",
+    disabled,
+    loading,
+  }) => (
+    <button
+      onClick={onClick}
+      disabled={disabled || loading}
+      className={`${color} h-14 text-lg font-bold flex items-center justify-center rounded-xl active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed touch-manipulation border shadow-sm select-none relative`}>
+      {val}
+    </button>
+  ),
+);
 
 export default function ScoreInput({
   match,
@@ -51,6 +77,7 @@ export default function ScoreInput({
   // -- Edit Triggers --
   const [editStriker, setEditStriker] = useState(false);
   const [editNonStriker, setEditNonStriker] = useState(false);
+  const [editBowler, setEditBowler] = useState(false);
 
   const [localOverlayDismissed, setLocalOverlayDismissed] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -78,6 +105,13 @@ export default function ScoreInput({
 
   // --- DATA EXTRACTION ---
   const activeIndex = match?.currentInnings || 0;
+
+  useEffect(() => {
+    setIncoming("");
+    setNewBowler("");
+    setLocalOverlayDismissed(false);
+  }, [activeIndex]);
+
   const m = useMemo(() => {
     if (!match || !match.innings) return {};
     const innArr = Array.isArray(match.innings)
@@ -204,7 +238,7 @@ export default function ScoreInput({
     }
   }, [m.timeline?.length, activeIndex]);
 
-  // --- ⚡️ CORE SCORING HANDLER ---
+  // --- ⚡️ CORE SCORING HANDLER (FIXED) ---
   const handleSubmitBall = useCallback(
     async (runsVal) => {
       if (isSyncing) return;
@@ -212,20 +246,32 @@ export default function ScoreInput({
       setIsSyncing(true);
 
       try {
-        const runs = parseInt(runsVal);
+        const runsRan = parseInt(runsVal) || 0; // The actual physical runs
+
         const isWide = extraType === "WD";
         const isNoBall = extraType === "NB";
         const isBye = extraType === "B";
         const isLegBye = extraType === "LB";
 
-        let calculatedRuns = runs;
-        if (isWide || isNoBall) {
-          calculatedRuns = runs + 1;
-        }
+        // ✅ FIX: Do NOT add +1 for Wide/NoBall here.
+        // We assume the backend `onBall` logic adds the penalty run automatically when `isWide` is true.
+        // We only pass the "runs ran" by the batsman/byes.
+        const scorePayload = runsRan;
 
-        let code = runsVal;
-        if (isWide) code = runs > 0 ? `${runs + 1}wd` : "WD";
-        else if (isNoBall) code = "NB";
+        // ✅ LOGIC: Display Code calculation (Visual Only)
+        // 0 ran + Wide = "WD" (Total score 1)
+        // 1 ran + Wide = "2WD" (Total score 2)
+        let code = runsRan.toString();
+
+        if (isWide) {
+          code = runsRan === 0 ? "WD" : `${runsRan + 1}WD`;
+        } else if (isNoBall) {
+          code = runsRan === 0 ? "NB" : `${runsRan + 1}NB`;
+        } else if (isBye) {
+          code = `${runsRan}B`;
+        } else if (isLegBye) {
+          code = `${runsRan}LB`;
+        }
 
         const extraData = {
           isWide,
@@ -235,7 +281,7 @@ export default function ScoreInput({
           isWicket: false,
         };
 
-        await onBall(code, extraData, calculatedRuns);
+        await onBall(code, extraData, scorePayload);
 
         setExtraType(null);
         setLocalOverlayDismissed(false);
@@ -257,12 +303,21 @@ export default function ScoreInput({
 
   const maxOvers = parseInt(match?.meta?.overs || 0);
   const totalWickets = parseInt(match?.meta?.totalWickets || 10);
+
   const isAllOut = m.wickets >= totalWickets;
-  const isMatchOver = isAllOut || (maxOvers > 0 && m.over >= maxOvers);
-  const needBatsman = m.awaitingNewBatsman && !isAllOut;
-  const needBowler = !needBatsman && m.awaitingNewBowler && !isMatchOver;
+  const isOversDone = maxOvers > 0 && m.over >= maxOvers;
+  const isTargetChased =
+    isInning2 && matchContext.target && m.score >= matchContext.target;
+
+  const isInningsComplete = isAllOut || isOversDone || isTargetChased;
+  const isMatchOver = isInningsComplete && isInning2;
+
+  const needBatsman = m.awaitingNewBatsman && !isAllOut && !isInningsComplete;
+  const needBowler =
+    !needBatsman && m.awaitingNewBowler && !isOversDone && !isInningsComplete;
   const showPlayerSelector =
-    !localOverlayDismissed && (needBatsman || needBowler);
+    !localOverlayDismissed && !isInningsComplete && (needBatsman || needBowler);
+
   const hasSetup = strikerName && nonStrikerName && currentBowlerName;
   const disableBallEntry =
     isSyncing ||
@@ -271,7 +326,8 @@ export default function ScoreInput({
     m.awaitingNewBowler ||
     m.awaitingNewBatsman ||
     isWicketMenuOpen ||
-    !hasSetup;
+    !hasSetup ||
+    isInningsComplete;
 
   // --- TOSS SCREEN ---
   if (!match?.meta?.toss?.winner) {
@@ -318,10 +374,7 @@ export default function ScoreInput({
                     match.id,
                   ),
                   {
-                    "meta.toss": {
-                      winner: tossWinner,
-                      decision: tossDecision,
-                    },
+                    "meta.toss": { winner: tossWinner, decision: tossDecision },
                     status: "ongoing",
                     innings: [
                       {
@@ -363,7 +416,7 @@ export default function ScoreInput({
       {/* --- CONTENT AREA --- */}
       <div className="flex-1 overflow-y-auto no-scrollbar relative flex flex-col">
         {/* Score Hero Card */}
-        <div className="py-4">
+        <div className="py-4 px-4">
           <div
             className={`rounded-2xl p-5 ${theme.card} relative overflow-hidden`}>
             <div className="flex justify-between items-end">
@@ -407,8 +460,8 @@ export default function ScoreInput({
         </div>
 
         {/* Players Area */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-2">
-          {/* 1. Striker */}
+        <div className="px-4 grid grid-cols-2 md:grid-cols-3 gap-2 mb-2">
+          {/* Striker */}
           <div
             onClick={() =>
               onStrikeChange && onStrikeChange(nonStrikerName, strikerName)
@@ -452,8 +505,7 @@ export default function ScoreInput({
               {m.batsmenStats?.[strikerName]?.balls || 0})
             </div>
           </div>
-
-          {/* 2. Non-Striker */}
+          {/* Non-Striker */}
           <div
             className={`p-3 rounded-xl border-l-4 border-transparent ${theme.card} opacity-80`}>
             <div className="flex justify-between mb-1">
@@ -491,10 +543,9 @@ export default function ScoreInput({
               {m.batsmenStats?.[nonStrikerName]?.balls || 0})
             </div>
           </div>
-
-          {/* 3. Bowler Bar */}
+          {/* Bowler */}
           <div
-            className={`col-span-2 md:col-span-1 p-3 rounded-xl border-l-4 border-l-blue-500 border-transparent ${theme.card} opacity-90`}>
+            className={`col-span-2 md:col-span-1 p-3 rounded-xl border-l-blue-500 border-l-4 border-transparent ${theme.card} opacity-90`}>
             <div className="flex justify-between items-center mb-1">
               <span
                 className={`text-[9px] font-black uppercase tracking-widest ${theme.sub}`}>
@@ -504,8 +555,7 @@ export default function ScoreInput({
                 <span className={lightMode ? "text-red-600" : "text-red-400"}>
                   {m.bowlerStats?.[currentBowlerName]?.wickets ?? 0}
                 </span>
-                <span className="mx-1 text-black opacity-50">-</span>
-                {/* ✅ FORCE HIGH CONTRAST COLOR */}
+                <span className="mx-1 opacity-50">-</span>
                 <span className={lightMode ? "text-black" : "text-white"}>
                   {m.bowlerStats?.[currentBowlerName]?.runs ??
                     m.bowlerStats?.[currentBowlerName]?.runsConceded ??
@@ -520,25 +570,39 @@ export default function ScoreInput({
                 </span>
               </span>
             </div>
-            <select
-              className={`w-full p-1 bg-transparent font-bold text-sm outline-none truncate appearance-none cursor-pointer ${theme.text}`}
-              value={currentBowlerName}
-              onChange={(e) => onChangeBowler(e.target.value)}>
-              <option value="" className="text-gray-500">
-                Select Bowler
-              </option>
-              {fieldingTeamPlayers.map((n) => (
-                <option key={n} value={n} className="text-black">
-                  {n}
-                </option>
-              ))}
-            </select>
+            {!editBowler ? (
+              <div className="flex justify-between items-center w-full">
+                <span className="font-bold truncate text-lg leading-tight">
+                  {currentBowlerName || "Select"}
+                </span>
+                <button
+                  onClick={() => setEditBowler(true)}
+                  className="opacity-30 p-1">
+                  <Menu size={12} />
+                </button>
+              </div>
+            ) : (
+              <select
+                className="w-full bg-black/20 text-xs p-1 rounded"
+                value={currentBowlerName}
+                onChange={(e) => {
+                  onChangeBowler(e.target.value);
+                  setEditBowler(false);
+                }}>
+                <option value="">Select Bowler</option>
+                {fieldingTeamPlayers.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
 
         {/* History Timeline */}
         <div
-          className={`h-12 mb-2 rounded-2xl flex items-center px-4 gap-2 overflow-x-auto no-scrollbar ${theme.card} shrink-0`}>
+          className={`h-12 flex items-center px-4 gap-2 overflow-x-auto no-scrollbar ${theme.card} shrink-0 mb-2`}>
           <span
             className={`text-[10px] font-bold uppercase ${theme.sub} shrink-0`}>
             Last 12:
@@ -548,17 +612,15 @@ export default function ScoreInput({
             .reverse()
             .map((b, i) => {
               let label = b.runs;
-              // Default bubble style (visible text)
               let bubble = lightMode
                 ? "bg-gray-200 text-black"
                 : "bg-slate-700 text-white";
-
               if (b.isWicket) {
                 label = "W";
                 bubble = "bg-red-500 text-white";
               } else if (b.isWide) {
-                // Checks for extra runs on the wide
-                const extraRuns = (b.runs || 1) - 1; // Basic WD is 1 run
+                // Visual Fix: Ensure timeline shows correct WD/2WD based on recorded runs
+                const extraRuns = (b.runs || 1) - 1;
                 label = extraRuns > 0 ? `${b.runs}WD` : "WD";
                 bubble = "bg-orange-500 text-white";
               } else if (b.isNoBall) {
@@ -575,7 +637,6 @@ export default function ScoreInput({
               ) {
                 label = b.code;
               }
-
               return (
                 <div
                   key={i}
@@ -586,16 +647,15 @@ export default function ScoreInput({
             })}
         </div>
 
-        {/* --- 🏏 THE COMPOSER (Bottom) --- */}
+        {/* --- 🏏 THE COMPOSER --- */}
         <div
           className={`rounded-t-3xl shadow-[0_-5px_30px_rgba(0,0,0,0.3)] pb-8 pt-4 z-20 ${theme.card} border-t shrink-0`}>
-          {/* Status Feedback */}
           <div className="px-6 mb-4 flex justify-between items-center">
             <span
               className={`text-[10px] font-black uppercase tracking-widest ${extraType ? theme.accent : theme.sub}`}>
               {extraType
                 ? extraType === "WD"
-                  ? "WIDE SELECTED (Add runs if ran)"
+                  ? "WIDE SELECTED (Runs Ran?)"
                   : extraType === "NB"
                     ? "NO BALL SELECTED"
                     : `${extraType} SELECTED`
@@ -607,57 +667,49 @@ export default function ScoreInput({
               </span>
             )}
           </div>
-
-          {/* Extras Toggles */}
           <div className="px-4 grid grid-cols-4 gap-2 mb-3">
             {["WD", "NB", "B", "LB"].map((type) => (
-              <button
+              <KeyButton
                 key={type}
+                val={type}
                 onClick={() => setExtraType(extraType === type ? null : type)}
                 disabled={disableBallEntry}
-                className={`h-12 rounded-lg font-bold text-xs tracking-wider border transition-all ${extraType === type ? theme.btnActive : theme.btnBase}`}>
-                {type}
-              </button>
+                color={extraType === type ? theme.btnActive : theme.btnBase}
+              />
             ))}
           </div>
-
-          {/* Run Grid */}
           <div className="px-4 grid grid-cols-4 gap-3">
             {[0, 1, 2, 3, 4, 6].map((run) => (
-              <button
+              <KeyButton
                 key={run}
+                val={run}
                 onClick={() => handleSubmitBall(run)}
                 disabled={disableBallEntry}
-                className={`h-14 rounded-xl text-2xl font-black transition-transform active:scale-95 ${theme.btnBase} ${run === 4 ? "text-blue-500 border-blue-500/20" : ""} ${run === 6 ? "text-yellow-500 border-yellow-500/20" : ""}`}>
-                {run}
-              </button>
+                loading={isSyncing}
+                color={`${theme.btnBase} ${run === 4 ? "text-blue-500 border-blue-500/20" : ""} ${run === 6 ? "text-yellow-500 border-yellow-500/20" : ""}`}
+              />
             ))}
-            <button
+            <KeyButton
+              val="OUT"
               onClick={() => {
                 setExtraType(null);
                 setIsWicketMenuOpen(true);
               }}
               disabled={disableBallEntry}
-              className="col-span-2 h-14 bg-red-600 text-white rounded-xl font-black text-xl tracking-widest shadow-lg active:scale-95">
-              OUT
-            </button>
+              color="col-span-2 bg-red-600 text-white shadow-lg active:scale-95"
+            />
           </div>
-
-          {/* Footer Actions */}
           <div className="flex justify-between items-center px-6 mt-6 opacity-60">
             <button
               onClick={() => onUndo()}
               className="text-xs font-bold flex items-center gap-1 hover:opacity-100">
               <RotateCcw size={14} /> UNDO LAST
             </button>
-
-            {/* ✅ Settings Button in Footer */}
             <button
               onClick={() => setShowCorrectionModal(true)}
               className="text-xs font-bold flex items-center gap-1 hover:opacity-100 transition-opacity">
               <Settings size={14} /> SETTINGS
             </button>
-
             <button
               onClick={() => onFinishMatch("Finished")}
               className="text-xs font-bold flex items-center gap-1 text-red-500 hover:opacity-100">
@@ -666,7 +718,57 @@ export default function ScoreInput({
           </div>
         </div>
 
-        {/* --- MODALS --- */}
+        {/* --- 🛑 INNINGS BREAK / MATCH END OVERLAY --- */}
+        {isInningsComplete && (
+          <div className="absolute inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center p-6 animate-in fade-in">
+            <div
+              className={`max-w-sm w-full p-8 rounded-3xl border border-white/10 text-center shadow-2xl ${theme.card}`}>
+              <div className="w-20 h-20 rounded-full flex items-center justify-center bg-white/5 border border-white/10 mx-auto mb-6">
+                {isMatchOver ? (
+                  <Trophy size={40} className="text-amber-500" />
+                ) : (
+                  <ArrowRightCircle size={40} className="text-teal-500" />
+                )}
+              </div>
+              <h2
+                className={`text-2xl font-black uppercase tracking-tight mb-2 ${theme.text}`}>
+                {isMatchOver ? "Match Finished!" : "Innings Complete!"}
+              </h2>
+              <p className={`text-sm mb-8 ${theme.sub}`}>
+                {isMatchOver
+                  ? "The match has officially ended. Confirm to save results."
+                  : `Target for ${battingSecondTeam}: ${m.score + 1} Runs.`}
+              </p>
+              {isMatchOver ? (
+                <button
+                  onClick={() => onFinishMatch("Finished")}
+                  className="w-full py-4 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-black uppercase tracking-widest rounded-xl shadow-lg shadow-amber-900/20 active:scale-95 transition-all">
+                  Confirm Result 🏆
+                </button>
+              ) : (
+                <button
+                  onClick={onEndInnings}
+                  className="w-full py-4 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-black uppercase tracking-widest rounded-xl shadow-lg shadow-teal-900/20 active:scale-95 transition-all">
+                  Start 2nd Innings 🏏
+                </button>
+              )}
+              <div className="mt-6 pt-6 border-t border-white/10 flex justify-between gap-4">
+                <button
+                  onClick={onUndo}
+                  className="flex-1 py-2 rounded-lg bg-white/5 text-xs font-bold text-gray-400 hover:text-white hover:bg-white/10 flex items-center justify-center gap-2">
+                  <RotateCcw size={12} /> Undo Last
+                </button>
+                <button
+                  onClick={() => setShowCorrectionModal(true)}
+                  className="flex-1 py-2 rounded-lg bg-white/5 text-xs font-bold text-gray-400 hover:text-white hover:bg-white/10 flex items-center justify-center gap-2">
+                  <Settings size={12} /> Corrections
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* --- OTHER MODALS --- */}
         {isWicketMenuOpen && (
           <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/90">
             <div
@@ -691,7 +793,6 @@ export default function ScoreInput({
                   </option>
                 ))}
               </select>
-
               {["caught", "runout", "stumped"].includes(wicketType) && (
                 <select
                   className="w-full p-4 rounded-xl bg-gray-500/20 mb-4"
@@ -705,7 +806,6 @@ export default function ScoreInput({
                   ))}
                 </select>
               )}
-
               <button
                 onClick={() => {
                   onBall(
@@ -736,7 +836,6 @@ export default function ScoreInput({
           </div>
         )}
 
-        {/* New Batsman / Bowler Overlay */}
         {showPlayerSelector && (
           <div className="absolute inset-0 z-[90] bg-black/95 flex flex-col justify-end p-4 pb-10">
             <div className="bg-[#1C2128] border border-white/10 p-6 rounded-3xl text-white">

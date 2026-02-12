@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { getManOfTheMatch } from "../utils/statsHelper";
+import { useTheme } from "../context/ThemeContext";
+import { ChevronDown, Trophy } from "lucide-react";
 
 const ScoreTable = ({ match }) => {
+  const { theme, lightMode } = useTheme();
   const [openInningIndex, setOpenInningIndex] = useState(0);
 
   useEffect(() => {
@@ -12,7 +15,8 @@ const ScoreTable = ({ match }) => {
 
   if (!match)
     return (
-      <div className="text-slate-500 text-center py-10 animate-pulse text-sm font-bold bg-[#0F1115] h-full flex items-center justify-center">
+      <div
+        className={`text-center py-10 animate-pulse text-sm font-bold flex items-center justify-center h-40 ${theme.sub}`}>
         Loading Scorecard...
       </div>
     );
@@ -33,11 +37,12 @@ const ScoreTable = ({ match }) => {
 
   const totalOvers = match.meta?.overs;
 
-  // --- 🛠️ 1. DISMISSAL TEXT (Standardized Color & Shorthand) ---
+  // --- 🛠️ 1. DISMISSAL TEXT (Theme Aware) ---
   const getDismissalText = (stats, isStriker, isNonStriker) => {
     if (isStriker || isNonStriker)
       return (
-        <span className="text-teal-400 font-bold uppercase text-[9px]">
+        <span
+          className={`font-bold uppercase text-[9px] ${lightMode ? "text-teal-600" : "text-teal-400"}`}>
           not out
         </span>
       );
@@ -46,7 +51,7 @@ const ScoreTable = ({ match }) => {
     const b = stats.bowler || "";
     const f = stats.fielderName || stats.fielder || "";
     const type = stats.wicketType || "out";
-    const style = "text-slate-400 font-medium lowercase";
+    const style = `font-medium lowercase ${lightMode ? "text-gray-500" : "text-slate-400"}`;
 
     switch (type) {
       case "bowled":
@@ -71,12 +76,12 @@ const ScoreTable = ({ match }) => {
         return <span className={style}>hit wicket b {b}</span>;
       case "retiredhurt":
         return (
-          <span className="text-slate-500 italic text-[9px]">retired hurt</span>
+          <span className={`${theme.sub} italic text-[9px]`}>retired hurt</span>
         );
       case "retiredout":
         return <span className={style}>retired out</span>;
       default:
-        return <span className="text-slate-500 capitalize">{type}</span>;
+        return <span className={`${theme.sub} capitalize`}>{type}</span>;
     }
   };
 
@@ -130,7 +135,7 @@ const ScoreTable = ({ match }) => {
       .map(cleanName)
       .filter((n) => n && !playedBowlers.includes(n));
 
-    // --- 4. STATS CALCULATIONS (Restored CRR & Extras) ---
+    // --- 4. STATS CALCULATIONS ---
     const extras = inn.extras || { wides: 0, noBalls: 0, byes: 0, legByes: 0 };
     const totalExtras =
       (extras.wides || 0) +
@@ -144,43 +149,66 @@ const ScoreTable = ({ match }) => {
     return (
       <div
         key={`inn-${idx}`}
-        className="bg-[#161920] border border-white/5 rounded-2xl overflow-hidden mb-4 shadow-2xl">
+        className={`border rounded-2xl overflow-hidden mb-4 shadow-lg transition-all ${
+          theme.card
+        } ${lightMode ? "border-gray-200" : "border-white/5"}`}>
         {/* HEADER */}
         <div
           onClick={() => setOpenInningIndex(isOpen ? null : idx)}
-          className={`px-4 py-4 flex justify-between items-center cursor-pointer transition-all ${isOpen ? "bg-[#1C2128]" : "hover:bg-white/5"}`}>
+          className={`px-4 py-4 flex justify-between items-center cursor-pointer transition-all ${
+            isOpen
+              ? lightMode
+                ? "bg-gray-100"
+                : "bg-[#252a33]"
+              : lightMode
+                ? "hover:bg-gray-50"
+                : "hover:bg-white/5"
+          }`}>
           <div className="flex items-center gap-3">
-            <span className="text-slate-200 font-black text-lg tracking-tight uppercase">
+            <span
+              className={`font-black text-lg tracking-tight uppercase ${theme.text}`}>
               {inn.battingTeam}
             </span>
             {isCurrentInnings && !isFinished && (
-              <span className="bg-red-500/10 text-red-500 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase animate-pulse border border-red-500/20">
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase animate-pulse border ${
+                  lightMode
+                    ? "bg-red-100 text-red-600 border-red-200"
+                    : "bg-red-500/10 text-red-500 border-red-500/20"
+                }`}>
                 Live
               </span>
             )}
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
-              <span className="text-2xl font-black text-white italic tracking-tighter">
+              <span
+                className={`text-2xl font-black italic tracking-tighter ${theme.text}`}>
                 {inn.score}/{inn.wickets}
               </span>
-              <span className="text-slate-500 text-xs ml-2 font-mono">
+              <span className={`text-xs ml-2 font-mono ${theme.sub}`}>
                 ({inn.over}.{inn.overBallCount} / {totalOvers} Ov)
               </span>
             </div>
-            <span
-              className={`text-slate-600 transition-transform duration-500 ${isOpen ? "rotate-180" : ""}`}>
-              ▼
-            </span>
+            <ChevronDown
+              size={20}
+              className={`transition-transform duration-300 ${isOpen ? "rotate-180" : ""} ${theme.sub}`}
+            />
           </div>
         </div>
 
         {isOpen && (
-          <div className="bg-[#0F1115] border-t border-white/5 animate-in fade-in slide-in-from-top-2">
-            {/* BATTING TABLE (Restored 4s, 6s) */}
+          <div
+            className={`border-t animate-in fade-in slide-in-from-top-2 ${lightMode ? "bg-white border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
+            {/* BATTING TABLE */}
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
-                <thead className="bg-[#1C2128]/50 text-slate-500 text-[10px] uppercase font-black border-b border-white/5">
+                <thead
+                  className={`text-[10px] uppercase font-black border-b ${
+                    lightMode
+                      ? "bg-gray-50 text-gray-500 border-gray-200"
+                      : "bg-[#1C2128]/50 text-slate-500 border-white/5"
+                  }`}>
                   <tr>
                     <th className="px-4 py-3 w-1/2">Batter</th>
                     <th className="px-2 py-3 text-right">R</th>
@@ -194,7 +222,8 @@ const ScoreTable = ({ match }) => {
                     <th className="px-2 py-3 text-right">SR</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5 text-sm">
+                <tbody
+                  className={`divide-y text-sm ${lightMode ? "divide-gray-100" : "divide-white/5"}`}>
                   {playedBatsmen.map((name) => {
                     const stats = inn.batsmenStats?.[name] || {
                       runs: 0,
@@ -210,66 +239,89 @@ const ScoreTable = ({ match }) => {
                       stats.balls > 0
                         ? ((stats.runs / stats.balls) * 100).toFixed(1)
                         : "0.0";
+
                     return (
                       <tr
                         key={name}
                         className={
                           isAtCrease
-                            ? "bg-teal-500/[0.04]"
-                            : "hover:bg-white/[0.02]"
+                            ? lightMode
+                              ? "bg-teal-50"
+                              : "bg-teal-500/[0.04]"
+                            : lightMode
+                              ? "hover:bg-gray-50"
+                              : "hover:bg-white/[0.02]"
                         }>
                         <td className="px-4 py-4">
                           <div
-                            className={`font-bold ${isAtCrease ? "text-teal-400" : "text-slate-300"}`}>
+                            className={`font-bold ${
+                              isAtCrease
+                                ? lightMode
+                                  ? "text-teal-700"
+                                  : "text-teal-400"
+                                : theme.text
+                            }`}>
                             {name} {isS && "*"}
                           </div>
                           <div className="mt-1">
                             {getDismissalText(stats, isS, isNS)}
                           </div>
                         </td>
-                        <td className="px-2 py-4 text-right font-black text-slate-100">
+                        <td
+                          className={`px-2 py-4 text-right font-black ${theme.text}`}>
                           {stats.runs}
                         </td>
-                        <td className="px-2 py-4 text-right text-slate-500">
+                        <td className={`px-2 py-4 text-right ${theme.sub}`}>
                           {stats.balls}
                         </td>
-                        <td className="px-2 py-4 text-right text-slate-600 hidden sm:table-cell">
+                        <td
+                          className={`px-2 py-4 text-right hidden sm:table-cell ${theme.sub}`}>
                           {stats.fours}
                         </td>
-                        <td className="px-2 py-4 text-right text-slate-600 hidden sm:table-cell">
+                        <td
+                          className={`px-2 py-4 text-right hidden sm:table-cell ${theme.sub}`}>
                           {stats.sixes}
                         </td>
-                        <td className="px-2 py-4 text-right text-slate-500 text-xs font-mono">
+                        <td
+                          className={`px-2 py-4 text-right text-xs font-mono ${theme.sub}`}>
                           {sr}
                         </td>
                       </tr>
                     );
                   })}
-                  {/* EXTRAS ROW (Restored) */}
-                  <tr className="bg-[#161920]/50 border-t border-white/5">
-                    <td className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase">
+                  {/* EXTRAS */}
+                  <tr
+                    className={`border-t ${lightMode ? "bg-gray-50/50 border-gray-100" : "bg-[#161920]/50 border-white/5"}`}>
+                    <td
+                      className={`px-4 py-2 text-[10px] font-bold uppercase ${theme.sub}`}>
                       Extras
                     </td>
                     <td
                       colSpan={5}
-                      className="px-4 py-2 text-right text-slate-300 font-mono text-xs">
+                      className={`px-4 py-2 text-right font-mono text-xs ${theme.text}`}>
                       {totalExtras} (wd {extras.wides}, nb {extras.noBalls}, b{" "}
                       {extras.byes}, lb {extras.legByes})
                     </td>
                   </tr>
-                  {/* TOTAL ROW (Restored) */}
-                  <tr className="bg-[#1C2128] border-t border-white/10 font-bold">
-                    <td className="px-4 py-3 text-slate-200 uppercase text-xs">
+                  {/* TOTAL */}
+                  <tr
+                    className={`border-t font-bold ${
+                      lightMode
+                        ? "bg-gray-100 border-gray-200"
+                        : "bg-[#1C2128] border-white/10"
+                    }`}>
+                    <td className={`px-4 py-3 uppercase text-xs ${theme.text}`}>
                       Total Score
                     </td>
                     <td colSpan={5} className="px-4 py-3 text-right">
-                      <span className="text-slate-100 text-base mr-2">
+                      <span className={`text-base mr-2 ${theme.text}`}>
                         {inn.score}/{inn.wickets}
                       </span>
-                      <span className="text-slate-500 text-xs font-mono">
+                      <span className={`text-xs font-mono ${theme.sub}`}>
                         ({inn.over}.{inn.overBallCount} / {totalOvers} Ov)
                       </span>
-                      <span className="text-teal-500/80 text-xs font-mono ml-3">
+                      <span
+                        className={`text-xs font-mono ml-3 ${lightMode ? "text-teal-600" : "text-teal-400/80"}`}>
                         CRR: {crr}
                       </span>
                     </td>
@@ -278,34 +330,45 @@ const ScoreTable = ({ match }) => {
               </table>
             </div>
 
-            {/* YET TO BAT SECTION */}
+            {/* YET TO BAT */}
             {dnbBatsmen.length > 0 && (
-              <div className="px-4 py-3 border-t border-white/5 bg-black/20">
-                <span className="text-[9px] font-black text-slate-600 uppercase mr-3 tracking-[0.2em]">
+              <div
+                className={`px-4 py-3 border-t ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/5"}`}>
+                <span
+                  className={`text-[9px] font-black uppercase mr-3 tracking-[0.2em] ${theme.sub}`}>
                   Yet to Bat:
                 </span>
-                <span className="text-xs text-slate-500 font-medium italic">
+                <span
+                  className={`text-xs font-medium italic ${lightMode ? "text-gray-600" : "text-slate-500"}`}>
                   {dnbBatsmen.join(", ")}
                 </span>
               </div>
             )}
 
-            {/* BOWLING SECTION (Restored Appearance Order & Current Highlight) */}
-            <div className="mt-2 border-t border-white/5">
-              <div className="px-4 py-2 text-[10px] font-black text-slate-600 uppercase bg-[#161920]">
+            {/* BOWLING TABLE */}
+            <div
+              className={`mt-2 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+              <div
+                className={`px-4 py-2 text-[10px] font-black uppercase ${lightMode ? "text-gray-500 bg-gray-100" : "text-slate-600 bg-[#161920]"}`}>
                 Bowling
               </div>
               <table className="w-full text-left">
-                <thead className="bg-[#1C2128]/30 text-slate-500 text-[10px] uppercase font-black border-b border-white/5">
+                <thead
+                  className={`text-[10px] uppercase font-black border-b ${
+                    lightMode
+                      ? "bg-gray-50 text-gray-500 border-gray-200"
+                      : "bg-[#1C2128]/30 text-slate-500 border-white/5"
+                  }`}>
                   <tr>
                     <th className="px-4 py-2 w-1/2">Bowler</th>
                     <th className="px-2 py-2 text-right">O</th>
                     <th className="px-2 py-2 text-right">R</th>
-                    <th className="px-2 py-2 text-right text-slate-300">W</th>
+                    <th className="px-2 py-2 text-right">W</th>
                     <th className="px-2 py-2 text-right">Eco</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5 text-sm">
+                <tbody
+                  className={`divide-y text-sm ${lightMode ? "divide-gray-100" : "divide-white/5"}`}>
                   {playedBowlers.map((name) => {
                     const s = inn.bowlerStats?.[name] || {
                       balls: 0,
@@ -315,29 +378,49 @@ const ScoreTable = ({ match }) => {
                     const isCurrent = name === cleanName(inn.currentBowler);
                     const eco =
                       s.balls > 0 ? (s.runs / (s.balls / 6)).toFixed(1) : "0.0";
+
                     return (
                       <tr
                         key={name}
                         className={
                           isCurrent
-                            ? "bg-teal-500/[0.04]"
-                            : "hover:bg-white/[0.02]"
+                            ? lightMode
+                              ? "bg-teal-50"
+                              : "bg-teal-500/[0.04]"
+                            : lightMode
+                              ? "hover:bg-gray-50"
+                              : "hover:bg-white/[0.02]"
                         }>
                         <td
-                          className={`px-4 py-3 font-bold ${isCurrent ? "text-teal-400" : "text-slate-400"}`}>
+                          className={`px-4 py-3 font-bold ${
+                            isCurrent
+                              ? lightMode
+                                ? "text-teal-700"
+                                : "text-teal-400"
+                              : theme.sub
+                          }`}>
                           {name} {isCurrent && "🥎"}
                         </td>
-                        <td className="px-2 py-3 text-right text-slate-500 font-mono">
+                        <td
+                          className={`px-2 py-3 text-right font-mono ${theme.sub}`}>
                           {Math.floor(s.balls / 6)}.{s.balls % 6}
                         </td>
-                        <td className="px-2 py-3 text-right text-slate-500 font-mono">
+                        <td
+                          className={`px-2 py-3 text-right font-mono ${theme.sub}`}>
                           {s.runs}
                         </td>
                         <td
-                          className={`px-2 py-3 text-right font-black ${isCurrent ? "text-teal-400" : "text-slate-100"}`}>
+                          className={`px-2 py-3 text-right font-black ${
+                            isCurrent
+                              ? lightMode
+                                ? "text-teal-700"
+                                : "text-teal-400"
+                              : theme.text
+                          }`}>
                           {s.wickets}
                         </td>
-                        <td className="px-2 py-3 text-right text-slate-600 text-xs font-mono">
+                        <td
+                          className={`px-2 py-3 text-right text-xs font-mono ${theme.sub}`}>
                           {eco}
                         </td>
                       </tr>
@@ -347,13 +430,16 @@ const ScoreTable = ({ match }) => {
               </table>
             </div>
 
-            {/* YET TO BOWL SECTION */}
+            {/* YET TO BOWL */}
             {dnbBowlers.length > 0 && (
-              <div className="px-4 py-3 border-t border-white/5 bg-black/20">
-                <span className="text-[9px] font-black text-slate-600 uppercase mr-3 tracking-[0.2em]">
+              <div
+                className={`px-4 py-3 border-t ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/5"}`}>
+                <span
+                  className={`text-[9px] font-black uppercase mr-3 tracking-[0.2em] ${theme.sub}`}>
                   Yet to Bowl:
                 </span>
-                <span className="text-xs text-slate-500 font-medium italic">
+                <span
+                  className={`text-xs font-medium italic ${lightMode ? "text-gray-600" : "text-slate-500"}`}>
                   {dnbBowlers.join(", ")}
                 </span>
               </div>
@@ -368,25 +454,41 @@ const ScoreTable = ({ match }) => {
     <div className="w-full flex flex-col gap-4 max-w-3xl mx-auto pb-20">
       {/* MAN OF THE MATCH CARD */}
       {isFinished && mom && (
-        <div className="bg-gradient-to-br from-[#1C2128] to-[#0F1115] border border-amber-500/20 rounded-3xl p-6 flex items-center justify-between shadow-2xl">
+        <div
+          className={`border rounded-3xl p-6 flex items-center justify-between shadow-2xl ${
+            lightMode
+              ? "bg-gradient-to-br from-white to-orange-50 border-orange-200"
+              : "bg-gradient-to-br from-[#1C2128] to-[#0F1115] border-amber-500/20"
+          }`}>
           <div className="flex items-center gap-5">
-            <div className="w-16 h-16 bg-amber-500/10 rounded-2xl flex items-center justify-center text-3xl border border-amber-500/20">
-              🏅
+            <div
+              className={`w-16 h-16 rounded-2xl flex items-center justify-center text-3xl border ${
+                lightMode
+                  ? "bg-orange-100 text-orange-600 border-orange-200"
+                  : "bg-amber-500/10 text-amber-500 border-amber-500/20"
+              }`}>
+              <Trophy size={32} />
             </div>
             <div>
-              <div className="text-[10px] text-amber-500 font-black uppercase tracking-widest mb-1">
+              <div
+                className={`text-[10px] font-black uppercase tracking-widest mb-1 ${
+                  lightMode ? "text-orange-600" : "text-amber-500"
+                }`}>
                 Player of the Match
               </div>
-              <div className="text-2xl font-black text-white italic uppercase">
+              <div
+                className={`text-2xl font-black italic uppercase ${theme.text}`}>
                 {cleanName(mom.name)}
               </div>
             </div>
           </div>
           <div className="text-right">
-            <div className="text-4xl font-black text-white tracking-tighter">
+            <div
+              className={`text-4xl font-black tracking-tighter ${theme.text}`}>
               {mom.mvpScore}
             </div>
-            <div className="text-[10px] text-slate-600 font-black uppercase mt-1">
+            <div
+              className={`text-[10px] font-black uppercase mt-1 ${theme.sub}`}>
               MVP Points
             </div>
           </div>

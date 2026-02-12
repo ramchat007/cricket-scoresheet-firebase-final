@@ -2,15 +2,30 @@ import React, { useState, useEffect } from "react";
 import { doc, updateDoc, onSnapshot } from "firebase/firestore";
 import { db } from "../../utils/firebase";
 import { useAuth } from "../../hooks/useAuth";
+import { useTheme } from "../../context/ThemeContext";
+import {
+  MapPin,
+  Calendar,
+  Radio,
+  Save,
+  Lock,
+  Loader2,
+  Globe,
+  Copy,
+  Layers,
+  Monitor,
+} from "lucide-react";
 
 export default function TournamentSettings({
   tournament: initialData,
   tournamentId,
 }) {
   const { user } = useAuth();
+  const { theme, lightMode } = useTheme();
 
-  // 1. Internal State for Tournament Data (handles prop missing case)
+  // 1. Internal State
   const [tournament, setTournament] = useState(initialData || null);
+  const [origin, setOrigin] = useState("");
 
   const [formData, setFormData] = useState({
     name: "",
@@ -20,19 +35,23 @@ export default function TournamentSettings({
     endDate: "",
   });
 
-  const [status, setStatus] = useState("loading"); // loading | authorized | restricted
+  const [status, setStatus] = useState("loading");
   const [loadingMessage, setLoadingMessage] = useState("Initializing...");
   const [saving, setSaving] = useState(false);
 
-  // --- EFFECT 1: FETCH DATA IF PROP IS MISSING ---
+  // --- EFFECT: Get Window Origin for Links ---
   useEffect(() => {
-    // If props provided data, use it
+    if (typeof window !== "undefined") {
+      setOrigin(window.location.origin);
+    }
+  }, []);
+
+  // --- EFFECT: FETCH DATA ---
+  useEffect(() => {
     if (initialData) {
       setTournament(initialData);
       return;
     }
-
-    // If no prop, fetch from DB
     if (tournamentId) {
       setLoadingMessage("Fetching Tournament Details...");
       const unsub = onSnapshot(
@@ -47,22 +66,18 @@ export default function TournamentSettings({
     }
   }, [initialData, tournamentId]);
 
-  // --- EFFECT 2: CHECK PERMISSIONS & POPULATE FORM ---
+  // --- EFFECT: PERMISSIONS & FORM ---
   useEffect(() => {
-    // A. Wait for Data
     if (!tournament) {
       setLoadingMessage("Waiting for Data...");
       return;
     }
-
-    // B. Wait for Auth
-    if (user === undefined) return; // Auth loading
+    if (user === undefined) return;
     if (user === null) {
       setStatus("restricted");
       return;
     }
 
-    // C. Populate Form
     setFormData({
       name: tournament.name || "",
       location: tournament.location || "",
@@ -71,7 +86,6 @@ export default function TournamentSettings({
       endDate: tournament.endDate || "",
     });
 
-    // D. Check Permissions
     const isOwner = tournament.ownerId === user.uid;
     const isScorer =
       tournament.scorers && Array.isArray(tournament.scorers)
@@ -107,12 +121,23 @@ export default function TournamentSettings({
     }
   };
 
+  const copyOverlayLink = () => {
+    const url = `${origin}/overlay/${tournamentId}/active?clean=true`;
+    navigator.clipboard.writeText(url);
+    alert("✅ Global Overlay URL Copied!\nPaste this into OBS.");
+  };
+
   // --- RENDER ---
 
   if (status === "loading") {
     return (
-      <div className="p-8 text-center bg-[#1C2128] rounded-2xl border border-white/5 animate-pulse">
-        <span className="text-slate-500 text-xs font-bold uppercase tracking-widest">
+      <div
+        className={`p-8 text-center rounded-2xl border animate-pulse flex flex-col items-center gap-2 ${
+          lightMode ? "bg-white border-gray-200" : "bg-[#1C2128] border-white/5"
+        }`}>
+        <Loader2 className={`animate-spin ${theme.sub}`} size={24} />
+        <span
+          className={`text-xs font-bold uppercase tracking-widest ${theme.sub}`}>
           {loadingMessage}
         </span>
       </div>
@@ -121,8 +146,15 @@ export default function TournamentSettings({
 
   if (status === "restricted") {
     return (
-      <div className="p-10 text-center text-slate-500 bg-[#161920] rounded-2xl border border-white/5">
-        <span className="text-2xl">🔒</span>
+      <div
+        className={`p-10 text-center rounded-2xl border ${
+          lightMode
+            ? "bg-white border-gray-200 text-gray-500"
+            : "bg-[#161920] border-white/5 text-slate-500"
+        }`}>
+        <div className="flex justify-center mb-2">
+          <Lock size={32} />
+        </div>
         <p className="text-xs font-bold uppercase tracking-widest mt-2">
           Restricted Access
         </p>
@@ -135,96 +167,217 @@ export default function TournamentSettings({
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-      {/* 🔴 BROADCAST CONFIGURATION */}
-      <div className="bg-[#1C2128] border border-white/5 p-6 rounded-2xl relative overflow-hidden group">
-        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-          <span className="text-6xl">📡</span>
-        </div>
-        <h3 className="text-slate-300 text-xs font-black uppercase tracking-widest mb-4 flex items-center gap-2">
-          <span className="text-red-500 animate-pulse">●</span> Global Broadcast
-          Link
-        </h3>
-        <div className="space-y-3">
-          <input
-            type="text"
-            value={formData.liveStreamUrl}
-            onChange={(e) =>
-              setFormData({ ...formData, liveStreamUrl: e.target.value })
-            }
-            placeholder="Paste YouTube Live URL here..."
-            className="w-full bg-black border border-red-500/20 text-white text-sm p-4 rounded-xl outline-none focus:border-red-500 transition-colors placeholder:text-slate-600"
+      {/* 📡 BROADCAST STUDIO CARD */}
+      <div
+        className={`border rounded-2xl relative overflow-hidden group ${
+          lightMode
+            ? "bg-white border-purple-100 shadow-sm"
+            : "bg-[#1C2128] border-white/5"
+        }`}>
+        {/* Header */}
+        <div
+          className={`px-6 py-4 border-b flex items-center gap-3 ${lightMode ? "bg-purple-50/50 border-purple-100" : "bg-[#13161a] border-white/5"}`}>
+          <Monitor
+            size={20}
+            className={lightMode ? "text-purple-600" : "text-purple-400"}
           />
-          <p className="text-[10px] text-slate-400 leading-relaxed">
-            Matches without a specific link will play this video.
-          </p>
+          <h3
+            className={`text-sm font-black uppercase tracking-widest ${theme.text}`}>
+            Broadcast Studio
+          </h3>
+        </div>
+
+        <div className="p-6 space-y-8">
+          {/* 1. OBS OUTPUT (The New Common URL) */}
+          <div>
+            <label
+              className={`flex items-center justify-between text-[10px] font-black uppercase tracking-widest mb-2 ${theme.sub}`}>
+              <span className="flex items-center gap-1.5">
+                <Layers size={14} className="text-teal-500" /> Global Overlay
+                Source (OBS)
+              </span>
+              <span className="text-teal-500">Output</span>
+            </label>
+            <div
+              className={`flex items-center gap-2 p-1.5 rounded-xl border ${
+                lightMode
+                  ? "bg-gray-50 border-gray-200"
+                  : "bg-black/40 border-white/10"
+              }`}>
+              <div
+                className={`flex-1 px-3 text-xs font-mono truncate select-all ${theme.text}`}>
+                {origin}/overlay/{tournamentId}/active?clean=true
+              </div>
+              <button
+                onClick={copyOverlayLink}
+                className={`p-2 rounded-lg transition-all active:scale-95 ${
+                  lightMode
+                    ? "bg-white border border-gray-200 text-gray-600 hover:text-teal-600 hover:border-teal-200"
+                    : "bg-white/5 hover:bg-teal-500/20 text-slate-400 hover:text-teal-400"
+                }`}
+                title="Copy to Clipboard">
+                <Copy size={14} />
+              </button>
+            </div>
+            <p className={`text-[10px] mt-2 opacity-70 ${theme.sub}`}>
+              <strong>One link for the whole tournament.</strong> It
+              automatically displays graphics for whichever match is currently{" "}
+              <strong>Live</strong>.
+            </p>
+          </div>
+
+          {/* Divider */}
+          <div
+            className={`h-px w-full ${lightMode ? "bg-purple-100" : "bg-white/5"}`}></div>
+
+          {/* 2. YOUTUBE INPUT (Existing Logic) */}
+          <div>
+            <label
+              className={`flex items-center justify-between text-[10px] font-black uppercase tracking-widest mb-2 ${theme.sub}`}>
+              <span className="flex items-center gap-1.5">
+                <Radio size={14} className="text-red-500" /> Live Stream Source
+              </span>
+              <span className="text-red-500">Input</span>
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={formData.liveStreamUrl}
+                onChange={(e) =>
+                  setFormData({ ...formData, liveStreamUrl: e.target.value })
+                }
+                placeholder="Paste YouTube Live URL here..."
+                className={`w-full text-sm p-3 pl-4 pr-10 rounded-xl outline-none focus:border-red-500 transition-colors border ${
+                  lightMode
+                    ? "bg-white border-gray-200 text-gray-900 placeholder:text-gray-400"
+                    : "bg-black/40 border-white/10 text-white placeholder:text-slate-600"
+                }`}
+              />
+              {/* Status Dot inside input */}
+              <div
+                className={`absolute right-3 top-3.5 w-2 h-2 rounded-full ${formData.liveStreamUrl ? "bg-red-500 animate-pulse" : "bg-gray-500"}`}></div>
+            </div>
+            <p className={`text-[10px] mt-2 opacity-70 ${theme.sub}`}>
+              This video will be embedded on the public tournament page.
+            </p>
+          </div>
         </div>
       </div>
 
       {/* 📝 GENERAL SETTINGS */}
       <form
         onSubmit={handleSave}
-        className="bg-[#1C2128] border border-white/5 p-6 rounded-2xl space-y-5">
-        <h3 className="text-slate-300 text-xs font-black uppercase tracking-widest mb-2">
-          General Information
+        className={`border p-6 rounded-2xl space-y-5 ${
+          lightMode
+            ? "bg-white border-gray-200 shadow-sm"
+            : "bg-[#1C2128] border-white/5"
+        }`}>
+        <h3
+          className={`text-xs font-black uppercase tracking-widest mb-2 flex items-center gap-2 ${theme.text}`}>
+          <Globe size={14} /> General Information
         </h3>
         <div>
-          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+          <label
+            className={`block text-[10px] font-bold uppercase mb-1 ${theme.sub}`}>
             Tournament Name
           </label>
           <input
             type="text"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="w-full bg-black/40 border border-white/10 text-white text-sm p-3 rounded-xl outline-none focus:border-teal-500 transition-colors"
+            className={`w-full text-sm p-3 rounded-xl outline-none transition-colors border focus:border-teal-500 ${
+              lightMode
+                ? "bg-gray-50 border-gray-200 text-gray-900 focus:bg-white"
+                : "bg-black/40 border-white/10 text-white"
+            }`}
           />
         </div>
         <div>
-          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+          <label
+            className={`block text-[10px] font-bold uppercase mb-1 ${theme.sub}`}>
             Location / Venue
           </label>
-          <input
-            type="text"
-            value={formData.location}
-            onChange={(e) =>
-              setFormData({ ...formData, location: e.target.value })
-            }
-            className="w-full bg-black/40 border border-white/10 text-white text-sm p-3 rounded-xl outline-none focus:border-teal-500 transition-colors"
-          />
+          <div className="relative">
+            <MapPin
+              className={`absolute left-3 top-3.5 ${theme.sub}`}
+              size={14}
+            />
+            <input
+              type="text"
+              value={formData.location}
+              onChange={(e) =>
+                setFormData({ ...formData, location: e.target.value })
+              }
+              className={`w-full text-sm p-3 pl-9 rounded-xl outline-none transition-colors border focus:border-teal-500 ${
+                lightMode
+                  ? "bg-gray-50 border-gray-200 text-gray-900 focus:bg-white"
+                  : "bg-black/40 border-white/10 text-white"
+              }`}
+            />
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+            <label
+              className={`block text-[10px] font-bold uppercase mb-1 ${theme.sub}`}>
               Start Date
             </label>
-            <input
-              type="date"
-              value={formData.startDate}
-              onChange={(e) =>
-                setFormData({ ...formData, startDate: e.target.value })
-              }
-              className="w-full bg-black/40 border border-white/10 text-white text-sm p-3 rounded-xl outline-none focus:border-teal-500 transition-colors"
-            />
+            <div className="relative">
+              <Calendar
+                className={`absolute left-3 top-3.5 ${theme.sub}`}
+                size={14}
+              />
+              <input
+                type="date"
+                value={formData.startDate}
+                onChange={(e) =>
+                  setFormData({ ...formData, startDate: e.target.value })
+                }
+                className={`w-full text-sm p-3 pl-9 rounded-xl outline-none transition-colors border focus:border-teal-500 ${
+                  lightMode
+                    ? "bg-gray-50 border-gray-200 text-gray-900 focus:bg-white"
+                    : "bg-black/40 border-white/10 text-white"
+                }`}
+              />
+            </div>
           </div>
           <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+            <label
+              className={`block text-[10px] font-bold uppercase mb-1 ${theme.sub}`}>
               End Date
             </label>
-            <input
-              type="date"
-              value={formData.endDate}
-              onChange={(e) =>
-                setFormData({ ...formData, endDate: e.target.value })
-              }
-              className="w-full bg-black/40 border border-white/10 text-white text-sm p-3 rounded-xl outline-none focus:border-teal-500 transition-colors"
-            />
+            <div className="relative">
+              <Calendar
+                className={`absolute left-3 top-3.5 ${theme.sub}`}
+                size={14}
+              />
+              <input
+                type="date"
+                value={formData.endDate}
+                onChange={(e) =>
+                  setFormData({ ...formData, endDate: e.target.value })
+                }
+                className={`w-full text-sm p-3 pl-9 rounded-xl outline-none transition-colors border focus:border-teal-500 ${
+                  lightMode
+                    ? "bg-gray-50 border-gray-200 text-gray-900 focus:bg-white"
+                    : "bg-black/40 border-white/10 text-white"
+                }`}
+              />
+            </div>
           </div>
         </div>
-        <div className="pt-4 border-t border-white/5 flex justify-end">
+        <div
+          className={`pt-4 border-t flex justify-end ${lightMode ? "border-gray-100" : "border-white/5"}`}>
           <button
             type="submit"
             disabled={saving}
-            className="bg-teal-600 hover:bg-teal-500 text-white text-xs font-black uppercase px-6 py-3 rounded-xl transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2">
-            {saving ? <span className="animate-spin">↻</span> : "💾"} Save
+            className="bg-teal-600 hover:bg-teal-500 text-white text-xs font-black uppercase px-6 py-3 rounded-xl transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-teal-900/20">
+            {saving ? (
+              <Loader2 className="animate-spin" size={16} />
+            ) : (
+              <Save size={16} />
+            )}{" "}
+            Save
           </button>
         </div>
       </form>

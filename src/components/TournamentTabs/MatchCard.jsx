@@ -1,24 +1,34 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { doc, deleteDoc } from "firebase/firestore";
-import { db } from "../../utils/firebase"; 
+import { db } from "../../utils/firebase";
+import { useTheme } from "../../context/ThemeContext";
+import {
+  Trash2,
+  ExternalLink,
+  Trophy,
+  Swords,
+  Clock,
+  MapPin,
+} from "lucide-react";
 
 export default function MatchCard({ match, teams, tournamentId, canEdit }) {
   const navigate = useNavigate();
+  const { theme, lightMode } = useTheme();
 
   // --- DELETE HANDLER ---
   const handleDelete = async (e) => {
     e.stopPropagation(); // 🛑 Stop the card from opening
     if (
       !window.confirm(
-        `Are you sure you want to delete the match:\n${match.teamA} vs ${match.teamB}?`
+        `Are you sure you want to delete the match:\n${match.teamA} vs ${match.teamB}?`,
       )
     )
       return;
 
     try {
       await deleteDoc(
-        doc(db, "tournaments", tournamentId, "matches", match.id)
+        doc(db, "tournaments", tournamentId, "matches", match.id),
       );
     } catch (error) {
       console.error("Error deleting match:", error);
@@ -119,18 +129,18 @@ export default function MatchCard({ match, teams, tournamentId, canEdit }) {
     if (inn1 && inn2) {
       if (inn1.score > inn2.score) {
         const diff = inn1.score - inn2.score;
-        resultText = `${inn1.battingTeam} won by ${diff} run${diff !== 1 ? 's' : ''}`;
+        resultText = `${inn1.battingTeam} won by ${diff} run${diff !== 1 ? "s" : ""}`;
       } else if (inn2.score > inn1.score) {
         const totalWickets = parseInt(meta.totalWickets || 10);
         const diff = Math.max(0, totalWickets - inn2.wickets);
-        resultText = `${inn2.battingTeam} won by ${diff} wicket${diff !== 1 ? 's' : ''}`;
+        resultText = `${inn2.battingTeam} won by ${diff} wicket${diff !== 1 ? "s" : ""}`;
       } else {
         resultText = "Match Tied";
       }
     }
   } else if (match.meta?.result) {
     // If backend stored a computed result string
-    resultText = match.meta.result; 
+    resultText = match.meta.result;
   }
 
   return (
@@ -138,29 +148,42 @@ export default function MatchCard({ match, teams, tournamentId, canEdit }) {
       onClick={() =>
         navigate(`/tournaments/${tournamentId}/scorecard/${match.id}`)
       }
-      className={`group bg-[#1C2128] border-2 rounded-[2rem] overflow-hidden transition-all duration-300 hover:scale-[1.01] cursor-pointer ${
+      className={`group border rounded-[2rem] overflow-hidden transition-all duration-300 hover:scale-[1.01] cursor-pointer shadow-lg hover:shadow-xl ${
         isLive
-          ? "border-red-500/30 shadow-lg shadow-red-900/10"
-          : "border-white/5"
+          ? lightMode
+            ? "bg-white border-red-500 shadow-red-100"
+            : "bg-[#1C2128] border-red-500/50 shadow-red-900/20"
+          : `${theme.card} ${lightMode ? "border-gray-200" : "border-white/5"}`
       }`}>
       {/* Top Bar */}
-      <div className="px-6 py-3 bg-[#0F1115]/50 flex justify-between items-center border-b border-white/5">
-        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2 truncate max-w-[60%]">
-          <span className="bg-white/10 text-slate-300 px-1.5 py-0.5 rounded truncate">
+      <div
+        className={`px-6 py-3 flex justify-between items-center border-b ${
+          lightMode
+            ? "bg-gray-50 border-gray-200"
+            : "bg-[#0F1115]/50 border-white/5"
+        }`}>
+        <span
+          className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-2 truncate max-w-[60%] ${theme.sub}`}>
+          <span
+            className={`px-1.5 py-0.5 rounded truncate ${lightMode ? "bg-white border border-gray-200" : "bg-white/10 text-slate-300"}`}>
             {displayId}
           </span>
-          <span className="shrink-0">•</span>
+          <span className="shrink-0 text-gray-400">•</span>
           <span className="shrink-0">{overs} Overs</span>
         </span>
 
         <div className="flex items-center gap-2">
           <span
-            className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-tighter ${
+            className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-tighter border ${
               isLive
-                ? "bg-red-600 text-white animate-pulse"
+                ? "bg-red-600 text-white animate-pulse border-red-600"
                 : isFinished
-                ? "bg-teal-500/10 text-teal-500"
-                : "bg-white/10 text-slate-400"
+                  ? lightMode
+                    ? "bg-teal-50 text-teal-600 border-teal-200"
+                    : "bg-teal-500/10 text-teal-500 border-teal-500/20"
+                  : lightMode
+                    ? "bg-gray-200 text-gray-600 border-gray-300"
+                    : "bg-white/10 text-slate-400 border-white/10"
             }`}>
             {statusText}
           </span>
@@ -171,7 +194,12 @@ export default function MatchCard({ match, teams, tournamentId, canEdit }) {
         <div className="flex items-center justify-between gap-4">
           {/* Team A */}
           <div className="flex flex-col items-center gap-3 flex-1 text-center">
-            <div className="w-16 h-16 md:w-20 md:h-20 bg-[#0F1115] rounded-3xl p-0 overflow-hidden border border-white/5 flex items-center justify-center shadow-inner group-hover:rotate-[-5deg] transition-transform">
+            <div
+              className={`w-16 h-16 md:w-20 md:h-20 rounded-3xl p-2 overflow-hidden border flex items-center justify-center shadow-inner group-hover:rotate-[-5deg] transition-transform ${
+                lightMode
+                  ? "bg-white border-gray-200"
+                  : "bg-[#0F1115] border-white/5"
+              }`}>
               {logoA ? (
                 <img
                   src={logoA}
@@ -179,27 +207,40 @@ export default function MatchCard({ match, teams, tournamentId, canEdit }) {
                   alt={teamAName}
                 />
               ) : (
-                <span className="text-2xl">🛡️</span>
+                <Swords size={32} className="text-gray-400 opacity-50" />
               )}
             </div>
-            <h4 className="text-sm md:text-base font-black text-slate-200 uppercase tracking-tighter leading-tight break-words w-full">
+            <h4
+              className={`text-sm md:text-base font-black uppercase tracking-tighter leading-tight break-words w-full ${theme.text}`}>
               {teamAName}
             </h4>
           </div>
 
           {/* VS Divider */}
-          <div className="flex flex-col items-center gap-1">
-            <span className="text-[10px] font-black text-slate-600 bg-[#0F1115] px-2 py-1 rounded border border-white/5 italic">
+          <div className="flex flex-col items-center gap-2">
+            <span
+              className={`text-[10px] font-black px-2 py-1 rounded border italic ${
+                lightMode
+                  ? "bg-gray-100 text-gray-500 border-gray-200"
+                  : "bg-[#0F1115] text-slate-600 border-white/5"
+              }`}>
               VS
             </span>
-            <span className="text-[10px] font-bold text-teal-600">
+            <span
+              className={`text-[10px] font-bold flex items-center gap-1 ${lightMode ? "text-teal-600" : "text-teal-500"}`}>
+              <Clock size={10} />
               {formattedDateTime}
             </span>
           </div>
 
           {/* Team B */}
           <div className="flex flex-col items-center gap-3 flex-1 text-center">
-            <div className="w-16 h-16 md:w-20 md:h-20 bg-[#0F1115] rounded-3xl p-0 overflow-hidden border border-white/5 flex items-center justify-center shadow-inner group-hover:rotate-[5deg] transition-transform">
+            <div
+              className={`w-16 h-16 md:w-20 md:h-20 rounded-3xl p-2 overflow-hidden border flex items-center justify-center shadow-inner group-hover:rotate-[5deg] transition-transform ${
+                lightMode
+                  ? "bg-white border-gray-200"
+                  : "bg-[#0F1115] border-white/5"
+              }`}>
               {logoB ? (
                 <img
                   src={logoB}
@@ -207,10 +248,14 @@ export default function MatchCard({ match, teams, tournamentId, canEdit }) {
                   alt={teamBName}
                 />
               ) : (
-                <span className="text-2xl">🛡️</span>
+                <Swords
+                  size={32}
+                  className="text-gray-400 opacity-50 scale-x-[-1]"
+                />
               )}
             </div>
-            <h4 className="text-sm md:text-base font-black text-slate-200 uppercase tracking-tighter leading-tight break-words w-full">
+            <h4
+              className={`text-sm md:text-base font-black uppercase tracking-tighter leading-tight break-words w-full ${theme.text}`}>
               {teamBName}
             </h4>
           </div>
@@ -218,21 +263,42 @@ export default function MatchCard({ match, teams, tournamentId, canEdit }) {
 
         {/* Status Message (Updated with Calculated Result) */}
         <div className="mt-6 text-center">
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-            {isFinished
-              ? `🏆 ${resultText}`
-              : venue || "TBA"}
+          <p
+            className={`text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-1.5 ${theme.sub}`}>
+            {isFinished ? (
+              <>
+                <Trophy size={12} className="text-amber-500" />
+                <span
+                  className={lightMode ? "text-amber-600" : "text-amber-400"}>
+                  {resultText}
+                </span>
+              </>
+            ) : (
+              <>
+                <MapPin size={12} />
+                {venue || "Venue TBA"}
+              </>
+            )}
           </p>
         </div>
       </div>
 
       {/* ADMIN FOOTER */}
       {canEdit && (
-        <div className="p-3 bg-[#0F1115]/30 border-t border-white/5 flex items-center justify-between gap-3">
+        <div
+          className={`p-3 border-t flex items-center justify-between gap-3 ${
+            lightMode
+              ? "bg-gray-50 border-gray-200"
+              : "bg-[#0F1115]/30 border-white/5"
+          }`}>
           <button
             onClick={handleDelete}
-            className="flex-1 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-colors">
-            🗑 Delete
+            className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-colors border flex items-center justify-center gap-2 ${
+              lightMode
+                ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
+                : "bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20"
+            }`}>
+            <Trash2 size={12} /> Delete
           </button>
 
           <button
@@ -240,8 +306,12 @@ export default function MatchCard({ match, teams, tournamentId, canEdit }) {
               e.stopPropagation();
               navigate(`/live/${tournamentId}/${match.id}`);
             }}
-            className="flex-[2] bg-teal-500/10 hover:bg-teal-500/20 text-teal-500 border border-teal-500/20 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-colors">
-            Scorer Dashboard →
+            className={`flex-[2] py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-colors border flex items-center justify-center gap-2 ${
+              lightMode
+                ? "bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100"
+                : "bg-teal-500/10 text-teal-500 border-teal-500/20 hover:bg-teal-500/20"
+            }`}>
+            Scorer Dashboard <ExternalLink size={12} />
           </button>
         </div>
       )}

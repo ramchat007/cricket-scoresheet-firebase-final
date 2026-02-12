@@ -3,6 +3,16 @@ import { calculatePointsTable } from "../../utils/statsHelper";
 import TournamentAccessManager from "../TournamentAccessManager";
 import TeamManager from "../TeamManager";
 import { useNavigate } from "react-router-dom";
+import { useTheme } from "../../context/ThemeContext";
+import {
+  LayoutList,
+  Users,
+  Trophy,
+  BarChart2,
+  Settings,
+  Shield,
+  Lock,
+} from "lucide-react";
 
 // Helper components
 import MatchesTab from "./MatchesTab";
@@ -24,6 +34,7 @@ export default function TournamentTabs({
   isAuctionEnabled,
 }) {
   const navigate = useNavigate();
+  const { theme, lightMode } = useTheme();
 
   // --- STATS STATE ---
   const [statsTab, setStatsTab] = useState("bat");
@@ -164,9 +175,9 @@ export default function TournamentTabs({
                 opponent: bowlTeam,
                 runs: r,
                 balls: b,
-                fours: f, // Now passing explicitly
-                sixes: x, // Now passing explicitly
-                wickets: 0, // Default for bat entry
+                fours: f,
+                sixes: x,
+                wickets: 0,
                 notOut: !s.out,
               });
             }
@@ -194,7 +205,7 @@ export default function TournamentTabs({
                 date: m.date,
                 opponent: batTeam,
                 wickets: w,
-                runs: 0, // We set runs to 0 here because this is conceded runs
+                runs: 0,
                 runsConceded: r_conceded,
                 fours: 0,
                 sixes: 0,
@@ -291,27 +302,41 @@ export default function TournamentTabs({
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 min-h-screen">
       {/* TABS NAVIGATION */}
       <div className="sticky top-2 z-40 mb-6 mx-[-16px] px-4 md:mx-0 md:px-0">
-        <div className="bg-[#1C2128]/90 backdrop-blur-xl border border-white/10 p-1.5 rounded-2xl flex overflow-x-auto shadow-2xl no-scrollbar snap-x snap-mandatory">
+        <div
+          className={`backdrop-blur-xl border p-1.5 rounded-2xl flex overflow-x-auto shadow-2xl no-scrollbar snap-x snap-mandatory ${
+            lightMode
+              ? "bg-white/90 border-gray-200"
+              : "bg-[#1C2128]/90 border-white/10"
+          }`}>
           {[
-            { id: "matches", label: "Matches", icon: "🏟️" },
-            { id: "teams", label: "Teams", icon: "👥" },
-            { id: "points", label: "Points", icon: "📊" },
-            { id: "players", label: "Stats", icon: "📈" },
-            { id: "admin", label: "Admin", icon: "⚙️" },
+            { id: "matches", label: "Matches", icon: LayoutList },
+            { id: "teams", label: "Teams", icon: Users },
+            { id: "points", label: "Points", icon: Trophy },
+            { id: "players", label: "Stats", icon: BarChart2 },
+            { id: "admin", label: "Admin", icon: Settings },
           ]
             .filter((tab) => tab.id !== "admin" || canEdit || isOwner)
-            .map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  window.scrollTo({ top: 0, behavior: "smooth" });
-                }}
-                className={`flex-shrink-0 flex-1 min-w-[90px] md:min-w-[120px] px-3 py-3 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider transition-all flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 snap-center ${activeTab === tab.id ? "bg-[#0F1115] text-white shadow-lg border border-white/10 scale-95 md:scale-100" : "text-slate-500 hover:text-slate-300 hover:bg-white/5 border border-transparent"}`}>
-                <span className="text-sm md:text-base">{tab.icon}</span>
-                <span>{tab.label}</span>
-              </button>
-            ))}
+            .map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  className={`flex-shrink-0 flex-1 min-w-[90px] md:min-w-[120px] px-3 py-3 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider transition-all flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 snap-center ${
+                    isActive
+                      ? "bg-teal-600 text-white shadow-lg scale-95 md:scale-100"
+                      : `text-slate-500 hover:bg-white/5 border border-transparent ${lightMode ? "hover:text-teal-600 hover:bg-gray-50" : "hover:text-slate-300"}`
+                  }`}>
+                  <Icon size={16} className={isActive ? "text-white" : ""} />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
         </div>
       </div>
 
@@ -364,24 +389,29 @@ export default function TournamentTabs({
 
         {activeTab === "admin" && (canEdit || isOwner) && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in zoom-in-95">
-            <div className="bg-[#1C2128] border border-white/5 rounded-2xl p-6 shadow-xl relative overflow-hidden group">
-              <h3 className="text-slate-100 font-bold text-lg mb-6 flex items-center gap-2">
-                <span className="text-cyan-500">🛡️</span> Team Management
+            <div
+              className={`border rounded-2xl p-6 shadow-xl relative overflow-hidden group ${theme.card} ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+              <h3
+                className={`font-bold text-lg mb-6 flex items-center gap-2 ${theme.text}`}>
+                <Shield size={20} className="text-cyan-500" /> Team Management
               </h3>
               {isAuctionEnabled ? (
-                <div className="bg-[#0F1115] border border-white/5 rounded-xl p-8 text-center">
-                  <div className="text-4xl mb-4">🔒</div>
-                  <h4 className="text-slate-200 font-bold mb-2">
+                <div
+                  className={`border rounded-xl p-8 text-center ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
+                  <div className="flex justify-center mb-4">
+                    <Lock size={32} className="text-gray-400" />
+                  </div>
+                  <h4 className={`font-bold mb-2 ${theme.text}`}>
                     Rosters Locked
                   </h4>
-                  <p className="text-slate-500 text-sm mb-6">
+                  <p className={`text-sm mb-6 ${theme.sub}`}>
                     Teams are managed in the Auction Console.
                   </p>
                   <button
                     onClick={() =>
                       navigate(`/tournaments/${tournamentId}/auction`)
                     }
-                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg">
+                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:shadow-purple-500/20 transition-all">
                     Go to Auction Console
                   </button>
                 </div>

@@ -17,16 +17,17 @@ import MatchCorrectionModal from "../components/MatchCorrectionModal.jsx";
 
 // Icons & Theme
 import {
-  Home,
   Radio,
   Copy,
   ExternalLink,
   Moon,
   Sun,
-  Wrench,
   ArrowLeft,
-  X, // ✅ Added Missing Import
-  Loader2, // ✅ Added Missing Import
+  X,
+  Loader2,
+  FileQuestion,
+  Home,
+  Layers, // Added for Overlay Icon
 } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 
@@ -35,14 +36,18 @@ const NavBtn = React.memo(({ active, onClick, icon, label }) => (
   <button
     onClick={onClick}
     className={`flex flex-col items-center justify-center h-14 rounded-2xl transition-all duration-200 active:scale-95 ${
-      active ? "text-cyan-400 bg-cyan-500/5" : "text-gray-600"
+      active
+        ? "text-cyan-500 bg-cyan-500/10"
+        : "text-gray-500 hover:text-gray-400"
     }`}>
     <span
-      className={`text-xl transition-transform duration-300 ${active ? "scale-110" : "grayscale opacity-50"}`}>
+      className={`text-xl transition-transform duration-300 ${active ? "scale-110" : "grayscale opacity-70"}`}>
       {icon}
     </span>
     <span
-      className={`text-[10px]  uppercase mt-1 tracking-widest transition-all ${active ? "font-white opacity-100" : "font-black opacity-40"}`}>
+      className={`text-[10px] font-black uppercase mt-1 tracking-widest transition-all ${
+        active ? "opacity-100" : "opacity-60"
+      }`}>
       {label}
     </span>
     {active && (
@@ -79,22 +84,20 @@ const getLocalMatch = (tId, mId) => {
 };
 
 export default function LiveScoring() {
-  // 1. HOOKS FIRST (Including Theme)
   const { tournamentId, matchId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-
-  // ✅ Theme must be defined here before any return statements
   const { theme, toggleTheme, lightMode } = useTheme();
 
   const [match, setMatch] = useState(() =>
     getLocalMatch(tournamentId, matchId),
   );
+
+  const [isInit, setIsInit] = useState(true);
+
   const [activeTab, setActiveTab] = useState("summary");
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
   const [canScore, setCanScore] = useState(false);
-
-  // Toggle Broadcast Panel
   const [showObsPanel, setShowObsPanel] = useState(false);
 
   // --- 2. DATA PROCESSING ---
@@ -103,7 +106,6 @@ export default function LiveScoring() {
     return { ...match, id: matchId };
   }, [match, matchId]);
 
-  // Check if Stream is Linked
   const isStreamLinked = useMemo(() => {
     const url =
       processedMatch?.meta?.liveStreamUrl || processedMatch?.meta?.liveStreamId;
@@ -124,18 +126,21 @@ export default function LiveScoring() {
     [navigate, tournamentId],
   );
 
-  // COPY OBS LINK HANDLER
+  // ✅ UPDATED: USE GLOBAL ACTIVE URL
+  // This URL automatically points to whichever match is currently "Live" in this tournament.
   const obsUrl =
     typeof window !== "undefined"
-      ? `${window.location.origin}/overlay/${tournamentId}/${matchId}?clean=true`
+      ? `${window.location.origin}/overlay/${tournamentId}/active?clean=true`
       : "";
 
   const copyObsLink = () => {
     navigator.clipboard.writeText(obsUrl);
-    alert("✅ OBS Link Copied!\nPaste this as a 'Browser Source' in OBS.");
+    alert(
+      "✅ Global OBS Link Copied!\nThis link works for ALL matches in this tournament.",
+    );
   };
 
-  // --- 4. PERMISSIONS & INITIAL SETUP ---
+  // --- 4. PERMISSIONS ---
   useEffect(() => {
     async function checkPermissions() {
       if (tournamentId === "generic") {
@@ -164,6 +169,7 @@ export default function LiveScoring() {
   // --- 5. DATA SUBSCRIPTION ---
   useEffect(() => {
     if (!tournamentId || !matchId) return;
+
     const unsub = subscribeMatch(tournamentId, matchId, (data) => {
       if (data) {
         setMatch((prev) => {
@@ -174,8 +180,12 @@ export default function LiveScoring() {
           `dfl-fb-${tournamentId}-${matchId}`,
           JSON.stringify(data),
         );
+      } else {
+        setMatch(null);
       }
+      setIsInit(false);
     });
+
     return () => unsub && unsub();
   }, [tournamentId, matchId]);
 
@@ -201,19 +211,50 @@ export default function LiveScoring() {
     handleDeleteMatch,
   } = scoring;
 
-  // --- 7. LOADING STATE (Safely uses theme now) ---
-  if (!processedMatch) {
+  // --- 7. RENDERING STATES ---
+
+  // A. Loading State
+  if (isInit && !processedMatch) {
     return (
       <div
-        className={`flex flex-col items-center justify-center h-screen ${theme.bg} ${theme.text}`}>
-        <div className="w-16 h-16 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin mb-6"></div>
-        <div className="text-[10px] font-black tracking-[0.3em] uppercase opacity-50">
+        className={`flex flex-col items-center justify-center h-[100dvh] ${theme.bg} ${theme.text}`}>
+        <Loader2 size={40} className="text-cyan-500 animate-spin mb-4" />
+        <div className="text-[10px] font-black tracking-[0.3em] uppercase opacity-50 animate-pulse">
           Synchronizing Arena...
         </div>
       </div>
     );
   }
 
+  // B. Not Found State
+  if (!isInit && !processedMatch) {
+    return (
+      <div
+        className={`flex flex-col items-center justify-center h-[100dvh] p-6 text-center ${theme.bg} ${theme.text}`}>
+        <div
+          className={`w-20 h-20 rounded-full flex items-center justify-center mb-6 ${lightMode ? "bg-gray-100 text-gray-400" : "bg-white/5 text-slate-600"}`}>
+          <FileQuestion size={40} />
+        </div>
+        <h2 className="text-xl font-black uppercase tracking-tight mb-2">
+          Match Not Found
+        </h2>
+        <p className={`text-sm mb-8 max-w-xs ${theme.sub}`}>
+          The match you are looking for does not exist or has been removed.
+        </p>
+        <button
+          onClick={handleHomeClick}
+          className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold uppercase tracking-widest text-xs transition-all active:scale-95 ${
+            lightMode
+              ? "bg-black text-white hover:bg-gray-800"
+              : "bg-white text-black hover:bg-gray-200"
+          }`}>
+          <Home size={16} /> Back to Tournament
+        </button>
+      </div>
+    );
+  }
+
+  // C. Main Content
   const getMatchTitle = () => {
     if (processedMatch.meta?.teamAName && processedMatch.meta?.teamBName)
       return `${processedMatch.meta.teamAName} v ${processedMatch.meta.teamBName}`;
@@ -248,7 +289,7 @@ export default function LiveScoring() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Broadcast Toggle (Only for Scorers) */}
+          {/* Broadcast Toggle */}
           {canScore && (
             <button
               onClick={() => setShowObsPanel(!showObsPanel)}
@@ -259,7 +300,7 @@ export default function LiveScoring() {
                     : "bg-purple-900/30 text-purple-400 border border-purple-500/30"
                   : theme.btnBase
               }`}>
-              <Radio
+              <Layers
                 size={18}
                 className={showObsPanel ? "animate-pulse" : ""}
               />
@@ -290,11 +331,11 @@ export default function LiveScoring() {
               </h3>
               {isStreamLinked ? (
                 <span className="text-[9px] bg-green-500/10 text-green-500 px-2 py-0.5 rounded border border-green-500/20 font-bold uppercase">
-                  Linked
+                  Stream Active
                 </span>
               ) : (
                 <span className="text-[9px] bg-red-500/10 text-red-500 px-2 py-0.5 rounded border border-red-500/20 font-bold uppercase">
-                  No Stream
+                  No Input
                 </span>
               )}
             </div>
@@ -307,8 +348,9 @@ export default function LiveScoring() {
               }`}>
               <div className="flex-1 min-w-0">
                 <div
-                  className={`text-[8px] font-bold uppercase mb-1 ${theme.sub}`}>
-                  OBS Browser Source URL
+                  className={`text-[8px] font-bold uppercase mb-1 flex items-center gap-1.5 ${theme.sub}`}>
+                  <Layers size={10} className="text-purple-500" /> Global
+                  Overlay Source
                 </div>
                 <div
                   className={`text-[10px] truncate font-mono select-all p-1.5 rounded border ${
@@ -322,7 +364,7 @@ export default function LiveScoring() {
               <button
                 onClick={copyObsLink}
                 className="bg-purple-600 hover:bg-purple-500 text-white p-2 rounded-lg transition-all active:scale-95 shadow-md"
-                title="Copy URL">
+                title="Copy Global URL">
                 <Copy size={16} />
               </button>
               <a
@@ -339,7 +381,8 @@ export default function LiveScoring() {
               </a>
             </div>
             <p className={`text-[9px] mt-2 text-center ${theme.sub}`}>
-              Paste into OBS as "Browser Source" (1920x1080) for live graphics.
+              <strong>Universal Link:</strong> Works for ALL matches. No need to
+              update OBS between games.
             </p>
           </div>
         </div>
@@ -371,7 +414,7 @@ export default function LiveScoring() {
             />
           </div>
         ) : (
-          // VIEW ONLY UI (For non-scorers/Admins viewing score)
+          // VIEW ONLY UI
           <div className="flex-1 overflow-y-auto p-4 space-y-6 no-scrollbar pb-24">
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
               <MemoizedScoreSummary match={processedMatch} />
@@ -382,7 +425,7 @@ export default function LiveScoring() {
           </div>
         )}
 
-        {/* TABS MODAL (Viewers/Admins Checking Info) */}
+        {/* TABS MODAL */}
         {activeTab !== "summary" && (
           <div
             className={`absolute inset-0 z-50 flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-300 ${theme.bg}`}>
@@ -394,7 +437,7 @@ export default function LiveScoring() {
               <button
                 onClick={handleTabSummary}
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-xs active:scale-90 transition-transform ${theme.btnBase}`}>
-                <X size={16} /> {/* ✅ X Icon is now properly imported */}
+                <X size={16} />
               </button>
             </div>
             <div className="flex-1 overflow-y-auto no-scrollbar pb-24">

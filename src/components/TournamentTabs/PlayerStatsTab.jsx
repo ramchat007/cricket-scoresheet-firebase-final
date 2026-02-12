@@ -1,5 +1,7 @@
 import React, { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTheme } from "../../context/ThemeContext";
+import { Trophy, Crown } from "lucide-react";
 
 export default function PlayerStatsTab({
   statsTab,
@@ -17,6 +19,7 @@ export default function PlayerStatsTab({
   id, // tournamentId
 }) {
   const navigate = useNavigate();
+  const { theme, lightMode } = useTheme();
 
   // --- 1. CONFIGURATION: Columns for each Tab ---
   const tableColumns = useMemo(() => {
@@ -82,7 +85,7 @@ export default function PlayerStatsTab({
             label: "4s",
             align: "center",
             width: "w-16",
-            color: "text-yellow-400",
+            color: "text-yellow-500",
           },
           {
             key: "sixes",
@@ -104,28 +107,33 @@ export default function PlayerStatsTab({
     }
   }, [statsTab]);
 
-  // --- 2. HELPER: Calculate Stats dynamically if missing ---
-  const processRowData = (p, index) => {
-    // Basic Calculations from History if stats are incomplete
+  // --- 2. HELPER: Calculate Stats ---
+  // We moved rank assignment to step 3 so we can sort first
+  const calculateStats = (p) => {
     const history = p.history || [];
     const matches = new Set(history.map((h) => h.matchId)).size;
 
-    // Batting specific
+    // Batting stats
     const batInnings = history.filter((h) => h.type === "bat").length;
-    const notOuts = p.notOuts || 0; // Ensure you have this or default to 0
+    const notOuts = p.notOuts || 0;
     const avg = (p.runs / (batInnings - notOuts || 1)).toFixed(1);
 
-    // Bowling specific
+    // Bowling stats
     const bowlInnings = history.filter((h) => h.type === "bowl").length;
     const ballsBowled = p.ballsBowled || 0;
     const runsConceded = p.runsConceded || 0;
+
+    // Standard Economy Calculation: Runs / (Balls/6)
     const economy =
-      ballsBowled > 0 ? (runsConceded / (ballsBowled / 6)).toFixed(1) : "-";
-    const bowlAvg = p.wickets > 0 ? (runsConceded / p.wickets).toFixed(1) : "-";
-    const bowlSR = p.wickets > 0 ? (ballsBowled / p.wickets).toFixed(1) : "-";
+      ballsBowled > 0 ? (runsConceded / (ballsBowled / 6)).toFixed(2) : "-";
+
+    // Bowling Average: Runs / Wickets
+    const bowlAvg = p.wickets > 0 ? (runsConceded / p.wickets).toFixed(2) : "-";
+
+    // Bowling Strike Rate: Balls / Wickets
+    const bowlSR = p.wickets > 0 ? (ballsBowled / p.wickets).toFixed(2) : "-";
 
     return {
-      rank: index + 1,
       id: p.id || p.name,
       name: p.name,
       team: p.team,
@@ -134,7 +142,7 @@ export default function PlayerStatsTab({
       runs: p.runs || 0,
       hs: p.highestScore || 0,
       avg: avg > 999 ? "∞" : avg,
-      sr: p.batSR || 0, // Using batSR from your logic
+      sr: p.batSR || 0,
       fours: p.fours || 0,
       sixes: p.sixes || 0,
       wickets: p.wickets || 0,
@@ -145,22 +153,66 @@ export default function PlayerStatsTab({
       points: p.mvp || 0,
       boundaryRuns: (p.fours || 0) * 4 + (p.sixes || 0) * 6,
       history: p.history,
+      // Raw data for sorting
+      rawEco: ballsBowled > 0 ? runsConceded / (ballsBowled / 6) : 9999, // High value for sorting asc
     };
   };
 
-  // --- 3. SORTING LOGIC ---
+  // --- 3. SORTING LOGIC (Fixed) ---
   const sortedData = useMemo(() => {
-    let data = [...filteredStats];
+    // A. First, process all stats
+    let data = filteredStats.map(calculateStats);
 
-    if (statsTab === "boundaries") {
-      data.sort((a, b) => {
+    // B. Then sort based on active tab
+    data.sort((a, b) => {
+      // 1. BATTING SORT
+      if (statsTab === "bat") {
+        if (sortStyle === "most_runs") return b.runs - a.runs;
+        if (sortStyle === "high_score") return b.hs - a.hs;
+        if (sortStyle === "strike_rate") return b.sr - a.sr;
+        if (sortStyle === "most_sixes") return b.sixes - a.sixes;
+        return b.runs - a.runs; // Default fallback
+      }
+
+      // 2. BOWLING SORT (Standard Cricket Rules)
+      else if (statsTab === "bowl") {
+        if (sortStyle === "most_wickets") {
+          // Primary: More Wickets
+          if (b.wickets !== a.wickets) return b.wickets - a.wickets;
+          // Secondary Tie-breaker: Better (Lower) Economy
+          return a.rawEco - b.rawEco;
+        }
+        if (sortStyle === "best_economy") {
+          // Exclude bowlers who haven't bowled (rawEco 9999)
+          if (a.rawEco === 9999 && b.rawEco === 9999) return 0;
+          if (a.rawEco === 9999) return 1;
+          if (b.rawEco === 9999) return -1;
+
+          // Sort by Economy Ascending
+          if (a.rawEco !== b.rawEco) return a.rawEco - b.rawEco;
+          // Secondary Tie-breaker: More Wickets
+          return b.wickets - a.wickets;
+        }
+        return b.wickets - a.wickets; // Default fallback
+      }
+
+      // 3. MVP SORT
+      else if (statsTab === "mvp") {
+        return b.points - a.points;
+      }
+
+      // 4. BOUNDARIES SORT
+      else if (statsTab === "boundaries") {
         if (sortStyle === "most_sixes") return b.sixes - a.sixes;
         if (sortStyle === "most_fours") return b.fours - a.fours;
-        return b.fours * 4 + b.sixes * 6 - (a.fours * 4 + a.sixes * 6);
-      });
-    }
-    // Other sorts are handled by parent `filteredStats`, or you can add specific sorts here
-    return data.map(processRowData);
+        return b.boundaryRuns - a.boundaryRuns;
+      }
+
+      return 0;
+    });
+
+    // C. Finally, assign rank based on sorted position
+    return data.map((item, index) => ({ ...item, rank: index + 1 }));
   }, [filteredStats, statsTab, sortStyle]);
 
   // --- 4. RENDER CELL ---
@@ -168,15 +220,16 @@ export default function PlayerStatsTab({
     switch (col.key) {
       case "rank":
         return (
-          <span className="text-slate-500 font-mono text-xs">{row.rank}</span>
+          <span className={`font-mono text-xs ${theme.sub}`}>{row.rank}</span>
         );
       case "player":
         return (
           <div className="flex flex-col justify-center">
-            <span className="font-bold text-slate-200 text-sm truncate">
+            <span className={`font-bold text-sm truncate ${theme.text}`}>
               {row.name}
             </span>
-            <span className="text-[10px] text-slate-500 uppercase font-black tracking-wider truncate">
+            <span
+              className={`text-[10px] uppercase font-black tracking-wider truncate ${theme.sub}`}>
               {row.team}
             </span>
           </div>
@@ -187,21 +240,20 @@ export default function PlayerStatsTab({
       case "boundaryRuns":
         return (
           <span
-            className={`font-black text-base ${col.highlight ? "text-teal-400" : "text-slate-300"}`}>
+            className={`font-black text-base ${col.highlight ? (lightMode ? "text-teal-600" : "text-teal-400") : theme.text}`}>
             {row[col.key]}
           </span>
         );
       case "fours":
       case "sixes":
         return (
-          <span
-            className={`font-bold text-sm ${col.color || "text-slate-300"}`}>
+          <span className={`font-bold text-sm ${col.color || theme.text}`}>
             {row[col.key]}
           </span>
         );
       default:
         return (
-          <span className="text-slate-400 text-sm font-medium">
+          <span className={`text-sm font-medium ${theme.sub}`}>
             {row[col.key] || "-"}
           </span>
         );
@@ -209,19 +261,16 @@ export default function PlayerStatsTab({
   };
 
   const getUnifiedHistory = (history = [], filterTab = "mvp") => {
-    // 1. Safety check: Ensure history is an array
     if (!Array.isArray(history)) return [];
 
     const matches = {};
 
     history.forEach((h) => {
-      // Create unique key per match
       const key = h.matchId || `temp-${h.date || "no-date"}`;
 
       if (!matches[key]) {
         matches[key] = {
           matchId: h.matchId,
-          // ✅ DATE FIX: Ensure we handle string, timestamp, or missing dates
           date: h.date || new Date(0).toISOString(),
           opponent: h.opponent || "Opponent",
           runs: 0,
@@ -246,10 +295,7 @@ export default function PlayerStatsTab({
       }
     });
 
-    // Convert object to Array
     const combinedArray = Object.values(matches);
-
-    // 2. ✅ FIXED FILTER LOGIC: Strict check to avoid "undefined is not a function"
     let filteredResult = combinedArray;
 
     if (filterTab === "bat") {
@@ -261,61 +307,69 @@ export default function PlayerStatsTab({
         (m) => Number(m.fours) > 0 || Number(m.sixes) > 0,
       );
     }
-    // "mvp" tab returns the full combined performance array
 
-    // 3. ✅ SAFE SORT: Compare numeric timestamps
     return filteredResult.sort((a, b) => {
       const timeA = new Date(a.date).getTime() || 0;
       const timeB = new Date(b.date).getTime() || 0;
-      return timeB - timeA; // Newest matches first
+      return timeB - timeA;
     });
   };
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 font-sans">
-      {/* --- CAPS SECTION (Keeping the Cards for Visual Appeal) --- */}
+      {/* --- CAPS SECTION --- */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {orangeCap && (
-          <div className="bg-gradient-to-r from-[#1C2128] to-orange-950/20 border border-orange-500/20 p-4 rounded-xl flex items-center justify-between shadow-lg group">
+          <div
+            className={`border p-4 rounded-xl flex items-center justify-between shadow-lg group ${lightMode ? "bg-gradient-to-r from-orange-50 to-orange-100 border-orange-200" : "bg-gradient-to-r from-[#1C2128] to-orange-950/20 border-orange-500/20"}`}>
             <div className="flex items-center gap-4">
-              <div className="bg-orange-500/10 p-3 rounded-lg text-2xl border border-orange-500/20 group-hover:scale-110 transition-transform">
-                🏏
+              <div
+                className={`p-3 rounded-lg text-2xl border group-hover:scale-110 transition-transform ${lightMode ? "bg-orange-100 border-orange-200 text-orange-600" : "bg-orange-500/10 border-orange-500/20"}`}>
+                <Trophy size={24} />
               </div>
               <div>
-                <div className="text-[10px] font-black uppercase tracking-widest text-orange-500 mb-0.5">
+                <div
+                  className={`text-[10px] font-black uppercase tracking-widest mb-0.5 ${lightMode ? "text-orange-600" : "text-orange-500"}`}>
                   Orange Cap
                 </div>
-                <div className="text-lg font-black text-slate-100">
+                <div className={`text-lg font-black ${theme.text}`}>
                   {orangeCap.name}
                 </div>
               </div>
             </div>
-            <div className="text-2xl font-black text-orange-400">
+            <div
+              className={`text-2xl font-black ${lightMode ? "text-orange-600" : "text-orange-400"}`}>
               {orangeCap.runs}{" "}
-              <span className="text-xs text-orange-500/60 font-medium">
+              <span
+                className={`text-xs font-medium ${lightMode ? "text-orange-600/60" : "text-orange-500/60"}`}>
                 Runs
               </span>
             </div>
           </div>
         )}
         {purpleCap && (
-          <div className="bg-gradient-to-r from-[#1C2128] to-purple-950/20 border border-purple-500/20 p-4 rounded-xl flex items-center justify-between shadow-lg group">
+          <div
+            className={`border p-4 rounded-xl flex items-center justify-between shadow-lg group ${lightMode ? "bg-gradient-to-r from-purple-50 to-purple-100 border-purple-200" : "bg-gradient-to-r from-[#1C2128] to-purple-950/20 border-purple-500/20"}`}>
             <div className="flex items-center gap-4">
-              <div className="bg-purple-500/10 p-3 rounded-lg text-2xl border border-purple-500/20 group-hover:scale-110 transition-transform">
-                🥎
+              <div
+                className={`p-3 rounded-lg text-2xl border group-hover:scale-110 transition-transform ${lightMode ? "bg-purple-100 border-purple-200 text-purple-600" : "bg-purple-500/10 border-purple-500/20"}`}>
+                <Crown size={24} />
               </div>
               <div>
-                <div className="text-[10px] font-black uppercase tracking-widest text-purple-500 mb-0.5">
+                <div
+                  className={`text-[10px] font-black uppercase tracking-widest mb-0.5 ${lightMode ? "text-purple-600" : "text-purple-500"}`}>
                   Purple Cap
                 </div>
-                <div className="text-lg font-black text-slate-100">
+                <div className={`text-lg font-black ${theme.text}`}>
                   {purpleCap.name}
                 </div>
               </div>
             </div>
-            <div className="text-2xl font-black text-purple-400">
+            <div
+              className={`text-2xl font-black ${lightMode ? "text-purple-600" : "text-purple-400"}`}>
               {purpleCap.wickets}{" "}
-              <span className="text-xs text-purple-500/60 font-medium">
+              <span
+                className={`text-xs font-medium ${lightMode ? "text-purple-600/60" : "text-purple-500/60"}`}>
                 Wkts
               </span>
             </div>
@@ -324,9 +378,10 @@ export default function PlayerStatsTab({
       </div>
 
       {/* --- CONTROLS --- */}
-      <div className="bg-[#1C2128] border border-white/5 p-2 rounded-xl flex flex-col md:flex-row gap-2 shadow-md">
-        {/* Tabs */}
-        <div className="flex bg-[#0F1115] p-1 rounded-lg flex-1 overflow-x-auto no-scrollbar">
+      <div
+        className={`border p-2 rounded-xl flex flex-col md:flex-row gap-2 shadow-md ${theme.card} ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+        <div
+          className={`flex p-1 rounded-lg flex-1 overflow-x-auto no-scrollbar ${lightMode ? "bg-gray-100" : "bg-[#0F1115]"}`}>
           {[
             { id: "bat", label: "Batting" },
             { id: "bowl", label: "Bowling" },
@@ -337,26 +392,20 @@ export default function PlayerStatsTab({
               key={tab.id}
               onClick={() => {
                 setStatsTab(tab.id);
-                // Smart Default Sorting
                 if (tab.id === "bat") setSortStyle("most_runs");
                 else if (tab.id === "bowl") setSortStyle("most_wickets");
                 else if (tab.id === "mvp") setSortStyle("mvp");
                 else if (tab.id === "boundaries") setSortStyle("most_sixes");
               }}
-              className={`flex-1 px-4 py-2 rounded-md text-[11px] font-black uppercase tracking-wider whitespace-nowrap transition-all ${
-                statsTab === tab.id
-                  ? "bg-slate-700 text-white shadow-sm"
-                  : "text-slate-500 hover:text-slate-300"
-              }`}>
+              className={`flex-1 px-4 py-2 rounded-md text-[11px] font-black uppercase tracking-wider whitespace-nowrap transition-all ${statsTab === tab.id ? (lightMode ? "bg-white text-teal-700 shadow-sm" : "bg-slate-700 text-white shadow-sm") : lightMode ? "text-gray-500 hover:text-gray-700" : "text-slate-500 hover:text-slate-300"}`}>
               {tab.label}
             </button>
           ))}
         </div>
 
-        {/* Filters */}
         <div className="flex gap-2">
           <select
-            className="bg-[#0F1115] border border-white/10 text-slate-300 text-xs font-bold rounded-lg px-3 py-2 outline-none focus:border-teal-500/50"
+            className={`text-xs font-bold rounded-lg px-3 py-2 outline-none border focus:border-teal-500/50 ${lightMode ? "bg-white border-gray-200 text-gray-700" : "bg-[#0F1115] border-white/10 text-slate-300"}`}
             value={teamFilter}
             onChange={(e) => setTeamFilter(e.target.value)}>
             <option value="all">All Teams</option>
@@ -368,7 +417,7 @@ export default function PlayerStatsTab({
           </select>
 
           <select
-            className="bg-[#0F1115] border border-white/10 text-slate-300 text-xs font-bold rounded-lg px-3 py-2 outline-none focus:border-teal-500/50"
+            className={`text-xs font-bold rounded-lg px-3 py-2 outline-none border focus:border-teal-500/50 ${lightMode ? "bg-white border-gray-200 text-gray-700" : "bg-[#0F1115] border-white/10 text-slate-300"}`}
             value={sortStyle}
             onChange={(e) => setSortStyle(e.target.value)}>
             {statsTab === "bat" && (
@@ -396,30 +445,29 @@ export default function PlayerStatsTab({
         </div>
       </div>
 
-      {/* --- STANDARD STATS TABLE (With Sticky First Column) --- */}
-      <div className="bg-[#1C2128] border border-white/5 rounded-2xl overflow-hidden shadow-2xl relative">
+      {/* --- STANDARD STATS TABLE --- */}
+      <div
+        className={`border rounded-2xl overflow-hidden shadow-2xl relative ${theme.card} ${lightMode ? "border-gray-200" : "border-white/5"}`}>
         <div className="overflow-x-auto custom-scrollbar">
           <table className="w-full text-left border-collapse">
-            <thead className="bg-[#13161c] text-slate-500 text-[10px] uppercase font-black tracking-wider border-b border-white/5">
+            <thead
+              className={`text-[10px] uppercase font-black tracking-wider border-b ${lightMode ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-[#13161c] text-slate-500 border-white/5"}`}>
               <tr>
                 {tableColumns.map((col, idx) => {
-                  // Logic to stick the first two columns (Rank & Player)
                   const isSticky = idx < 2;
-                  const stickyClass = isSticky
-                    ? "sticky z-20 bg-[#13161c]"
-                    : "";
+                  const bgClass = lightMode ? "bg-gray-50" : "bg-[#13161c]";
+                  const stickyClass = isSticky ? `sticky z-20 ${bgClass}` : "";
                   const leftPos =
-                    idx === 0 ? "left-0" : idx === 1 ? "left-8" : ""; // Approx width for rank
-
+                    idx === 0 ? "left-0" : idx === 1 ? "left-8" : "";
                   return (
                     <th
                       key={col.key}
                       className={`p-4 whitespace-nowrap ${col.align === "center" ? "text-center" : "text-left"} ${stickyClass} ${leftPos}`}
                       style={isSticky ? { minWidth: col.width } : {}}>
                       {col.label}
-                      {/* Add a border to the right of the sticky column for separation */}
                       {idx === 1 && (
-                        <div className="absolute top-0 right-0 h-full w-px bg-white/10 shadow-xl"></div>
+                        <div
+                          className={`absolute top-0 right-0 h-full w-px shadow-xl ${lightMode ? "bg-gray-200" : "bg-white/10"}`}></div>
                       )}
                     </th>
                   );
@@ -427,12 +475,13 @@ export default function PlayerStatsTab({
                 <th className="p-4 w-10"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody
+              className={`divide-y ${lightMode ? "divide-gray-100" : "divide-white/5"}`}>
               {sortedData.length === 0 ? (
                 <tr>
                   <td
                     colSpan={tableColumns.length + 1}
-                    className="p-8 text-center text-slate-600 text-sm italic">
+                    className={`p-8 text-center text-sm italic ${theme.sub}`}>
                     No stats available.
                   </td>
                 </tr>
@@ -445,48 +494,50 @@ export default function PlayerStatsTab({
                           expandedPlayer === row.name ? null : row.name,
                         )
                       }
-                      className={`transition-colors cursor-pointer group ${expandedPlayer === row.name ? "bg-white/5" : "hover:bg-white/5"}`}>
+                      className={`transition-colors cursor-pointer group ${expandedPlayer === row.name ? (lightMode ? "bg-gray-50" : "bg-white/5") : lightMode ? "hover:bg-gray-50" : "hover:bg-white/5"}`}>
                       {tableColumns.map((col, idx) => {
                         const isSticky = idx < 2;
-                        // Important: Sticky cells need a solid background color to cover scrolling content
                         const bgClass =
                           expandedPlayer === row.name
-                            ? "bg-[#252932]"
-                            : "bg-[#1C2128]";
+                            ? lightMode
+                              ? "bg-gray-100"
+                              : "bg-[#252932]"
+                            : lightMode
+                              ? "bg-white group-hover:bg-gray-50"
+                              : "bg-[#1C2128] group-hover:bg-white/5";
                         const stickyClass = isSticky
                           ? `sticky z-10 ${bgClass}`
                           : "";
                         const leftPos =
                           idx === 0 ? "left-0" : idx === 1 ? "left-8" : "";
-
                         return (
                           <td
                             key={col.key}
                             className={`p-3 whitespace-nowrap ${col.align === "center" ? "text-center" : "text-left"} ${stickyClass} ${leftPos}`}>
                             {renderCell(row, col)}
-                            {/* Visual separator for the sticky column */}
                             {idx === 1 && (
-                              <div className="absolute top-0 right-0 h-full w-px bg-gradient-to-b from-white/5 to-transparent"></div>
+                              <div
+                                className={`absolute top-0 right-0 h-full w-px ${lightMode ? "bg-gray-100" : "bg-gradient-to-b from-white/5 to-transparent"}`}></div>
                             )}
                           </td>
                         );
                       })}
-                      <td className="p-3 text-center text-slate-600 text-[10px]">
+                      <td
+                        className={`p-3 text-center text-[10px] ${theme.sub}`}>
                         {expandedPlayer === row.name ? "▲" : "▼"}
                       </td>
                     </tr>
-
-                    {/* EXPANDED HISTORY (Accordion) - Stays same, spans full width */}
                     {expandedPlayer === row.name && (
-                      <tr className="bg-[#0F1115] animate-in slide-in-from-top-2 duration-300">
+                      <tr
+                        className={`animate-in slide-in-from-top-2 duration-300 ${lightMode ? "bg-gray-50" : "bg-[#0F1115]"}`}>
                         <td colSpan={12} className="p-0">
                           <div className="p-4 sticky left-0 w-full">
-                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">
+                            <h4
+                              className={`text-[10px] font-black uppercase tracking-widest mb-3 ${theme.sub}`}>
                               {statsTab === "mvp"
                                 ? "Match Performance"
                                 : `Recent ${statsTab} form`}
                             </h4>
-
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                               {getUnifiedHistory(row.history, statsTab).length >
                               0 ? (
@@ -500,9 +551,10 @@ export default function PlayerStatsTab({
                                           `/tournaments/${id}/scorecard/${log.matchId}`,
                                         );
                                       }}
-                                      className="bg-[#1C2128] border border-white/5 p-3 rounded-lg flex justify-between items-center hover:border-teal-500/30 transition-all cursor-pointer shadow-sm group/card">
+                                      className={`border p-3 rounded-lg flex justify-between items-center transition-all cursor-pointer shadow-sm group/card ${lightMode ? "bg-white border-gray-200 hover:border-teal-300" : "bg-[#1C2128] border-white/5 hover:border-teal-500/30"}`}>
                                       <div>
-                                        <div className="text-[10px] text-slate-500 font-bold uppercase">
+                                        <div
+                                          className={`text-[10px] font-bold uppercase ${theme.sub}`}>
                                           {(() => {
                                             const d = new Date(log.date);
                                             return isNaN(d.getTime())
@@ -513,42 +565,43 @@ export default function PlayerStatsTab({
                                                 });
                                           })()}
                                         </div>
-                                        <div className="text-xs font-bold text-slate-300 group-hover/card:text-teal-400">
+                                        <div
+                                          className={`text-xs font-bold transition-colors ${lightMode ? "text-gray-700 group-hover/card:text-teal-600" : "text-slate-300 group-hover/card:text-teal-400"}`}>
                                           vs {log.opponent}
                                         </div>
                                       </div>
-
-                                      {/* ✅ COMBINED DISPLAY LOGIC */}
                                       <div className="flex gap-3 items-center">
                                         {(statsTab === "bat" ||
                                           statsTab === "mvp" ||
                                           statsTab === "boundaries") &&
                                           log.isBat && (
                                             <div className="text-right">
-                                              <div className="text-sm font-black text-yellow-400 leading-none">
+                                              <div className="text-sm font-black text-yellow-500 leading-none">
                                                 {log.runs}
                                               </div>
-                                              <div className="text-[8px] text-slate-500 font-bold uppercase">
+                                              <div
+                                                className={`text-[8px] font-bold uppercase ${theme.sub}`}>
                                                 Runs
                                               </div>
                                             </div>
                                           )}
-
                                         {(statsTab === "bowl" ||
                                           statsTab === "mvp") &&
                                           log.isBowl && (
-                                            <div className="text-right border-l border-white/10 pl-3">
-                                              <div className="text-sm font-black text-green-400 leading-none">
+                                            <div
+                                              className={`text-right border-l pl-3 ${lightMode ? "border-gray-200" : "border-white/10"}`}>
+                                              <div className="text-sm font-black text-green-500 leading-none">
                                                 {log.wickets}w
                                               </div>
-                                              <div className="text-[8px] text-slate-500 font-bold uppercase">
+                                              <div
+                                                className={`text-[8px] font-bold uppercase ${theme.sub}`}>
                                                 Wkts
                                               </div>
                                             </div>
                                           )}
-
                                         {statsTab === "boundaries" && (
-                                          <div className="flex gap-2 border-l border-white/10 pl-3">
+                                          <div
+                                            className={`flex gap-2 border-l pl-3 ${lightMode ? "border-gray-200" : "border-white/10"}`}>
                                             <span className="text-[10px] font-bold text-orange-500">
                                               {log.sixes}x6s
                                             </span>
@@ -562,7 +615,8 @@ export default function PlayerStatsTab({
                                   ),
                                 )
                               ) : (
-                                <div className="text-xs text-slate-600 italic p-2">
+                                <div
+                                  className={`text-xs italic p-2 ${theme.sub}`}>
                                   No relevant stats recorded for this category.
                                 </div>
                               )}

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { doc, onSnapshot, getDoc } from "firebase/firestore";
 import { db } from "../utils/firebase";
+import { useTheme } from "../context/ThemeContext"; // ✅ Added Theme Context
 import ScoreSummary from "../components/ScoreSummary";
 import ScoreTable from "../components/ScoreTable";
 import MatchCommentary from "../components/MatchCommentary";
@@ -28,6 +29,8 @@ const getYouTubeId = (url) => {
 
 export default function MatchScorecard() {
   const { tournamentId, matchId } = useParams();
+  const { theme, lightMode } = useTheme(); // ✅ Hook into Global Theme
+
   const [match, setMatch] = useState(null);
   const [tournament, setTournament] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -35,7 +38,7 @@ export default function MatchScorecard() {
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("scorecard");
 
-  // --- 1. FETCH MATCH (Real-Time) ---
+  // --- 1. FETCH MATCH ---
   useEffect(() => {
     if (!tournamentId || !matchId) return;
 
@@ -63,7 +66,7 @@ export default function MatchScorecard() {
     return () => unsubscribe();
   }, [tournamentId, matchId]);
 
-  // --- 2. FETCH TOURNAMENT (Once) ---
+  // --- 2. FETCH TOURNAMENT ---
   useEffect(() => {
     if (!tournamentId) return;
     const fetchTournament = async () => {
@@ -79,21 +82,18 @@ export default function MatchScorecard() {
     fetchTournament();
   }, [tournamentId]);
 
-  // --- 3. SMART VIDEO ID CALCULATION ---
+  // --- 3. VIDEO ID ---
   const videoId = useMemo(() => {
     const matchUrl = match?.meta?.liveStreamUrl || match?.meta?.liveStreamId;
     const globalUrl = tournament?.liveStreamUrl || tournament?.broadcastUrl;
-
     return getYouTubeId(matchUrl) || getYouTubeId(globalUrl);
   }, [match, tournament]);
 
-  // --- 🧠 STANDARDIZED TEAM LOGIC ---
+  // --- 4. TEAM LOGIC ---
   const { battingFirstTeam, battingSecondTeam } = useMemo(() => {
-    // If data isn't here yet, return empty
     if (!match || !match.meta)
       return { battingFirstTeam: "", battingSecondTeam: "" };
 
-    // 1. Try to get team from the first innings record (most reliable)
     const inn1 =
       match.innings?.[0] || (match.innings && Object.values(match.innings)[0]);
 
@@ -104,9 +104,8 @@ export default function MatchScorecard() {
       return { battingFirstTeam: first, battingSecondTeam: second };
     }
 
-    // 2. Fallback: If no innings yet, use the Toss Decision
     const tossWinner = match.meta.toss?.winner;
-    const decision = match.meta.toss?.decision; // "Bat" or "Bowl"
+    const decision = match.meta.toss?.decision;
 
     if (tossWinner && decision) {
       const otherTeam =
@@ -118,26 +117,22 @@ export default function MatchScorecard() {
       }
     }
 
-    // 3. Last Resort: Use meta order
     return {
       battingFirstTeam: match.meta.teamA,
       battingSecondTeam: match.meta.teamB,
     };
   }, [match]);
 
-  // --- 4. DYNAMIC TABS (Corrected: Only returns Array) ---
+  // --- 5. TABS ---
   const tabs = useMemo(() => {
     const list = [
       { id: "scorecard", label: "Scorecard" },
       { id: "commentary", label: "Timeline" },
       { id: "info", label: "Match Info" },
     ];
-
-    // 🔒 HIDDEN: Video Stream Tab (Code preserved for future use)
     if (videoId) {
       list.unshift({ id: "stream", label: "🔴 Live Stream" });
     }
-
     return list;
   }, [videoId]);
 
@@ -146,24 +141,25 @@ export default function MatchScorecard() {
     setTimeout(() => setRefreshing(false), 600);
   }, []);
 
-  // --- 5. RENDER GUARDS (Moved OUT of useMemo) ---
+  // --- RENDER STATES ---
   if (loading)
     return (
-      <div className="min-h-screen bg-[#0F1115] flex items-center justify-center text-teal-500">
+      <div
+        className={`min-h-screen flex items-center justify-center font-bold tracking-widest uppercase text-sm ${lightMode ? "bg-slate-50 text-teal-600" : "bg-slate-950 text-teal-500"}`}>
         Loading Arena...
       </div>
     );
 
   if (error)
     return (
-      <div className="min-h-screen bg-[#0F1115] flex items-center justify-center text-red-500">
+      <div
+        className={`min-h-screen flex items-center justify-center font-bold ${lightMode ? "bg-slate-50 text-rose-600" : "bg-slate-950 text-rose-500"}`}>
         {error}
       </div>
     );
 
   if (!match) return null;
 
-  // Now update the title variable using the memoized values
   const matchTitle = battingFirstTeam
     ? `${battingFirstTeam} vs ${battingSecondTeam}`
     : "Live Match";
@@ -172,23 +168,37 @@ export default function MatchScorecard() {
   );
 
   return (
-    <div className="min-h-screen bg-[#0F1115] text-slate-300 font-sans pb-32 selection:bg-teal-500/30">
+    <div
+      className={`min-h-screen font-sans pb-32 transition-colors duration-300 ${lightMode ? "bg-slate-50 text-slate-800" : "bg-slate-950 text-slate-300"}`}>
       {/* HEADER */}
-      <div className="bg-[#161920]/90 backdrop-blur-xl border-b border-white/5 sticky top-0 z-[100]">
+      <div
+        className={`sticky top-0 z-[100] backdrop-blur-md border-b transition-colors duration-300 ${
+          lightMode
+            ? "bg-white/80 border-slate-200 shadow-sm"
+            : "bg-slate-900/80 border-slate-800"
+        }`}>
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <Link
             to={`/tournaments/${tournamentId}`}
-            className="w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 border border-white/5 text-slate-400">
+            className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all active:scale-95 border ${
+              lightMode
+                ? "bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200"
+                : "bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700"
+            }`}>
             ←
           </Link>
+
           <div className="flex flex-col items-center">
-            <h1 className="text-[11px] font-black text-slate-200 uppercase tracking-[0.15em] truncate max-w-[180px] sm:max-w-md italic">
+            <h1
+              className={`text-[11px] font-black uppercase tracking-[0.15em] truncate max-w-[180px] sm:max-w-md italic ${lightMode ? "text-slate-800" : "text-slate-200"}`}>
               {matchTitle}
             </h1>
             {isLive ? (
               <div className="flex items-center gap-1.5 mt-1">
-                <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(239,68,68,1)]"></span>
-                <span className="text-[9px] font-black text-red-500 uppercase tracking-widest">
+                <span
+                  className={`w-1.5 h-1.5 rounded-full animate-pulse ${lightMode ? "bg-rose-600" : "bg-rose-500"}`}></span>
+                <span
+                  className={`text-[9px] font-black uppercase tracking-widest ${lightMode ? "text-rose-600" : "text-rose-500"}`}>
                   LIVE BROADCAST
                 </span>
               </div>
@@ -198,9 +208,14 @@ export default function MatchScorecard() {
               </span>
             )}
           </div>
+
           <button
             onClick={handleManualRefresh}
-            className={`w-10 h-10 rounded-xl bg-teal-500/5 border border-teal-500/10 text-teal-500 flex items-center justify-center ${refreshing && "animate-spin"}`}>
+            className={`w-10 h-10 rounded-xl flex items-center justify-center border transition-all active:scale-95 ${refreshing ? "animate-spin" : ""} ${
+              lightMode
+                ? "bg-teal-50 border-teal-100 text-teal-600"
+                : "bg-teal-500/10 border-teal-500/20 text-teal-500"
+            }`}>
             ↻
           </button>
         </div>
@@ -212,15 +227,22 @@ export default function MatchScorecard() {
         </div>
 
         {/* TAB NAVIGATION */}
-        <div className="bg-[#1C2128] border border-white/10 p-1 rounded-2xl flex gap-1 shadow-2xl max-w-lg mx-auto sticky top-20 z-50 backdrop-blur-md overflow-x-auto no-scrollbar">
+        <div
+          className={`p-1 rounded-2xl flex gap-1 shadow-lg max-w-lg mx-auto sticky top-20 z-50 backdrop-blur-md overflow-x-auto no-scrollbar border ${
+            lightMode
+              ? "bg-white border-slate-200 shadow-slate-200/50"
+              : "bg-slate-900 border-slate-800 shadow-black/50"
+          }`}>
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`flex-1 py-3 px-4 rounded-xl text-[10px] font-black uppercase tracking-tighter whitespace-nowrap transition-all duration-300 ${
                 activeTab === tab.id
-                  ? "bg-gradient-to-br from-teal-500 to-teal-700 text-white shadow-lg"
-                  : "text-slate-500 hover:text-slate-300"
+                  ? "bg-teal-600 text-white shadow-md"
+                  : lightMode
+                    ? "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                    : "text-slate-500 hover:bg-slate-800 hover:text-slate-200"
               }`}>
               {tab.label}
             </button>
@@ -229,9 +251,14 @@ export default function MatchScorecard() {
 
         {/* CONTENT AREA */}
         <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 min-h-[500px]">
-          {/* 🔴 STREAM TAB (HIDDEN: Code preserved) */}
+          {/* STREAM TAB */}
           {activeTab === "stream" && videoId && (
-            <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border border-white/10 relative">
+            <div
+              className={`w-full aspect-video rounded-2xl overflow-hidden shadow-2xl relative border ${
+                lightMode
+                  ? "bg-black border-slate-200"
+                  : "bg-black border-slate-800"
+              }`}>
               <iframe
                 className="w-full h-full"
                 src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&controls=0&rel=0&modestbranding=1&playsinline=1`}
@@ -240,7 +267,7 @@ export default function MatchScorecard() {
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen></iframe>
               {match?.meta?.liveStreamUrl ? null : (
-                <div className="absolute top-2 left-2 bg-red-600 text-white text-[8px] font-bold px-2 py-1 rounded shadow">
+                <div className="absolute top-2 left-2 bg-rose-600 text-white text-[8px] font-bold px-2 py-1 rounded shadow">
                   DAY STREAM
                 </div>
               )}
@@ -264,7 +291,14 @@ export default function MatchScorecard() {
           )}
         </div>
       </div>
-      <div className="fixed bottom-0 left-0 w-full h-32 bg-gradient-to-t from-[#0F1115] to-transparent pointer-events-none z-0"></div>
+
+      {/* Footer Gradient Fade */}
+      <div
+        className={`fixed bottom-0 left-0 w-full h-32 pointer-events-none z-0 bg-gradient-to-t ${
+          lightMode
+            ? "from-slate-50 to-transparent"
+            : "from-slate-950 to-transparent"
+        }`}></div>
     </div>
   );
 }

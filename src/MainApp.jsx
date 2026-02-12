@@ -1,12 +1,14 @@
 // src/MainApp.jsx
 import React, { useEffect, useState } from "react";
 import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
+import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
+import { db } from "./utils/firebase";
 
 // --- COMPONENTS ---
 import Navigation from "./components/Navigation.jsx";
 import TournamentSelector from "./components/TournamentSelector.jsx";
 import MatchSelector from "./components/MatchSelector.jsx";
-import MatchSetup from "./components/MatchSetup.jsx";
+import MatchScheduler from "./components/MatchScheduler"; // ✅ Unified Scheduler
 import LiveScoring from "./components/LiveScoring.jsx";
 import Scoreboard from "./components/Scoreboard.jsx";
 import MatchesPage from "./components/Matches.jsx";
@@ -26,39 +28,29 @@ import PastLeague from "./components/PastLeague.jsx";
 import MatchOverlay from "./components/Overlay/MatchOverlay.jsx";
 import TournamentBanner from "./components/Overlay/TournamentBanner";
 
-// --- UTILS & HOOKS ---
-import {
-  createMatchAuto,
-  listMatches,
-  listTournaments,
-  listAllTeams,
-} from "./utils/firestore.js";
 import { useAuth } from "./hooks/useAuth.jsx";
-
-// --- 🎨 IMPORT THEME CONTEXT ---
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
 
-
 // ----------------------------------------------------------------------
-// 1. INNER COMPONENT (Contains your existing logic + Theme Consumption)
+// 1. APP CONTENT (Inner Component)
 // ----------------------------------------------------------------------
 function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
-
-  // ✅ Consume Theme
   const { theme, lightMode } = useTheme();
 
+  // Global State
   const [tournamentId, setTournamentId] = useState("");
   const [matchId, setMatchId] = useState(null);
+
+  // Data States
   const [availableTournaments, setAvailableTournaments] = useState([]);
-  const [allMatches, setAllMatches] = useState([]);
-  const [allTeams, setAllTeams] = useState([]);
+  const [allMatches, setAllMatches] = useState([]); // Used for internal logic if needed
+  const [allTeams, setAllTeams] = useState([]); // ✅ Populates Scheduler Dropdowns
 
-  // ✅ DETECT OVERLAY ROUTE
+  // Route Helpers
   const isOverlay = location.pathname.startsWith("/overlay");
-
   const isMatchesPage =
     location.pathname === "/" || location.pathname === "/scoreboard";
 
@@ -66,69 +58,61 @@ function AppContent() {
     navigate(`/live/${tid}/${mid}`);
   };
 
+  // --- 🔄 1. REAL-TIME DATA LISTENER (Fixes Empty Dropdowns) ---
   useEffect(() => {
-    async function loadInitialData() {
-      listAllTeams().then(setAllTeams);
-      try {
-        const allTournaments = await listTournaments();
-        setAvailableTournaments(allTournaments);
-        if (allTournaments.length > 0 && !tournamentId) {
-          setTournamentId(allTournaments[0].id);
-        }
-      } catch (e) {
-        console.error("Error loading tournaments:", e);
-      }
-    }
-    loadInitialData();
-  }, [user]);
+    // A. Listen for Teams (Real-time)
+    const teamsQuery = query(collection(db, "teams"), orderBy("name", "asc"));
+    const unsubTeams = onSnapshot(teamsQuery, (snapshot) => {
+      const teamsData = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setAllTeams(teamsData);
+    });
 
+    // B. Listen for Tournaments (Real-time)
+    const tournamentsQuery = query(collection(db, "tournaments"));
+    const unsubTournaments = onSnapshot(tournamentsQuery, (snapshot) => {
+      const tourneys = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setAvailableTournaments(tourneys);
+
+      // Auto-select first tournament if none selected
+      if (tourneys.length > 0 && !tournamentId) {
+        setTournamentId(tourneys[0].id);
+      }
+    });
+
+    return () => {
+      unsubTeams();
+      unsubTournaments();
+    };
+  }, []); // Run once on mount
+
+  // --- 2. Listen for Matches (Optional context awareness) ---
   useEffect(() => {
     if (!tournamentId) {
       setAllMatches([]);
       return;
     }
-    const fetchData = async () => {
-      try {
-        const matches = await listMatches(tournamentId);
-        matches.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        setAllMatches(matches);
-      } catch (err) {
-        console.error("Error fetching matches:", err);
-      }
-    };
-    fetchData();
+    // We keep a listener here if you need match lists in the main view later
+    const matchesRef = collection(db, "tournaments", tournamentId, "matches");
+    // (Logic simplified for this view as it's mostly handled in sub-pages)
   }, [tournamentId]);
-
-  async function handleCreate({ payload, tournament }) {
-    if (!user) {
-      alert("Login required.");
-      return;
-    }
-    const tid = tournament || tournamentId;
-    if (!tid) {
-      alert("Tournament required.");
-      return;
-    }
-    try {
-      const newMatchId = await createMatchAuto(tid, payload);
-      navigateToScoring(tid, newMatchId);
-    } catch (err) {
-      console.error(err);
-      alert("Failed to create match. Check permissions.");
-    }
-  }
 
   function handleMatchesPageSelect(tournament, matchIdSelected) {
     navigateToScoring(tournament, matchIdSelected);
   }
 
-  // ✅ CONDITIONAL RENDER: If Overlay, return plain wrapper (Ignore Theme Background)
+  // ✅ OVERLAY VIEW (No Theme/Layout)
   if (isOverlay) {
     return (
       <div className="w-full h-screen bg-transparent font-sans overflow-hidden">
         <Routes>
           <Route
-            path="/overlay/:tournamentId/:matchId"
+            path="/overlay/:tournamentId/active"
             element={<MatchOverlay />}
           />
           <Route
@@ -140,15 +124,14 @@ function AppContent() {
     );
   }
 
-  // ✅ STANDARD APP LAYOUT
-  // Note: We replaced 'bg-black text-gray-200' with dynamic 'theme.bg theme.text'
+  // ✅ MAIN APPLICATION LAYOUT
   return (
     <div
-      className={`min-h-screen ${theme.bg} ${theme.text} font-sans selection:bg-cyan-500/30 transition-colors duration-300`}>
+      className={`min-h-screen ${theme.bg} ${theme.text} font-sans transition-colors duration-300`}>
       <Navigation />
 
       <div className="container mx-auto px-4 pb-24 md:pb-10 pt-4">
-        {/* --- MOBILE-OPTIMIZED ADMIN COMMAND CENTER --- */}
+        {/* --- ADMIN DASHBOARD (Mobile Optimized) --- */}
         {isMatchesPage && user && (
           <div
             className={`${theme.card} rounded-3xl p-5 mb-8 shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-4 duration-500`}>
@@ -166,16 +149,8 @@ function AppContent() {
 
             {/* Selectors Section */}
             <div className="grid grid-cols-1 gap-3 mb-6">
-              {/* 👇 UPDATED CLASS HERE 
-         Dark: bg-black/40
-         Light: bg-gray-50 (Clean separation from the white card)
-      */}
               <div
-                className={`p-1 rounded-2xl border ${
-                  lightMode
-                    ? "bg-gray-50 border-gray-200"
-                    : "bg-black/40 border-white/5"
-                }`}>
+                className={`p-1 rounded-2xl border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/5"}`}>
                 <TournamentSelector
                   tournamentId={tournamentId}
                   setTournamentId={setTournamentId}
@@ -184,11 +159,7 @@ function AppContent() {
               </div>
 
               <div
-                className={`p-1 rounded-2xl border ${
-                  lightMode
-                    ? "bg-gray-50 border-gray-200"
-                    : "bg-black/40 border-white/5"
-                }`}>
+                className={`p-1 rounded-2xl border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/5"}`}>
                 <MatchSelector
                   matchId={matchId}
                   setMatchId={(id) => {
@@ -200,18 +171,14 @@ function AppContent() {
               </div>
             </div>
 
-            {/* Quick Action Cards */}
+            {/* Analytics Button */}
             <div className="grid grid-cols-2 gap-3">
               <button
                 onClick={() => {
                   if (tournamentId) navigate(`/tournaments/${tournamentId}`);
                   else alert("Select a tournament first.");
                 }}
-                className={`flex items-center gap-3 p-4 border rounded-2xl transition-all active:scale-95 group shadow-lg ${
-                  lightMode
-                    ? "bg-indigo-50 border-indigo-100 hover:border-indigo-300"
-                    : "bg-gradient-to-br from-indigo-900/20 to-indigo-900/10 border-indigo-500/20 hover:border-indigo-400"
-                }`}>
+                className={`flex items-center gap-3 p-4 border rounded-2xl transition-all active:scale-95 group shadow-lg ${lightMode ? "bg-indigo-50 border-indigo-100 hover:border-indigo-300" : "bg-gradient-to-br from-indigo-900/20 to-indigo-900/10 border-indigo-500/20 hover:border-indigo-400"}`}>
                 <div className="bg-indigo-600 shadow-[0_0_15px_rgba(99,102,241,0.4)] w-10 h-10 rounded-xl flex items-center justify-center text-xl group-hover:rotate-12 transition-transform text-white">
                   📊
                 </div>
@@ -236,34 +203,45 @@ function AppContent() {
               path="/"
               element={
                 matchId === "new" ? (
-                  <div className="animate-in fade-in zoom-in duration-300 max-w-2xl mx-auto">
-                    <div className="flex justify-between items-end mb-6 px-2">
+                  <div className="max-w-4xl mx-auto animate-in fade-in zoom-in duration-300 p-4">
+                    {/* Scheduler Header */}
+                    <div className="flex justify-between items-end mb-8">
                       <div>
                         <h2
                           className={`text-3xl font-black ${theme.text} uppercase tracking-tighter italic`}>
-                          Match Setup
+                          Match Control
                         </h2>
                         <p
                           className={`text-[10px] ${theme.sub} font-bold uppercase tracking-widest`}>
-                          Configuration Phase
+                          {tournamentId
+                            ? `Scheduling for: ${availableTournaments.find((t) => t.id === tournamentId)?.name || "Selected Tournament"}`
+                            : "Select a Tournament to Schedule"}
                         </p>
                       </div>
-                      <button
-                        onClick={() => setMatchId(null)}
-                        className={`bg-white/5 hover:bg-white/10 ${theme.text} px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest border border-white/10 transition-all`}>
-                        Cancel
-                      </button>
                     </div>
-                    <div className={`${theme.card} rounded-[2.5rem] p-2`}>
-                      <MatchSetup
-                        onCreate={handleCreate}
+
+                    {/* ✅ UNIFIED SCHEDULER: Ensures Teams & ID are passed */}
+                    {tournamentId ? (
+                      <MatchScheduler
                         tournamentId={tournamentId}
-                        allTeams={allTeams}
-                        availableTournaments={availableTournaments}
+                        teams={allTeams} // <--- Fixes Empty Dropdown
+                        onCancel={() => setMatchId(null)}
                       />
-                    </div>
+                    ) : (
+                      <div
+                        className={`p-8 rounded-2xl text-center border border-dashed ${lightMode ? "bg-red-50 border-red-200 text-red-600" : "bg-red-900/10 border-red-500/30 text-red-400"}`}>
+                        <h3 className="font-bold uppercase tracking-widest mb-2">
+                          Tournament Required
+                        </h3>
+                        <p className="text-xs opacity-70">
+                          Please select a tournament from the dropdown above to
+                          start scheduling matches.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 ) : (
+                  // Default Dashboard State
                   <div className="flex flex-col items-center justify-center min-h-[40vh] text-center space-y-6">
                     <div
                       className={`w-20 h-20 ${theme.card} rounded-3xl flex items-center justify-center text-3xl animate-bounce shadow-2xl`}>
@@ -287,6 +265,7 @@ function AppContent() {
             <Route path="/" element={<Dashboard />} />
           )}
 
+          {/* Sub-Pages */}
           <Route
             path="/live/:tournamentId/:matchId"
             element={<LiveScoring />}
@@ -298,7 +277,6 @@ function AppContent() {
             path="/tournaments/:id/auction"
             element={<AuctionDashboard />}
           />
-
           <Route
             path="/matches"
             element={
@@ -332,7 +310,7 @@ function AppContent() {
 }
 
 // ----------------------------------------------------------------------
-// 2. MAIN EXPORT (Wraps Everything in ThemeProvider)
+// 2. MAIN EXPORT
 // ----------------------------------------------------------------------
 export default function MainApp() {
   return (

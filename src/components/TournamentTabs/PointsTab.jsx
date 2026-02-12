@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { recalculateTournamentStats } from "../../utils/matchService";
+import { useTheme } from "../../context/ThemeContext";
+import { RefreshCw, TrendingUp, History, AlertCircle } from "lucide-react";
 
 // --- NRR Helper ---
 const calculateNRR = (runsScored, oversFaced, runsConceded, oversBowled) => {
@@ -147,7 +149,6 @@ const processStandings = (teams, matches) => {
       if (nrrB !== nrrA) return nrrB - nrrA;
 
       // 4. Matches Played (Lower is better for 0-point ties)
-      // This pushes teams with 0 games above teams that lost games but kept 0.000 NRR
       return a.played - b.played;
     });
 };
@@ -160,14 +161,12 @@ export default function PointsTab({
   canEdit,
 }) {
   const navigate = useNavigate();
+  const { theme, lightMode } = useTheme();
   const [isSyncing, setIsSyncing] = useState(false);
   const [expandedTeamId, setExpandedTeamId] = useState(null);
 
   const tableData = useMemo(() => {
     // ⚠️ NOTE: If 'pointsTable' from DB has data, it might override this calculation.
-    // If you want to force the new logic, temporarily rely on 'processStandings' by commenting out the check below,
-    // OR click the "Sync Stats" button to update the backend.
-
     // Fallback Calculation (Client Side) - This now contains the fix
     if (matches && matches.length > 0) return processStandings(teams, matches);
 
@@ -208,30 +207,46 @@ export default function PointsTab({
           <button
             onClick={handleSync}
             disabled={isSyncing}
-            className="flex items-center gap-2 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 text-xs font-bold px-3 py-1.5 rounded-lg border border-indigo-500/30 transition-all disabled:opacity-50">
-            <span className={isSyncing ? "animate-spin" : ""}>↻</span>{" "}
+            className={`flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-lg border transition-all disabled:opacity-50 ${
+              lightMode
+                ? "bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border-indigo-200"
+                : "bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 border-indigo-500/30"
+            }`}>
+            <RefreshCw size={14} className={isSyncing ? "animate-spin" : ""} />
             {isSyncing ? "Syncing..." : "Sync Stats"}
           </button>
         </div>
       )}
 
-      <div className="bg-[#1C2128] border border-white/5 rounded-2xl overflow-hidden shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div
+        className={`border rounded-2xl overflow-hidden shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500 ${
+          lightMode ? "bg-white border-gray-200" : "bg-[#1C2128] border-white/5"
+        }`}>
         <div className="overflow-x-auto no-scrollbar pb-2">
           <table className="w-full text-sm text-left border-collapse whitespace-nowrap">
-            <thead className="bg-[#0F1115] text-slate-500 text-[10px] uppercase font-black tracking-[0.2em] border-b border-white/5">
+            <thead
+              className={`text-[10px] uppercase font-black tracking-[0.2em] border-b ${
+                lightMode
+                  ? "bg-gray-50 text-gray-500 border-gray-200"
+                  : "bg-[#0F1115] text-slate-500 border-white/5"
+              }`}>
               <tr>
                 <th className="px-4 py-4 text-center w-10">#</th>
-                <th className="px-4 py-4 sticky left-0 bg-[#0F1115] z-10 shadow-[4px_0_10px_rgba(0,0,0,0.5)]">
+                <th
+                  className={`px-4 py-4 sticky left-0 z-10 shadow-[4px_0_10px_rgba(0,0,0,0.1)] ${
+                    lightMode ? "bg-gray-50" : "bg-[#0F1115]"
+                  }`}>
                   Team
                 </th>
                 <th className="px-3 text-center">P</th>
                 <th className="px-3 text-center text-teal-500">W</th>
                 <th className="px-3 text-center text-red-500">L</th>
-                <th className="px-4 text-center text-slate-200">Pts</th>
+                <th className={`px-4 text-center ${theme.text}`}>Pts</th>
                 <th className="px-6 text-right text-indigo-400">NRR</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody
+              className={`divide-y ${lightMode ? "divide-gray-100" : "divide-white/5"}`}>
               {tableData.length > 0 ? (
                 tableData.map((t, i) => {
                   const isQualifier = i < 4;
@@ -241,16 +256,40 @@ export default function PointsTab({
                     <React.Fragment key={t.id || i}>
                       <tr
                         onClick={() => toggleRow(t.id)}
-                        className={`cursor-pointer transition-colors group ${
-                          isExpanded ? "bg-white/[0.03]" : "hover:bg-white/5"
-                        } ${isQualifier ? "border-l-2 border-teal-500" : "border-l-2 border-transparent"}`}>
-                        <td className="px-4 py-3 font-mono text-center text-slate-500 text-xs">
+                        className={`cursor-pointer transition-colors group border-l-2 ${
+                          isExpanded
+                            ? lightMode
+                              ? "bg-gray-50"
+                              : "bg-white/[0.03]"
+                            : lightMode
+                              ? "hover:bg-gray-50"
+                              : "hover:bg-white/5"
+                        } ${isQualifier ? "border-teal-500" : "border-transparent"}`}>
+                        <td
+                          className={`px-4 py-3 font-mono text-center text-xs ${theme.sub}`}>
                           {i + 1}
                         </td>
-                        <td className="px-4 py-3 sticky left-0 bg-[#1C2128] z-10 shadow-[4px_0_10px_rgba(0,0,0,0.5)] group-hover:bg-[#252b33] transition-colors">
+                        <td
+                          className={`px-4 py-3 sticky left-0 z-10 shadow-[4px_0_10px_rgba(0,0,0,0.1)] transition-colors ${
+                            isExpanded
+                              ? lightMode
+                                ? "bg-gray-50"
+                                : "bg-[#252b33]"
+                              : lightMode
+                                ? "bg-white group-hover:bg-gray-50"
+                                : "bg-[#1C2128] group-hover:bg-[#252b33]"
+                          }`}>
                           <div className="flex items-center gap-2">
                             <div
-                              className={`w-6 h-6 rounded flex-none flex items-center justify-center text-[10px] shadow-inner ${isQualifier ? "bg-teal-900/20 text-teal-400" : "bg-slate-800 text-slate-500"}`}>
+                              className={`w-6 h-6 rounded flex-none flex items-center justify-center text-[10px] shadow-inner ${
+                                isQualifier
+                                  ? lightMode
+                                    ? "bg-teal-100 text-teal-700"
+                                    : "bg-teal-900/20 text-teal-400"
+                                  : lightMode
+                                    ? "bg-gray-100 text-gray-500"
+                                    : "bg-slate-800 text-slate-500"
+                              }`}>
                               {t.logo ? (
                                 <img
                                   src={t.logo}
@@ -262,22 +301,36 @@ export default function PointsTab({
                               )}
                             </div>
                             <span
-                              className={`text-xs font-bold truncate max-w-[120px] ${isQualifier ? "text-slate-100" : "text-slate-400"}`}>
+                              className={`text-xs font-bold truncate max-w-[120px] ${
+                                isQualifier
+                                  ? lightMode
+                                    ? "text-teal-900"
+                                    : "text-slate-100"
+                                  : lightMode
+                                    ? "text-gray-600"
+                                    : "text-slate-400"
+                              }`}>
                               {t.name}
                             </span>
                           </div>
                         </td>
-                        <td className="px-3 text-center text-slate-500 font-medium">
+                        <td
+                          className={`px-3 text-center font-medium ${theme.sub}`}>
                           {t.played}
                         </td>
-                        <td className="px-3 text-center font-bold text-teal-400">
+                        <td className="px-3 text-center font-bold text-teal-500">
                           {t.won}
                         </td>
-                        <td className="px-3 text-center text-red-400 font-medium">
+                        <td className="px-3 text-center text-red-500 font-medium">
                           {t.lost}
                         </td>
                         <td className="px-4 text-center">
-                          <span className="inline-block bg-black/40 text-white font-black px-2 py-1 rounded border border-white/10 min-w-[28px] text-xs">
+                          <span
+                            className={`inline-block font-black px-2 py-1 rounded border min-w-[28px] text-xs ${
+                              lightMode
+                                ? "bg-gray-800 text-white border-gray-600"
+                                : "bg-black/40 text-white border-white/10"
+                            }`}>
                             {t.points}
                           </span>
                         </td>
@@ -294,10 +347,11 @@ export default function PointsTab({
                         <tr>
                           <td
                             colSpan={7}
-                            className="bg-[#0F1115]/50 border-b border-white/5 p-0">
+                            className={`p-0 border-b ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115]/50 border-white/5"}`}>
                             <div className="p-4 animate-in slide-in-from-top-2 duration-300">
-                              <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 pl-1">
-                                Recent Match History
+                              <h4
+                                className={`text-[10px] font-bold uppercase tracking-widest mb-3 pl-1 flex items-center gap-2 ${theme.sub}`}>
+                                <History size={12} /> Recent Match History
                               </h4>
                               <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar snap-x">
                                 {(t.history || []).length > 0 ? (
@@ -332,23 +386,35 @@ export default function PointsTab({
                                                 `/tournaments/${tId}/scorecard/${mId}`,
                                               );
                                           }}
-                                          className="snap-start flex-shrink-0 w-32 bg-[#1C2128] border border-white/10 rounded-xl p-3 flex flex-col items-center gap-2 cursor-pointer hover:border-teal-500/50 hover:bg-[#252b33] transition-all group">
+                                          className={`snap-start flex-shrink-0 w-32 border rounded-xl p-3 flex flex-col items-center gap-2 cursor-pointer transition-all group ${
+                                            lightMode
+                                              ? "bg-white border-gray-200 hover:border-teal-300 hover:shadow-md"
+                                              : "bg-[#1C2128] border-white/10 hover:border-teal-500/50 hover:bg-[#252b33]"
+                                          }`}>
                                           <div
-                                            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shadow-lg ${result === "W" ? "bg-teal-500 text-black shadow-teal-500/20" : result === "L" ? "bg-red-500 text-white shadow-red-500/20" : "bg-slate-600 text-white"}`}>
+                                            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shadow-lg ${
+                                              result === "W"
+                                                ? "bg-teal-500 text-black shadow-teal-500/20"
+                                                : result === "L"
+                                                  ? "bg-red-500 text-white shadow-red-500/20"
+                                                  : "bg-slate-600 text-white"
+                                            }`}>
                                             {result}
                                           </div>
                                           <div className="text-center">
-                                            <div className="text-[9px] text-slate-500 uppercase font-bold tracking-tight">
+                                            <div
+                                              className={`text-[9px] uppercase font-bold tracking-tight ${theme.sub}`}>
                                               vs
                                             </div>
                                             <div
-                                              className="text-[10px] font-bold text-slate-300 truncate max-w-[100px]"
+                                              className={`text-[10px] font-bold truncate max-w-[100px] ${theme.text}`}
                                               title={oppName}>
                                               {oppName || "Opponent"}
                                             </div>
                                           </div>
                                           {dateStr && (
-                                            <div className="text-[9px] text-slate-600 font-mono mt-1">
+                                            <div
+                                              className={`text-[9px] font-mono mt-1 ${theme.sub}`}>
                                               {new Date(
                                                 dateStr,
                                               ).toLocaleDateString(undefined, {
@@ -361,7 +427,8 @@ export default function PointsTab({
                                       );
                                     })
                                 ) : (
-                                  <div className="text-slate-500 text-xs italic px-2">
+                                  <div
+                                    className={`text-xs italic px-2 ${theme.sub}`}>
                                     No matches played yet.
                                   </div>
                                 )}
@@ -377,7 +444,7 @@ export default function PointsTab({
                 <tr>
                   <td
                     colSpan={7}
-                    className="px-6 py-12 text-center text-slate-600 italic text-xs">
+                    className={`px-6 py-12 text-center italic text-xs ${theme.sub}`}>
                     No standings available.
                   </td>
                 </tr>

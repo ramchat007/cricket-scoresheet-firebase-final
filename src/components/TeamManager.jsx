@@ -9,11 +9,26 @@ import {
   createGlobalPlayer,
 } from "../utils/firestore.js";
 import { addDoc, collection } from "firebase/firestore";
-import { db } from "../utils/firebase"; 
+import { db } from "../utils/firebase";
 import { useAuth } from "../hooks/useAuth.jsx";
+import { useTheme } from "../context/ThemeContext";
+import {
+  X,
+  Search,
+  Shield,
+  Check,
+  Loader2,
+  Plus,
+  Globe,
+  UserPlus,
+  Trash2,
+  Crown,
+  Save,
+} from "lucide-react";
 
 // --- SUB-COMPONENT: GLOBAL PLAYER SELECTOR MODAL ---
 const PlayerSelectorModal = ({ isOpen, onClose, onSelect, existingNames }) => {
+  const { theme, lightMode } = useTheme();
   const [globalPlayers, setGlobalPlayers] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedPlayers, setSelectedPlayers] = useState([]);
@@ -54,40 +69,59 @@ const PlayerSelectorModal = ({ isOpen, onClose, onSelect, existingNames }) => {
   };
 
   const filtered = globalPlayers.filter((p) =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase())
+    p.name.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F1115]/90 backdrop-blur-md p-4 animate-in fade-in">
-      <div className="bg-[#1C2128] border border-white/10 w-full max-w-lg rounded-3xl shadow-2xl flex flex-col max-h-[80vh]">
-        <div className="p-6 border-b border-white/5 flex justify-between items-center">
-          <h3 className="text-lg font-black text-slate-100 uppercase tracking-tight italic">
-            Select Global Players
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+      <div
+        className={`w-full max-w-lg rounded-3xl shadow-2xl flex flex-col max-h-[80vh] transition-colors ${theme.card} ${lightMode ? "border border-gray-200" : "border border-white/10"}`}>
+        <div
+          className={`p-6 border-b flex justify-between items-center ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#1C2128] border-white/5"}`}>
+          <h3
+            className={`text-lg font-black uppercase tracking-tight italic flex items-center gap-2 ${theme.text}`}>
+            <Globe size={20} className="text-teal-500" /> Select Global Players
           </h3>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors">
-            ✕
+          <button
+            onClick={onClose}
+            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${lightMode ? "bg-gray-200 text-gray-500 hover:bg-gray-300" : "bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"}`}>
+            <X size={16} />
           </button>
         </div>
-        
-        <div className="p-4 bg-[#161920] border-b border-white/5">
-          <input
-            className="w-full bg-[#0F1115] border border-white/10 rounded-xl px-4 py-3 text-slate-200 outline-none focus:border-teal-500/50 transition-colors placeholder:text-slate-600 font-bold"
-            placeholder="Search database..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            autoFocus
-          />
+
+        <div
+          className={`p-4 border-b ${lightMode ? "bg-white border-gray-200" : "bg-[#161920] border-white/5"}`}>
+          <div className="relative">
+            <Search
+              className={`absolute left-4 top-3.5 ${theme.sub}`}
+              size={16}
+            />
+            <input
+              className={`w-full rounded-xl px-4 py-3 pl-11 outline-none transition-colors font-bold text-sm border focus:border-teal-500 ${
+                lightMode
+                  ? "bg-gray-50 border-gray-200 text-gray-900 placeholder:text-gray-400 focus:bg-white"
+                  : "bg-[#0F1115] border-white/10 text-slate-200 placeholder:text-slate-600 focus:border-teal-500/50"
+              }`}
+              placeholder="Search database..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              autoFocus
+            />
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
           {loading ? (
-            <div className="text-center py-8 text-teal-500 animate-pulse font-bold text-sm uppercase tracking-widest">
-              Loading...
+            <div className="flex flex-col items-center justify-center py-8 gap-2 text-teal-500 animate-pulse">
+              <Loader2 size={24} className="animate-spin" />
+              <span className="font-bold text-sm uppercase tracking-widest">
+                Loading...
+              </span>
             </div>
           ) : filtered.length === 0 ? (
-            <div className="text-center py-8 text-slate-600 italic text-sm">
+            <div className={`text-center py-8 italic text-sm ${theme.sub}`}>
               No matching players found.
             </div>
           ) : (
@@ -99,24 +133,48 @@ const PlayerSelectorModal = ({ isOpen, onClose, onSelect, existingNames }) => {
                   onClick={() => toggleSelect(p)}
                   className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all border ${
                     isSelected
-                      ? "bg-teal-500/10 border-teal-500/50"
-                      : "bg-[#0F1115] border-white/5 hover:border-white/10"
+                      ? lightMode
+                        ? "bg-teal-50 border-teal-500 shadow-md"
+                        : "bg-teal-500/10 border-teal-500/50"
+                      : lightMode
+                        ? "bg-white border-gray-200 hover:border-teal-300"
+                        : "bg-[#0F1115] border-white/5 hover:border-white/10"
                   }`}>
                   <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black ${isSelected ? 'bg-teal-500 text-black' : 'bg-white/5 text-slate-500'}`}>
+                    <div
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black ${
+                        isSelected
+                          ? lightMode
+                            ? "bg-teal-100 text-teal-700"
+                            : "bg-teal-500 text-black"
+                          : lightMode
+                            ? "bg-gray-100 text-gray-500"
+                            : "bg-white/5 text-slate-500"
+                      }`}>
                       {p.name.charAt(0)}
                     </div>
                     <div>
-                      <div className={`text-sm font-bold ${isSelected ? 'text-teal-400' : 'text-slate-300'}`}>
+                      <div
+                        className={`text-sm font-bold ${
+                          isSelected
+                            ? lightMode
+                              ? "text-teal-700"
+                              : "text-teal-400"
+                            : theme.text
+                        }`}>
                         {p.name}
                       </div>
-                      <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
+                      <div
+                        className={`text-[10px] uppercase font-bold tracking-wider ${theme.sub}`}>
                         {p.role}
                       </div>
                     </div>
                   </div>
                   {isSelected && (
-                    <div className="text-teal-400 font-black text-lg">✓</div>
+                    <div
+                      className={`p-1 rounded-full ${lightMode ? "bg-teal-100 text-teal-600" : "text-teal-400"}`}>
+                      <Check size={16} strokeWidth={4} />
+                    </div>
                   )}
                 </div>
               );
@@ -124,17 +182,22 @@ const PlayerSelectorModal = ({ isOpen, onClose, onSelect, existingNames }) => {
           )}
         </div>
 
-        <div className="p-6 border-t border-white/5 bg-[#161920] flex justify-end gap-3 rounded-b-3xl">
+        <div
+          className={`p-6 border-t flex justify-end gap-3 rounded-b-3xl ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#161920] border-white/5"}`}>
           <button
             onClick={onClose}
-            className="text-slate-500 text-xs font-black uppercase tracking-widest px-6 py-3 border border-white/10 rounded-xl hover:bg-white/5 transition-colors">
+            className={`text-xs font-black uppercase tracking-widest px-6 py-3 border rounded-xl transition-colors ${
+              lightMode
+                ? "text-gray-500 border-gray-300 hover:bg-gray-200"
+                : "text-slate-500 border-white/10 hover:bg-white/5"
+            }`}>
             Cancel
           </button>
           <button
             onClick={handleAdd}
             disabled={selectedPlayers.length === 0}
-            className="bg-gradient-to-r from-teal-600 to-teal-700 text-white text-xs font-black uppercase tracking-widest px-6 py-3 rounded-xl shadow-lg shadow-teal-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98]">
-            Add {selectedPlayers.length} Players
+            className="bg-gradient-to-r from-teal-600 to-teal-700 text-white text-xs font-black uppercase tracking-widest px-6 py-3 rounded-xl shadow-lg shadow-teal-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] flex items-center gap-2">
+            <Plus size={14} /> Add {selectedPlayers.length} Players
           </button>
         </div>
       </div>
@@ -145,6 +208,7 @@ const PlayerSelectorModal = ({ isOpen, onClose, onSelect, existingNames }) => {
 // --- MAIN COMPONENT ---
 export default function TeamManager({ tournamentId }) {
   const { user } = useAuth();
+  const { theme, lightMode } = useTheme();
 
   // Data State
   const [teams, setTeams] = useState([]);
@@ -152,13 +216,13 @@ export default function TeamManager({ tournamentId }) {
   // Form State
   const [teamId, setTeamId] = useState("");
   const [teamName, setTeamName] = useState("");
-  const [ownerName, setOwnerName] = useState(""); 
+  const [ownerName, setOwnerName] = useState("");
   const [squad, setSquad] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
 
   // Owner Player Logic
-  const [isOwnerPlaying, setIsOwnerPlaying] = useState(false); 
-  const [ownerRole, setOwnerRole] = useState("All-Rounder"); 
+  const [isOwnerPlaying, setIsOwnerPlaying] = useState(false);
+  const [ownerRole, setOwnerRole] = useState("All-Rounder");
 
   // UI State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -187,7 +251,7 @@ export default function TeamManager({ tournamentId }) {
     if (team) {
       setTeamId(team.id);
       setTeamName(team.name || team.id);
-      setOwnerName(team.ownerName || ""); 
+      setOwnerName(team.ownerName || "");
 
       if (team.roster && Array.isArray(team.roster) && team.roster.length > 0) {
         setSquad(team.roster);
@@ -197,7 +261,7 @@ export default function TeamManager({ tournamentId }) {
             id: `guest_${Date.now()}_${Math.random()}`,
             name: name,
             isGuest: true,
-          }))
+          })),
         );
       } else {
         setSquad([]);
@@ -263,15 +327,15 @@ export default function TeamManager({ tournamentId }) {
       let finalSquad = [...squad];
       if (isOwnerPlaying) {
         const exists = finalSquad.find(
-          (p) => p.name.toLowerCase() === ownerName.trim().toLowerCase()
+          (p) => p.name.toLowerCase() === ownerName.trim().toLowerCase(),
         );
         if (!exists) {
           finalSquad.push({
-            id: `owner_${Date.now()}`, 
+            id: `owner_${Date.now()}`,
             name: ownerName.trim(),
             role: ownerRole,
-            isGuest: true, 
-            isOwner: true, 
+            isGuest: true,
+            isOwner: true,
           });
         }
       }
@@ -300,7 +364,7 @@ export default function TeamManager({ tournamentId }) {
             }
           }
           return p;
-        })
+        }),
       );
 
       // --- STEP 3: PREPARE DATA ---
@@ -310,14 +374,14 @@ export default function TeamManager({ tournamentId }) {
         name: p.name,
         role: p.role || "Player",
         isGuest: !!p.isGuest,
-        isOwner: !!p.isOwner, 
+        isOwner: !!p.isOwner,
       }));
 
       // --- STEP 4: SAVE TEAM DOC ---
       let savedTeamId = teamId;
       const teamPayload = {
         name: teamName,
-        ownerName: ownerName, 
+        ownerName: ownerName,
         roster: rosterArray,
       };
 
@@ -328,7 +392,7 @@ export default function TeamManager({ tournamentId }) {
           tournamentId,
           teamName,
           playersArray,
-          teamPayload
+          teamPayload,
         );
         savedTeamId = newDocRef.id;
       }
@@ -343,12 +407,12 @@ export default function TeamManager({ tournamentId }) {
               name: ownerPlayer.name,
               role: ownerPlayer.role,
               status: "SOLD",
-              teamId: savedTeamId, 
+              teamId: savedTeamId,
               soldPrice: 0,
               isOwner: true,
-              playerId: ownerPlayer.id, 
+              playerId: ownerPlayer.id,
               createdAt: new Date().toISOString(),
-            }
+            },
           );
         }
       }
@@ -375,11 +439,20 @@ export default function TeamManager({ tournamentId }) {
     }
   };
 
-  const labelClass = "block text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2 ml-1";
-  const inputClass = "w-full bg-[#0F1115] text-slate-200 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20 transition-all placeholder:text-slate-600 font-bold";
+  const labelClass = `block text-[10px] font-black uppercase tracking-[0.2em] mb-2 ml-1 ${theme.sub}`;
+  const inputClass = `w-full rounded-xl px-4 py-3 focus:outline-none transition-all font-bold text-sm border focus:border-teal-500 ${
+    lightMode
+      ? "bg-gray-50 border-gray-200 text-gray-900 focus:bg-white placeholder:text-gray-400"
+      : "bg-[#0F1115] border-white/10 text-slate-200 focus:ring-1 focus:ring-teal-500/20 placeholder:text-slate-600"
+  }`;
 
   return (
-    <div className="bg-[#1C2128] border border-white/5 rounded-[2rem] p-6 md:p-8 shadow-2xl mb-6 backdrop-blur-md">
+    <div
+      className={`rounded-[2rem] p-6 md:p-8 shadow-2xl mb-6 backdrop-blur-md transition-colors ${
+        lightMode
+          ? "bg-white border border-gray-200"
+          : "bg-[#1C2128] border border-white/5"
+      }`}>
       <PlayerSelectorModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
@@ -387,11 +460,22 @@ export default function TeamManager({ tournamentId }) {
         existingNames={squad.map((p) => p.name)}
       />
 
-      <div className="flex justify-between items-center mb-8 border-b border-white/5 pb-4">
-        <h2 className="text-xl font-black text-slate-100 italic uppercase tracking-tighter flex items-center gap-3">
-          <span className="text-2xl not-italic">🛡️</span> Team Manager
+      <div
+        className={`flex justify-between items-center mb-8 border-b pb-4 ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+        <h2
+          className={`text-xl font-black italic uppercase tracking-tighter flex items-center gap-3 ${theme.text}`}>
+          <Shield
+            size={24}
+            className={lightMode ? "text-teal-600" : "text-white"}
+          />{" "}
+          Team Manager
         </h2>
-        <span className="text-[10px] font-black text-slate-500 bg-[#0F1115] border border-white/5 px-3 py-1.5 rounded-lg uppercase tracking-widest">
+        <span
+          className={`text-[10px] font-black px-3 py-1.5 rounded-lg uppercase tracking-widest border ${
+            lightMode
+              ? "bg-gray-100 text-gray-600 border-gray-200"
+              : "bg-[#0F1115] text-slate-500 border-white/5"
+          }`}>
           {teams.length} Teams Active
         </span>
       </div>
@@ -402,17 +486,27 @@ export default function TeamManager({ tournamentId }) {
           <label className={labelClass}>Select Team to Edit</label>
           <div className="relative group">
             <select
-              className={`${inputClass} appearance-none cursor-pointer hover:border-white/20`}
+              className={`${inputClass} appearance-none cursor-pointer`}
               value={teamId}
               onChange={handleSelectTeam}>
-              <option value="" className="text-slate-500">-- Create New Team --</option>
+              <option value="" className="text-gray-500">
+                -- Create New Team --
+              </option>
               {teams.map((t) => (
-                <option key={t.id} value={t.id} className="text-slate-200 bg-[#1C2128]">
+                <option
+                  key={t.id}
+                  value={t.id}
+                  className={
+                    lightMode
+                      ? "bg-white text-gray-900"
+                      : "bg-[#1C2128] text-slate-200"
+                  }>
                   {t.name || t.id}
                 </option>
               ))}
             </select>
-            <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-slate-500 group-hover:text-slate-300 transition-colors">
+            <div
+              className={`absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none transition-colors ${theme.sub}`}>
               ▼
             </div>
           </div>
@@ -443,26 +537,34 @@ export default function TeamManager({ tournamentId }) {
         </div>
 
         {/* OWNER PLAYING CONFIG */}
-        <div className="bg-[#161920] p-5 rounded-2xl border border-white/5">
+        <div
+          className={`p-5 rounded-2xl border transition-colors ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#161920] border-white/5"}`}>
           <div className="flex items-center gap-4">
             <div className="relative flex items-center">
-                <input
+              <input
                 type="checkbox"
                 id="ownerPlay"
                 checked={isOwnerPlaying}
                 onChange={(e) => setIsOwnerPlaying(e.target.checked)}
-                className="peer h-6 w-6 cursor-pointer appearance-none rounded-lg border border-white/10 bg-[#0F1115] checked:border-teal-500 checked:bg-teal-500 transition-all"
-                />
-                <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-black opacity-0 peer-checked:opacity-100 font-bold pointer-events-none">✓</span>
+                className={`peer h-6 w-6 cursor-pointer appearance-none rounded-lg border transition-all ${
+                  lightMode
+                    ? "bg-white border-gray-300 checked:bg-teal-600 checked:border-teal-600"
+                    : "bg-[#0F1115] border-white/10 checked:bg-teal-500 checked:border-teal-500"
+                }`}
+              />
+              <Check
+                size={14}
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white opacity-0 peer-checked:opacity-100 pointer-events-none"
+              />
             </div>
-            
+
             <div>
               <label
                 htmlFor="ownerPlay"
-                className="text-slate-200 text-sm font-bold cursor-pointer select-none">
+                className={`text-sm font-bold cursor-pointer select-none ${theme.text}`}>
                 Is Owner playing in the team?
               </label>
-              <p className="text-[10px] text-slate-500 font-medium mt-0.5">
+              <p className={`text-[10px] font-medium mt-0.5 ${theme.sub}`}>
                 They will be added to squad & stats automatically.
               </p>
             </div>
@@ -487,41 +589,64 @@ export default function TeamManager({ tournamentId }) {
         {/* ROSTER BUILDER */}
         <div>
           <div className="flex justify-between items-end mb-2 px-1">
-             <label className={labelClass}>Squad Roster ({squad.length})</label>
-             <span className="text-[9px] text-slate-600 font-bold uppercase">Drag & Drop coming soon</span>
+            <label className={labelClass}>Squad Roster ({squad.length})</label>
+            <span className={`text-[9px] font-bold uppercase ${theme.sub}`}>
+              Drag & Drop coming soon
+            </span>
           </div>
 
-          <div className="bg-[#0F1115] border border-white/5 rounded-2xl p-4 min-h-[150px] shadow-inner">
+          <div
+            className={`border rounded-2xl p-4 min-h-[150px] shadow-inner transition-colors ${
+              lightMode
+                ? "bg-gray-50 border-gray-200"
+                : "bg-[#0F1115] border-white/5"
+            }`}>
             {squad.length === 0 ? (
-              <div className="text-center text-slate-600 text-sm py-10 italic flex flex-col items-center gap-2">
-                <span className="text-2xl opacity-20">👥</span>
-                <span>No players added yet.<br />Use the buttons below to build your squad.</span>
+              <div
+                className={`text-center text-sm py-10 italic flex flex-col items-center gap-2 ${theme.sub}`}>
+                <UserPlus size={32} className="opacity-20" />
+                <span>
+                  No players added yet.
+                  <br />
+                  Use the buttons below to build your squad.
+                </span>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {squad.map((player) => (
                   <div
                     key={player.id}
-                    className="bg-[#161920] flex justify-between items-center p-3 rounded-xl border border-white/5 group hover:border-white/10 transition-all shadow-sm">
+                    className={`flex justify-between items-center p-3 rounded-xl border transition-all shadow-sm group ${
+                      lightMode
+                        ? "bg-white border-gray-200 hover:border-teal-300"
+                        : "bg-[#161920] border-white/5 hover:border-white/10"
+                    }`}>
                     <div className="flex items-center gap-3">
                       <div
                         className={`w-2 h-2 rounded-full shadow-[0_0_8px_currentColor] ${
                           player.isOwner
                             ? "bg-purple-500 text-purple-500 animate-pulse"
                             : player.isGuest
-                            ? "bg-amber-500 text-amber-500"
-                            : "bg-teal-500 text-teal-500"
+                              ? "bg-amber-500 text-amber-500"
+                              : "bg-teal-500 text-teal-500"
                         }`}></div>
                       <div>
-                        <div className="text-sm font-bold text-slate-200 leading-tight flex items-center gap-2">
+                        <div
+                          className={`text-sm font-bold leading-tight flex items-center gap-2 ${theme.text}`}>
                           {player.name}
                           {player.isOwner && (
-                            <span className="text-[8px] bg-purple-900/30 text-purple-300 px-1.5 py-0.5 rounded border border-purple-500/30 font-black uppercase tracking-widest">
-                              OWNER
+                            <span
+                              className={`text-[8px] px-1.5 py-0.5 rounded border font-black uppercase tracking-widest flex items-center gap-1 ${
+                                lightMode
+                                  ? "bg-purple-100 text-purple-700 border-purple-200"
+                                  : "bg-purple-900/30 text-purple-300 border-purple-500/30"
+                              }`}>
+                              <Crown size={8} /> OWNER
                             </span>
                           )}
                         </div>
-                        <div className="text-[9px] text-slate-500 uppercase font-bold tracking-wider mt-0.5">
+                        <div
+                          className={`text-[9px] uppercase font-bold tracking-wider mt-0.5 ${theme.sub}`}>
                           {player.isGuest
                             ? "Guest (Auto-Save)"
                             : "Global Player"}
@@ -530,8 +655,12 @@ export default function TeamManager({ tournamentId }) {
                     </div>
                     <button
                       onClick={() => removePlayer(player.id)}
-                      className="w-6 h-6 rounded-full flex items-center justify-center text-slate-600 hover:text-red-400 hover:bg-red-900/20 transition-all font-bold text-xs">
-                      ✕
+                      className={`w-6 h-6 rounded-full flex items-center justify-center transition-all font-bold text-xs ${
+                        lightMode
+                          ? "text-gray-400 hover:text-red-600 hover:bg-red-50"
+                          : "text-slate-600 hover:text-red-400 hover:bg-red-900/20"
+                      }`}>
+                      <X size={14} />
                     </button>
                   </div>
                 ))}
@@ -543,13 +672,21 @@ export default function TeamManager({ tournamentId }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             <button
               onClick={() => setIsModalOpen(true)}
-              className="bg-teal-900/10 hover:bg-teal-900/20 text-teal-400 border border-teal-500/20 hover:border-teal-500/40 font-black text-xs uppercase tracking-widest py-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-sm">
-              <span className="text-lg">🌍</span> Search Global DB
+              className={`font-black text-xs uppercase tracking-widest py-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-sm border ${
+                lightMode
+                  ? "bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100"
+                  : "bg-teal-900/10 hover:bg-teal-900/20 text-teal-400 border-teal-500/20 hover:border-teal-500/40"
+              }`}>
+              <Globe size={18} /> Search Global DB
             </button>
 
             <div className="flex gap-2">
               <input
-                className="bg-[#0F1115] border border-white/10 text-slate-200 rounded-xl px-4 py-3 flex-1 text-sm font-bold focus:outline-none focus:border-white/20 placeholder:text-slate-600"
+                className={`border rounded-xl px-4 py-3 flex-1 text-sm font-bold focus:outline-none transition-colors ${
+                  lightMode
+                    ? "bg-white border-gray-200 text-gray-900 placeholder:text-gray-400 focus:border-gray-300"
+                    : "bg-[#0F1115] border-white/10 text-slate-200 focus:border-white/20 placeholder:text-slate-600"
+                }`}
                 placeholder="Type Manual Guest Name..."
                 value={guestName}
                 onChange={(e) => setGuestName(e.target.value)}
@@ -558,34 +695,45 @@ export default function TeamManager({ tournamentId }) {
               <button
                 onClick={addGuestPlayer}
                 disabled={!guestName.trim()}
-                className="bg-[#161920] hover:bg-white/10 text-white px-5 rounded-xl font-bold disabled:opacity-30 border border-white/5 transition-all text-xl">
-                +
+                className={`px-5 rounded-xl font-bold disabled:opacity-30 border transition-all text-xl flex items-center justify-center ${
+                  lightMode
+                    ? "bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-200"
+                    : "bg-[#161920] hover:bg-white/10 text-white border-white/5"
+                }`}>
+                <Plus size={20} />
               </button>
             </div>
           </div>
         </div>
 
         {/* FOOTER ACTIONS */}
-        <div className="pt-8 border-t border-white/5 flex gap-4">
+        <div
+          className={`pt-8 border-t flex gap-4 ${lightMode ? "border-gray-200" : "border-white/5"}`}>
           <button
             onClick={handleSaveTeam}
             disabled={!user || isSaving}
             className="flex-1 bg-gradient-to-r from-teal-600 to-indigo-600 hover:from-teal-500 hover:to-indigo-500 text-white font-black text-sm uppercase tracking-[0.15em] py-4 rounded-xl shadow-xl shadow-teal-900/20 disabled:opacity-50 transition-all flex justify-center items-center gap-3 active:scale-[0.98]">
-            {isSaving && (
-              <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+            {isSaving ? (
+              <Loader2 size={18} className="animate-spin" />
+            ) : (
+              <Save size={18} />
             )}
             {isSaving
               ? "Saving Team..."
               : teamId
-              ? "Update Team Roster"
-              : "Create New Team"}
+                ? "Update Team Roster"
+                : "Create New Team"}
           </button>
 
           {teamId && (
             <button
               onClick={handleDelete}
-              className="px-6 py-4 bg-red-900/10 text-red-400 hover:bg-red-900/30 font-black text-sm uppercase tracking-widest rounded-xl border border-red-500/20 transition-all hover:border-red-500/40">
-              Delete
+              className={`px-6 py-4 font-black text-sm uppercase tracking-widest rounded-xl border transition-all flex items-center gap-2 ${
+                lightMode
+                  ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
+                  : "bg-red-900/10 text-red-400 hover:bg-red-900/30 border-red-500/20 hover:border-red-500/40"
+              }`}>
+              <Trash2 size={16} /> Delete
             </button>
           )}
         </div>

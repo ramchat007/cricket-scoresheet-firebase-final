@@ -1,10 +1,25 @@
 import React, { useState, useEffect } from "react";
-import { doc, updateDoc, getDoc } from "firebase/firestore"; 
+import { doc, updateDoc, getDoc } from "firebase/firestore";
 import { db } from "../utils/firebase";
-import { useAuth } from "../hooks/useAuth"; // ✅ Import Auth Hook
+import { useAuth } from "../hooks/useAuth";
+import { useTheme } from "../context/ThemeContext";
+import {
+  Trophy,
+  Calendar,
+  MapPin,
+  Zap,
+  Users,
+  Video,
+  Save,
+  Shield,
+  Clock,
+  Loader2,
+} from "lucide-react";
 
 export default function MatchInfo({ match }) {
-  const { user } = useAuth(); // ✅ Get current user
+  const { user } = useAuth();
+  const { theme, lightMode } = useTheme();
+
   const [streamUrl, setStreamUrl] = useState(match.meta?.liveStreamUrl || "");
   const [saving, setSaving] = useState(false);
   const [isAuthorized, setIsAuthorized] = useState(false);
@@ -14,7 +29,9 @@ export default function MatchInfo({ match }) {
     const checkPermission = async () => {
       if (!user || !match?.meta?.tournament) return;
       try {
-        const tSnap = await getDoc(doc(db, "tournaments", match.meta.tournament));
+        const tSnap = await getDoc(
+          doc(db, "tournaments", match.meta.tournament),
+        );
         if (tSnap.exists()) {
           const tData = tSnap.data();
           // Allow if User is Owner OR in Scorers list
@@ -33,13 +50,16 @@ export default function MatchInfo({ match }) {
     if (!match?.id || !match?.meta?.tournament) return;
     setSaving(true);
     try {
-      const matchRef = doc(db, "tournaments", match.meta.tournament, "matches", match.id);
-      
-      // Keep ID if just ID, or extract from URL if full URL
-      let cleanUrl = streamUrl; 
-      
+      const matchRef = doc(
+        db,
+        "tournaments",
+        match.meta.tournament,
+        "matches",
+        match.id,
+      );
+      let cleanUrl = streamUrl;
       await updateDoc(matchRef, {
-        "meta.liveStreamUrl": cleanUrl
+        "meta.liveStreamUrl": cleanUrl,
       });
       alert("Stream linked successfully! Check the header.");
     } catch (e) {
@@ -78,7 +98,8 @@ export default function MatchInfo({ match }) {
       n === cleanName(currentInn.nonStriker)
     ) {
       return (
-        <span className="text-[8px] bg-teal-500/20 text-teal-400 px-1.5 py-0.5 rounded border border-teal-500/20 font-black ml-auto">
+        <span
+          className={`text-[8px] px-1.5 py-0.5 rounded border font-black ml-auto ${lightMode ? "bg-teal-100 text-teal-700 border-teal-200" : "bg-teal-500/20 text-teal-400 border-teal-500/20"}`}>
           ON FIELD
         </span>
       );
@@ -86,7 +107,8 @@ export default function MatchInfo({ match }) {
     const stats = currentInn.batsmenStats?.[n];
     if (stats?.out) {
       return (
-        <span className="text-[8px] bg-red-500/10 text-red-400/60 px-1.5 py-0.5 rounded border border-red-500/10 font-bold ml-auto uppercase">
+        <span
+          className={`text-[8px] px-1.5 py-0.5 rounded border font-bold ml-auto uppercase ${lightMode ? "bg-red-50 text-red-600 border-red-200" : "bg-red-500/10 text-red-400/60 border-red-500/10"}`}>
           Out
         </span>
       );
@@ -94,17 +116,25 @@ export default function MatchInfo({ match }) {
     return null;
   };
 
-  const InfoRow = ({ label, value, icon }) => (
-    <div className="flex items-center justify-between p-4 bg-[#161920] rounded-xl border border-white/5 hover:border-white/10 transition-all group">
+  const InfoRow = ({ label, value, icon: Icon }) => (
+    <div
+      className={`flex items-center justify-between p-4 rounded-xl border transition-all group ${
+        lightMode
+          ? "bg-white border-gray-100 hover:border-teal-200 hover:shadow-md"
+          : "bg-[#161920] border-white/5 hover:border-white/10"
+      }`}>
       <div className="flex items-center gap-3">
-        <span className="text-xl opacity-60 group-hover:scale-110 transition-transform">
-          {icon}
+        <span
+          className={`text-xl transition-transform group-hover:scale-110 ${lightMode ? "text-teal-600 opacity-80" : "opacity-60"}`}>
+          {typeof Icon === "string" ? Icon : <Icon size={20} />}
         </span>
-        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest group-hover:text-slate-300">
+        <span
+          className={`text-[10px] font-black uppercase tracking-widest ${theme.sub}`}>
           {label}
         </span>
       </div>
-      <div className="text-slate-200 font-bold text-right text-sm tracking-tight">
+      <div
+        className={`font-bold text-right text-sm tracking-tight ${theme.text}`}>
         {value || "N/A"}
       </div>
     </div>
@@ -112,41 +142,61 @@ export default function MatchInfo({ match }) {
 
   return (
     <div className="flex flex-col gap-6 max-w-4xl mx-auto pb-20 px-2 sm:px-0">
-      
-      {/* 🔴 LIVE STREAM SETTINGS (Only Visible to Authorized Scorers) */}
+      {/* 🔴 LIVE STREAM SETTINGS (Admin Only) */}
       {isAuthorized && (
-        <div className="bg-[#1C2128] border border-white/5 p-5 rounded-2xl animate-in fade-in slide-in-from-top-4">
-          <h3 className="text-slate-300 text-xs font-black uppercase tracking-widest mb-4 flex items-center gap-2">
-            <span className="text-red-500">●</span> Admin: Live Stream Config
+        <div
+          className={`p-5 rounded-2xl border animate-in fade-in slide-in-from-top-4 ${lightMode ? "bg-white border-red-100 shadow-lg" : "bg-[#1C2128] border-white/5"}`}>
+          <h3
+            className={`text-xs font-black uppercase tracking-widest mb-4 flex items-center gap-2 ${theme.text}`}>
+            <Video size={16} className="text-red-500" /> Admin: Live Stream
+            Config
           </h3>
           <div className="flex gap-2">
-            <input 
-              type="text" 
+            <input
+              type="text"
               value={streamUrl}
               onChange={(e) => setStreamUrl(e.target.value)}
               placeholder="Paste YouTube Link or ID here..."
-              className="flex-1 bg-black border border-white/10 text-white text-xs p-3 rounded-xl outline-none focus:border-red-500 transition-colors"
+              className={`flex-1 text-xs p-3 rounded-xl outline-none border transition-all focus:border-red-500 ${
+                lightMode
+                  ? "bg-gray-50 border-gray-200 text-gray-900 focus:bg-white"
+                  : "bg-black border-white/10 text-white focus:bg-black/50"
+              }`}
             />
-            <button 
+            <button
               onClick={handleSaveStream}
               disabled={saving}
-              className="bg-red-600 hover:bg-red-500 text-white text-xs font-black uppercase px-4 rounded-xl transition-all active:scale-95 disabled:opacity-50"
-            >
-              {saving ? "..." : "Link"}
+              className="bg-red-600 hover:bg-red-500 text-white text-xs font-black uppercase px-4 rounded-xl transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2">
+              {saving ? (
+                <Loader2 className="animate-spin" size={14} />
+              ) : (
+                <Save size={14} />
+              )}
+              <span className="hidden sm:inline">Save</span>
             </button>
           </div>
-          <p className="text-[10px] text-slate-500 mt-2">
-            Only you can see this box. Pasting a link here enables the video player for all viewers.
+          <p className={`text-[10px] mt-2 ${theme.sub}`}>
+            Visible only to you. Linking a stream enables the video player for
+            all viewers.
           </p>
         </div>
       )}
 
       {/* 1. MATCH ARCHIVE CARD */}
-      <div className="bg-[#1C2128] border border-white/5 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 blur-3xl rounded-full"></div>
-        <div className="flex items-center gap-3 mb-6 border-b border-white/5 pb-4">
-          <span className="text-xl">📋</span>
-          <h3 className="text-sm font-black text-white uppercase tracking-widest">
+      <div
+        className={`border rounded-3xl p-6 shadow-2xl relative overflow-hidden ${theme.card} ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+        {!lightMode && (
+          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 blur-3xl rounded-full"></div>
+        )}
+
+        <div
+          className={`flex items-center gap-3 mb-6 border-b pb-4 ${lightMode ? "border-gray-100" : "border-white/5"}`}>
+          <Shield
+            size={24}
+            className={lightMode ? "text-teal-600" : "text-slate-400"}
+          />
+          <h3
+            className={`text-sm font-black uppercase tracking-widest ${theme.text}`}>
             General Information
           </h3>
         </div>
@@ -155,22 +205,22 @@ export default function MatchInfo({ match }) {
           <InfoRow
             label="Series"
             value={meta.tournament || "Exhibition"}
-            icon="🏆"
+            icon={Trophy}
           />
           <InfoRow
             label="Fixture Date"
             value={formatDate(match.date || meta.date)}
-            icon="📅"
+            icon={Calendar}
           />
           <InfoRow
             label="Match Format"
             value={`${meta.overs || "?"} Overs`}
-            icon="🏏"
+            icon={Clock}
           />
           <InfoRow
             label="Arena"
             value={meta.location || meta.venue || "Neutral Ground"}
-            icon="📍"
+            icon={MapPin}
           />
           <InfoRow
             label="The Toss"
@@ -184,16 +234,22 @@ export default function MatchInfo({ match }) {
           <InfoRow
             label="Match Level"
             value={meta.matchType || "Standard"}
-            icon="⚡"
+            icon={Zap}
           />
         </div>
       </div>
 
       {/* 2. SQUADS & STATUS CARD */}
-      <div className="bg-[#1C2128] border border-white/5 rounded-3xl p-6 shadow-2xl relative">
-        <div className="flex items-center gap-3 mb-6 border-b border-white/5 pb-4">
-          <span className="text-xl">⚔️</span>
-          <h3 className="text-sm font-black text-white uppercase tracking-widest">
+      <div
+        className={`border rounded-3xl p-6 shadow-2xl relative ${theme.card} ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+        <div
+          className={`flex items-center gap-3 mb-6 border-b pb-4 ${lightMode ? "border-gray-100" : "border-white/5"}`}>
+          <Users
+            size={24}
+            className={lightMode ? "text-indigo-600" : "text-slate-400"}
+          />
+          <h3
+            className={`text-sm font-black uppercase tracking-widest ${theme.text}`}>
             Active Playing Squads
           </h3>
         </div>
@@ -201,11 +257,14 @@ export default function MatchInfo({ match }) {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* TEAM A */}
           <div className="space-y-4">
-            <div className="bg-teal-500/10 p-3 rounded-xl border border-teal-500/20 flex justify-between items-center">
-              <span className="text-teal-400 font-black uppercase text-xs tracking-tighter">
+            <div
+              className={`p-3 rounded-xl border flex justify-between items-center ${lightMode ? "bg-teal-50 border-teal-100" : "bg-teal-500/10 border-teal-500/20"}`}>
+              <span
+                className={`font-black uppercase text-xs tracking-tighter ${lightMode ? "text-teal-700" : "text-teal-400"}`}>
                 {meta.teamA}
               </span>
-              <span className="text-[10px] text-teal-600 font-bold uppercase">
+              <span
+                className={`text-[10px] font-bold uppercase ${lightMode ? "text-teal-600" : "text-teal-600"}`}>
                 {match.teamASquad?.length || 0} Players
               </span>
             </div>
@@ -213,11 +272,16 @@ export default function MatchInfo({ match }) {
               {(match.teamASquad || []).map((p, i) => (
                 <div
                   key={i}
-                  className="bg-black/20 p-3 rounded-lg flex items-center border border-white/5 hover:bg-black/40 transition-colors group">
-                  <span className="text-slate-600 text-[10px] font-mono w-5">
+                  className={`p-3 rounded-lg flex items-center border transition-colors group ${
+                    lightMode
+                      ? "bg-white border-gray-100 hover:border-teal-200 hover:shadow-sm"
+                      : "bg-black/20 border-white/5 hover:bg-black/40"
+                  }`}>
+                  <span className={`text-[10px] font-mono w-5 ${theme.sub}`}>
                     {i + 1}
                   </span>
-                  <span className="text-slate-300 text-sm font-semibold group-hover:text-white transition-colors">
+                  <span
+                    className={`text-sm font-semibold transition-colors ${theme.text}`}>
                     {cleanName(p)}
                   </span>
                   {getPlayerBadge(p)}
@@ -228,11 +292,14 @@ export default function MatchInfo({ match }) {
 
           {/* TEAM B */}
           <div className="space-y-4">
-            <div className="bg-indigo-500/10 p-3 rounded-xl border border-indigo-500/20 flex justify-between items-center">
-              <span className="text-indigo-400 font-black uppercase text-xs tracking-tighter">
+            <div
+              className={`p-3 rounded-xl border flex justify-between items-center ${lightMode ? "bg-indigo-50 border-indigo-100" : "bg-indigo-500/10 border-indigo-500/20"}`}>
+              <span
+                className={`font-black uppercase text-xs tracking-tighter ${lightMode ? "text-indigo-700" : "text-indigo-400"}`}>
                 {meta.teamB}
               </span>
-              <span className="text-[10px] text-indigo-600 font-bold uppercase">
+              <span
+                className={`text-[10px] font-bold uppercase ${lightMode ? "text-indigo-600" : "text-indigo-600"}`}>
                 {match.teamBSquad?.length || 0} Players
               </span>
             </div>
@@ -240,11 +307,16 @@ export default function MatchInfo({ match }) {
               {(match.teamBSquad || []).map((p, i) => (
                 <div
                   key={i}
-                  className="bg-black/20 p-3 rounded-lg flex items-center border border-white/5 hover:bg-black/40 transition-colors group">
-                  <span className="text-slate-600 text-[10px] font-mono w-5">
+                  className={`p-3 rounded-lg flex items-center border transition-colors group ${
+                    lightMode
+                      ? "bg-white border-gray-100 hover:border-indigo-200 hover:shadow-sm"
+                      : "bg-black/20 border-white/5 hover:bg-black/40"
+                  }`}>
+                  <span className={`text-[10px] font-mono w-5 ${theme.sub}`}>
                     {i + 1}
                   </span>
-                  <span className="text-slate-300 text-sm font-semibold group-hover:text-white transition-colors">
+                  <span
+                    className={`text-sm font-semibold transition-colors ${theme.text}`}>
                     {cleanName(p)}
                   </span>
                   {getPlayerBadge(p)}
@@ -257,23 +329,26 @@ export default function MatchInfo({ match }) {
 
       {/* 3. MATCH OFFICIALS */}
       {(meta.umpires || meta.referee) && (
-        <div className="bg-[#161920] border border-white/5 rounded-2xl p-5 flex flex-wrap gap-6 justify-center shadow-lg">
+        <div
+          className={`border rounded-2xl p-5 flex flex-wrap gap-6 justify-center shadow-lg ${theme.card} ${lightMode ? "border-gray-200" : "border-white/5"}`}>
           {meta.umpires && (
             <div className="text-center">
-              <div className="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">
+              <div
+                className={`text-[9px] font-black uppercase tracking-widest mb-1 ${theme.sub}`}>
                 Umpires
               </div>
-              <div className="text-xs text-slate-300 font-bold">
+              <div className={`text-xs font-bold ${theme.text}`}>
                 {meta.umpires}
               </div>
             </div>
           )}
           {meta.referee && (
             <div className="text-center">
-              <div className="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">
+              <div
+                className={`text-[9px] font-black uppercase tracking-widest mb-1 ${theme.sub}`}>
                 Match Referee
               </div>
-              <div className="text-xs text-slate-300 font-bold">
+              <div className={`text-xs font-bold ${theme.text}`}>
                 {meta.referee}
               </div>
             </div>

@@ -60,9 +60,9 @@ body {
 .h1, .h2, .h3, .h4, .h5, .h6, h1, h2, h3, h4, h5, h6{
   color: var(--text);
 }
-span{
+/* span{
   color: var(--text);
-}
+} */
 
 /* Override Bootstrap card */
 .card {
@@ -154,6 +154,6 @@ a,
 .nav-link{color:  var(--accent-light);}
 .navbar-brand{color: var(--accent-light);}
 
-span {
+/* span.font-black.text-6xl.tracking-tighter {
     color: #f8f9fa;
-}
+} */
