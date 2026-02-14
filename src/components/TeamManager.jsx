@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   addTeam,
   updateTeam,
   deleteTeam,
   subscribeTeams,
-  subscribeAllTeams,
+  subscribeAllGlobalTeams, // Used for Importing
   listGlobalPlayers,
   createGlobalPlayer,
+  getTournamentDetails, // Need this to check Auction Mode
 } from "../utils/firestore.js";
-import { addDoc, collection } from "firebase/firestore";
+import { addDoc, collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useTheme } from "../context/ThemeContext";
@@ -24,9 +25,12 @@ import {
   Trash2,
   Crown,
   Save,
+  Copy, // For Import Icon
+  GripVertical, // For Drag Handle
 } from "lucide-react";
 
 // --- SUB-COMPONENT: GLOBAL PLAYER SELECTOR MODAL ---
+// (Kept largely the same, just ensured theme consistency)
 const PlayerSelectorModal = ({ isOpen, onClose, onSelect, existingNames }) => {
   const { theme, lightMode } = useTheme();
   const [globalPlayers, setGlobalPlayers] = useState([]);
@@ -90,7 +94,6 @@ const PlayerSelectorModal = ({ isOpen, onClose, onSelect, existingNames }) => {
             <X size={16} />
           </button>
         </div>
-
         <div
           className={`p-4 border-b ${lightMode ? "bg-white border-gray-200" : "bg-[#161920] border-white/5"}`}>
           <div className="relative">
@@ -99,11 +102,7 @@ const PlayerSelectorModal = ({ isOpen, onClose, onSelect, existingNames }) => {
               size={16}
             />
             <input
-              className={`w-full rounded-xl px-4 py-3 pl-11 outline-none transition-colors font-bold text-sm border focus:border-teal-500 ${
-                lightMode
-                  ? "bg-gray-50 border-gray-200 text-gray-900 placeholder:text-gray-400 focus:bg-white"
-                  : "bg-[#0F1115] border-white/10 text-slate-200 placeholder:text-slate-600 focus:border-teal-500/50"
-              }`}
+              className={`w-full rounded-xl px-4 py-3 pl-11 outline-none transition-colors font-bold text-sm border focus:border-teal-500 ${lightMode ? "bg-gray-50 border-gray-200 text-gray-900 placeholder:text-gray-400 focus:bg-white" : "bg-[#0F1115] border-white/10 text-slate-200 placeholder:text-slate-600 focus:border-teal-500/50"}`}
               placeholder="Search database..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -111,7 +110,6 @@ const PlayerSelectorModal = ({ isOpen, onClose, onSelect, existingNames }) => {
             />
           </div>
         </div>
-
         <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-8 gap-2 text-teal-500 animate-pulse">
@@ -131,37 +129,15 @@ const PlayerSelectorModal = ({ isOpen, onClose, onSelect, existingNames }) => {
                 <div
                   key={p.id}
                   onClick={() => toggleSelect(p)}
-                  className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all border ${
-                    isSelected
-                      ? lightMode
-                        ? "bg-teal-50 border-teal-500 shadow-md"
-                        : "bg-teal-500/10 border-teal-500/50"
-                      : lightMode
-                        ? "bg-white border-gray-200 hover:border-teal-300"
-                        : "bg-[#0F1115] border-white/5 hover:border-white/10"
-                  }`}>
+                  className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all border ${isSelected ? (lightMode ? "bg-teal-50 border-teal-500 shadow-md" : "bg-teal-500/10 border-teal-500/50") : lightMode ? "bg-white border-gray-200 hover:border-teal-300" : "bg-[#0F1115] border-white/5 hover:border-white/10"}`}>
                   <div className="flex items-center gap-3">
                     <div
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black ${
-                        isSelected
-                          ? lightMode
-                            ? "bg-teal-100 text-teal-700"
-                            : "bg-teal-500 text-black"
-                          : lightMode
-                            ? "bg-gray-100 text-gray-500"
-                            : "bg-white/5 text-slate-500"
-                      }`}>
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black ${isSelected ? (lightMode ? "bg-teal-100 text-teal-700" : "bg-teal-500 text-black") : lightMode ? "bg-gray-100 text-gray-500" : "bg-white/5 text-slate-500"}`}>
                       {p.name.charAt(0)}
                     </div>
                     <div>
                       <div
-                        className={`text-sm font-bold ${
-                          isSelected
-                            ? lightMode
-                              ? "text-teal-700"
-                              : "text-teal-400"
-                            : theme.text
-                        }`}>
+                        className={`text-sm font-bold ${isSelected ? (lightMode ? "text-teal-700" : "text-teal-400") : theme.text}`}>
                         {p.name}
                       </div>
                       <div
@@ -181,16 +157,11 @@ const PlayerSelectorModal = ({ isOpen, onClose, onSelect, existingNames }) => {
             })
           )}
         </div>
-
         <div
           className={`p-6 border-t flex justify-end gap-3 rounded-b-3xl ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#161920] border-white/5"}`}>
           <button
             onClick={onClose}
-            className={`text-xs font-black uppercase tracking-widest px-6 py-3 border rounded-xl transition-colors ${
-              lightMode
-                ? "text-gray-500 border-gray-300 hover:bg-gray-200"
-                : "text-slate-500 border-white/10 hover:bg-white/5"
-            }`}>
+            className={`text-xs font-black uppercase tracking-widest px-6 py-3 border rounded-xl transition-colors ${lightMode ? "text-gray-500 border-gray-300 hover:bg-gray-200" : "text-slate-500 border-white/10 hover:bg-white/5"}`}>
             Cancel
           </button>
           <button
@@ -205,6 +176,91 @@ const PlayerSelectorModal = ({ isOpen, onClose, onSelect, existingNames }) => {
   );
 };
 
+// --- SUB-COMPONENT: IMPORT TEAM MODAL ---
+const ImportTeamModal = ({
+  isOpen,
+  onClose,
+  onImport,
+  currentTournamentId,
+}) => {
+  const { theme, lightMode } = useTheme();
+  const [allTeams, setAllTeams] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    if (isOpen) {
+      setLoading(true);
+      // Fetch all teams from ALL tournaments using the group collection query
+      // Note: 'subscribeAllTeams' fetches everything. We need to filter out current tournament's teams later if needed,
+      // but user might want to clone a team from THIS tournament too (e.g. Team A vs Team A Copy), so we allow it.
+      const unsub = subscribeAllGlobalTeams((teams) => {
+        setAllTeams(teams);
+        setLoading(false);
+      });
+      return () => unsub();
+    }
+  }, [isOpen]);
+
+  const filtered = allTeams.filter((t) =>
+    t.name.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+      <div
+        className={`w-full max-w-lg rounded-3xl shadow-2xl flex flex-col max-h-[80vh] ${theme.card} border ${lightMode ? "border-gray-200" : "border-white/10"}`}>
+        <div
+          className={`p-6 border-b flex justify-between items-center ${lightMode ? "bg-gray-50" : "bg-black/20"}`}>
+          <h3
+            className={`text-lg font-black uppercase flex gap-2 ${theme.text}`}>
+            <Copy size={20} className="text-blue-500" /> Import Team
+          </h3>
+          <button onClick={onClose}>
+            <X size={20} className={theme.sub} />
+          </button>
+        </div>
+        <div className="p-4 border-b">
+          <input
+            autoFocus
+            placeholder="Search existing teams..."
+            className={`w-full p-3 rounded-xl font-bold border outline-none ${lightMode ? "bg-white border-gray-200 text-black" : "bg-black/20 border-white/10 text-white"}`}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {loading ? (
+            <div className="text-center p-8">
+              <Loader2 className="animate-spin mx-auto" />
+            </div>
+          ) : (
+            filtered.map((t) => (
+              <div
+                key={t.id}
+                onClick={() => {
+                  onImport(t);
+                  onClose();
+                }}
+                className={`p-4 rounded-xl border cursor-pointer hover:border-blue-500 transition-all flex justify-between items-center ${lightMode ? "bg-white border-gray-200" : "bg-white/5 border-white/5"}`}>
+                <div>
+                  <div className={`font-bold ${theme.text}`}>{t.name}</div>
+                  <div className={`text-xs ${theme.sub}`}>
+                    {t.roster?.length || 0} Players
+                  </div>
+                </div>
+                <Plus size={16} className="text-blue-500" />
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- MAIN COMPONENT ---
 export default function TeamManager({ tournamentId }) {
   const { user } = useAuth();
@@ -212,6 +268,8 @@ export default function TeamManager({ tournamentId }) {
 
   // Data State
   const [teams, setTeams] = useState([]);
+  const [allTournamentPlayers, setAllTournamentPlayers] = useState(new Set()); // For duplicate check
+  const [isAuctionMode, setIsAuctionMode] = useState(false); // 1. Feature Check
 
   // Form State
   const [teamId, setTeamId] = useState("");
@@ -226,18 +284,35 @@ export default function TeamManager({ tournamentId }) {
 
   // UI State
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
   const [guestName, setGuestName] = useState("");
 
-  // 1. Fetch Teams
+  // Drag State
+  const [draggedItemIndex, setDraggedItemIndex] = useState(null);
+
+  // 1. Fetch Teams & Config
   useEffect(() => {
-    let unsubscribe = () => {};
-    if (tournamentId) {
-      unsubscribe = subscribeTeams(tournamentId, setTeams);
-    } else {
-      unsubscribe = subscribeAllTeams(setTeams);
-    }
-    return () => unsubscribe && unsubscribe();
-  }, [tournamentId]);
+    if (!tournamentId) return;
+
+    // Check Auction Mode
+    const fetchConfig = async () => {
+      const data = await getTournamentDetails(tournamentId);
+      setIsAuctionMode(!!data?.isAuctionMode);
+    };
+    fetchConfig();
+
+    const unsubscribe = subscribeTeams(tournamentId, (data) => {
+      setTeams(data);
+      // 3. Build Set of ALL players in this tournament for duplicate checking
+      const playerSet = new Set();
+      data.forEach((t) => {
+        if (t.id === teamId) return; // Don't count current team's players against itself when editing
+        t.roster?.forEach((p) => playerSet.add(p.name.toLowerCase().trim()));
+      });
+      setAllTournamentPlayers(playerSet);
+    });
+    return () => unsubscribe();
+  }, [tournamentId, teamId]);
 
   // 2. Select Team Logic
   const handleSelectTeam = (e) => {
@@ -279,10 +354,33 @@ export default function TeamManager({ tournamentId }) {
     setOwnerRole("All-Rounder");
   };
 
+  // 2b. Import Team Logic
+  const handleImportTeam = (importedTeam) => {
+    // Pre-fill form but keep ID empty so it creates NEW team
+    setTeamId("");
+    setTeamName(importedTeam.name + " (Copy)");
+    setOwnerName(importedTeam.ownerName || "");
+    if (importedTeam.roster) {
+      setSquad(importedTeam.roster.map((p) => ({ ...p }))); // Deep copy players
+    }
+  };
+
   // 3. Squad Management
+  const checkDuplicate = (name) => {
+    if (allTournamentPlayers.has(name.toLowerCase().trim())) {
+      alert(
+        `⚠️ Player "${name}" is already in another team in this tournament!`,
+      );
+      return true;
+    }
+    return false;
+  };
+
   const addGuestPlayer = (e) => {
     e.preventDefault();
     if (!guestName.trim()) return;
+    if (checkDuplicate(guestName)) return; // 3. Duplicate Check
+
     const newPlayer = {
       id: `guest_${Date.now()}`,
       name: guestName.trim(),
@@ -294,7 +392,8 @@ export default function TeamManager({ tournamentId }) {
   };
 
   const addGlobalPlayers = (selected) => {
-    const formatted = selected.map((p) => ({
+    const validPlayers = selected.filter((p) => !checkDuplicate(p.name)); // Filter duplicates
+    const formatted = validPlayers.map((p) => ({
       id: p.id,
       name: p.name,
       role: p.role || "Player",
@@ -307,12 +406,36 @@ export default function TeamManager({ tournamentId }) {
     setSquad((prev) => prev.filter((p) => p.id !== playerId));
   };
 
-  // 4. Save Logic
+  // 4. Drag & Drop Handlers
+  const onDragStart = (e, index) => {
+    setDraggedItemIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+    // e.target.style.opacity = '0.5'; // Optional visual
+  };
+
+  const onDragOver = (e, index) => {
+    e.preventDefault(); // Necessary for drop
+    if (draggedItemIndex === null || draggedItemIndex === index) return;
+
+    const newSquad = [...squad];
+    const draggedItem = newSquad[draggedItemIndex];
+    newSquad.splice(draggedItemIndex, 1);
+    newSquad.splice(index, 0, draggedItem);
+
+    setSquad(newSquad);
+    setDraggedItemIndex(index);
+  };
+
+  const onDragEnd = () => {
+    setDraggedItemIndex(null);
+  };
+
+  // 5. Save Logic
   const handleSaveTeam = async () => {
     if (!teamName.trim()) return alert("Team name required.");
     if (!tournamentId) return alert("Tournament ID missing.");
 
-    if (isOwnerPlaying && !ownerName.trim()) {
+    if (isAuctionMode && isOwnerPlaying && !ownerName.trim()) {
       return alert("Owner Name is required if they are playing.");
     }
 
@@ -325,7 +448,7 @@ export default function TeamManager({ tournamentId }) {
     try {
       // --- STEP 1: ADD OWNER TO SQUAD ---
       let finalSquad = [...squad];
-      if (isOwnerPlaying) {
+      if (isAuctionMode && isOwnerPlaying) {
         const exists = finalSquad.find(
           (p) => p.name.toLowerCase() === ownerName.trim().toLowerCase(),
         );
@@ -345,6 +468,7 @@ export default function TeamManager({ tournamentId }) {
         finalSquad.map(async (p) => {
           if (p.isGuest) {
             try {
+              // Auto-create global player for guests so they have IDs
               const newGlobalId = await createGlobalPlayer({
                 name: p.name,
                 role: p.role || "All-Rounder",
@@ -381,7 +505,7 @@ export default function TeamManager({ tournamentId }) {
       let savedTeamId = teamId;
       const teamPayload = {
         name: teamName,
-        ownerName: ownerName,
+        ownerName: isAuctionMode ? ownerName : "", // Clear owner if no auction
         roster: rosterArray,
       };
 
@@ -395,26 +519,6 @@ export default function TeamManager({ tournamentId }) {
           teamPayload,
         );
         savedTeamId = newDocRef.id;
-      }
-
-      // --- STEP 5: REGISTER OWNER IN AUCTION STATS ---
-      if (isOwnerPlaying) {
-        const ownerPlayer = processedSquad.find((p) => p.isOwner);
-        if (ownerPlayer) {
-          await addDoc(
-            collection(db, "tournaments", tournamentId, "auctionPlayers"),
-            {
-              name: ownerPlayer.name,
-              role: ownerPlayer.role,
-              status: "SOLD",
-              teamId: savedTeamId,
-              soldPrice: 0,
-              isOwner: true,
-              playerId: ownerPlayer.id,
-              createdAt: new Date().toISOString(),
-            },
-          );
-        }
       }
 
       alert(teamId ? "Team updated!" : "Team created!");
@@ -459,6 +563,11 @@ export default function TeamManager({ tournamentId }) {
         onSelect={addGlobalPlayers}
         existingNames={squad.map((p) => p.name)}
       />
+      <ImportTeamModal
+        isOpen={isImportOpen}
+        onClose={() => setIsImportOpen(false)}
+        onImport={handleImportTeam}
+      />
 
       <div
         className={`flex justify-between items-center mb-8 border-b pb-4 ${lightMode ? "border-gray-200" : "border-white/5"}`}>
@@ -481,39 +590,48 @@ export default function TeamManager({ tournamentId }) {
       </div>
 
       <div className="space-y-8">
-        {/* SELECT TEAM */}
+        {/* SELECT TEAM & IMPORT */}
         <div>
           <label className={labelClass}>Select Team to Edit</label>
-          <div className="relative group">
-            <select
-              className={`${inputClass} appearance-none cursor-pointer`}
-              value={teamId}
-              onChange={handleSelectTeam}>
-              <option value="" className="text-gray-500">
-                -- Create New Team --
-              </option>
-              {teams.map((t) => (
-                <option
-                  key={t.id}
-                  value={t.id}
-                  className={
-                    lightMode
-                      ? "bg-white text-gray-900"
-                      : "bg-[#1C2128] text-slate-200"
-                  }>
-                  {t.name || t.id}
+          <div className="flex gap-2">
+            <div className="relative group flex-1">
+              <select
+                className={`${inputClass} appearance-none cursor-pointer`}
+                value={teamId}
+                onChange={handleSelectTeam}>
+                <option value="" className="text-gray-500">
+                  -- Create New Team --
                 </option>
-              ))}
-            </select>
-            <div
-              className={`absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none transition-colors ${theme.sub}`}>
-              ▼
+                {teams.map((t) => (
+                  <option
+                    key={t.id}
+                    value={t.id}
+                    className={
+                      lightMode
+                        ? "bg-white text-gray-900"
+                        : "bg-[#1C2128] text-slate-200"
+                    }>
+                    {t.name || t.id}
+                  </option>
+                ))}
+              </select>
+              <div
+                className={`absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none transition-colors ${theme.sub}`}>
+                ▼
+              </div>
             </div>
+            {/* 2. IMPORT BUTTON */}
+            <button
+              onClick={() => setIsImportOpen(true)}
+              className={`px-4 rounded-xl font-bold uppercase text-xs flex items-center gap-2 transition-all ${lightMode ? "bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100" : "bg-blue-900/20 text-blue-400 border border-blue-500/20 hover:border-blue-500/50"}`}>
+              <Copy size={16} /> Import
+            </button>
           </div>
         </div>
 
         {/* TEAM NAME & OWNER NAME */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div
+          className={`grid grid-cols-1 ${isAuctionMode ? "md:grid-cols-2" : "md:grid-cols-1"} gap-6`}>
           <div>
             <label className={labelClass}>Team Name</label>
             <input
@@ -524,74 +642,79 @@ export default function TeamManager({ tournamentId }) {
               placeholder="e.g. Royal Challengers"
             />
           </div>
-          <div>
-            <label className={labelClass}>Owner Name</label>
-            <input
-              type="text"
-              className={inputClass}
-              value={ownerName}
-              onChange={(e) => setOwnerName(e.target.value)}
-              placeholder="e.g. Virat Kohli"
-            />
-          </div>
-        </div>
-
-        {/* OWNER PLAYING CONFIG */}
-        <div
-          className={`p-5 rounded-2xl border transition-colors ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#161920] border-white/5"}`}>
-          <div className="flex items-center gap-4">
-            <div className="relative flex items-center">
-              <input
-                type="checkbox"
-                id="ownerPlay"
-                checked={isOwnerPlaying}
-                onChange={(e) => setIsOwnerPlaying(e.target.checked)}
-                className={`peer h-6 w-6 cursor-pointer appearance-none rounded-lg border transition-all ${
-                  lightMode
-                    ? "bg-white border-gray-300 checked:bg-teal-600 checked:border-teal-600"
-                    : "bg-[#0F1115] border-white/10 checked:bg-teal-500 checked:border-teal-500"
-                }`}
-              />
-              <Check
-                size={14}
-                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white opacity-0 peer-checked:opacity-100 pointer-events-none"
-              />
-            </div>
-
+          {/* 1. CONDITIONAL OWNER FIELD */}
+          {isAuctionMode && (
             <div>
-              <label
-                htmlFor="ownerPlay"
-                className={`text-sm font-bold cursor-pointer select-none ${theme.text}`}>
-                Is Owner playing in the team?
-              </label>
-              <p className={`text-[10px] font-medium mt-0.5 ${theme.sub}`}>
-                They will be added to squad & stats automatically.
-              </p>
-            </div>
-          </div>
-
-          {isOwnerPlaying && (
-            <div className="mt-4 animate-in slide-in-from-top-2 pl-10">
-              <label className={labelClass}>Owner's Playing Role</label>
-              <select
-                value={ownerRole}
-                onChange={(e) => setOwnerRole(e.target.value)}
-                className={`${inputClass} w-full md:w-1/2`}>
-                <option>Batsman</option>
-                <option>Bowler</option>
-                <option>All-Rounder</option>
-                <option>Wicket Keeper</option>
-              </select>
+              <label className={labelClass}>Owner Name</label>
+              <input
+                type="text"
+                className={inputClass}
+                value={ownerName}
+                onChange={(e) => setOwnerName(e.target.value)}
+                placeholder="e.g. Virat Kohli"
+              />
             </div>
           )}
         </div>
+
+        {/* 1. CONDITIONAL OWNER PLAYING CONFIG */}
+        {isAuctionMode && (
+          <div
+            className={`p-5 rounded-2xl border transition-colors ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#161920] border-white/5"}`}>
+            <div className="flex items-center gap-4">
+              <div className="relative flex items-center">
+                <input
+                  type="checkbox"
+                  id="ownerPlay"
+                  checked={isOwnerPlaying}
+                  onChange={(e) => setIsOwnerPlaying(e.target.checked)}
+                  className={`peer h-6 w-6 cursor-pointer appearance-none rounded-lg border transition-all ${
+                    lightMode
+                      ? "bg-white border-gray-300 checked:bg-teal-600 checked:border-teal-600"
+                      : "bg-[#0F1115] border-white/10 checked:bg-teal-500 checked:border-teal-500"
+                  }`}
+                />
+                <Check
+                  size={14}
+                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white opacity-0 peer-checked:opacity-100 pointer-events-none"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="ownerPlay"
+                  className={`text-sm font-bold cursor-pointer select-none ${theme.text}`}>
+                  Is Owner playing in the team?
+                </label>
+                <p className={`text-[10px] font-medium mt-0.5 ${theme.sub}`}>
+                  They will be added to squad & stats automatically.
+                </p>
+              </div>
+            </div>
+
+            {isOwnerPlaying && (
+              <div className="mt-4 animate-in slide-in-from-top-2 pl-10">
+                <label className={labelClass}>Owner's Playing Role</label>
+                <select
+                  value={ownerRole}
+                  onChange={(e) => setOwnerRole(e.target.value)}
+                  className={`${inputClass} w-full md:w-1/2`}>
+                  <option>Batsman</option>
+                  <option>Bowler</option>
+                  <option>All-Rounder</option>
+                  <option>Wicket Keeper</option>
+                </select>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ROSTER BUILDER */}
         <div>
           <div className="flex justify-between items-end mb-2 px-1">
             <label className={labelClass}>Squad Roster ({squad.length})</label>
             <span className={`text-[9px] font-bold uppercase ${theme.sub}`}>
-              Drag & Drop coming soon
+              Drag to reorder
             </span>
           </div>
 
@@ -613,15 +736,24 @@ export default function TeamManager({ tournamentId }) {
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {squad.map((player) => (
+                {/* 4. DRAG AND DROP IMPLEMENTATION */}
+                {squad.map((player, index) => (
                   <div
                     key={player.id}
-                    className={`flex justify-between items-center p-3 rounded-xl border transition-all shadow-sm group ${
+                    draggable
+                    onDragStart={(e) => onDragStart(e, index)}
+                    onDragOver={(e) => onDragOver(e, index)}
+                    onDragEnd={onDragEnd}
+                    className={`flex justify-between items-center p-3 rounded-xl border transition-all shadow-sm group cursor-move ${
                       lightMode
                         ? "bg-white border-gray-200 hover:border-teal-300"
                         : "bg-[#161920] border-white/5 hover:border-white/10"
-                    }`}>
+                    } ${draggedItemIndex === index ? "opacity-50 ring-2 ring-teal-500" : ""}`}>
                     <div className="flex items-center gap-3">
+                      <GripVertical
+                        size={16}
+                        className={`opacity-30 group-hover:opacity-100 ${theme.sub}`}
+                      />
                       <div
                         className={`w-2 h-2 rounded-full shadow-[0_0_8px_currentColor] ${
                           player.isOwner

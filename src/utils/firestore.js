@@ -15,6 +15,7 @@ import {
   addDoc,
   orderBy,
   or,
+  collectionGroup,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -903,3 +904,106 @@ export async function addAuctionPlayer(tournamentId, playerData) {
     throw e;
   }
 }
+
+export const quickAddPlayer = async (
+  tournamentId,
+  matchId,
+  teamId,
+  teamSide,
+  playerName,
+) => {
+  try {
+    const newPlayerId = `P-${Date.now()}`;
+    const newPlayer = {
+      id: newPlayerId,
+      name: playerName.trim(),
+      role: "All-Rounder",
+      isIcon: false,
+    };
+
+    // 1. Create Player in Global Directory ("/players")
+    // Using setDoc to ensure it creates the document if it doesn't exist
+    const globalPlayerRef = doc(db, "players", newPlayerId);
+    await setDoc(globalPlayerRef, {
+      ...newPlayer,
+      teams: [teamId], // Track which team they belong to
+      tournamentId: tournamentId,
+      createdAt: new Date().toISOString(),
+    });
+
+    // 2. Update Tournament Team ("/tournaments/{id}/teams/{teamId}")
+    // This fixes the "No document to update" error by targeting the correct path
+    const tourTeamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
+    await updateDoc(tourTeamRef, {
+      roster: arrayUnion(newPlayer), // Add full object
+    });
+
+    // 3. Update Current Match Squad (Instant Availability)
+    const matchRef = doc(db, "tournaments", tournamentId, "matches", matchId);
+    const fieldToUpdate = teamSide === "A" ? "teamASquad" : "teamBSquad";
+
+    await updateDoc(matchRef, {
+      [fieldToUpdate]: arrayUnion(newPlayer),
+    });
+
+    return newPlayer;
+  } catch (error) {
+    console.error("Quick Add Player Failed:", error);
+    throw error;
+  }
+};
+
+export const getTournamentDetails = async (tournamentId) => {
+  if (!tournamentId) return null;
+  try {
+    const docRef = doc(db, "tournaments", tournamentId);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return { id: docSnap.id, ...docSnap.data() };
+    } else {
+      console.warn("No such tournament found!");
+      return null;
+    }
+  } catch (error) {
+    console.error("Error fetching tournament details:", error);
+    return null;
+  }
+};
+
+export const subscribeAllGlobalTeams = (callback) => {
+  try {
+    // This searches for ANY collection named "teams" in the entire database
+    // (both global /teams and /tournaments/.../teams)
+    const q = query(collectionGroup(db, "teams"));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const teams = snapshot.docs.map((doc) => {
+          // Helper to find source tournament if it's a subcollection
+          const parentPath = doc.ref.parent.path;
+          const tournamentId = parentPath.includes("tournaments")
+            ? doc.ref.parent.parent?.id
+            : "Global";
+
+          return {
+            id: doc.id,
+            ...doc.data(),
+            sourceTournamentId: tournamentId,
+          };
+        });
+        callback(teams);
+      },
+      (error) => {
+        console.error("Error subscribing to all teams:", error);
+        // NOTE: If you see a "Missing or insufficient permissions" error in console,
+        // it might be an index issue. Check the link in the console if provided.
+      },
+    );
+
+    return unsubscribe;
+  } catch (e) {
+    console.error("Setup failed for subscribeAllTeams:", e);
+    return () => {};
+  }
+};
