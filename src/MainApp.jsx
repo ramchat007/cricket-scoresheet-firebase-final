@@ -27,6 +27,8 @@ import GlobalPlayerRegistration from "./components/GlobalPlayerRegistration.jsx"
 import PastLeague from "./components/PastLeague.jsx";
 import MatchOverlay from "./components/Overlay/MatchOverlay.jsx";
 import TournamentBanner from "./components/Overlay/TournamentBanner";
+import RequireAuth from "./components/guards/RequireAuth.jsx";
+import RequireTournamentAccess from "./components/guards/RequireTournamentAccess.jsx";
 
 import { useAuth } from "./hooks/useAuth.jsx";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
@@ -268,14 +270,29 @@ function AppContent() {
           {/* Sub-Pages */}
           <Route
             path="/live/:tournamentId/:matchId"
-            element={<LiveScoring />}
+            element={
+              <RequireTournamentAccess>
+                <LiveScoring />
+              </RequireTournamentAccess>
+            }
           />
           <Route path="/scoreboard" element={<Scoreboard />} />
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/create-tournament" element={<CreateTournament />} />
+          <Route
+            path="/create-tournament"
+            element={
+              <RequireAuth>
+                <CreateTournament />
+              </RequireAuth>
+            }
+          />
           <Route
             path="/tournaments/:id/auction"
-            element={<AuctionDashboard />}
+            element={
+              <RequireTournamentAccess requireEdit>
+                <AuctionDashboard />
+              </RequireTournamentAccess>
+            }
           />
           <Route
             path="/matches"
@@ -287,22 +304,72 @@ function AppContent() {
               />
             }
           />
-          <Route path="/players" element={<GlobalPlayersView />} />
-          <Route path="/profile" element={<Profile />} />
+          <Route
+            path="/players"
+            element={
+              <RequireAuth>
+                <GlobalPlayersView />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <RequireAuth>
+                <Profile />
+              </RequireAuth>
+            }
+          />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route
             path="/register-player"
-            element={<GlobalPlayerRegistration />}
+            element={
+              <RequireAuth>
+                <GlobalPlayerRegistration />
+              </RequireAuth>
+            }
           />
-          <Route path="/migrate" element={<MigrationTool />} />
-          <Route path="/tournaments/:id" element={<TournamentDetails />} />
+          <Route
+            path="/migrate"
+            element={
+              <RequireAuth>
+                <MigrationTool />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/tournaments/:id"
+            element={
+              <RequireTournamentAccess>
+                <TournamentDetails />
+              </RequireTournamentAccess>
+            }
+          />
           <Route
             path="/tournaments/:tournamentId/scorecard/:matchId"
-            element={<MatchScorecard />}
+            element={
+              <RequireTournamentAccess>
+                <MatchScorecard />
+              </RequireTournamentAccess>
+            }
           />
-          <Route path="/teams" element={<TeamsManager />} />
-          <Route path="/past-leagues" element={<PastLeague />} />
+          <Route
+            path="/teams"
+            element={
+              <RequireAuth>
+                <TeamsManager />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/past-leagues"
+            element={
+              <RequireAuth>
+                <PastLeague />
+              </RequireAuth>
+            }
+          />
         </Routes>
       </div>
     </div>

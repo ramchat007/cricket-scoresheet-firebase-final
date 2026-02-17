@@ -14,6 +14,7 @@ import ScoreSummary from "../components/ScoreSummary.jsx";
 import MatchCommentary from "../components/MatchCommentary.jsx";
 import MatchInfo from "../components/MatchInfo.jsx";
 import MatchCorrectionModal from "../components/MatchCorrectionModal.jsx";
+import OfflineBanner from "../components/OfflineBanner.jsx";
 
 // Icons & Theme
 import {
@@ -30,6 +31,7 @@ import {
   Layers, // Added for Overlay Icon
 } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
+import { syncPendingActions } from "../utils/offlineQueue";
 
 // --- MEMOIZED NAV BUTTON ---
 const NavBtn = React.memo(({ active, onClick, icon, label }) => (
@@ -73,11 +75,74 @@ const MemoizedCommentary = React.memo(MatchCommentary, (prev, next) => {
   return prevLen === nextLen;
 });
 
+const asObj = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : {});
+const asNumber = (v, fallback = 0) =>
+  Number.isFinite(Number(v)) ? Number(v) : fallback;
+
+const normalizeInnings = (raw = {}) => {
+  const innings = asObj(raw);
+  return {
+    ...innings,
+    battingTeam: innings.battingTeam || "",
+    bowlingTeam: innings.bowlingTeam || "",
+    striker: innings.striker || "",
+    nonStriker: innings.nonStriker || "",
+    currentBowler: innings.currentBowler || "",
+    score: asNumber(innings.score),
+    wickets: asNumber(innings.wickets),
+    over: asNumber(innings.over),
+    overBallCount: asNumber(innings.overBallCount),
+    extras: asObj(innings.extras),
+    batsmenStats: asObj(innings.batsmenStats),
+    bowlerStats: asObj(innings.bowlerStats),
+    timeline: Array.isArray(innings.timeline) ? innings.timeline : [],
+    fallOfWickets: Array.isArray(innings.fallOfWickets)
+      ? innings.fallOfWickets
+      : [],
+    completed: !!innings.completed,
+  };
+};
+
+const normalizeMatchData = (raw, matchId) => {
+  if (!raw || typeof raw !== "object") return null;
+
+  const meta = asObj(raw.meta);
+  const inningsRaw = Array.isArray(raw.innings) ? raw.innings : [];
+  const innings = inningsRaw.map((inn) => normalizeInnings(inn));
+
+  const normalizedInnings =
+    innings.length > 0
+      ? innings
+      : [
+          normalizeInnings({
+            battingTeam: meta.teamA || "",
+            bowlingTeam: meta.teamB || "",
+          }),
+        ];
+
+  let currentInnings = asNumber(raw.currentInnings, 0);
+  if (currentInnings < 0 || currentInnings >= normalizedInnings.length) {
+    currentInnings = 0;
+  }
+
+  return {
+    ...raw,
+    id: raw.id || matchId,
+    meta,
+    innings: normalizedInnings,
+    currentInnings,
+    status: raw.status || meta.matchStatus || meta.status || "upcoming",
+    undoStack: Array.isArray(raw.undoStack) ? raw.undoStack : [],
+    lastUpdate: asNumber(raw.lastUpdate, Date.now()),
+  };
+};
+
 const getLocalMatch = (tId, mId) => {
   try {
-    return JSON.parse(
+    const parsed = JSON.parse(
       localStorage.getItem(`dfl-fb-${tId || "default"}-${mId}`),
     );
+    return normalizeMatchData(parsed, mId);
   } catch (e) {
     return null;
   }
@@ -103,7 +168,7 @@ export default function LiveScoring() {
   // --- 2. DATA PROCESSING ---
   const processedMatch = useMemo(() => {
     if (!match) return null;
-    return { ...match, id: matchId };
+    return normalizeMatchData(match, matchId);
   }, [match, matchId]);
 
   const isStreamLinked = useMemo(() => {
@@ -172,13 +237,20 @@ export default function LiveScoring() {
 
     const unsub = subscribeMatch(tournamentId, matchId, (data) => {
       if (data) {
+        const normalized = normalizeMatchData(data, matchId);
+        if (!normalized) {
+          setMatch(null);
+          setIsInit(false);
+          return;
+        }
+
         setMatch((prev) => {
-          if (prev && prev.lastUpdate > data.lastUpdate) return prev;
-          return data;
+          if (prev && prev.lastUpdate > normalized.lastUpdate) return prev;
+          return normalized;
         });
         localStorage.setItem(
           `dfl-fb-${tournamentId}-${matchId}`,
-          JSON.stringify(data),
+          JSON.stringify(normalized),
         );
       } else {
         setMatch(null);
@@ -209,7 +281,21 @@ export default function LiveScoring() {
     handleEndInnings,
     handleFinishMatch,
     handleDeleteMatch,
+    processQueuedAction,
   } = scoring;
+
+  const handleSyncNow = useCallback(async () => {
+    await syncPendingActions(processQueuedAction);
+  }, [processQueuedAction]);
+
+  useEffect(() => {
+    const onOnline = () => {
+      syncPendingActions(processQueuedAction);
+    };
+
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, [processQueuedAction]);
 
   // --- 7. RENDERING STATES ---
 
@@ -264,6 +350,9 @@ export default function LiveScoring() {
   return (
     <div
       className={`h-screen h-[100dvh] w-full font-sans flex flex-col overflow-hidden select-none touch-manipulation transition-colors duration-300 ${theme.bg} ${theme.text}`}>
+      <div className="flex-none">
+        <OfflineBanner onSyncNow={handleSyncNow} />
+      </div>
       {/* --- HEADER --- */}
       <div
         className={`flex-none px-4 h-14 flex items-center justify-between z-[60] border-b ${theme.card} backdrop-blur-xl`}>

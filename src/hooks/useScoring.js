@@ -6,6 +6,11 @@ import {
   deleteMatch,
 } from "../utils/firestore.js";
 import { syncMatchStatsToGlobalPlayers } from "../utils/statsSync";
+import {
+  addPendingAction,
+  isActionProcessed,
+  markActionProcessed,
+} from "../utils/offlineQueue";
 
 // Helper: Normalize keys
 const norm = (k) =>
@@ -333,8 +338,6 @@ function applyBallLogic(s, code, extraData = {}, physicalRuns = 0) {
 
   newBall.nextStriker = nextS;
   newBall.nextNonStriker = nextNS;
-  newBall.nextBowler = overEnding ? null : inn.currentBowler;
-
   newBall.nextBowler = (overEnding && !isInningsFinishedByOvers) ? null : inn.currentBowler;
 
   inn.timeline = inn.timeline || [];
@@ -419,40 +422,144 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
     }
   };
 
-  const runScoringAction = async (actionFn) => {
+  const runScoringAction = async (actionFn, queuePayload = null) => {
     performOptimisticUpdate((s) => {
-      const inn = s.innings?.[s.currentInnings || 0];
-      if (!inn) return s;
-      s.undoStack = s.undoStack || [];
-      s.undoStack.push(createSnapshot(inn));
       return actionFn(s);
     });
 
     try {
-      await ballTransaction(tournamentId, matchId, (s) => {
-        const inn = s.innings?.[s.currentInnings || 0];
-        if (!inn) return s;
-        s.undoStack = s.undoStack || [];
-        s.undoStack.push(createSnapshot(inn));
-        return actionFn(s);
-      });
+      await ballTransaction(tournamentId, matchId, actionFn);
+
+      if (queuePayload?.actionId) {
+        markActionProcessed(queuePayload.actionId);
+      }
     } catch (e) {
       console.error("Sync Failed", e);
+
+      if (queuePayload && !isActionProcessed(queuePayload.actionId)) {
+        addPendingAction(queuePayload);
+      }
     }
   };
 
-  return {
-    handleBall: (code, extraData, physicalRuns) =>
-      runScoringAction((s) => applyBallLogic(s, code, extraData, physicalRuns)),
+  const processQueuedAction = async (action) => {
+    if (!action || action.type !== "scoringAction") return;
+    if (isActionProcessed(action.actionId)) return;
+    if (action.tournamentId !== tournamentId || action.matchId !== matchId) return;
 
-    handleExtraBallRuns: (type, runs) =>
-      runScoringAction((s) =>
+    const { actionType, payload = {} } = action;
+
+    const actionMap = {
+      BALL: (s) =>
         applyBallLogic(
           s,
-          type === "wides" ? "WD" : "NB",
-          { isWide: type === "wides", isNoBall: type === "noBalls" },
-          runs,
+          payload.code,
+          payload.extraData || {},
+          payload.physicalRuns,
         ),
+      EXTRA_BALL_RUNS: (s) =>
+        applyBallLogic(
+          s,
+          payload.type === "wides" ? "WD" : "NB",
+          {
+            isWide: payload.type === "wides",
+            isNoBall: payload.type === "noBalls",
+          },
+          payload.runs,
+        ),
+      NEW_BATSMAN: (s) => {
+        const inn = s.innings[s.currentInnings];
+        inn.striker = payload.player;
+        inn.awaitingNewBatsman = false;
+        if (inn.timeline && inn.timeline.length > 0) {
+          const lastBall = inn.timeline[inn.timeline.length - 1];
+          const isLegal =
+            (!lastBall.isWide && !lastBall.isNoBall) || lastBall.isLegalOverride;
+
+          if (inn.overBallCount === 0 && inn.over > 0 && isLegal) {
+            const currentS = inn.striker;
+            inn.striker = inn.nonStriker;
+            inn.nonStriker = currentS;
+            lastBall.nextStriker = inn.striker;
+            lastBall.nextNonStriker = inn.nonStriker;
+          } else {
+            lastBall.nextStriker = payload.player;
+          }
+        }
+        return s;
+      },
+      CONFIRM_BOWLER: (s) => {
+        const inn = s.innings[s.currentInnings];
+        inn.currentBowler = payload.player;
+        inn.awaitingNewBowler = false;
+        if (inn.timeline && inn.timeline.length > 0)
+          inn.timeline[inn.timeline.length - 1].nextBowler = payload.player;
+        return s;
+      },
+      CHANGE_BOWLER: (s) => {
+        s.innings[s.currentInnings].currentBowler = payload.player;
+        return s;
+      },
+      STRIKE_CHANGE: (st) => {
+        const inn = st.innings[st.currentInnings];
+        inn.striker = payload.striker;
+        inn.nonStriker = payload.nonStriker;
+        if (inn.timeline && inn.timeline.length > 0) {
+          inn.timeline[inn.timeline.length - 1].nextStriker = payload.striker;
+          inn.timeline[inn.timeline.length - 1].nextNonStriker =
+            payload.nonStriker;
+        }
+        return st;
+      },
+      END_INNINGS: (s) => {
+        s.innings[s.currentInnings].completed = true;
+        checkFinishAndSetResult(s, s.currentInnings);
+        return s;
+      },
+      UNDO: async () => {
+        await undoLast(action.tournamentId, action.matchId);
+      },
+    };
+
+    const handler = actionMap[actionType];
+    if (!handler) return;
+
+    if (actionType === "UNDO") {
+      await handler();
+      markActionProcessed(action.actionId);
+      return;
+    }
+
+    await ballTransaction(action.tournamentId, action.matchId, handler);
+    markActionProcessed(action.actionId);
+  };
+
+  const createQueuePayload = (actionType, payload = {}) => ({
+    type: "scoringAction",
+    actionType,
+    payload,
+    tournamentId,
+    matchId,
+    actionId: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+  });
+
+  return {
+    handleBall: (code, extraData, physicalRuns) =>
+      runScoringAction(
+        (s) => applyBallLogic(s, code, extraData, physicalRuns),
+        createQueuePayload("BALL", { code, extraData, physicalRuns }),
+      ),
+
+    handleExtraBallRuns: (type, runs) =>
+      runScoringAction(
+        (s) =>
+          applyBallLogic(
+            s,
+            type === "wides" ? "WD" : "NB",
+            { isWide: type === "wides", isNoBall: type === "noBalls" },
+            runs,
+          ),
+        createQueuePayload("EXTRA_BALL_RUNS", { type, runs }),
       ),
 
     handleNewBatsman: (p) =>
@@ -479,7 +586,7 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
           }
         }
         return s;
-      }),
+      }, createQueuePayload("NEW_BATSMAN", { player: p })),
 
     handleConfirmBowler: (p) =>
       runScoringAction((s) => {
@@ -489,13 +596,13 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
         if (inn.timeline && inn.timeline.length > 0)
           inn.timeline[inn.timeline.length - 1].nextBowler = p;
         return s;
-      }),
+      }, createQueuePayload("CONFIRM_BOWLER", { player: p })),
 
     handleChangeBowler: (p) =>
       runScoringAction((s) => {
         s.innings[s.currentInnings].currentBowler = p;
         return s;
-      }),
+      }, createQueuePayload("CHANGE_BOWLER", { player: p })),
 
     handleStrikeChange: (s, ns) =>
       runScoringAction((st) => {
@@ -507,14 +614,14 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
           inn.timeline[inn.timeline.length - 1].nextNonStriker = ns;
         }
         return st;
-      }),
+      }, createQueuePayload("STRIKE_CHANGE", { striker: s, nonStriker: ns })),
 
     handleEndInnings: () =>
       runScoringAction((s) => {
         s.innings[s.currentInnings].completed = true;
         checkFinishAndSetResult(s, s.currentInnings);
         return s;
-      }),
+      }, createQueuePayload("END_INNINGS")),
 
     handleUndo: () => {
       performOptimisticUpdate((s) => {
@@ -529,7 +636,13 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
         }
         return s;
       });
-      undoLast(tournamentId, matchId);
+      const queuePayload = createQueuePayload("UNDO");
+      undoLast(tournamentId, matchId)
+        .then(() => markActionProcessed(queuePayload.actionId))
+        .catch((e) => {
+          console.error("Undo sync failed", e);
+          addPendingAction(queuePayload);
+        });
     },
 
     handleFinishMatch: async (r) => {
@@ -538,5 +651,6 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
     },
 
     handleDeleteMatch: () => deleteMatch(tournamentId, matchId),
+    processQueuedAction,
   };
 }
