@@ -1,5 +1,5 @@
 // src/MainApp.jsx
-import React, { useEffect, useState } from "react";
+import React, { Suspense, lazy, useEffect, useState } from "react";
 import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "./utils/firebase";
@@ -9,24 +9,32 @@ import Navigation from "./components/Navigation.jsx";
 import TournamentSelector from "./components/TournamentSelector.jsx";
 import MatchSelector from "./components/MatchSelector.jsx";
 import MatchScheduler from "./components/MatchScheduler"; // ✅ Unified Scheduler
-import LiveScoring from "./components/LiveScoring.jsx";
+const LiveScoring = lazy(() => import("./components/LiveScoring.jsx"));
 import Scoreboard from "./components/Scoreboard.jsx";
 import MatchesPage from "./components/Matches.jsx";
 import TeamsManager from "./components/TeamManager.jsx";
 import Profile from "./components/Profile.jsx";
 import Login from "./components/Login.jsx";
 import Register from "./components/Register.jsx";
-import TournamentDetails from "./components/TournamentDetails.jsx";
-import MatchScorecard from "./components/MatchScorecard.jsx";
+const TournamentDetails = lazy(
+  () => import("./components/TournamentDetails.jsx"),
+);
+const MatchScorecard = lazy(() => import("./components/MatchScorecard.jsx"));
 import Dashboard from "./components/Dashboard.jsx";
-import CreateTournament from "./components/CreateTournament.jsx";
-import GlobalPlayersView from "./components/GlobalPlayersView.jsx";
-import MigrationTool from "./components/MigrationTool.jsx";
-import AuctionDashboard from "./components/AuctionDashboard.jsx";
-import GlobalPlayerRegistration from "./components/GlobalPlayerRegistration.jsx";
-import PastLeague from "./components/PastLeague.jsx";
-import MatchOverlay from "./components/Overlay/MatchOverlay.jsx";
-import TournamentBanner from "./components/Overlay/TournamentBanner";
+const CreateTournament = lazy(() => import("./components/CreateTournament.jsx"));
+const GlobalPlayersView = lazy(() => import("./components/GlobalPlayersView.jsx"));
+const MigrationTool = lazy(() => import("./components/MigrationTool.jsx"));
+const AuctionDashboard = lazy(() => import("./components/AuctionDashboard.jsx"));
+const GlobalPlayerRegistration = lazy(
+  () => import("./components/GlobalPlayerRegistration.jsx"),
+);
+const PastLeague = lazy(() => import("./components/PastLeague.jsx"));
+const MatchOverlay = lazy(() => import("./components/Overlay/MatchOverlay.jsx"));
+const TournamentBanner = lazy(
+  () => import("./components/Overlay/TournamentBanner"),
+);
+import RequireAuth from "./components/guards/RequireAuth.jsx";
+import RequireTournamentAccess from "./components/guards/RequireTournamentAccess.jsx";
 
 import { useAuth } from "./hooks/useAuth.jsx";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
@@ -46,7 +54,6 @@ function AppContent() {
 
   // Data States
   const [availableTournaments, setAvailableTournaments] = useState([]);
-  const [allMatches, setAllMatches] = useState([]); // Used for internal logic if needed
   const [allTeams, setAllTeams] = useState([]); // ✅ Populates Scheduler Dropdowns
 
   // Route Helpers
@@ -91,17 +98,6 @@ function AppContent() {
     };
   }, []); // Run once on mount
 
-  // --- 2. Listen for Matches (Optional context awareness) ---
-  useEffect(() => {
-    if (!tournamentId) {
-      setAllMatches([]);
-      return;
-    }
-    // We keep a listener here if you need match lists in the main view later
-    const matchesRef = collection(db, "tournaments", tournamentId, "matches");
-    // (Logic simplified for this view as it's mostly handled in sub-pages)
-  }, [tournamentId]);
-
   function handleMatchesPageSelect(tournament, matchIdSelected) {
     navigateToScoring(tournament, matchIdSelected);
   }
@@ -110,16 +106,23 @@ function AppContent() {
   if (isOverlay) {
     return (
       <div className="w-full h-screen bg-transparent font-sans overflow-hidden">
-        <Routes>
-          <Route
-            path="/overlay/:tournamentId/active"
-            element={<MatchOverlay />}
-          />
-          <Route
-            path="/overlay/tournament-banner/:tournamentId"
-            element={<TournamentBanner />}
-          />
-        </Routes>
+        <Suspense
+          fallback={
+            <div className="w-full h-full flex items-center justify-center text-xs font-bold uppercase tracking-[0.2em] text-white/70">
+              Loading overlay...
+            </div>
+          }>
+          <Routes>
+            <Route
+              path="/overlay/:tournamentId/active"
+              element={<MatchOverlay />}
+            />
+            <Route
+              path="/overlay/tournament-banner/:tournamentId"
+              element={<TournamentBanner />}
+            />
+          </Routes>
+        </Suspense>
       </div>
     );
   }
@@ -197,7 +200,14 @@ function AppContent() {
         )}
 
         {/* --- ROUTES --- */}
-        <Routes>
+        <Suspense
+          fallback={
+            <div
+              className={`min-h-[50vh] flex items-center justify-center text-xs font-black uppercase tracking-[0.3em] ${theme.sub}`}>
+              Loading module...
+            </div>
+          }>
+          <Routes>
           {user ? (
             <Route
               path="/"
@@ -268,14 +278,29 @@ function AppContent() {
           {/* Sub-Pages */}
           <Route
             path="/live/:tournamentId/:matchId"
-            element={<LiveScoring />}
+            element={
+              <RequireTournamentAccess>
+                <LiveScoring />
+              </RequireTournamentAccess>
+            }
           />
           <Route path="/scoreboard" element={<Scoreboard />} />
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/create-tournament" element={<CreateTournament />} />
+          <Route
+            path="/create-tournament"
+            element={
+              <RequireAuth>
+                <CreateTournament />
+              </RequireAuth>
+            }
+          />
           <Route
             path="/tournaments/:id/auction"
-            element={<AuctionDashboard />}
+            element={
+              <RequireTournamentAccess requireEdit>
+                <AuctionDashboard />
+              </RequireTournamentAccess>
+            }
           />
           <Route
             path="/matches"
@@ -287,23 +312,74 @@ function AppContent() {
               />
             }
           />
-          <Route path="/players" element={<GlobalPlayersView />} />
-          <Route path="/profile" element={<Profile />} />
+          <Route
+            path="/players"
+            element={
+              <RequireAuth>
+                <GlobalPlayersView />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <RequireAuth>
+                <Profile />
+              </RequireAuth>
+            }
+          />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route
             path="/register-player"
-            element={<GlobalPlayerRegistration />}
+            element={
+              <RequireAuth>
+                <GlobalPlayerRegistration />
+              </RequireAuth>
+            }
           />
-          <Route path="/migrate" element={<MigrationTool />} />
-          <Route path="/tournaments/:id" element={<TournamentDetails />} />
+          <Route
+            path="/migrate"
+            element={
+              <RequireAuth>
+                <MigrationTool />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/tournaments/:id"
+            element={
+              <RequireTournamentAccess>
+                <TournamentDetails />
+              </RequireTournamentAccess>
+            }
+          />
           <Route
             path="/tournaments/:tournamentId/scorecard/:matchId"
-            element={<MatchScorecard />}
+            element={
+              <RequireTournamentAccess>
+                <MatchScorecard />
+              </RequireTournamentAccess>
+            }
           />
-          <Route path="/teams" element={<TeamsManager />} />
-          <Route path="/past-leagues" element={<PastLeague />} />
-        </Routes>
+          <Route
+            path="/teams"
+            element={
+              <RequireAuth>
+                <TeamsManager />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/past-leagues"
+            element={
+              <RequireAuth>
+                <PastLeague />
+              </RequireAuth>
+            }
+          />
+          </Routes>
+        </Suspense>
       </div>
     </div>
   );
