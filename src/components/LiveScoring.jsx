@@ -14,6 +14,7 @@ import ScoreSummary from "../components/ScoreSummary.jsx";
 import MatchCommentary from "../components/MatchCommentary.jsx";
 import MatchInfo from "../components/MatchInfo.jsx";
 import MatchCorrectionModal from "../components/MatchCorrectionModal.jsx";
+import OfflineBanner from "../components/OfflineBanner.jsx";
 
 // Icons & Theme
 import {
@@ -30,6 +31,7 @@ import {
   Layers, // Added for Overlay Icon
 } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
+import { syncPendingActions } from "../utils/offlineQueue";
 
 // --- MEMOIZED NAV BUTTON ---
 const NavBtn = React.memo(({ active, onClick, icon, label }) => (
@@ -209,7 +211,21 @@ export default function LiveScoring() {
     handleEndInnings,
     handleFinishMatch,
     handleDeleteMatch,
+    processQueuedAction,
   } = scoring;
+
+  const handleSyncNow = useCallback(async () => {
+    await syncPendingActions(processQueuedAction);
+  }, [processQueuedAction]);
+
+  useEffect(() => {
+    const onOnline = () => {
+      syncPendingActions(processQueuedAction);
+    };
+
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, [processQueuedAction]);
 
   // --- 7. RENDERING STATES ---
 
@@ -264,6 +280,9 @@ export default function LiveScoring() {
   return (
     <div
       className={`h-screen h-[100dvh] w-full font-sans flex flex-col overflow-hidden select-none touch-manipulation transition-colors duration-300 ${theme.bg} ${theme.text}`}>
+      <div className="flex-none">
+        <OfflineBanner onSyncNow={handleSyncNow} />
+      </div>
       {/* --- HEADER --- */}
       <div
         className={`flex-none px-4 h-14 flex items-center justify-between z-[60] border-b ${theme.card} backdrop-blur-xl`}>

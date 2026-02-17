@@ -1,5 +1,6 @@
 // src/utils/offlineQueue.js
 const KEY = "pendingActions:v1";
+const PROCESSED_KEY = "processedActions:v1";
 
 /**
  * Pending action shape:
@@ -11,6 +12,34 @@ export function getPendingActions() {
     return JSON.parse(localStorage.getItem(KEY)) || [];
   } catch (e) {
     return [];
+  }
+}
+
+export function getProcessedActionIds() {
+  try {
+    return JSON.parse(localStorage.getItem(PROCESSED_KEY)) || [];
+  } catch (e) {
+    return [];
+  }
+}
+
+export function isActionProcessed(actionId) {
+  if (!actionId) return false;
+  return getProcessedActionIds().includes(actionId);
+}
+
+export function markActionProcessed(actionId) {
+  if (!actionId) return;
+  try {
+    const processed = getProcessedActionIds();
+    if (processed.includes(actionId)) return;
+    processed.push(actionId);
+
+    // Keep bounded history for localStorage footprint safety
+    const bounded = processed.slice(-500);
+    localStorage.setItem(PROCESSED_KEY, JSON.stringify(bounded));
+  } catch (e) {
+    console.error("markActionProcessed error", e);
   }
 }
 
