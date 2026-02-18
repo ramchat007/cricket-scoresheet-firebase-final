@@ -403,6 +403,9 @@ export default function ScoreInput({
         <div className="px-4 grid grid-cols-2 md:grid-cols-3 gap-2 mb-2">
           {/* Striker */}
           <div
+            onClick={() =>
+              onStrikeChange && onStrikeChange(nonStrikerName, strikerName)
+            }
             className={`p-3 rounded-xl border-l-4 border-l-green-500 ${theme.card} shadow-sm border ${lightMode ? "border-gray-200" : "border-white/5"} relative`}>
             <div className="flex justify-between mb-1">
               <span className="bg-green-500 text-black text-[9px] font-black px-1.5 py-0.5 rounded">
@@ -536,10 +539,10 @@ export default function ScoreInput({
                 label = "W";
                 bubble = "bg-red-500 text-white border-red-600";
               } else if (b.isWide) {
-                label = "WD";
+                label = b.runs - 1 + "+WD";
                 bubble = "bg-orange-500 text-white border-orange-600";
               } else if (b.isNoBall) {
-                label = "NB";
+                label = b.runs - 1 + "+NB";
                 bubble = "bg-orange-500 text-white border-orange-600";
               } else if (b.runs === 4) {
                 bubble = "bg-blue-500 text-white border-blue-600";
@@ -549,7 +552,7 @@ export default function ScoreInput({
               return (
                 <div
                   key={i}
-                  className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${bubble} shadow-sm border`}>
+                  className={`w-9 h-9 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${bubble} shadow-sm border`}>
                   {label}
                 </div>
               );
