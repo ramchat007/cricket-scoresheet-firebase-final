@@ -34,8 +34,8 @@ const AuctionDashboard = lazy(
 const GlobalPlayerRegistration = lazy(
   () => import("./components/GlobalPlayerRegistration.jsx"),
 );
-const TournamentPlayerList = lazy(
-  () => import("./components/TournamentPlayerList.jsx"),
+const TournamentPlayersView = lazy(
+  () => import("./components/TournamentPlayersView.jsx"),
 );
 const PastLeague = lazy(() => import("./components/PastLeague.jsx"));
 const MatchOverlay = lazy(
@@ -69,7 +69,9 @@ function AppContent() {
 
   // Route Helpers
   const isOverlay = location.pathname.startsWith("/overlay");
-  const isRegistration = location.pathname.startsWith("/register-player");
+  const isRegistration =
+    location.pathname.startsWith("/register-player") ||
+    location.pathname.startsWith("/view-players");
   const isMatchesPage =
     location.pathname === "/" || location.pathname === "/scoreboard";
 
@@ -143,12 +145,12 @@ function AppContent() {
       <Routes>
         <Route path="/register-player" element={<GlobalPlayerRegistration />} />
         <Route
-          path="/register/:tournamentId"
+          path="/register-player/:tournamentId"
           element={<GlobalPlayerRegistration />}
         />
         <Route
           path="/view-players/:tournamentId"
-          element={<TournamentPlayerList />}
+          element={<TournamentPlayersView />}
         />
       </Routes>
     );

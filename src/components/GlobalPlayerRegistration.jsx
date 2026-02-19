@@ -274,14 +274,15 @@ export default function GlobalPlayerRegistration() {
         type={notification?.type}
         onClose={() => setNotification(null)}
       />
+      <h1 className="text-4xl font-black italic tracking-tighter mb-2">
+        <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-indigo-500 uppercase">
+          {/* {isEditing ? "Update Profile" : "Player Registration"} */}
+          Saivihar Premier Leaugue 2026 - Season 2
+        </span>
+      </h1>
 
       <div className="relative z-10 w-full max-w-lg">
         <div className="text-center mb-10">
-          <h1 className="text-4xl font-black italic tracking-tighter mb-2">
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-indigo-500 uppercase">
-              {isEditing ? "Update Profile" : "Player Registration"}
-            </span>
-          </h1>
           <p
             className={`text-xs font-bold uppercase tracking-widest ${theme.sub}`}>
             {isEditing
