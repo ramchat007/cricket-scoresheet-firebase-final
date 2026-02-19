@@ -1,10 +1,17 @@
 import React, { useEffect, useState, useRef, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  updateDoc,
+  addDoc,
+  arrayUnion,
+} from "firebase/firestore";
 import { db } from "../utils/firebase";
 import {
-  createGlobalPlayer,
-  updateGlobalPlayer,
   deleteGlobalPlayer,
   listMatchesForTournament,
 } from "../utils/firestore";
@@ -104,9 +111,14 @@ export default function TournamentPlayersView() {
   const loadTournamentData = async () => {
     setLoading(true);
     try {
-      // Fetch ONLY players registered for this specific tournament
       const playersRef = collection(db, "players");
-      const q = query(playersRef, where("tournamentId", "==", tournamentId));
+
+      // 🔥 UPDATED: Use array-contains to find players enrolled in this tournament
+      const q = query(
+        playersRef,
+        where("registeredTournaments", "array-contains", tournamentId),
+      );
+
       const querySnapshot = await getDocs(q);
       const tournamentPlayers = querySnapshot.docs.map((doc) => ({
         id: doc.id,
@@ -143,8 +155,13 @@ export default function TournamentPlayersView() {
     // 1. Initialize Map
     const statsMap = {};
     players.forEach((p) => {
+      // Use specific tournament role for filtering if it exists, fallback to global
+      const tData = p.tournamentData?.[tournamentId] || {};
+      const activeRole = tData.role || p.role;
+
       statsMap[p.id] = {
         ...p,
+        activeRole, // Store the resolved role for accurate filtering
         calculatedStats: {
           matches: 0,
           runs: 0,
@@ -304,7 +321,7 @@ export default function TournamentPlayersView() {
       );
     }
     if (roleFilter !== "All") {
-      result = result.filter((p) => p.role === roleFilter);
+      result = result.filter((p) => p.activeRole === roleFilter); // Use activeRole!
     }
 
     result.sort((a, b) => {
@@ -319,8 +336,14 @@ export default function TournamentPlayersView() {
           sortConfig.key,
         )
       ) {
-        valA = a[sortConfig.key];
-        valB = b[sortConfig.key];
+        // Ensure we sort by the specific tournament role
+        if (sortConfig.key === "role") {
+          valA = a.activeRole;
+          valB = b.activeRole;
+        } else {
+          valA = a[sortConfig.key];
+          valB = b[sortConfig.key];
+        }
       } else {
         valA = 0;
         valB = 0;
@@ -339,7 +362,7 @@ export default function TournamentPlayersView() {
       orangeCap: orange?.calculatedStats.runs > 0 ? orange : null,
       purpleCap: purple?.calculatedStats.wickets > 0 ? purple : null,
     };
-  }, [players, allMatches, searchTerm, roleFilter, sortConfig]);
+  }, [players, allMatches, searchTerm, roleFilter, sortConfig, tournamentId]);
 
   // --- ACTIONS ---
   const handleDelete = async (playerId, e) => {
@@ -439,17 +462,29 @@ export default function TournamentPlayersView() {
 
   const openEditModal = (player, e) => {
     e.stopPropagation();
+
+    // Load Specific Tournament Data into form, fallback to global
+    const tData = player.tournamentData?.[tournamentId] || {};
+
     const sanitizeStyle = (val, defaultVal) =>
       !val || val === "Unknown" ? defaultVal : val;
+
     setFormData({
       id: player.id,
       name: player.name,
-      role: player.role || "All-Rounder",
-      battingStyle: sanitizeStyle(player.battingStyle, "Right Hand Bat"),
-      bowlingStyle: sanitizeStyle(player.bowlingStyle, "Right Arm Medium"),
+      role: tData.role || player.role || "All-Rounder",
+      battingStyle: sanitizeStyle(
+        tData.battingStyle || player.battingStyle,
+        "Right Hand Bat",
+      ),
+      bowlingStyle: sanitizeStyle(
+        tData.bowlingStyle || player.bowlingStyle,
+        "Right Arm Medium",
+      ),
       mobile: player.mobile || "",
-      photoURL: player.photoURL || "",
-      paymentScreenshotURL: player.paymentScreenshotURL || "",
+      photoURL: tData.photoURL || player.photoURL || "",
+      paymentScreenshotURL:
+        tData.paymentScreenshotURL || player.paymentScreenshotURL || "",
     });
     setIsEditing(true);
     setShowModal(true);
@@ -459,33 +494,110 @@ export default function TournamentPlayersView() {
     e.preventDefault();
     if (!formData.name) return showToast("Name is required", "error");
 
+    setProcessingImage(true);
+
     try {
+      const cleanMobile = formData.mobile
+        ? formData.mobile.trim().replace(/\D/g, "")
+        : "";
+      const playersRef = collection(db, "players");
+      const isoDate = new Date().toISOString();
+
       if (isEditing && formData.id) {
-        await updateGlobalPlayer(formData.id, {
-          name: formData.name,
-          role: formData.role,
-          battingStyle: formData.battingStyle,
-          bowlingStyle: formData.bowlingStyle,
-          mobile: formData.mobile,
-          photoURL: formData.photoURL,
-          paymentScreenshotURL: formData.paymentScreenshotURL,
+        // --- 1. ADMIN EDITS EXISTING PLAYER (Tournament Specific) ---
+        const playerDocRef = doc(db, "players", formData.id);
+
+        await updateDoc(playerDocRef, {
+          name: formData.name, // Keep name global
+          mobile: cleanMobile, // Keep mobile global
+          updatedAt: isoDate,
+          // Update the specific tournament map
+          [`tournamentData.${tournamentId}`]: {
+            role: formData.role,
+            battingStyle: formData.battingStyle,
+            bowlingStyle: formData.bowlingStyle,
+            photoURL: formData.photoURL,
+            paymentScreenshotURL: formData.paymentScreenshotURL,
+            lastEdited: isoDate,
+          },
         });
         showToast("Player Updated!");
       } else {
+        // --- 2. ADMIN ADDING NEW PLAYER ---
+        if (cleanMobile) {
+          const q = query(playersRef, where("mobile", "==", cleanMobile));
+          const querySnapshot = await getDocs(q);
+
+          if (!querySnapshot.empty) {
+            const existingDoc = querySnapshot.docs[0];
+            const existingData = existingDoc.data();
+            const enrolledTournaments =
+              existingData.registeredTournaments || [];
+
+            if (enrolledTournaments.includes(tournamentId)) {
+              showToast(
+                "This player is already registered in this tournament.",
+                "error",
+              );
+              setProcessingImage(false);
+              return;
+            }
+
+            // Auto-link and add specific map data
+            const playerDocRef = doc(db, "players", existingDoc.id);
+            await updateDoc(playerDocRef, {
+              registeredTournaments: arrayUnion(tournamentId),
+              updatedAt: isoDate,
+              [`tournamentData.${tournamentId}`]: {
+                role: formData.role,
+                battingStyle: formData.battingStyle,
+                bowlingStyle: formData.bowlingStyle,
+                photoURL: formData.photoURL,
+                paymentScreenshotURL: formData.paymentScreenshotURL,
+                registeredAt: isoDate,
+              },
+            });
+
+            showToast("Global player found! Linked to this tournament.");
+            setShowModal(false);
+            loadTournamentData();
+            setProcessingImage(false);
+            return;
+          }
+        }
+
+        // --- 3. COMPLETELY NEW PLAYER ---
         const { id, ...payload } = formData;
-        // IMPORTANT: Inject the tournamentId here so it gets linked properly
-        await createGlobalPlayer({
-          ...payload,
-          tournamentId: tournamentId,
+        await addDoc(playersRef, {
+          name: formData.name,
+          mobile: cleanMobile,
+          registeredTournaments: [tournamentId],
           stats: { matches: 0, runs: 0, wickets: 0 },
+          isVerified: true,
+          createdAt: isoDate,
+          updatedAt: isoDate,
+          // Initialize map with current details
+          tournamentData: {
+            [tournamentId]: {
+              role: formData.role,
+              battingStyle: formData.battingStyle,
+              bowlingStyle: formData.bowlingStyle,
+              photoURL: formData.photoURL,
+              paymentScreenshotURL: formData.paymentScreenshotURL,
+              registeredAt: isoDate,
+            },
+          },
         });
-        showToast("Tournament Player Created!");
+        showToast("New Tournament Player Created!");
       }
+
       setShowModal(false);
-      // Reload the data to reflect changes
       loadTournamentData();
     } catch (error) {
+      console.error("Error saving player", error);
       showToast("Error saving player", "error");
+    } finally {
+      setProcessingImage(false);
     }
   };
 
@@ -697,246 +809,258 @@ export default function TournamentPlayersView() {
                       </td>
                     </tr>
                   ) : (
-                    processedPlayers.map((player) => (
-                      <React.Fragment key={player.id}>
-                        <tr
-                          onClick={() => toggleRowExpansion(player.id)}
-                          className={`cursor-pointer group transition-colors ${
-                            expandedPlayerId === player.id
-                              ? lightMode
-                                ? "bg-indigo-50"
-                                : "bg-white/5"
-                              : lightMode
-                                ? "hover:bg-gray-50"
-                                : "hover:bg-white/5"
-                          }`}>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-4">
-                              <img
-                                src={
-                                  player.photoURL ||
-                                  "https://cdn-icons-png.flaticon.com/512/847/847969.png"
-                                }
-                                alt=""
-                                className={`w-12 h-12 rounded-xl object-cover border flex-shrink-0 shadow-sm ${lightMode ? "bg-gray-200 border-gray-200" : "bg-[#0F1115] border-white/10"}`}
-                                onError={(e) => {
-                                  e.target.src =
-                                    "https://cdn-icons-png.flaticon.com/512/847/847969.png";
-                                }}
-                              />
-                              <div className="flex flex-col overflow-hidden">
-                                <span
-                                  className={`font-bold text-sm leading-tight truncate max-w-[120px] md:max-w-none transition-colors ${theme.text}`}>
-                                  {player.name}
-                                </span>
-                                <div className="flex flex-wrap gap-1 mt-1.5">
-                                  <span
-                                    className={`text-[9px] px-2 py-0.5 rounded border truncate uppercase font-bold tracking-wider ${lightMode ? "bg-white border-gray-200 text-gray-500" : "bg-[#0F1115] text-slate-500 border-white/10"}`}>
-                                    {player.role}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                          <td
-                            className={`px-4 py-4 text-center font-mono font-bold ${theme.sub}`}>
-                            {player.calculatedStats.matches}
-                          </td>
-                          <td className="px-4 py-4 text-center font-bold text-teal-500 font-mono text-base">
-                            {player.calculatedStats.runs}
-                          </td>
-                          <td
-                            className={`px-4 py-4 text-center font-mono font-bold hidden md:table-cell ${theme.sub}`}>
-                            {player.calculatedStats.highestScore}
-                          </td>
-                          <td className="px-4 py-4 text-center font-bold text-purple-500 font-mono text-base">
-                            {player.calculatedStats.wickets}
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <div className="flex justify-end gap-3 items-center">
-                              <ChevronDown
-                                className={`transition-transform duration-200 ${expandedPlayerId === player.id ? "rotate-180" : ""} ${theme.sub}`}
-                                size={16}
-                              />
-                              {user && (
-                                <>
-                                  <button
-                                    onClick={(e) => openEditModal(player, e)}
-                                    className={`p-2 rounded-lg transition-all ${lightMode ? "text-gray-400 hover:bg-gray-100 hover:text-gray-900" : "text-slate-500 hover:bg-white/10 hover:text-white"}`}>
-                                    <Edit3 size={16} />
-                                  </button>
-                                  <button
-                                    onClick={(e) => handleDelete(player.id, e)}
-                                    className="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-500/10 transition-all">
-                                    <Trash2 size={16} />
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
+                    processedPlayers.map((player) => {
+                      // 🔥 DYNAMIC VARIABLES ESTABLISHED HERE 🔥
+                      const tData = player.tournamentData?.[tournamentId] || {};
+                      const displayPhoto =
+                        tData.photoURL ||
+                        player.photoURL ||
+                        "https://cdn-icons-png.flaticon.com/512/847/847969.png";
+                      const displayPayment =
+                        tData.paymentScreenshotURL ||
+                        player.paymentScreenshotURL;
+                      const displayRole = tData.role || player.role;
+                      const displayBatting =
+                        tData.battingStyle || player.battingStyle;
+                      const displayBowling =
+                        tData.bowlingStyle || player.bowlingStyle;
 
-                        {expandedPlayerId === player.id && (
+                      return (
+                        <React.Fragment key={player.id}>
                           <tr
-                            className={`border-t border-b animate-in slide-in-from-top-1 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
-                            <td colSpan={8} className="p-6">
-                              <div className="flex flex-col md:flex-row gap-8 items-start">
-                                <div className="flex-shrink-0">
-                                  <img
-                                    src={
-                                      player.photoURL ||
-                                      "https://cdn-icons-png.flaticon.com/512/847/847969.png"
-                                    }
-                                    alt={player.name}
-                                    className={`w-32 h-32 md:w-40 md:h-40 rounded-2xl object-cover border-2 shadow-2xl cursor-pointer ${lightMode ? "border-indigo-100 bg-white shadow-indigo-500/10" : "border-indigo-500/30 bg-[#161920] shadow-indigo-900/20"}`}
-                                    onClick={() =>
-                                      player.photoURL &&
-                                      setPreviewImage(player.photoURL)
-                                    }
-                                    onError={(e) => {
-                                      e.target.src =
-                                        "https://cdn-icons-png.flaticon.com/512/847/847969.png";
-                                    }}
-                                  />
-                                </div>
-                                <div className="flex-grow w-full">
-                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                                    <DetailItem
-                                      label="Full Name"
-                                      value={player.name}
-                                    />
-                                    <DetailItem
-                                      label="Role"
-                                      value={player.role}
-                                    />
-                                    <DetailItem
-                                      label="Batting"
-                                      value={player.battingStyle}
-                                    />
-                                    <DetailItem
-                                      label="Bowling"
-                                      value={player.bowlingStyle}
-                                    />
-                                    <DetailItem
-                                      label="Mobile"
-                                      value={player.mobile}
-                                      isMono={true}
-                                    />
-                                    <DetailItem
-                                      label="Registered"
-                                      value={
-                                        player.createdAt
-                                          ? new Date(
-                                              player.createdAt,
-                                            ).toLocaleDateString()
-                                          : "N/A"
-                                      }
-                                    />
-                                  </div>
-
-                                  {user && player.paymentScreenshotURL && (
-                                    <div
-                                      className={`mb-8 pt-6 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}>
-                                      <h4
-                                        className={`text-xs font-black uppercase mb-4 tracking-widest ${theme.sub}`}>
-                                        Receipt / Proof
-                                      </h4>
-                                      <div
-                                        className="relative group w-full md:w-64 cursor-pointer"
-                                        onClick={() =>
-                                          setPreviewImage(
-                                            player.paymentScreenshotURL,
-                                          )
-                                        }>
-                                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-xl">
-                                          <span className="text-white font-bold text-xs uppercase tracking-widest">
-                                            Enlarge
-                                          </span>
-                                        </div>
-                                        <img
-                                          src={player.paymentScreenshotURL}
-                                          alt="Payment"
-                                          className={`w-full h-32 object-cover rounded-xl border ${lightMode ? "border-gray-200" : "border-white/10"}`}
-                                        />
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  <div
-                                    className={`pt-6 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}>
-                                    <h4
-                                      className={`text-xs font-black uppercase mb-4 flex items-center gap-2 tracking-widest ${theme.sub}`}>
-                                      Match History (
-                                      {player.calculatedStats.history.length})
-                                    </h4>
-                                    {player.calculatedStats.history.length >
-                                    0 ? (
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                        {player.calculatedStats.history
-                                          .slice(0, 10)
-                                          .map((match, idx) => (
-                                            <div
-                                              key={idx}
-                                              onClick={() =>
-                                                goToMatch(
-                                                  match.tournamentId,
-                                                  match.matchId,
-                                                )
-                                              }
-                                              className={`p-4 rounded-xl cursor-pointer transition-all flex justify-between items-center group/card border ${lightMode ? "bg-white border-gray-200 hover:border-indigo-500/50 hover:shadow-md" : "bg-[#161920] border-white/5 hover:border-indigo-500/40 hover:bg-[#1C2128]"}`}>
-                                              <div>
-                                                <div
-                                                  className={`text-[9px] font-bold uppercase tracking-wider mb-1 ${theme.sub}`}>
-                                                  {new Date(
-                                                    match.date,
-                                                  ).toLocaleDateString() ||
-                                                    "Date"}
-                                                </div>
-                                                <div
-                                                  className={`font-bold text-sm transition-colors group-hover/card:text-indigo-500 ${theme.text}`}>
-                                                  vs{" "}
-                                                  {match.opponent || "Opponent"}
-                                                </div>
-                                              </div>
-                                              <div className="text-right flex flex-col items-end">
-                                                <div className="flex gap-3 text-xs">
-                                                  {match.runs > 0 && (
-                                                    <span className="text-teal-500 font-bold font-mono">
-                                                      🏏 {match.runs}
-                                                    </span>
-                                                  )}
-                                                  {match.wickets > 0 && (
-                                                    <span className="text-purple-500 font-bold font-mono">
-                                                      🥎 {match.wickets}
-                                                    </span>
-                                                  )}
-                                                  {match.runs === 0 &&
-                                                    match.wickets === 0 && (
-                                                      <span
-                                                        className={theme.sub}>
-                                                        -
-                                                      </span>
-                                                    )}
-                                                </div>
-                                              </div>
-                                            </div>
-                                          ))}
-                                      </div>
-                                    ) : (
-                                      <div
-                                        className={`text-xs italic p-6 border border-dashed rounded-xl text-center font-medium ${lightMode ? "text-gray-400 bg-white border-gray-200" : "text-slate-600 bg-[#161920] border-white/5"}`}>
-                                        No match history recorded for this
-                                        tournament.
-                                      </div>
-                                    )}
+                            onClick={() => toggleRowExpansion(player.id)}
+                            className={`cursor-pointer group transition-colors ${
+                              expandedPlayerId === player.id
+                                ? lightMode
+                                  ? "bg-indigo-50"
+                                  : "bg-white/5"
+                                : lightMode
+                                  ? "hover:bg-gray-50"
+                                  : "hover:bg-white/5"
+                            }`}>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-4">
+                                <img
+                                  src={displayPhoto}
+                                  alt=""
+                                  className={`w-12 h-12 rounded-xl object-cover border flex-shrink-0 shadow-sm ${lightMode ? "bg-gray-200 border-gray-200" : "bg-[#0F1115] border-white/10"}`}
+                                  onError={(e) => {
+                                    e.target.src =
+                                      "https://cdn-icons-png.flaticon.com/512/847/847969.png";
+                                  }}
+                                />
+                                <div className="flex flex-col overflow-hidden">
+                                  <span
+                                    className={`font-bold text-sm leading-tight truncate max-w-[120px] md:max-w-none transition-colors ${theme.text}`}>
+                                    {player.name}
+                                  </span>
+                                  <div className="flex flex-wrap gap-1 mt-1.5">
+                                    <span
+                                      className={`text-[9px] px-2 py-0.5 rounded border truncate uppercase font-bold tracking-wider ${lightMode ? "bg-white border-gray-200 text-gray-500" : "bg-[#0F1115] text-slate-500 border-white/10"}`}>
+                                      {displayRole}
+                                    </span>
                                   </div>
                                 </div>
                               </div>
                             </td>
+                            <td
+                              className={`px-4 py-4 text-center font-mono font-bold ${theme.sub}`}>
+                              {player.calculatedStats.matches}
+                            </td>
+                            <td className="px-4 py-4 text-center font-bold text-teal-500 font-mono text-base">
+                              {player.calculatedStats.runs}
+                            </td>
+                            <td
+                              className={`px-4 py-4 text-center font-mono font-bold hidden md:table-cell ${theme.sub}`}>
+                              {player.calculatedStats.highestScore}
+                            </td>
+                            <td className="px-4 py-4 text-center font-bold text-purple-500 font-mono text-base">
+                              {player.calculatedStats.wickets}
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <div className="flex justify-end gap-3 items-center">
+                                <ChevronDown
+                                  className={`transition-transform duration-200 ${expandedPlayerId === player.id ? "rotate-180" : ""} ${theme.sub}`}
+                                  size={16}
+                                />
+                                {user && (
+                                  <>
+                                    <button
+                                      onClick={(e) => openEditModal(player, e)}
+                                      className={`p-2 rounded-lg transition-all ${lightMode ? "text-gray-400 hover:bg-gray-100 hover:text-gray-900" : "text-slate-500 hover:bg-white/10 hover:text-white"}`}>
+                                      <Edit3 size={16} />
+                                    </button>
+                                    <button
+                                      onClick={(e) =>
+                                        handleDelete(player.id, e)
+                                      }
+                                      className="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-500/10 transition-all">
+                                      <Trash2 size={16} />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
                           </tr>
-                        )}
-                      </React.Fragment>
-                    ))
+
+                          {expandedPlayerId === player.id && (
+                            <tr
+                              className={`border-t border-b animate-in slide-in-from-top-1 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
+                              <td colSpan={8} className="p-6">
+                                <div className="flex flex-col md:flex-row gap-8 items-start">
+                                  <div className="flex-shrink-0">
+                                    <img
+                                      src={displayPhoto}
+                                      alt={player.name}
+                                      className={`w-32 h-32 md:w-40 md:h-40 rounded-2xl object-cover border-2 shadow-2xl cursor-pointer ${lightMode ? "border-indigo-100 bg-white shadow-indigo-500/10" : "border-indigo-500/30 bg-[#161920] shadow-indigo-900/20"}`}
+                                      onClick={() =>
+                                        displayPhoto &&
+                                        setPreviewImage(displayPhoto)
+                                      }
+                                      onError={(e) => {
+                                        e.target.src =
+                                          "https://cdn-icons-png.flaticon.com/512/847/847969.png";
+                                      }}
+                                    />
+                                  </div>
+                                  <div className="flex-grow w-full">
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                                      <DetailItem
+                                        label="Full Name"
+                                        value={player.name}
+                                      />
+                                      <DetailItem
+                                        label="Role"
+                                        value={displayRole}
+                                      />
+                                      <DetailItem
+                                        label="Batting"
+                                        value={displayBatting}
+                                      />
+                                      <DetailItem
+                                        label="Bowling"
+                                        value={displayBowling}
+                                      />
+                                      <DetailItem
+                                        label="Mobile"
+                                        value={player.mobile}
+                                        isMono={true}
+                                      />
+                                      <DetailItem
+                                        label="Registered"
+                                        value={
+                                          player.createdAt
+                                            ? new Date(
+                                                player.createdAt,
+                                              ).toLocaleDateString()
+                                            : "N/A"
+                                        }
+                                      />
+                                    </div>
+
+                                    {user && displayPayment && (
+                                      <div
+                                        className={`mb-8 pt-6 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+                                        <h4
+                                          className={`text-xs font-black uppercase mb-4 tracking-widest ${theme.sub}`}>
+                                          Receipt / Proof
+                                        </h4>
+                                        <div
+                                          className="relative group w-full md:w-64 cursor-pointer"
+                                          onClick={() =>
+                                            setPreviewImage(displayPayment)
+                                          }>
+                                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-xl">
+                                            <span className="text-white font-bold text-xs uppercase tracking-widest">
+                                              Enlarge
+                                            </span>
+                                          </div>
+                                          <img
+                                            src={displayPayment}
+                                            alt="Payment"
+                                            className={`w-full h-32 object-cover rounded-xl border ${lightMode ? "border-gray-200" : "border-white/10"}`}
+                                          />
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    <div
+                                      className={`pt-6 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+                                      <h4
+                                        className={`text-xs font-black uppercase mb-4 flex items-center gap-2 tracking-widest ${theme.sub}`}>
+                                        Match History (
+                                        {player.calculatedStats.history.length})
+                                      </h4>
+                                      {player.calculatedStats.history.length >
+                                      0 ? (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                          {player.calculatedStats.history
+                                            .slice(0, 10)
+                                            .map((match, idx) => (
+                                              <div
+                                                key={idx}
+                                                onClick={() =>
+                                                  goToMatch(
+                                                    match.tournamentId,
+                                                    match.matchId,
+                                                  )
+                                                }
+                                                className={`p-4 rounded-xl cursor-pointer transition-all flex justify-between items-center group/card border ${lightMode ? "bg-white border-gray-200 hover:border-indigo-500/50 hover:shadow-md" : "bg-[#161920] border-white/5 hover:border-indigo-500/40 hover:bg-[#1C2128]"}`}>
+                                                <div>
+                                                  <div
+                                                    className={`text-[9px] font-bold uppercase tracking-wider mb-1 ${theme.sub}`}>
+                                                    {new Date(
+                                                      match.date,
+                                                    ).toLocaleDateString() ||
+                                                      "Date"}
+                                                  </div>
+                                                  <div
+                                                    className={`font-bold text-sm transition-colors group-hover/card:text-indigo-500 ${theme.text}`}>
+                                                    vs{" "}
+                                                    {match.opponent ||
+                                                      "Opponent"}
+                                                  </div>
+                                                </div>
+                                                <div className="text-right flex flex-col items-end">
+                                                  <div className="flex gap-3 text-xs">
+                                                    {match.runs > 0 && (
+                                                      <span className="text-teal-500 font-bold font-mono">
+                                                        🏏 {match.runs}
+                                                      </span>
+                                                    )}
+                                                    {match.wickets > 0 && (
+                                                      <span className="text-purple-500 font-bold font-mono">
+                                                        🥎 {match.wickets}
+                                                      </span>
+                                                    )}
+                                                    {match.runs === 0 &&
+                                                      match.wickets === 0 && (
+                                                        <span
+                                                          className={theme.sub}>
+                                                          -
+                                                        </span>
+                                                      )}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            ))}
+                                        </div>
+                                      ) : (
+                                        <div
+                                          className={`text-xs italic p-6 border border-dashed rounded-xl text-center font-medium ${lightMode ? "text-gray-400 bg-white border-gray-200" : "text-slate-600 bg-[#161920] border-white/5"}`}>
+                                          No match history recorded for this
+                                          tournament.
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })
                   )}
                 </tbody>
               </table>

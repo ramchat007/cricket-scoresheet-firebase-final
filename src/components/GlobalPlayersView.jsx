@@ -130,7 +130,7 @@ export default function GlobalPlayersView() {
     loadRealTimeData();
   }, []);
 
-  // --- 2. LIVE STATS CALCULATION ENGINE (PRESERVED) ---
+  // --- 2. LIVE STATS CALCULATION ENGINE ---
   const { processedPlayers, orangeCap, purpleCap } = useMemo(() => {
     if (players.length === 0)
       return { processedPlayers: [], orangeCap: null, purpleCap: null };
@@ -138,8 +138,36 @@ export default function GlobalPlayersView() {
     // 1. Initialize Map
     const statsMap = {};
     players.forEach((p) => {
+      // 🔥 MAGIC: Find the absolute most recent profile data across Global and Tournaments
+      let latest = {
+        photoURL: p.photoURL,
+        paymentScreenshotURL: p.paymentScreenshotURL,
+        role: p.role || "All-Rounder",
+        battingStyle: p.battingStyle || "Right Hand Bat",
+        bowlingStyle: p.bowlingStyle || "Right Arm Medium",
+        date: new Date(p.updatedAt || p.createdAt || 0).getTime(),
+      };
+
+      if (p.tournamentData) {
+        Object.values(p.tournamentData).forEach((tData) => {
+          const tDate = new Date(
+            tData.lastEdited || tData.registeredAt || 0,
+          ).getTime();
+          if (tDate >= latest.date) {
+            latest.date = tDate;
+            if (tData.photoURL) latest.photoURL = tData.photoURL;
+            if (tData.paymentScreenshotURL)
+              latest.paymentScreenshotURL = tData.paymentScreenshotURL;
+            if (tData.role) latest.role = tData.role;
+            if (tData.battingStyle) latest.battingStyle = tData.battingStyle;
+            if (tData.bowlingStyle) latest.bowlingStyle = tData.bowlingStyle;
+          }
+        });
+      }
+
       statsMap[p.id] = {
         ...p,
+        latestProfile: latest, // Attach the freshest data to the player object
         calculatedStats: {
           matches: 0,
           runs: 0,
@@ -299,7 +327,7 @@ export default function GlobalPlayersView() {
       );
     }
     if (roleFilter !== "All") {
-      result = result.filter((p) => p.role === roleFilter);
+      result = result.filter((p) => p.latestProfile.role === roleFilter); // Filter by newest role
     }
 
     result.sort((a, b) => {
@@ -310,12 +338,14 @@ export default function GlobalPlayersView() {
         valA = a.calculatedStats[sortConfig.key] || 0;
         valB = b.calculatedStats[sortConfig.key] || 0;
       } else if (
-        ["name", "role", "battingStyle", "bowlingStyle"].includes(
-          sortConfig.key,
-        )
+        ["role", "battingStyle", "bowlingStyle"].includes(sortConfig.key)
       ) {
-        valA = a[sortConfig.key];
-        valB = b[sortConfig.key];
+        // Sort by the newest dynamic profile data
+        valA = a.latestProfile[sortConfig.key];
+        valB = b.latestProfile[sortConfig.key];
+      } else if (sortConfig.key === "name") {
+        valA = a.name;
+        valB = b.name;
       } else {
         valA = 0;
         valB = 0;
@@ -339,7 +369,12 @@ export default function GlobalPlayersView() {
   // --- ACTIONS ---
   const handleDelete = async (playerId, e) => {
     e.stopPropagation();
-    if (!window.confirm("⚠ Permanently delete this player?")) return;
+    if (
+      !window.confirm(
+        "⚠ Permanently delete this player from the Global Database?",
+      )
+    )
+      return;
     try {
       await deleteGlobalPlayer(playerId);
       setPlayers((prev) => prev.filter((p) => p.id !== playerId));
@@ -431,17 +466,22 @@ export default function GlobalPlayersView() {
 
   const openEditModal = (player, e) => {
     e.stopPropagation();
+
+    // 🔥 Populate the edit modal with the absolute latest data we found
+    const profile = player.latestProfile || {};
+
     const sanitizeStyle = (val, defaultVal) =>
       !val || val === "Unknown" ? defaultVal : val;
+
     setFormData({
       id: player.id,
-      name: player.name,
-      role: player.role || "All-Rounder",
-      battingStyle: sanitizeStyle(player.battingStyle, "Right Hand Bat"),
-      bowlingStyle: sanitizeStyle(player.bowlingStyle, "Right Arm Medium"),
-      mobile: player.mobile || "",
-      photoURL: player.photoURL || "",
-      paymentScreenshotURL: player.paymentScreenshotURL || "",
+      name: player.name, // Name is global
+      role: profile.role || "All-Rounder",
+      battingStyle: sanitizeStyle(profile.battingStyle, "Right Hand Bat"),
+      bowlingStyle: sanitizeStyle(profile.bowlingStyle, "Right Arm Medium"),
+      mobile: player.mobile || "", // Mobile is global
+      photoURL: profile.photoURL || "",
+      paymentScreenshotURL: profile.paymentScreenshotURL || "",
     });
     setIsEditing(true);
     setShowModal(true);
@@ -451,8 +491,11 @@ export default function GlobalPlayersView() {
     e.preventDefault();
     if (!formData.name) return showToast("Name is required", "error");
 
+    setProcessingImage(true);
+
     try {
       if (isEditing && formData.id) {
+        // Updating from Global View updates the Global timestamps, making this the new "Latest"
         await updateGlobalPlayer(formData.id, {
           name: formData.name,
           role: formData.role,
@@ -461,8 +504,9 @@ export default function GlobalPlayersView() {
           mobile: formData.mobile,
           photoURL: formData.photoURL,
           paymentScreenshotURL: formData.paymentScreenshotURL,
+          updatedAt: new Date().toISOString(), // This ensures it overrides old tournament data
         });
-        showToast("Player Updated!");
+        showToast("Player Updated Globally!");
       } else {
         const { id, ...payload } = formData;
         await createGlobalPlayer({
@@ -476,6 +520,8 @@ export default function GlobalPlayersView() {
       setPlayers(data);
     } catch (error) {
       showToast("Error saving player", "error");
+    } finally {
+      setProcessingImage(false);
     }
   };
 
@@ -686,245 +732,252 @@ export default function GlobalPlayersView() {
                       </td>
                     </tr>
                   ) : (
-                    processedPlayers.map((player) => (
-                      <React.Fragment key={player.id}>
-                        <tr
-                          onClick={() => toggleRowExpansion(player.id)}
-                          className={`cursor-pointer group transition-colors ${
-                            expandedPlayerId === player.id
-                              ? lightMode
-                                ? "bg-teal-50"
-                                : "bg-white/5"
-                              : lightMode
-                                ? "hover:bg-gray-50"
-                                : "hover:bg-white/5"
-                          }`}>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-4">
-                              <img
-                                src={
-                                  player.photoURL ||
-                                  "https://cdn-icons-png.flaticon.com/512/847/847969.png"
-                                }
-                                alt=""
-                                className={`w-12 h-12 rounded-xl object-cover border flex-shrink-0 shadow-sm ${lightMode ? "bg-gray-200 border-gray-200" : "bg-[#0F1115] border-white/10"}`}
-                                onError={(e) => {
-                                  e.target.src =
-                                    "https://cdn-icons-png.flaticon.com/512/847/847969.png";
-                                }}
-                              />
-                              <div className="flex flex-col overflow-hidden">
-                                <span
-                                  className={`font-bold text-sm leading-tight truncate max-w-[120px] md:max-w-none transition-colors ${theme.text}`}>
-                                  {player.name}
-                                </span>
-                                <div className="flex flex-wrap gap-1 mt-1.5">
-                                  <span
-                                    className={`text-[9px] px-2 py-0.5 rounded border truncate uppercase font-bold tracking-wider ${lightMode ? "bg-white border-gray-200 text-gray-500" : "bg-[#0F1115] text-slate-500 border-white/10"}`}>
-                                    {player.role}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                          <td
-                            className={`px-4 py-4 text-center font-mono font-bold ${theme.sub}`}>
-                            {player.calculatedStats.matches}
-                          </td>
-                          <td className="px-4 py-4 text-center font-bold text-teal-500 font-mono text-base">
-                            {player.calculatedStats.runs}
-                          </td>
-                          <td
-                            className={`px-4 py-4 text-center font-mono font-bold hidden md:table-cell ${theme.sub}`}>
-                            {player.calculatedStats.highestScore}
-                          </td>
-                          <td className="px-4 py-4 text-center font-bold text-purple-500 font-mono text-base">
-                            {player.calculatedStats.wickets}
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <div className="flex justify-end gap-3 items-center">
-                              <ChevronDown
-                                className={`transition-transform duration-200 ${expandedPlayerId === player.id ? "rotate-180" : ""} ${theme.sub}`}
-                                size={16}
-                              />
-                              {user && (
-                                <>
-                                  <button
-                                    onClick={(e) => openEditModal(player, e)}
-                                    className={`p-2 rounded-lg transition-all ${lightMode ? "text-gray-400 hover:bg-gray-100 hover:text-gray-900" : "text-slate-500 hover:bg-white/10 hover:text-white"}`}>
-                                    <Edit3 size={16} />
-                                  </button>
-                                  <button
-                                    onClick={(e) => handleDelete(player.id, e)}
-                                    className="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-500/10 transition-all">
-                                    <Trash2 size={16} />
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
+                    processedPlayers.map((player) => {
+                      // 🔥 Extracting the dynamically calculated newest data for the UI
+                      const profile = player.latestProfile;
+                      const displayPhoto =
+                        profile.photoURL ||
+                        "https://cdn-icons-png.flaticon.com/512/847/847969.png";
+                      const displayRole = profile.role;
+                      const displayPayment = profile.paymentScreenshotURL;
+                      const displayBatting = profile.battingStyle;
+                      const displayBowling = profile.bowlingStyle;
 
-                        {expandedPlayerId === player.id && (
+                      return (
+                        <React.Fragment key={player.id}>
                           <tr
-                            className={`border-t border-b animate-in slide-in-from-top-1 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
-                            <td colSpan={8} className="p-6">
-                              <div className="flex flex-col md:flex-row gap-8 items-start">
-                                <div className="flex-shrink-0">
-                                  <img
-                                    src={
-                                      player.photoURL ||
-                                      "https://cdn-icons-png.flaticon.com/512/847/847969.png"
-                                    }
-                                    alt={player.name}
-                                    className={`w-32 h-32 md:w-40 md:h-40 rounded-2xl object-cover border-2 shadow-2xl cursor-pointer ${lightMode ? "border-teal-100 bg-white shadow-teal-500/10" : "border-teal-500/30 bg-[#161920] shadow-teal-900/20"}`}
-                                    onClick={() =>
-                                      player.photoURL &&
-                                      setPreviewImage(player.photoURL)
-                                    }
-                                    onError={(e) => {
-                                      e.target.src =
-                                        "https://cdn-icons-png.flaticon.com/512/847/847969.png";
-                                    }}
-                                  />
-                                </div>
-                                <div className="flex-grow w-full">
-                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                                    <DetailItem
-                                      label="Full Name"
-                                      value={player.name}
-                                    />
-                                    <DetailItem
-                                      label="Role"
-                                      value={player.role}
-                                    />
-                                    <DetailItem
-                                      label="Batting"
-                                      value={player.battingStyle}
-                                    />
-                                    <DetailItem
-                                      label="Bowling"
-                                      value={player.bowlingStyle}
-                                    />
-                                    <DetailItem
-                                      label="Mobile"
-                                      value={player.mobile}
-                                      isMono={true}
-                                    />
-                                    <DetailItem
-                                      label="Registered"
-                                      value={
-                                        player.createdAt
-                                          ? new Date(
-                                              player.createdAt,
-                                            ).toLocaleDateString()
-                                          : "N/A"
-                                      }
-                                    />
-                                  </div>
-
-                                  {user && player.paymentScreenshotURL && (
-                                    <div
-                                      className={`mb-8 pt-6 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}>
-                                      <h4
-                                        className={`text-xs font-black uppercase mb-4 tracking-widest ${theme.sub}`}>
-                                        Receipt / Proof
-                                      </h4>
-                                      <div
-                                        className="relative group w-full md:w-64 cursor-pointer"
-                                        onClick={() =>
-                                          setPreviewImage(
-                                            player.paymentScreenshotURL,
-                                          )
-                                        }>
-                                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-xl">
-                                          <span className="text-white font-bold text-xs uppercase tracking-widest">
-                                            Enlarge
-                                          </span>
-                                        </div>
-                                        <img
-                                          src={player.paymentScreenshotURL}
-                                          alt="Payment"
-                                          className={`w-full h-32 object-cover rounded-xl border ${lightMode ? "border-gray-200" : "border-white/10"}`}
-                                        />
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  <div
-                                    className={`pt-6 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}>
-                                    <h4
-                                      className={`text-xs font-black uppercase mb-4 flex items-center gap-2 tracking-widest ${theme.sub}`}>
-                                      Match History (
-                                      {player.calculatedStats.history.length})
-                                    </h4>
-                                    {player.calculatedStats.history.length >
-                                    0 ? (
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                        {player.calculatedStats.history
-                                          .slice(0, 10)
-                                          .map((match, idx) => (
-                                            <div
-                                              key={idx}
-                                              onClick={() =>
-                                                goToMatch(
-                                                  match.tournamentId,
-                                                  match.matchId,
-                                                )
-                                              }
-                                              className={`p-4 rounded-xl cursor-pointer transition-all flex justify-between items-center group/card border ${lightMode ? "bg-white border-gray-200 hover:border-teal-500/50 hover:shadow-md" : "bg-[#161920] border-white/5 hover:border-teal-500/40 hover:bg-[#1C2128]"}`}>
-                                              <div>
-                                                <div
-                                                  className={`text-[9px] font-bold uppercase tracking-wider mb-1 ${theme.sub}`}>
-                                                  {new Date(
-                                                    match.date,
-                                                  ).toLocaleDateString() ||
-                                                    "Date"}
-                                                </div>
-                                                <div
-                                                  className={`font-bold text-sm transition-colors group-hover/card:text-teal-500 ${theme.text}`}>
-                                                  vs{" "}
-                                                  {match.opponent || "Opponent"}
-                                                </div>
-                                              </div>
-                                              <div className="text-right flex flex-col items-end">
-                                                <div className="flex gap-3 text-xs">
-                                                  {match.runs > 0 && (
-                                                    <span className="text-teal-500 font-bold font-mono">
-                                                      🏏 {match.runs}
-                                                    </span>
-                                                  )}
-                                                  {match.wickets > 0 && (
-                                                    <span className="text-purple-500 font-bold font-mono">
-                                                      🥎 {match.wickets}
-                                                    </span>
-                                                  )}
-                                                  {match.runs === 0 &&
-                                                    match.wickets === 0 && (
-                                                      <span
-                                                        className={theme.sub}>
-                                                        -
-                                                      </span>
-                                                    )}
-                                                </div>
-                                              </div>
-                                            </div>
-                                          ))}
-                                      </div>
-                                    ) : (
-                                      <div
-                                        className={`text-xs italic p-6 border border-dashed rounded-xl text-center font-medium ${lightMode ? "text-gray-400 bg-white border-gray-200" : "text-slate-600 bg-[#161920] border-white/5"}`}>
-                                        No match history recorded.
-                                      </div>
-                                    )}
+                            onClick={() => toggleRowExpansion(player.id)}
+                            className={`cursor-pointer group transition-colors ${
+                              expandedPlayerId === player.id
+                                ? lightMode
+                                  ? "bg-teal-50"
+                                  : "bg-white/5"
+                                : lightMode
+                                  ? "hover:bg-gray-50"
+                                  : "hover:bg-white/5"
+                            }`}>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-4">
+                                <img
+                                  src={displayPhoto}
+                                  alt=""
+                                  className={`w-12 h-12 rounded-xl object-cover border flex-shrink-0 shadow-sm ${lightMode ? "bg-gray-200 border-gray-200" : "bg-[#0F1115] border-white/10"}`}
+                                  onError={(e) => {
+                                    e.target.src =
+                                      "https://cdn-icons-png.flaticon.com/512/847/847969.png";
+                                  }}
+                                />
+                                <div className="flex flex-col overflow-hidden">
+                                  <span
+                                    className={`font-bold text-sm leading-tight truncate max-w-[120px] md:max-w-none transition-colors ${theme.text}`}>
+                                    {player.name}
+                                  </span>
+                                  <div className="flex flex-wrap gap-1 mt-1.5">
+                                    <span
+                                      className={`text-[9px] px-2 py-0.5 rounded border truncate uppercase font-bold tracking-wider ${lightMode ? "bg-white border-gray-200 text-gray-500" : "bg-[#0F1115] text-slate-500 border-white/10"}`}>
+                                      {displayRole}
+                                    </span>
                                   </div>
                                 </div>
                               </div>
                             </td>
+                            <td
+                              className={`px-4 py-4 text-center font-mono font-bold ${theme.sub}`}>
+                              {player.calculatedStats.matches}
+                            </td>
+                            <td className="px-4 py-4 text-center font-bold text-teal-500 font-mono text-base">
+                              {player.calculatedStats.runs}
+                            </td>
+                            <td
+                              className={`px-4 py-4 text-center font-mono font-bold hidden md:table-cell ${theme.sub}`}>
+                              {player.calculatedStats.highestScore}
+                            </td>
+                            <td className="px-4 py-4 text-center font-bold text-purple-500 font-mono text-base">
+                              {player.calculatedStats.wickets}
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <div className="flex justify-end gap-3 items-center">
+                                <ChevronDown
+                                  className={`transition-transform duration-200 ${expandedPlayerId === player.id ? "rotate-180" : ""} ${theme.sub}`}
+                                  size={16}
+                                />
+                                {user && (
+                                  <>
+                                    <button
+                                      onClick={(e) => openEditModal(player, e)}
+                                      className={`p-2 rounded-lg transition-all ${lightMode ? "text-gray-400 hover:bg-gray-100 hover:text-gray-900" : "text-slate-500 hover:bg-white/10 hover:text-white"}`}>
+                                      <Edit3 size={16} />
+                                    </button>
+                                    <button
+                                      onClick={(e) =>
+                                        handleDelete(player.id, e)
+                                      }
+                                      className="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-500/10 transition-all">
+                                      <Trash2 size={16} />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
                           </tr>
-                        )}
-                      </React.Fragment>
-                    ))
+
+                          {expandedPlayerId === player.id && (
+                            <tr
+                              className={`border-t border-b animate-in slide-in-from-top-1 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
+                              <td colSpan={8} className="p-6">
+                                <div className="flex flex-col md:flex-row gap-8 items-start">
+                                  <div className="flex-shrink-0">
+                                    <img
+                                      src={displayPhoto}
+                                      alt={player.name}
+                                      className={`w-32 h-32 md:w-40 md:h-40 rounded-2xl object-cover border-2 shadow-2xl cursor-pointer ${lightMode ? "border-teal-100 bg-white shadow-teal-500/10" : "border-teal-500/30 bg-[#161920] shadow-teal-900/20"}`}
+                                      onClick={() =>
+                                        displayPhoto &&
+                                        setPreviewImage(displayPhoto)
+                                      }
+                                      onError={(e) => {
+                                        e.target.src =
+                                          "https://cdn-icons-png.flaticon.com/512/847/847969.png";
+                                      }}
+                                    />
+                                  </div>
+                                  <div className="flex-grow w-full">
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                                      <DetailItem
+                                        label="Full Name"
+                                        value={player.name}
+                                      />
+                                      <DetailItem
+                                        label="Role"
+                                        value={displayRole}
+                                      />
+                                      <DetailItem
+                                        label="Batting"
+                                        value={displayBatting}
+                                      />
+                                      <DetailItem
+                                        label="Bowling"
+                                        value={displayBowling}
+                                      />
+                                      <DetailItem
+                                        label="Mobile"
+                                        value={player.mobile}
+                                        isMono={true}
+                                      />
+                                      <DetailItem
+                                        label="Last Updated"
+                                        value={
+                                          profile.date
+                                            ? new Date(
+                                                profile.date,
+                                              ).toLocaleDateString()
+                                            : "N/A"
+                                        }
+                                      />
+                                    </div>
+
+                                    {user && displayPayment && (
+                                      <div
+                                        className={`mb-8 pt-6 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+                                        <h4
+                                          className={`text-xs font-black uppercase mb-4 tracking-widest ${theme.sub}`}>
+                                          Latest Receipt / Proof
+                                        </h4>
+                                        <div
+                                          className="relative group w-full md:w-64 cursor-pointer"
+                                          onClick={() =>
+                                            setPreviewImage(displayPayment)
+                                          }>
+                                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-xl">
+                                            <span className="text-white font-bold text-xs uppercase tracking-widest">
+                                              Enlarge
+                                            </span>
+                                          </div>
+                                          <img
+                                            src={displayPayment}
+                                            alt="Payment"
+                                            className={`w-full h-32 object-cover rounded-xl border ${lightMode ? "border-gray-200" : "border-white/10"}`}
+                                          />
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    <div
+                                      className={`pt-6 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+                                      <h4
+                                        className={`text-xs font-black uppercase mb-4 flex items-center gap-2 tracking-widest ${theme.sub}`}>
+                                        Global Match History (
+                                        {player.calculatedStats.history.length})
+                                      </h4>
+                                      {player.calculatedStats.history.length >
+                                      0 ? (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                          {player.calculatedStats.history
+                                            .slice(0, 10)
+                                            .map((match, idx) => (
+                                              <div
+                                                key={idx}
+                                                onClick={() =>
+                                                  goToMatch(
+                                                    match.tournamentId,
+                                                    match.matchId,
+                                                  )
+                                                }
+                                                className={`p-4 rounded-xl cursor-pointer transition-all flex justify-between items-center group/card border ${lightMode ? "bg-white border-gray-200 hover:border-teal-500/50 hover:shadow-md" : "bg-[#161920] border-white/5 hover:border-teal-500/40 hover:bg-[#1C2128]"}`}>
+                                                <div>
+                                                  <div
+                                                    className={`text-[9px] font-bold uppercase tracking-wider mb-1 ${theme.sub}`}>
+                                                    {new Date(
+                                                      match.date,
+                                                    ).toLocaleDateString() ||
+                                                      "Date"}
+                                                  </div>
+                                                  <div
+                                                    className={`font-bold text-sm transition-colors group-hover/card:text-teal-500 ${theme.text}`}>
+                                                    vs{" "}
+                                                    {match.opponent ||
+                                                      "Opponent"}
+                                                  </div>
+                                                </div>
+                                                <div className="text-right flex flex-col items-end">
+                                                  <div className="flex gap-3 text-xs">
+                                                    {match.runs > 0 && (
+                                                      <span className="text-teal-500 font-bold font-mono">
+                                                        🏏 {match.runs}
+                                                      </span>
+                                                    )}
+                                                    {match.wickets > 0 && (
+                                                      <span className="text-purple-500 font-bold font-mono">
+                                                        🥎 {match.wickets}
+                                                      </span>
+                                                    )}
+                                                    {match.runs === 0 &&
+                                                      match.wickets === 0 && (
+                                                        <span
+                                                          className={theme.sub}>
+                                                          -
+                                                        </span>
+                                                      )}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            ))}
+                                        </div>
+                                      ) : (
+                                        <div
+                                          className={`text-xs italic p-6 border border-dashed rounded-xl text-center font-medium ${lightMode ? "text-gray-400 bg-white border-gray-200" : "text-slate-600 bg-[#161920] border-white/5"}`}>
+                                          No global match history recorded.
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -963,7 +1016,7 @@ export default function GlobalPlayersView() {
                 className={`p-6 border-b flex justify-between items-center sticky top-0 z-10 ${lightMode ? "bg-white border-gray-200" : "bg-[#1C2128] border-white/5"}`}>
                 <h3
                   className={`text-lg font-black uppercase tracking-tight italic ${theme.text}`}>
-                  {isEditing ? "Edit Player Profile" : "Create New Player"}
+                  {isEditing ? "Edit Global Profile" : "Create New Player"}
                 </h3>
                 <button
                   onClick={() => setShowModal(false)}
@@ -1112,7 +1165,7 @@ export default function GlobalPlayersView() {
                     {processingImage
                       ? "Processing..."
                       : isEditing
-                        ? "Update Player"
+                        ? "Update Global Profile"
                         : "Create Player"}
                   </button>
                 </form>

@@ -9,6 +9,7 @@ import {
   updateDoc,
   doc,
   getDoc,
+  arrayUnion,
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { useAuth } from "../hooks/useAuth";
@@ -54,7 +55,31 @@ const NotificationToast = ({ message, type, onClose }) => {
 
 export default function GlobalPlayerRegistration() {
   const { tournamentId } = useParams();
+  const [tournamentName, setTournamentName] = useState("");
   const { user } = useAuth();
+
+  // --- ADD THIS USEEFFECT ---
+  useEffect(() => {
+    const fetchTournamentDetails = async () => {
+      if (!tournamentId) return; // Skip if it's the global generic link
+
+      try {
+        const tDocRef = doc(db, "tournaments", tournamentId);
+        const tDocSnap = await getDoc(tDocRef);
+
+        if (tDocSnap.exists()) {
+          setTournamentName(tDocSnap.data().name); // Assuming your tournament name field is 'name'
+        } else {
+          // Fallback just in case the document name is missing: replaces hyphens with spaces
+          setTournamentName(tournamentId.replace(/-/g, " "));
+        }
+      } catch (error) {
+        console.error("Failed to fetch tournament name:", error);
+      }
+    };
+
+    fetchTournamentDetails();
+  }, [tournamentId]);
 
   // 2. Consume Theme
   const { theme, lightMode } = useTheme();
@@ -145,22 +170,25 @@ export default function GlobalPlayerRegistration() {
     if (cleanMobile.length < 10) {
       setLoading(false);
       setStatus("idle");
-      showToast("Please enter a valid 10-digit mobile number.", "error");
-      return;
+      return showToast("Please enter a valid 10-digit mobile number.", "error");
     }
 
     if (!photoBase64 || !paymentBase64) {
       setLoading(false);
       setStatus("idle");
-      showToast("Profile Photo and Payment Screenshot are mandatory.", "error");
-      return;
+      return showToast(
+        "Profile Photo and Payment Screenshot are mandatory.",
+        "error",
+      );
     }
 
     try {
       const playersRef = collection(db, "players");
       const isoDate = new Date().toISOString();
+      const currentTournament = tournamentId || "global"; // Use URL ID or global
 
       if (isEditing && existingPlayerId) {
+        // ... (Keep your existing Update Logic here) ...
         const playerDocRef = doc(db, "players", existingPlayerId);
         await updateDoc(playerDocRef, {
           name: formData.name.trim(),
@@ -170,46 +198,80 @@ export default function GlobalPlayerRegistration() {
           photoURL: photoBase64,
           paymentScreenshotURL: paymentBase64,
           updatedAt: isoDate,
-          tournamentId: tournamentId || "global",
         });
         setStatus("updated");
       } else {
+        // --- THE MAGIC HAPPENS HERE ---
         const q = query(playersRef, where("mobile", "==", cleanMobile));
         const querySnapshot = await getDocs(q);
 
         if (!querySnapshot.empty) {
           const docSnap = querySnapshot.docs[0];
-          const isUserAdmin = user && user.email === "ramchat007@gmail.com";
+          const existingData = docSnap.data();
+          const enrolledTournaments = existingData.registeredTournaments || [];
 
-          if (isUserAdmin) {
-            if (
-              window.confirm(
-                "⚠️ Admin Access: This mobile number is already registered. Load for editing?",
-              )
-            ) {
-              loadExistingPlayer(docSnap.data(), docSnap.id);
-              setLoading(false);
-              return;
-            }
-          } else {
+          // 1. Check if they are ALREADY in this specific tournament
+          if (enrolledTournaments.includes(currentTournament)) {
             setStatus("exists");
             setLoading(false);
             return;
           }
+
+          // 2. They exist globally, but are NEW to this tournament.
+          // Let's auto-enroll them AND update their data!
+          const playerDocRef = doc(db, "players", docSnap.id);
+
+          await updateDoc(playerDocRef, {
+            // Keep the global name updated just in case they fixed a typo
+            name: formData.name.trim(),
+
+            // Add to the array for easy querying
+            registeredTournaments: arrayUnion(currentTournament),
+
+            // 🔥 Store the specific details FOR THIS TOURNAMENT ONLY
+            [`tournamentData.${currentTournament}`]: {
+              role: formData.role,
+              battingStyle: formData.battingStyle,
+              bowlingStyle: formData.bowlingStyle,
+              photoURL: photoBase64,
+              paymentScreenshotURL: paymentBase64,
+              registeredAt: isoDate,
+            },
+
+            updatedAt: isoDate,
+          });
+
+          setStatus("success");
+          showToast(
+            "Global profile updated and added to this tournament!",
+            "success",
+          );
+          setLoading(false);
+          return;
         }
 
+        // 3. Completely new player
         await addDoc(playersRef, {
           name: formData.name.trim(),
           mobile: cleanMobile,
-          role: formData.role,
-          battingStyle: formData.battingStyle,
-          bowlingStyle: formData.bowlingStyle,
-          photoURL: photoBase64,
-          paymentScreenshotURL: paymentBase64,
           stats: { matches: 0, runs: 0, wickets: 0 },
           isVerified: false,
           createdAt: isoDate,
           updatedAt: isoDate,
+
+          registeredTournaments: [currentTournament],
+
+          // 🔥 Initialize the map with their first tournament
+          tournamentData: {
+            [currentTournament]: {
+              role: formData.role,
+              battingStyle: formData.battingStyle,
+              bowlingStyle: formData.bowlingStyle,
+              photoURL: photoBase64,
+              paymentScreenshotURL: paymentBase64,
+              registeredAt: isoDate,
+            },
+          },
         });
         setStatus("success");
       }
@@ -275,9 +337,13 @@ export default function GlobalPlayerRegistration() {
         onClose={() => setNotification(null)}
       />
       <h1 className="text-4xl font-black italic tracking-tighter mb-2">
-        <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-indigo-500 uppercase">
-          {/* {isEditing ? "Update Profile" : "Player Registration"} */}
-          Saivihar Premier Leaugue 2026 - Season 2
+        <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-indigo-500 uppercase px-2">
+          {/* Show fetched name, fallback to generic title if no tournamentId exists */}
+          {tournamentName
+            ? tournamentName
+            : isEditing
+              ? "Update Profile"
+              : "Player Registration"}
         </span>
       </h1>
 
