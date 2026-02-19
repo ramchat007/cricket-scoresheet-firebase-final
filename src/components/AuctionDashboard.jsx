@@ -11,6 +11,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { useAuth } from "../hooks/useAuth";
+import { useTheme } from "../context/ThemeContext";
 import {
   subscribeAuctionState,
   startBidding,
@@ -25,6 +26,7 @@ import AuctionAdminPanel from "./AuctionAdminPanel";
 export default function AuctionDashboard() {
   const { id: tournamentId } = useParams();
   const { user } = useAuth();
+  const { theme, lightMode } = useTheme();
 
   const [auctionState, setAuctionState] = useState(null);
   const [allPlayers, setAllPlayers] = useState([]);
@@ -45,7 +47,9 @@ export default function AuctionDashboard() {
       return;
     }
     const isOwner =
-      tournamentConfig.ownerId === user.uid ||
+      (Array.isArray(tournamentConfig.ownerId)
+        ? tournamentConfig.ownerId.includes(user.uid)
+        : tournamentConfig.ownerId === user.uid) ||
       tournamentConfig.createdBy === user.uid;
     const isAdmin =
       Array.isArray(tournamentConfig.admins) &&
@@ -59,7 +63,7 @@ export default function AuctionDashboard() {
 
   useEffect(() => {
     getDoc(doc(db, "tournaments", tournamentId)).then((s) =>
-      setTournamentConfig(s.data())
+      setTournamentConfig(s.data()),
     );
     const unsubState = subscribeAuctionState(tournamentId, setAuctionState);
     const unsubSlots = onSnapshot(
@@ -68,9 +72,9 @@ export default function AuctionDashboard() {
         setSlots(
           snap.docs
             .map((d) => ({ id: d.id, ...d.data() }))
-            .sort((a, b) => a.order - b.order)
+            .sort((a, b) => a.order - b.order),
         );
-      }
+      },
     );
     const unsubTeams = onSnapshot(
       query(collection(db, "tournaments", tournamentId, "teams")),
@@ -84,15 +88,15 @@ export default function AuctionDashboard() {
         });
         setTeams(teamData);
         setTeamsMap(mapping);
-      }
+      },
     );
     const unsubPlayers = onSnapshot(
       query(collection(db, "tournaments", tournamentId, "auctionPlayers")),
       (snapshot) => {
         setAllPlayers(
-          snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+          snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
         );
-      }
+      },
     );
     return () => {
       unsubState?.();
@@ -104,14 +108,14 @@ export default function AuctionDashboard() {
 
   const activeSlotId = auctionState?.activeSlotId;
   const currentSlotPlayers = allPlayers.filter(
-    (p) => p.auctionSlotId === activeSlotId
+    (p) => p.auctionSlotId === activeSlotId,
   );
   const upcomingInSlot = currentSlotPlayers.filter(
-    (p) => p.status === "PENDING"
+    (p) => p.status === "PENDING",
   );
   const soldPlayers = allPlayers.filter((p) => p.status === "SOLD");
   const unsoldPlayers = allPlayers.filter(
-    (p) => p.status === "UNSOLD" || p.status === "UNSOLD_PASSED"
+    (p) => p.status === "UNSOLD" || p.status === "UNSOLD_PASSED",
   );
 
   const startNextInSlot = () => {
@@ -119,15 +123,28 @@ export default function AuctionDashboard() {
     if (upcomingInSlot.length === 0)
       return alert("No players left in this slot!");
     const nextPlayer = [...upcomingInSlot].sort(
-      (a, b) => (a.order || 0) - (b.order || 0)
+      (a, b) => (a.order || 0) - (b.order || 0),
     )[0];
     startBidding(tournamentId, nextPlayer);
+  };
+
+  // ✅ NEW: Pick a random player from the current active slot
+  const startRandomInSlot = () => {
+    if (!canEdit) return;
+    if (upcomingInSlot.length === 0)
+      return alert("No players left in this slot!");
+
+    // Generate a random index based on the remaining players
+    const randomIndex = Math.floor(Math.random() * upcomingInSlot.length);
+    const randomPlayer = upcomingInSlot[randomIndex];
+
+    startBidding(tournamentId, randomPlayer);
   };
 
   const calculateNextBid = (current) => {
     if (tournamentConfig?.bidSlabs?.length > 0) {
       const sortedSlabs = [...tournamentConfig.bidSlabs].sort(
-        (a, b) => a.max - b.max
+        (a, b) => a.max - b.max,
       );
       const activeSlab = sortedSlabs.find((s) => current < s.max);
       if (activeSlab) return current + activeSlab.inc;
@@ -142,7 +159,7 @@ export default function AuctionDashboard() {
   const reverseLastBid = async () => {
     if (
       !window.confirm(
-        "⚠️ Undo last bid? The previous bidder will become the leader."
+        "⚠️ Undo last bid? The previous bidder will become the leader.",
       )
     )
       return;
@@ -167,19 +184,27 @@ export default function AuctionDashboard() {
   const nextBidAmount =
     isLive || isPaused ? calculateNextBid(auctionState.currentBid) : 0;
 
+  // --- STYLES HELPER ---
+  const borderColor = lightMode ? "border-gray-200" : "border-white/5";
+  const inputBgColor = lightMode
+    ? "bg-gray-50 border-gray-200 text-gray-900"
+    : "bg-[#0F1115] border-white/10 text-slate-200";
+
   const renderStage = () => {
     if ((!isLive && !isPaused) || !currentPlayer) {
       return (
-        <div className="bg-[#1C2128]/50 border-2 border-dashed border-white/5 rounded-[2rem] p-8 mb-8 text-center flex flex-col items-center justify-center min-h-[350px]">
+        <div
+          className={`${theme.card} border-2 border-dashed ${borderColor} rounded-[2rem] p-8 mb-8 text-center flex flex-col items-center justify-center min-h-[350px] shadow-sm`}>
           {canEdit ? (
             <>
               <div className="flex gap-4 mb-6 w-full max-w-md">
                 <div className="flex-1 text-left">
-                  <label className="text-[10px] text-slate-500 font-black uppercase block mb-2 tracking-widest">
+                  <label
+                    className={`text-[10px] ${theme.sub} font-black uppercase block mb-2 tracking-widest`}>
                     Select Auction Slot
                   </label>
                   <select
-                    className="w-full bg-[#0F1115] text-slate-200 p-4 rounded-xl border border-white/10 outline-none focus:border-teal-500/50 font-bold"
+                    className={`w-full p-4 rounded-xl border outline-none focus:border-teal-500/50 font-bold transition-colors ${inputBgColor}`}
                     value={activeSlotId || ""}
                     onChange={(e) =>
                       updateDoc(
@@ -188,9 +213,9 @@ export default function AuctionDashboard() {
                           "tournaments",
                           tournamentId,
                           "auction",
-                          "state"
+                          "state",
                         ),
-                        { activeSlotId: e.target.value }
+                        { activeSlotId: e.target.value },
                       )
                     }>
                     <option value="">-- Choose Slot --</option>
@@ -202,22 +227,40 @@ export default function AuctionDashboard() {
                   </select>
                 </div>
               </div>
-              <h2 className="text-xl font-black text-slate-300 mb-2 uppercase tracking-tight italic">
+              <h2
+                className={`text-xl font-black ${theme.text} mb-4 uppercase tracking-tight italic`}>
                 {activeSlotId
                   ? `Slot: ${slots.find((s) => s.id === activeSlotId)?.name}`
                   : "Waiting for selection..."}
               </h2>
-              <button
-                onClick={startNextInSlot}
-                disabled={!activeSlotId || upcomingInSlot.length === 0}
-                className="bg-gradient-to-r from-teal-600 to-teal-700 text-white font-black uppercase tracking-widest text-sm py-4 px-10 rounded-xl disabled:opacity-20 hover:scale-105 active:scale-95 transition-all shadow-lg">
-                Start Next Player
-              </button>
+
+              {/* ✅ NEW: Button Group (Sequential & Random) */}
+              <div className="flex flex-col sm:flex-row gap-4 mt-2">
+                <button
+                  onClick={startNextInSlot}
+                  disabled={!activeSlotId || upcomingInSlot.length === 0}
+                  className="bg-gradient-to-r from-teal-600 to-teal-700 text-white font-black uppercase tracking-widest text-xs py-4 px-8 rounded-xl disabled:opacity-30 hover:scale-105 active:scale-95 transition-all shadow-lg flex-1">
+                  Start Sequential
+                </button>
+                <button
+                  onClick={startRandomInSlot}
+                  disabled={!activeSlotId || upcomingInSlot.length === 0}
+                  className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-black uppercase tracking-widest text-xs py-4 px-8 rounded-xl disabled:opacity-30 hover:scale-105 active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2 flex-1">
+                  <span className="text-base">🎲</span> Random Player
+                </button>
+              </div>
+              {activeSlotId && upcomingInSlot.length > 0 && (
+                <div
+                  className={`mt-4 text-[10px] uppercase font-bold tracking-widest ${theme.sub}`}>
+                  {upcomingInSlot.length} Players Remaining in Slot
+                </div>
+              )}
             </>
           ) : (
             <div className="text-center">
               <div className="text-4xl mb-4 grayscale opacity-50">⏸️</div>
-              <h2 className="text-xl font-black text-slate-400 uppercase tracking-widest">
+              <h2
+                className={`text-xl font-black ${theme.sub} uppercase tracking-widest`}>
                 Auction Paused
               </h2>
             </div>
@@ -227,7 +270,8 @@ export default function AuctionDashboard() {
     }
 
     return (
-      <div className="bg-[#1C2128] border border-white/5 rounded-[2.5rem] p-8 mb-8 text-center relative overflow-hidden shadow-2xl">
+      <div
+        className={`${theme.card} border ${borderColor} rounded-[2.5rem] p-8 mb-8 text-center relative overflow-hidden shadow-xl`}>
         <div
           className={`absolute top-0 left-0 w-full h-1.5 ${
             isPaused
@@ -241,13 +285,14 @@ export default function AuctionDashboard() {
               "https://cdn-icons-png.flaticon.com/512/847/847969.png"
             }
             alt={currentPlayer.name}
-            className={`w-48 h-48 md:w-64 md:h-64 rounded-full object-cover border-4 border-[#0F1115] shadow-2xl relative z-10 bg-black ${
+            className={`w-48 h-48 md:w-64 md:h-64 rounded-full object-cover border-4 ${lightMode ? "border-white" : "border-[#0F1115]"} shadow-xl relative z-10 bg-black ${
               isPaused ? "grayscale" : ""
             }`}
           />
           <div className="flex-1 text-left md:text-center">
             <div className="flex justify-center items-center gap-3 mb-3">
-              <div className="bg-[#0F1115] text-teal-400 text-[10px] font-black uppercase tracking-[0.2em] px-4 py-1.5 rounded-full border border-teal-500/20 shadow-lg">
+              <div
+                className={`${lightMode ? "bg-teal-50 text-teal-700 border-teal-200" : "bg-[#0F1115] text-teal-400 border-teal-500/20"} text-[10px] font-black uppercase tracking-[0.2em] px-4 py-1.5 rounded-full border shadow-sm`}>
                 {slots.find((s) => s.id === activeSlotId)?.name ||
                   "Current Round"}
               </div>
@@ -257,29 +302,35 @@ export default function AuctionDashboard() {
                 </div>
               )}
             </div>
-            <h1 className="text-4xl md:text-5xl font-black text-slate-100 mb-2 tracking-tighter uppercase italic">
+            <h1
+              className={`text-4xl md:text-5xl font-black ${theme.text} mb-2 tracking-tighter uppercase italic`}>
               {currentPlayer.name}
             </h1>
-            <p className="text-slate-500 uppercase mb-8 font-black tracking-widest text-xs flex items-center justify-center gap-2">
+            <p
+              className={`${theme.sub} uppercase mb-8 font-black tracking-widest text-xs flex items-center justify-center gap-2`}>
               {currentPlayer.role} • Base: ₹{currentPlayer.basePrice}{" "}
               {currentPlayer.isIcon && (
-                <span className="text-amber-400 ml-1">★ Icon</span>
+                <span className="text-amber-500 ml-1">★ Icon</span>
               )}
             </p>
             <div className="flex flex-col md:flex-row justify-center gap-4 mb-8">
-              <div className="bg-[#0F1115] p-5 rounded-2xl border border-white/5 min-w-[180px] text-center">
-                <div className="text-[9px] text-slate-500 uppercase font-black tracking-widest mb-1">
+              <div
+                className={`${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"} p-5 rounded-2xl border min-w-[180px] text-center shadow-sm`}>
+                <div
+                  className={`text-[9px] ${theme.sub} uppercase font-black tracking-widest mb-1`}>
                   Current Bid
                 </div>
-                <div className="text-4xl font-mono font-bold text-teal-400">
+                <div className="text-4xl font-mono font-bold text-teal-500">
                   ₹{auctionState.currentBid.toLocaleString()}
                 </div>
               </div>
-              <div className="bg-[#0F1115] p-5 rounded-2xl border border-white/5 min-w-[180px] text-center">
-                <div className="text-[9px] text-slate-500 uppercase font-black tracking-widest mb-1">
+              <div
+                className={`${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"} p-5 rounded-2xl border min-w-[180px] text-center shadow-sm`}>
+                <div
+                  className={`text-[9px] ${theme.sub} uppercase font-black tracking-widest mb-1`}>
                   Leading Team
                 </div>
-                <div className="text-xl font-bold text-slate-200 truncate">
+                <div className={`text-xl font-bold ${theme.text} truncate`}>
                   {auctionState.highestBidderName || "No Bids Yet"}
                 </div>
               </div>
@@ -288,7 +339,7 @@ export default function AuctionDashboard() {
               <div className="flex flex-wrap gap-4 justify-center">
                 <button
                   onClick={() => markUnsold(tournamentId, currentPlayer.id)}
-                  className="bg-[#0F1115] hover:bg-white/5 text-slate-400 px-8 py-4 rounded-xl font-black text-xs uppercase border border-white/10">
+                  className={`${lightMode ? "bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-200" : "bg-[#0F1115] hover:bg-white/5 text-slate-400 border-white/10"} px-8 py-4 rounded-xl font-black text-xs uppercase border transition-colors`}>
                   Pass
                 </button>
                 <button
@@ -296,21 +347,23 @@ export default function AuctionDashboard() {
                   className={`${
                     isPaused
                       ? "bg-teal-600 text-white"
-                      : "bg-amber-600/20 text-amber-500 border-amber-500/20"
+                      : lightMode
+                        ? "bg-amber-100 text-amber-700 border-amber-300"
+                        : "bg-amber-600/20 text-amber-500 border-amber-500/20"
                   } px-6 py-4 rounded-xl font-black text-xs uppercase border transition-all`}>
                   {isPaused ? "▶ Resume" : "⏸ Pause"}
                 </button>
                 {auctionState.highestBidderId && (
                   <button
                     onClick={reverseLastBid}
-                    className="bg-red-900/20 text-red-400 px-6 py-4 rounded-xl font-black text-xs uppercase border border-red-500/20">
+                    className={`${lightMode ? "bg-red-50 text-red-600 border-red-200" : "bg-red-900/20 text-red-400 border-red-500/20"} px-6 py-4 rounded-xl font-black text-xs uppercase border transition-colors`}>
                     Undo Bid
                   </button>
                 )}
                 <button
                   onClick={() => markSold(tournamentId)}
                   disabled={!auctionState.highestBidderId}
-                  className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-10 py-4 rounded-xl font-black text-xs uppercase shadow-xl disabled:opacity-20 transform active:scale-95 transition-all">
+                  className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-10 py-4 rounded-xl font-black text-xs uppercase shadow-xl disabled:opacity-30 transform active:scale-95 transition-all">
                   SOLD 🔨
                 </button>
               </div>
@@ -330,24 +383,30 @@ export default function AuctionDashboard() {
     if (filterRole !== "All")
       displayList = displayList.filter((p) => p.role === filterRole);
     return (
-      <div className="bg-[#1C2128] border border-white/5 rounded-[2rem] p-6 mb-8 shadow-xl">
+      <div
+        className={`${theme.card} border ${borderColor} rounded-[2rem] p-6 mb-8 shadow-sm`}>
         <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-          <div className="flex bg-[#0F1115] rounded-xl p-1 border border-white/5 overflow-x-auto no-scrollbar">
+          <div
+            className={`flex ${lightMode ? "bg-gray-100" : "bg-[#0F1115] border-white/5"} rounded-xl p-1 border overflow-x-auto no-scrollbar`}>
             {["upcoming", "sold", "unsold"].map((t) => (
               <button
                 key={t}
                 onClick={() => setQueueTab(t)}
                 className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
                   queueTab === t
-                    ? "bg-[#1C2128] text-white border border-white/10"
-                    : "text-slate-500 hover:text-slate-300"
+                    ? lightMode
+                      ? "bg-white text-teal-600 shadow-sm border border-gray-200"
+                      : "bg-[#1C2128] text-white border border-white/10 shadow-sm"
+                    : lightMode
+                      ? "text-gray-500 hover:text-gray-800"
+                      : "text-slate-500 hover:text-slate-300"
                 }`}>
                 {t}
               </button>
             ))}
           </div>
           <select
-            className="bg-[#0F1115] text-slate-300 text-xs border border-white/10 rounded-xl px-4 py-2.5 outline-none font-bold"
+            className={`${inputBgColor} text-xs rounded-xl px-4 py-2.5 outline-none font-bold`}
             value={filterRole}
             onChange={(e) => setFilterRole(e.target.value)}>
             <option>All</option>
@@ -361,9 +420,10 @@ export default function AuctionDashboard() {
           {displayList.map((player) => (
             <div
               key={player.id}
-              className="bg-[#0F1115] p-3 rounded-xl border border-white/5 flex justify-between items-center group hover:border-white/10 transition-all">
+              className={`${lightMode ? "bg-white border-gray-200 hover:border-teal-300" : "bg-[#0F1115] border-white/5 hover:border-white/10"} p-3 rounded-xl border flex justify-between items-center group transition-all shadow-sm`}>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-[#161920] overflow-hidden border border-white/5">
+                <div
+                  className={`w-10 h-10 rounded-lg overflow-hidden border ${lightMode ? "bg-gray-100 border-gray-200" : "bg-[#161920] border-white/5"}`}>
                   <img
                     src={
                       player.photoURL ||
@@ -374,10 +434,12 @@ export default function AuctionDashboard() {
                   />
                 </div>
                 <div>
-                  <div className="font-bold text-slate-200 text-sm truncate max-w-[120px]">
+                  <div
+                    className={`font-bold ${theme.text} text-sm truncate max-w-[120px]`}>
                     {player.name}
                   </div>
-                  <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">
+                  <div
+                    className={`text-[9px] ${theme.sub} font-bold uppercase tracking-wider`}>
                     {player.role}
                   </div>
                 </div>
@@ -385,9 +447,7 @@ export default function AuctionDashboard() {
               <div className="text-right">
                 <div
                   className={`text-xs font-mono font-bold ${
-                    player.status === "SOLD"
-                      ? "text-teal-400"
-                      : "text-slate-400"
+                    player.status === "SOLD" ? "text-teal-500" : theme.sub
                   }`}>
                   ₹
                   {(player.status === "SOLD"
@@ -396,7 +456,8 @@ export default function AuctionDashboard() {
                   ).toLocaleString()}
                 </div>
                 {player.status === "SOLD" && (
-                  <div className="text-[9px] text-slate-600 truncate max-w-[80px] font-bold uppercase mt-0.5">
+                  <div
+                    className={`text-[9px] ${theme.sub} truncate max-w-[80px] font-bold uppercase mt-0.5`}>
                     {teamsMap[player.teamId]}
                   </div>
                 )}
@@ -412,9 +473,11 @@ export default function AuctionDashboard() {
     return (
       <div className="mt-8 pb-20">
         <div className="flex justify-between items-center mb-6">
-          <h3 className="text-slate-100 font-black text-xl uppercase tracking-tighter italic">
+          <h3
+            className={`${theme.text} font-black text-xl uppercase tracking-tighter italic`}>
             Bidding Console{" "}
-            <span className="text-xs bg-[#1C2128] text-teal-500 px-3 py-1 rounded-lg font-black border border-teal-500/20 uppercase not-italic">
+            <span
+              className={`text-xs ${lightMode ? "bg-teal-50 text-teal-600 border-teal-200" : "bg-[#1C2128] text-teal-400 border-teal-500/20"} px-3 py-1 rounded-lg font-black border uppercase not-italic ml-2`}>
               Smart Rules Active
             </span>
           </h3>
@@ -424,7 +487,9 @@ export default function AuctionDashboard() {
               className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase transition-all border ${
                 ruleOverride
                   ? "bg-red-600 text-white border-red-500 shadow-lg shadow-red-900/20"
-                  : "bg-white/5 text-slate-500 border-white/10"
+                  : lightMode
+                    ? "bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200"
+                    : "bg-white/5 text-slate-500 border-white/10 hover:bg-white/10"
               }`}>
               {ruleOverride ? "⚠️ Rule Override: ON" : "Rule Override: OFF"}
             </button>
@@ -452,7 +517,6 @@ export default function AuctionDashboard() {
             const isNoBidsYet = !auctionState?.highestBidderId;
 
             // --- ROSTER SIZE LOGIC ---
-            // Fix: Add +1 if Owner exists but is missing from DB roster array
             let currentSquadSize = (team?.roster || []).length;
             const hasOwnerInRoster = team?.roster?.some((p) => p.isOwner);
             if (!hasOwnerInRoster && (team.isOwner || team.ownerName)) {
@@ -478,36 +542,28 @@ export default function AuctionDashboard() {
             const maxPossibleBid = remainingPurse - mandatoryReserve;
 
             // --- RULE CHECKS ---
-
-            // 1. Locked Slot Check
             const isLocked = team.lockedSlots?.includes(
-              auctionState.activeSlotId
+              auctionState.activeSlotId,
             );
 
-            // 2. Limit One Per Slot Check (ROBUST FIX)
-            // We look up the player in 'allPlayers' to ensure we get the auctionSlotId
             const limitActive = tournamentConfig?.limitOnePlayerPerSlot;
             const currentSlotId = auctionState?.activeSlotId;
 
             let hasPlayerInSlot = false;
             if (limitActive && currentSlotId && team.roster?.length > 0) {
-              // Get IDs of players this team has bought
               const teamPlayerIds = team.roster.map((p) => p.id);
-              // Check against the Master List (allPlayers) which definitely has the slot info
               hasPlayerInSlot = allPlayers.some(
                 (p) =>
                   teamPlayerIds.includes(p.id) &&
-                  String(p.auctionSlotId) === String(currentSlotId)
+                  String(p.auctionSlotId) === String(currentSlotId),
               );
             }
 
-            // 3. Icon Limit Check
             const currentIcons =
               team.roster?.filter((p) => p.isIcon).length || 0;
             const isIconLimitReached =
               currentPlayer?.isIcon && currentIcons >= maxIcons;
 
-            // 4. Max Bid Cap Check
             const isBidOverCap = bidAmountToPlace > maxBidPerPlayer;
 
             // --- VALIDATION DECISION ---
@@ -543,14 +599,16 @@ export default function AuctionDashboard() {
             return (
               <div
                 key={team.id}
-                className={`p-6 rounded-2xl border-2 relative transition-all duration-300 group ${
+                className={`p-6 rounded-2xl border-2 relative transition-all duration-300 group shadow-sm ${
                   isHighest
-                    ? "bg-teal-900/20 border-teal-500 shadow-lg scale-[1.02]"
-                    : "bg-[#1C2128] border-white/5"
+                    ? lightMode
+                      ? "bg-teal-50 border-teal-500 scale-[1.02] shadow-md"
+                      : "bg-teal-900/20 border-teal-500 scale-[1.02] shadow-lg"
+                    : `${theme.card} ${borderColor}`
                 } ${isDisabled && !isHighest ? "opacity-50 grayscale" : ""} 
                 ${isLocked ? "opacity-30 grayscale" : ""}`}>
                 {isHighest && (
-                  <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-teal-500 text-black text-xs px-4 py-1 rounded-full font-black uppercase tracking-widest shadow-lg z-20">
+                  <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-teal-500 text-white text-xs px-4 py-1 rounded-full font-black uppercase tracking-widest shadow-lg z-20">
                     Leading
                   </div>
                 )}
@@ -558,41 +616,46 @@ export default function AuctionDashboard() {
                 <div className="text-center mb-4 mt-2">
                   <div
                     className={`font-black truncate text-base uppercase italic mb-1 ${
-                      isHighest ? "text-teal-400" : "text-slate-100"
+                      isHighest
+                        ? "text-teal-600 dark:text-teal-400"
+                        : theme.text
                     }`}>
                     {team.name}
                   </div>
 
                   <div
                     className={`text-xs mt-1 font-bold uppercase tracking-wider ${
-                      errorReason ? "text-red-400" : "text-slate-400"
+                      errorReason ? "text-red-500" : theme.sub
                     }`}>
                     {errorReason ||
                       `Max Bid: ₹${(maxPossibleBid || 0).toLocaleString()}`}
                   </div>
 
-                  <div className="mt-4 space-y-1.5 border-y border-white/5 py-3">
+                  <div
+                    className={`mt-4 space-y-1.5 border-y py-3 ${lightMode ? "border-gray-200" : "border-white/5"}`}>
                     <div className="flex justify-between text-[10px] uppercase font-bold px-1">
-                      <span className="text-slate-500">Total Purse</span>
-                      <span className="text-slate-300">
+                      <span className={theme.sub}>Total Purse</span>
+                      <span className={theme.text}>
                         ₹{totalPurse.toLocaleString()}
                       </span>
                     </div>
                     <div className="flex justify-between text-[10px] uppercase font-bold px-1">
-                      <span className="text-slate-500">Total Spent</span>
-                      <span className="text-red-400">
+                      <span className={theme.sub}>Total Spent</span>
+                      <span className="text-red-500">
                         ₹{totalSpent.toLocaleString()}
                       </span>
                     </div>
-                    <div className="flex justify-between text-[11px] uppercase font-black px-1 pt-1 border-t border-white/5">
-                      <span className="text-slate-400">Balance</span>
-                      <span className="text-teal-400">
+                    <div
+                      className={`flex justify-between text-[11px] uppercase font-black px-1 pt-1 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+                      <span className={theme.sub}>Balance</span>
+                      <span className="text-teal-600 dark:text-teal-400">
                         ₹{remainingPurse.toLocaleString()}
                       </span>
                     </div>
                   </div>
 
-                  <div className="text-[10px] text-slate-500 uppercase font-bold tracking-tight mt-3">
+                  <div
+                    className={`text-[10px] uppercase font-bold tracking-tight mt-3 ${theme.sub}`}>
                     {playersStillNeeded > 0
                       ? `Reserve ₹${(
                           mandatoryReserve || 0
@@ -604,7 +667,8 @@ export default function AuctionDashboard() {
                 {canEdit ? (
                   <div className="mt-4 space-y-2">
                     {isLocked ? (
-                      <div className="py-3 px-4 bg-red-900/20 border border-red-500/20 rounded-xl text-[10px] text-red-500 font-black text-center uppercase tracking-widest">
+                      <div
+                        className={`py-3 px-4 rounded-xl text-[10px] font-black text-center uppercase tracking-widest border ${lightMode ? "bg-red-50 text-red-600 border-red-200" : "bg-red-900/20 text-red-500 border-red-500/20"}`}>
                         🔒 Slot Locked
                       </div>
                     ) : (
@@ -616,23 +680,25 @@ export default function AuctionDashboard() {
                               tournamentId,
                               team.id,
                               team.name,
-                              bidAmountToPlace
+                              bidAmountToPlace,
                             )
                           }
                           className={`w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
                             isHighest
-                              ? "bg-teal-500 text-black shadow-lg"
+                              ? "bg-teal-500 text-white shadow-lg"
                               : isDisabled
-                              ? "bg-[#0F1115] text-slate-600 cursor-not-allowed"
-                              : "bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 text-white shadow-lg"
+                                ? lightMode
+                                  ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
+                                  : "bg-[#0F1115] text-slate-600 cursor-not-allowed"
+                                : "bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 text-white shadow-lg"
                           }`}>
                           {isHighest
                             ? "Leading"
                             : !currentPlayer
-                            ? "Standby"
-                            : `Bid ₹${(
-                                bidAmountToPlace || 0
-                              ).toLocaleString()}`}
+                              ? "Standby"
+                              : `Bid ₹${(
+                                  bidAmountToPlace || 0
+                                ).toLocaleString()}`}
                         </button>
 
                         {canDirectBuy && !isDisabled && (
@@ -642,10 +708,10 @@ export default function AuctionDashboard() {
                                 tournamentId,
                                 team.id,
                                 team.name,
-                                currentPlayer
+                                currentPlayer,
                               )
                             }
-                            className="w-full py-2 bg-amber-600/10 hover:bg-amber-600 text-amber-500 hover:text-white border border-amber-600/30 rounded-xl text-[9px] font-black uppercase transition-all">
+                            className={`w-full py-2 rounded-xl text-[9px] font-black uppercase transition-all border ${lightMode ? "bg-amber-50 hover:bg-amber-500 text-amber-600 hover:text-white border-amber-200" : "bg-amber-600/10 hover:bg-amber-600 text-amber-500 hover:text-white border-amber-600/30"}`}>
                             ⚡ Direct Buy (Base)
                           </button>
                         )}
@@ -657,8 +723,10 @@ export default function AuctionDashboard() {
                     <span
                       className={`text-xs font-bold uppercase tracking-wider px-4 py-2 rounded-lg border ${
                         isHighest
-                          ? "bg-teal-500 text-black border-teal-500"
-                          : "bg-[#0F1115] border-white/5 text-slate-600"
+                          ? "bg-teal-500 text-white border-teal-500"
+                          : lightMode
+                            ? "bg-gray-100 border-gray-200 text-gray-500"
+                            : "bg-[#0F1115] border-white/5 text-slate-600"
                       }`}>
                       {isHighest ? "Leader" : "Waiting"}
                     </span>
@@ -674,18 +742,20 @@ export default function AuctionDashboard() {
 
   if (!auctionState)
     return (
-      <div className="min-h-screen bg-[#0F1115] flex items-center justify-center text-teal-500 animate-pulse font-black text-xl uppercase tracking-widest">
+      <div
+        className={`min-h-screen flex items-center justify-center animate-pulse font-black text-xl uppercase tracking-widest ${theme.bg} text-teal-500`}>
         Connecting...
       </div>
     );
 
   return (
-    <div className="min-h-screen bg-[#0F1115] px-4 pb-24 pt-24 font-sans text-slate-200">
+    <div
+      className={`min-h-screen px-4 pb-24 pt-24 font-sans ${theme.bg} ${theme.text}`}>
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <Link
             to={`/tournaments/${tournamentId}`}
-            className="text-slate-500 hover:text-white text-xs font-black uppercase tracking-widest flex items-center gap-2 transition-colors group">
+            className={`${theme.sub} hover:text-teal-500 text-xs font-black uppercase tracking-widest flex items-center gap-2 transition-colors group`}>
             <span className="group-hover:-translate-x-1 transition-transform">
               ←
             </span>{" "}
@@ -694,7 +764,7 @@ export default function AuctionDashboard() {
           {canEdit && (
             <button
               onClick={() => setShowAdmin(true)}
-              className="bg-[#1C2128] hover:bg-white/5 px-5 py-3 rounded-xl font-black text-xs text-teal-400 border border-teal-500/20 uppercase tracking-widest shadow-lg shadow-teal-900/10">
+              className={`${theme.card} ${lightMode ? "hover:bg-gray-50 border-gray-200" : "hover:bg-white/5 border-white/10"} px-5 py-3 rounded-xl font-black text-xs text-teal-500 border uppercase tracking-widest shadow-sm transition-colors`}>
               ⚙️ Admin Setup
             </button>
           )}

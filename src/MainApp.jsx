@@ -44,6 +44,10 @@ const MatchOverlay = lazy(
 const TournamentBanner = lazy(
   () => import("./components/Overlay/TournamentBanner"),
 );
+
+import BroadcastLayer from "./components/Overlay/BroadcastLayer.jsx";
+import OverlayControllerWrapper from "./components/Overlay/OverlayControllerWrapper.jsx";
+
 import RequireAuth from "./components/guards/RequireAuth.jsx";
 import RequireTournamentAccess from "./components/guards/RequireTournamentAccess.jsx";
 
@@ -127,6 +131,7 @@ function AppContent() {
             </div>
           }>
           <Routes>
+            {/* SOURCE 2: Existing Auto-Scorecard */}
             <Route
               path="/overlay/:tournamentId/active"
               element={<MatchOverlay />}
@@ -134,6 +139,12 @@ function AppContent() {
             <Route
               path="/overlay/tournament-banner/:tournamentId"
               element={<TournamentBanner />}
+            />
+
+            {/* 🔴 SOURCE 3: NEW Auto-Broadcast Layer */}
+            <Route
+              path="/overlay/:tournamentId/broadcast/active"
+              element={<BroadcastLayer />}
             />
           </Routes>
         </Suspense>
@@ -312,6 +323,10 @@ function AppContent() {
                   <LiveScoring />
                 </RequireTournamentAccess>
               }
+            />
+            <Route
+              path="/broadcast-control/:tournamentId/:matchId"
+              element={<OverlayControllerWrapper />}
             />
             <Route path="/scoreboard" element={<Scoreboard />} />
             <Route path="/dashboard" element={<Dashboard />} />

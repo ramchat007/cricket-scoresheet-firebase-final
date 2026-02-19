@@ -19,6 +19,7 @@ import {
 import { db } from "../utils/firebase";
 import { listGlobalPlayers } from "../utils/firestore";
 import { useAuth } from "../hooks/useAuth";
+import { useTheme } from "../context/ThemeContext";
 import MatchScheduler from "./MatchScheduler";
 import AuctionOwnersAdmin from "./AuctionOwnersAdmin";
 
@@ -26,8 +27,8 @@ import AuctionOwnersAdmin from "./AuctionOwnersAdmin";
 const PlayerRow = React.memo(
   ({
     p,
-    teams, // Pass simple array for dropdown
-    teamsMap, // Pass map for lookup
+    teams,
+    teamsMap,
     poolFilter,
     onAssign,
     onUpdatePrice,
@@ -37,33 +38,37 @@ const PlayerRow = React.memo(
     slots,
     tournamentId,
   }) => {
+    const { theme, lightMode } = useTheme();
     const [tempTeam, setTempTeam] = useState("");
-    // Local state for price to avoid parent re-renders on every keystroke
     const [tempPrice, setTempPrice] = useState(p.basePrice || 100);
 
-    // Sync local price if parent updates (e.g. reset)
     useEffect(() => {
       setTempPrice(p.basePrice || 100);
     }, [p.basePrice]);
 
-    // Handler for Assign button to prevent inline function creation
     const handleAssignClick = () => {
       onAssign(p.id, tempTeam, tempPrice);
     };
 
-    // Handler for Price Blur (save on exit) instead of every keystroke
     const handlePriceBlur = () => {
       if (tempPrice !== p.basePrice) {
         onUpdatePrice(p.id, tempPrice);
       }
     };
 
+    const inputClass = `border rounded-lg p-2 text-[10px] outline-none font-bold ${
+      lightMode
+        ? "bg-white border-gray-300 text-gray-900 focus:border-teal-500"
+        : "bg-[#0F1115] border-teal-500/20 text-slate-300 focus:border-teal-500/50"
+    }`;
+
     return (
-      <tr className="hover:bg-[#0F1115]/50 transition-colors group">
-        <td className="p-5 font-bold text-slate-200 whitespace-nowrap">
+      <tr
+        className={`hover:${lightMode ? "bg-gray-50" : "bg-[#0F1115]/50"} transition-colors group`}>
+        <td className={`p-5 font-bold ${theme.text} whitespace-nowrap`}>
           <div>
             {p.name}
-            <div className="text-[9px] text-slate-500 uppercase mt-1">
+            <div className={`text-[9px] ${theme.sub} uppercase mt-1`}>
               {p.role}
             </div>
           </div>
@@ -72,7 +77,7 @@ const PlayerRow = React.memo(
           {p.status !== "SOLD" ? (
             <div className="flex items-center gap-2">
               <select
-                className="bg-[#0F1115] border border-teal-500/20 rounded-lg p-2 text-[10px] text-slate-300 outline-none w-32 font-bold"
+                className={`${inputClass} w-32`}
                 value={tempTeam}
                 onChange={(e) => setTempTeam(e.target.value)}>
                 <option value="">Select Team</option>
@@ -84,30 +89,30 @@ const PlayerRow = React.memo(
               </select>
               <input
                 type="number"
-                className="bg-[#0F1115] border border-teal-500/20 rounded-lg p-2 text-[10px] text-teal-400 w-20 outline-none font-bold"
+                className={`${inputClass} w-20 text-teal-500`}
                 value={tempPrice}
                 onChange={(e) => setTempPrice(e.target.value)}
               />
               <button
                 onClick={handleAssignClick}
-                className="bg-teal-600 text-white px-3 py-2 rounded-lg text-[9px] font-black uppercase hover:bg-teal-500 transition-colors">
+                className="bg-teal-600 text-white px-3 py-2 rounded-lg text-[9px] font-black uppercase hover:bg-teal-500 transition-colors shadow-sm">
                 Assign
               </button>
             </div>
           ) : (
-            <span className="text-[9px] text-teal-500 font-bold uppercase">
+            <span className="text-[9px] text-teal-600 dark:text-teal-500 font-bold uppercase">
               Sold to {teamsMap[p.teamId]}
             </span>
           )}
         </td>
         <td className="p-5">
           <select
-            className="bg-[#0F1115] border border-white/10 rounded-lg p-2 text-[10px] text-slate-300 outline-none w-full max-w-[160px] font-bold cursor-pointer"
+            className={`${inputClass} w-full max-w-[160px] cursor-pointer`}
             value={p.auctionSlotId || ""}
             onChange={(e) =>
               updateDoc(
                 doc(db, "tournaments", tournamentId, "auctionPlayers", p.id),
-                { auctionSlotId: e.target.value }
+                { auctionSlotId: e.target.value },
               )
             }>
             <option value="">-- Unassigned --</option>
@@ -120,18 +125,22 @@ const PlayerRow = React.memo(
         </td>
         <td className="p-5 font-mono">
           {poolFilter === "SOLD" ? (
-            <span className="text-green-400 font-bold text-sm">
+            <span className="text-emerald-600 dark:text-green-400 font-bold text-sm">
               ₹{p.soldPrice?.toLocaleString()}
             </span>
           ) : (
             <div className="flex items-center gap-2 text-xs">
-              <span className="text-slate-600">₹</span>
+              <span className={theme.sub}>₹</span>
               <input
                 type="number"
-                className="bg-[#0F1115] border border-white/10 rounded-lg px-2 py-1.5 w-24 text-slate-200 outline-none font-bold"
+                className={`border rounded-lg px-2 py-1.5 w-24 outline-none font-bold ${
+                  lightMode
+                    ? "bg-white border-gray-300 text-gray-900"
+                    : "bg-[#0F1115] border-white/10 text-slate-200"
+                }`}
                 value={tempPrice}
                 onChange={(e) => setTempPrice(e.target.value)}
-                onBlur={handlePriceBlur} // Update DB only on blur for performance
+                onBlur={handlePriceBlur}
               />
             </div>
           )}
@@ -141,35 +150,48 @@ const PlayerRow = React.memo(
             onClick={() => onToggleIcon(p)}
             className={`text-lg transition-all ${
               p.isIcon
-                ? "text-amber-400 scale-110"
-                : "text-slate-700 hover:text-slate-500"
+                ? "text-amber-500 scale-110"
+                : "text-gray-400 hover:text-gray-500 dark:text-slate-700 dark:hover:text-slate-500"
             }`}>
             ★
           </button>
           {(poolFilter === "UNSOLD" || poolFilter === "SOLD") && (
             <button
               onClick={() => onReset(p.id)}
-              className="bg-teal-900/20 text-teal-400 border border-teal-500/20 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase hover:bg-teal-900/30">
+              className={`border px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-colors ${
+                lightMode
+                  ? "bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100"
+                  : "bg-teal-900/20 text-teal-400 border-teal-500/20 hover:bg-teal-900/30"
+              }`}>
               ↺ Reset
             </button>
           )}
           <button
             onClick={() => onDelete(p.id)}
-            className="text-slate-700 hover:text-red-500 transition-colors p-2">
+            className={`${theme.sub} hover:text-red-500 transition-colors p-2`}>
             🗑
           </button>
         </td>
       </tr>
     );
-  }
-); // End React.memo
+  },
+);
 
 // --- GLOBAL PLAYER PICKER MODAL ---
-const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
+const GlobalPlayerPicker = ({
+  isOpen,
+  onClose,
+  onImport,
+  existingIds,
+  tournamentId,
+}) => {
+  const { theme, lightMode } = useTheme();
   const [players, setPlayers] = useState([]);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  const [tournamentOnly, setTournamentOnly] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -182,6 +204,7 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
     } else {
       setSelected([]);
       setSearch("");
+      setTournamentOnly(false);
     }
   }, [isOpen, existingIds]);
 
@@ -194,35 +217,123 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
   };
 
   if (!isOpen) return null;
-  const filtered = players.filter((p) =>
-    p.name.toLowerCase().includes(search.toLowerCase())
-  );
+
+  const filtered = players.filter((p) => {
+    const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase());
+
+    let matchesTourney = true;
+    if (tournamentOnly && tournamentId) {
+      matchesTourney =
+        String(p.tournamentId) === String(tournamentId) ||
+        String(p.tournament) === String(tournamentId) ||
+        String(p.tId) === String(tournamentId) ||
+        (Array.isArray(p.tournaments) &&
+          p.tournaments.includes(tournamentId)) ||
+        (Array.isArray(p.registeredTournaments) &&
+          p.registeredTournaments.includes(tournamentId));
+    }
+
+    return matchesSearch && matchesTourney;
+  });
+
+  // ✅ NEW: Select All Logic
+  const isAllSelected =
+    filtered.length > 0 &&
+    filtered.every((p) => selected.some((s) => s.id === p.id));
+
+  const handleSelectAll = () => {
+    if (isAllSelected) {
+      // Deselect all CURRENTLY FILTERED players
+      setSelected((prev) =>
+        prev.filter((s) => !filtered.some((f) => f.id === s.id)),
+      );
+    } else {
+      // Select all CURRENTLY FILTERED players (without duplicating)
+      setSelected((prev) => {
+        const newSelected = [...prev];
+        filtered.forEach((f) => {
+          if (!newSelected.some((s) => s.id === f.id)) {
+            newSelected.push(f);
+          }
+        });
+        return newSelected;
+      });
+    }
+  };
+
+  const borderClass = lightMode ? "border-gray-200" : "border-white/10";
+  const headerFooterBg = lightMode ? "bg-gray-50" : "bg-[#1C2128]";
+  const inputBg = lightMode
+    ? "bg-white text-gray-900 placeholder:text-gray-400"
+    : "bg-[#0F1115] text-slate-200";
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-[#0F1115]/95 p-4 backdrop-blur-md">
-      <div className="bg-[#1C2128] border border-white/10 w-full max-w-lg rounded-3xl flex flex-col max-h-[80vh] shadow-2xl">
-        <div className="p-6 border-b border-white/5 flex justify-between items-center bg-[#1C2128]">
-          <h3 className="text-slate-100 font-black uppercase tracking-tight text-lg italic">
+    <div
+      className={`fixed inset-0 z-[120] flex items-center justify-center p-4 backdrop-blur-md ${lightMode ? "bg-white/80" : "bg-[#0F1115]/95"}`}>
+      <div
+        className={`${theme.card} border ${borderClass} w-full max-w-lg rounded-3xl flex flex-col max-h-[80vh] shadow-2xl`}>
+        <div
+          className={`p-6 border-b ${borderClass} flex justify-between items-center ${headerFooterBg} rounded-t-3xl`}>
+          <h3
+            className={`${theme.text} font-black uppercase tracking-tight text-lg italic`}>
             Global Database
           </h3>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white/5 text-slate-400">
+            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+              lightMode
+                ? "bg-gray-200 text-gray-600 hover:bg-gray-300"
+                : "bg-white/5 text-slate-400 hover:bg-white/10"
+            }`}>
             ✕
           </button>
         </div>
-        <div className="p-4 bg-[#161920]">
+
+        <div className={`p-4 border-b ${borderClass}`}>
           <input
-            className="w-full bg-[#0F1115] border border-white/10 rounded-xl px-4 py-3 text-slate-200 outline-none"
-            placeholder="Search..."
+            className={`w-full border ${borderClass} rounded-xl px-4 py-3 outline-none focus:border-teal-500 font-bold ${inputBg}`}
+            placeholder="Search players..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+
+          <div className="flex justify-between items-center mt-3">
+            <label
+              className={`flex items-center gap-2 cursor-pointer text-[10px] sm:text-xs font-bold ${theme.sub}`}>
+              <input
+                type="checkbox"
+                checked={tournamentOnly}
+                onChange={(e) => setTournamentOnly(e.target.checked)}
+                className="w-4 h-4 accent-teal-600 rounded"
+              />
+              Filter by Tournament
+            </label>
+
+            {/* ✅ NEW: Select All Button */}
+            <button
+              onClick={handleSelectAll}
+              disabled={filtered.length === 0}
+              className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg border transition-all disabled:opacity-30 ${
+                isAllSelected
+                  ? "bg-teal-500 text-white border-teal-500 shadow-md"
+                  : lightMode
+                    ? "bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200"
+                    : "bg-white/5 text-slate-300 border-white/10 hover:bg-white/10"
+              }`}>
+              {isAllSelected ? "Deselect All" : "Select All"}
+            </button>
+          </div>
         </div>
+
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
           {loading ? (
-            <div className="text-center py-10 text-teal-500 animate-pulse">
+            <div className="text-center py-10 text-teal-500 animate-pulse font-bold">
               Loading...
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className={`text-center py-10 italic text-xs ${theme.sub}`}>
+              No players found.{" "}
+              {tournamentOnly ? "Try unchecking the tournament filter." : ""}
             </div>
           ) : (
             filtered.map((p) => {
@@ -231,45 +342,60 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
                 <div
                   key={p.id}
                   onClick={() => toggleSelect(p)}
-                  className={`flex items-center justify-between p-3 rounded-xl cursor-pointer border ${
+                  className={`flex items-center justify-between p-3 rounded-xl cursor-pointer border transition-all ${
                     isSel
-                      ? "bg-teal-500/10 border-teal-500/50"
-                      : "bg-[#0F1115] border-white/5"
+                      ? lightMode
+                        ? "bg-teal-50 border-teal-500 shadow-sm"
+                        : "bg-teal-500/10 border-teal-500/50"
+                      : lightMode
+                        ? "bg-white border-gray-200 hover:border-teal-300"
+                        : "bg-[#0F1115] border-white/5 hover:border-white/10"
                   }`}>
                   <div className="flex items-center gap-3">
                     <div
                       className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black ${
                         isSel
-                          ? "bg-teal-500 text-black"
-                          : "bg-white/5 text-slate-500"
+                          ? lightMode
+                            ? "bg-teal-100 text-teal-700"
+                            : "bg-teal-500 text-black"
+                          : lightMode
+                            ? "bg-gray-100 text-gray-600"
+                            : "bg-white/5 text-slate-500"
                       }`}>
                       {p.name.charAt(0)}
                     </div>
                     <div>
-                      <div className="text-sm font-bold text-slate-200">
+                      <div
+                        className={`text-sm font-bold ${isSel ? (lightMode ? "text-teal-700" : "text-teal-400") : theme.text}`}>
                         {p.name}
                       </div>
-                      <div className="text-[10px] text-slate-500 uppercase">
+                      <div
+                        className={`text-[10px] ${theme.sub} uppercase font-bold tracking-wider`}>
                         {p.role}
                       </div>
                     </div>
                   </div>
-                  {isSel && <div className="text-teal-400 font-black">✓</div>}
+                  {isSel && <div className="text-teal-500 font-black">✓</div>}
                 </div>
               );
             })
           )}
         </div>
-        <div className="p-6 border-t border-white/5 flex justify-end gap-3">
+        <div
+          className={`p-6 border-t ${borderClass} flex justify-end gap-3 rounded-b-3xl ${headerFooterBg}`}>
           <button
             onClick={onClose}
-            className="px-6 py-3 text-slate-500 text-xs font-black uppercase">
+            className={`px-6 py-3 border rounded-xl font-black uppercase text-xs transition-colors ${
+              lightMode
+                ? "text-gray-600 border-gray-300 hover:bg-gray-200"
+                : "text-slate-500 border-white/10 hover:bg-white/5"
+            }`}>
             Cancel
           </button>
           <button
             onClick={() => onImport(selected)}
             disabled={selected.length === 0}
-            className="bg-teal-600 text-white px-6 py-3 rounded-xl font-black text-xs uppercase shadow-lg disabled:opacity-20">
+            className="bg-teal-600 text-white px-6 py-3 rounded-xl font-black text-xs uppercase shadow-lg disabled:opacity-30 active:scale-95 transition-all">
             Import {selected.length} Players
           </button>
         </div>
@@ -281,6 +407,8 @@ const GlobalPlayerPicker = ({ isOpen, onClose, onImport, existingIds }) => {
 // --- 3. MAIN SETUP PANEL ---
 export default function AuctionAdminPanel({ tournamentId, onClose }) {
   const { user } = useAuth();
+  const { theme, lightMode } = useTheme();
+
   const [tab, setTab] = useState("pool");
   const [roleFilter, setRoleFilter] = useState("All");
   const [slotFilter, setSlotFilter] = useState("All");
@@ -315,15 +443,23 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
 
   const [config, setConfig] = useState(systemDefaults);
 
+  // Helper missing in original code
+  const handleCancelEdit = () => {
+    setEditingSlotId(null);
+    setEditingSlotName("");
+  };
+
   // --- PERMISSION CHECK ---
   useEffect(() => {
     async function checkPermission() {
-      if (!user) return setHasAccess(false), setCheckingAccess(false);
+      if (!user) return (setHasAccess(false), setCheckingAccess(false));
       const docSnap = await getDoc(doc(db, "tournaments", tournamentId));
       if (docSnap.exists()) {
         const data = docSnap.data();
         const isOwner =
-          data.ownerId === user.uid || data.createdBy === user.uid;
+          (Array.isArray(data.ownerId)
+            ? data.ownerId.includes(user.uid)
+            : data.ownerId === user.uid) || data.createdBy === user.uid;
         const isAdmin =
           Array.isArray(data.admins) && data.admins.includes(user.uid);
         const isSuperAdmin = user.email === "ramchat007@gmail.com";
@@ -338,36 +474,32 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
   useEffect(() => {
     if (!hasAccess) return;
 
-    // Players Listener
     const unsubPool = onSnapshot(
       query(
         collection(db, "tournaments", tournamentId, "auctionPlayers"),
-        orderBy("name")
+        orderBy("name"),
       ),
       (snap) => {
         const players = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        // Only update state if data actually changed to reduce re-renders
         setAuctionPlayers(players);
-      }
+      },
     );
 
-    // Teams Listener
     const unsubTeams = onSnapshot(
       collection(db, "tournaments", tournamentId, "teams"),
       (snap) => {
         setTeams(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      }
+      },
     );
 
-    // Slots Listener
     const unsubSlots = onSnapshot(
       query(
         collection(db, "tournaments", tournamentId, "auction_slots"),
-        orderBy("order")
+        orderBy("order"),
       ),
       (snap) => {
         setSlots(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      }
+      },
     );
 
     getDocs(collection(db, "users")).then((snap) => {
@@ -375,7 +507,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
     });
 
     getDoc(doc(db, "tournaments", tournamentId)).then(
-      (s) => s.exists() && setConfig((prev) => ({ ...prev, ...s.data() }))
+      (s) => s.exists() && setConfig((prev) => ({ ...prev, ...s.data() })),
     );
     return () => {
       unsubPool();
@@ -384,21 +516,17 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
     };
   }, [tournamentId, hasAccess]);
 
-  // --- MEMOIZED HELPERS ---
   const teamsMap = useMemo(() => {
     return Object.fromEntries(teams.map((t) => [t.id, t.name]));
   }, [teams]);
 
-  // --- HANDLERS (OPTIMISTIC UI) ---
-
-  // 1. Optimistic Toggle Icon
+  // --- HANDLERS ---
   const handleToggleIcon = useCallback(
     async (player) => {
-      // Immediate UI Update
       setAuctionPlayers((current) =>
         current.map((p) =>
-          p.id === player.id ? { ...p, isIcon: !p.isIcon } : p
-        )
+          p.id === player.id ? { ...p, isIcon: !p.isIcon } : p,
+        ),
       );
 
       const playerRef = doc(
@@ -406,21 +534,19 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
         "tournaments",
         tournamentId,
         "auctionPlayers",
-        player.id
+        player.id,
       );
       const newStatus = !player.isIcon;
 
       try {
         await updateDoc(playerRef, { isIcon: newStatus });
-
-        // Update team roster if applicable
         if (player.teamId) {
           const teamRef = doc(
             db,
             "tournaments",
             tournamentId,
             "teams",
-            player.teamId
+            player.teamId,
           );
           await runTransaction(db, async (tx) => {
             const teamSnap = await tx.get(teamRef);
@@ -440,31 +566,28 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
         }
       } catch (error) {
         console.error("Icon Sync Error:", error);
-        // Revert on error
         setAuctionPlayers((current) =>
           current.map((p) =>
-            p.id === player.id ? { ...p, isIcon: !newStatus } : p
-          )
+            p.id === player.id ? { ...p, isIcon: !newStatus } : p,
+          ),
         );
         alert("Failed to sync icon status.");
       }
     },
-    [tournamentId]
+    [tournamentId],
   );
 
-  // 2. Optimistic Force Assign
   const forceAssignPlayer = useCallback(
     async (playerId, teamId, price) => {
       if (!teamId) return alert("Select team!");
       if (!window.confirm("Confirm Force Assign?")) return;
 
-      // Immediate UI Update (Optimistic)
       setAuctionPlayers((current) =>
         current.map((p) =>
           p.id === playerId
             ? { ...p, status: "SOLD", teamId: teamId, soldPrice: Number(price) }
-            : p
-        )
+            : p,
+        ),
       );
 
       try {
@@ -474,7 +597,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
             "tournaments",
             tournamentId,
             "auctionPlayers",
-            playerId
+            playerId,
           );
           const tRef = doc(db, "tournaments", tournamentId, "teams", teamId);
 
@@ -515,50 +638,39 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
             bidHistory: [historyEntry],
           });
         });
-        // No alert needed if UI is instant, or use a toast
       } catch (e) {
-        // Revert if failed
         alert(e.message);
-        // Logic to revert state would technically require refetching,
-        // but onSnapshot will handle corrections eventually.
       }
     },
-    [tournamentId]
+    [tournamentId],
   );
 
-  // 3. Update Price
   const handleUpdatePrice = useCallback(
     async (playerId, val) => {
-      // Optimistic update
       setAuctionPlayers((current) =>
         current.map((p) =>
-          p.id === playerId ? { ...p, basePrice: Number(val) } : p
-        )
+          p.id === playerId ? { ...p, basePrice: Number(val) } : p,
+        ),
       );
       await updateDoc(
         doc(db, "tournaments", tournamentId, "auctionPlayers", playerId),
-        {
-          basePrice: Number(val),
-        }
+        { basePrice: Number(val) },
       );
     },
-    [tournamentId]
+    [tournamentId],
   );
 
-  // 4. Delete Player
   const handleDeletePlayer = useCallback(
     async (playerId) => {
       if (!window.confirm("Remove?")) return;
-      // Optimistic Remove
       setAuctionPlayers((current) => current.filter((p) => p.id !== playerId));
       await deleteDoc(
-        doc(db, "tournaments", tournamentId, "auctionPlayers", playerId)
+        doc(db, "tournaments", tournamentId, "auctionPlayers", playerId),
       );
     },
-    [tournamentId]
+    [tournamentId],
   );
 
-  // 5. Reset Player
   const reAddPlayer = useCallback(
     async (playerId) => {
       if (!window.confirm("Reset Player?")) return;
@@ -569,7 +681,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
             "tournaments",
             tournamentId,
             "auctionPlayers",
-            playerId
+            playerId,
           );
           const pData = (await tx.get(pRef)).data();
 
@@ -579,15 +691,15 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
               "tournaments",
               tournamentId,
               "teams",
-              pData.teamId
+              pData.teamId,
             );
             const tData = (await tx.get(tRef)).data();
             const newSpent = Math.max(
               0,
-              (tData.spent || 0) - (pData.soldPrice || 0)
+              (tData.spent || 0) - (pData.soldPrice || 0),
             );
             const newRoster = (tData.roster || []).filter(
-              (item) => item.id !== playerId
+              (item) => item.id !== playerId,
             );
             tx.update(tRef, { spent: newSpent, roster: newRoster });
           }
@@ -597,7 +709,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
         alert(e.message);
       }
     },
-    [tournamentId]
+    [tournamentId],
   );
 
   // --- CONFIG HANDLERS ---
@@ -655,7 +767,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
     alert("Auction Signal Repaired!");
   };
 
-  // --- SLOT & TEAM HANDLERS ---
+  // --- SLOT HANDLERS ---
   const handleCreateSlot = async () => {
     if (!newSlotName) return;
     await addDoc(collection(db, "tournaments", tournamentId, "auction_slots"), {
@@ -679,12 +791,12 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
     }
     await updateDoc(
       doc(db, `tournaments/${tournamentId}/auction_slots`, slotId),
-      { name: editingSlotName.trim() }
+      { name: editingSlotName.trim() },
     );
     setSlots((prev) =>
       prev.map((s) =>
-        s.id === slotId ? { ...s, name: editingSlotName.trim() } : s
-      )
+        s.id === slotId ? { ...s, name: editingSlotName.trim() } : s,
+      ),
     );
     setEditingSlotId(null);
     setEditingSlotName("");
@@ -693,7 +805,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
   const handleDeleteSlot = async (slotId) =>
     window.confirm("Delete?") &&
     (await deleteDoc(
-      doc(db, "tournaments", tournamentId, "auction_slots", slotId)
+      doc(db, "tournaments", tournamentId, "auction_slots", slotId),
     ));
 
   const handleImport = async (uniqueSelection) => {
@@ -702,7 +814,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
       db,
       "tournaments",
       tournamentId,
-      "auctionPlayers"
+      "auctionPlayers",
     );
     uniqueSelection.forEach((p) => {
       const newRef = doc(colRef);
@@ -735,18 +847,18 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
       allRounders: auctionPlayers.filter((p) => p.role === "All-Rounder")
         .length,
     }),
-    [auctionPlayers]
+    [auctionPlayers],
   );
 
   const slotCounts = useMemo(
     () =>
       slots.reduce((acc, slot) => {
         acc[slot.id] = auctionPlayers.filter(
-          (p) => p.auctionSlotId === slot.id
+          (p) => p.auctionSlotId === slot.id,
         ).length;
         return acc;
       }, {}),
-    [slots, auctionPlayers]
+    [slots, auctionPlayers],
   );
 
   const unassignedCount = auctionPlayers.filter((p) => !p.auctionSlotId).length;
@@ -769,49 +881,64 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
     });
   }, [auctionPlayers, poolFilter, roleFilter, slotFilter]);
 
+  // --- STYLES HELPER ---
+  const borderClass = lightMode ? "border-gray-200" : "border-white/5";
+  const inputBgClass = lightMode
+    ? "bg-white border-gray-200 text-gray-900"
+    : "bg-[#0F1115] border-white/10 text-slate-200";
+
   if (checkingAccess)
     return (
-      <div className="fixed inset-0 bg-[#0F1115] flex items-center justify-center text-teal-500 font-bold">
+      <div
+        className={`fixed inset-0 ${theme.bg} flex items-center justify-center text-teal-500 font-bold z-[100]`}>
         Checking Access...
       </div>
     );
   if (!hasAccess)
     return (
-      <div className="fixed inset-0 bg-[#0F1115] flex items-center justify-center text-red-500 font-black uppercase">
+      <div
+        className={`fixed inset-0 ${theme.bg} flex items-center justify-center text-red-500 font-black uppercase z-[100]`}>
         Access Denied
       </div>
     );
 
   return (
-    <div className="fixed inset-0 z-[100] bg-[#0F1115] flex flex-col overflow-hidden">
+    <div
+      className={`fixed inset-0 z-[100] ${theme.bg} flex flex-col overflow-hidden`}>
       <GlobalPlayerPicker
         isOpen={showPicker}
         onClose={() => setShowPicker(false)}
         onImport={handleImport}
         existingIds={auctionPlayers.map((p) => p.originalPlayerId)}
+        tournamentId={tournamentId}
       />
 
-      <div className="p-4 border-b border-white/5 flex justify-between items-center bg-[#1C2128]">
-        <h2 className="text-lg font-black text-slate-100 flex items-center gap-3 uppercase tracking-tighter italic">
-          <span className="bg-teal-600 p-1.5 rounded-lg text-sm">⚙️</span>{" "}
+      <div
+        className={`p-4 border-b ${borderClass} flex justify-between items-center ${theme.card}`}>
+        <h2
+          className={`${theme.text} font-black flex items-center gap-3 uppercase tracking-tighter italic text-lg`}>
+          <span className="bg-teal-600 text-white p-1.5 rounded-lg text-sm">
+            ⚙️
+          </span>{" "}
           Auction Setup
         </h2>
         <button
           onClick={onClose}
-          className="bg-white/5 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase">
+          className={`${lightMode ? "bg-gray-200 hover:bg-gray-300 text-gray-700" : "bg-white/5 hover:bg-white/10 text-white"} px-5 py-2.5 rounded-xl text-[10px] font-black uppercase transition-colors`}>
           Close
         </button>
       </div>
 
-      <div className="flex border-b border-white/5 bg-[#161920] overflow-x-auto no-scrollbar">
+      <div
+        className={`flex border-b ${borderClass} ${lightMode ? "bg-gray-50" : "bg-[#161920]"} overflow-x-auto no-scrollbar`}>
         {["pool", "slots", "config", "teams", "matches"].map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={`flex-1 min-w-[90px] py-4 text-[10px] font-black uppercase tracking-wider transition-all border-b-2 ${
               tab === t
-                ? "text-teal-400 border-teal-400 bg-teal-500/5"
-                : "text-slate-500 border-transparent"
+                ? "text-teal-500 border-teal-500 bg-teal-500/5"
+                : `${theme.sub} border-transparent hover:${theme.text}`
             }`}>
             {t === "config" ? "Rules" : t === "teams" ? "Teams & Owners" : t}
           </button>
@@ -820,26 +947,29 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8 max-w-7xl mx-auto w-full">
         {tab === "config" && (
-          /* ... Config UI (Same as before) ... */
           <div className="space-y-6">
-            <div className="bg-teal-900/10 border border-teal-500/20 p-6 rounded-2xl flex justify-between items-center">
+            <div
+              className={`border p-6 rounded-2xl flex justify-between items-center ${lightMode ? "bg-teal-50 border-teal-200" : "bg-teal-900/10 border-teal-500/20"}`}>
               <div>
-                <h4 className="text-teal-400 font-black text-xs uppercase">
+                <h4 className="text-teal-600 dark:text-teal-400 font-black text-xs uppercase">
                   Repair Auction Signal
                 </h4>
-                <p className="text-slate-500 text-[10px]">
+                <p
+                  className={`text-[10px] ${lightMode ? "text-teal-800/60" : "text-slate-500"}`}>
                   Use if dashboard is stuck
                 </p>
               </div>
               <button
                 onClick={forceAuctionReady}
-                className="bg-teal-600 px-6 py-2 rounded-xl text-[10px] font-black uppercase">
+                className="bg-teal-600 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-teal-700 transition-colors shadow-sm">
                 Repair
               </button>
             </div>
-            <div className="bg-[#0F1115] p-6 rounded-2xl border border-white/5 flex justify-between items-center mt-4">
+
+            <div
+              className={`${theme.card} p-6 rounded-2xl border ${borderClass} flex justify-between items-center mt-4 shadow-sm`}>
               <div>
-                <h4 className="text-white font-black text-xs uppercase">
+                <h4 className={`${theme.text} font-black text-xs uppercase`}>
                   Limit: 1 Player Per Slot
                 </h4>
               </div>
@@ -851,7 +981,9 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   })
                 }
                 className={`w-14 h-8 rounded-full transition-all relative ${
-                  config.limitOnePlayerPerSlot ? "bg-teal-600" : "bg-slate-700"
+                  config.limitOnePlayerPerSlot
+                    ? "bg-teal-600"
+                    : "bg-gray-300 dark:bg-slate-700"
                 }`}>
                 <div
                   className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${
@@ -859,9 +991,11 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   }`}></div>
               </button>
             </div>
-            <div className="bg-[#0F1115] p-6 rounded-2xl border border-white/5 flex justify-between items-center mt-4">
+
+            <div
+              className={`${theme.card} p-6 rounded-2xl border ${borderClass} flex justify-between items-center mt-4 shadow-sm`}>
               <div>
-                <h4 className="text-white font-black text-xs uppercase">
+                <h4 className={`${theme.text} font-black text-xs uppercase`}>
                   Allow Direct Buy
                 </h4>
               </div>
@@ -873,7 +1007,9 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   })
                 }
                 className={`w-14 h-8 rounded-full transition-all relative ${
-                  config.allowDirectBuy ? "bg-teal-600" : "bg-slate-700"
+                  config.allowDirectBuy
+                    ? "bg-teal-600"
+                    : "bg-gray-300 dark:bg-slate-700"
                 }`}>
                 <div
                   className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${
@@ -882,15 +1018,16 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
               </button>
             </div>
 
-            <div className="bg-[#1C2128] border border-white/5 p-8 rounded-[2rem] shadow-2xl relative overflow-hidden">
+            <div
+              className={`${theme.card} border ${borderClass} p-8 rounded-[2rem] shadow-xl relative overflow-hidden`}>
               <div className="mb-10">
                 <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-slate-100 font-black uppercase text-xs">
+                  <h3 className={`${theme.text} font-black uppercase text-xs`}>
                     Dynamic Bidding Slabs
                   </h3>
                   <button
                     onClick={addSlab}
-                    className="bg-teal-600 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest">
+                    className="bg-teal-600 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-teal-700 shadow-sm transition-colors">
                     + Add Slab
                   </button>
                 </div>
@@ -898,27 +1035,29 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   {(config.bidSlabs || []).map((slab, index) => (
                     <div
                       key={index}
-                      className="flex gap-4 items-center bg-[#0F1115] p-3 rounded-xl border border-white/5">
+                      className={`flex gap-4 items-center p-3 rounded-xl border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
                       <div className="flex-1">
-                        <label className="text-[8px] text-slate-500 block mb-1 uppercase font-black">
+                        <label
+                          className={`text-[8px] ${theme.sub} block mb-1 uppercase font-black`}>
                           Up to (₹)
                         </label>
                         <input
                           type="number"
-                          className="bg-transparent text-white font-bold outline-none w-full"
+                          className={`bg-transparent ${theme.text} font-bold outline-none w-full`}
                           value={slab.max}
                           onChange={(e) =>
                             updateSlab(index, "max", e.target.value)
                           }
                         />
                       </div>
-                      <div className="flex-1 border-l border-white/10 pl-4">
+                      <div
+                        className={`flex-1 border-l ${lightMode ? "border-gray-200" : "border-white/10"} pl-4`}>
                         <label className="text-[8px] text-teal-500 block mb-1 uppercase font-black">
                           Inc (₹)
                         </label>
                         <input
                           type="number"
-                          className="bg-transparent text-teal-400 font-bold outline-none w-full"
+                          className="bg-transparent text-teal-500 font-bold outline-none w-full"
                           value={slab.inc}
                           onChange={(e) =>
                             updateSlab(index, "inc", e.target.value)
@@ -927,24 +1066,27 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                       </div>
                       <button
                         onClick={() => removeSlab(index)}
-                        className="text-red-500 text-xl">
+                        className="text-red-500 hover:text-red-600 text-xl px-2">
                         &times;
                       </button>
                     </div>
                   ))}
                 </div>
               </div>
-              <h3 className="text-slate-100 font-black uppercase text-xs mb-8 border-b border-white/5 pb-4">
+
+              <h3
+                className={`${theme.text} font-black uppercase text-xs mb-8 border-b ${borderClass} pb-4`}>
                 Auction Logic Configuration
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-500 uppercase">
+                  <label
+                    className={`text-[10px] font-black ${theme.sub} uppercase`}>
                     Min Squad Size
                   </label>
                   <input
                     type="number"
-                    className="w-full bg-[#0F1115] border border-white/10 rounded-xl p-4 text-slate-200"
+                    className={`w-full rounded-xl p-4 border outline-none font-bold ${inputBgClass}`}
                     value={config.minSquadSize}
                     onChange={(e) =>
                       setConfig({ ...config, minSquadSize: e.target.value })
@@ -952,12 +1094,13 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-500 uppercase">
+                  <label
+                    className={`text-[10px] font-black ${theme.sub} uppercase`}>
                     Max Squad Size
                   </label>
                   <input
                     type="number"
-                    className="w-full bg-[#0F1115] border border-white/10 rounded-xl p-4 text-slate-200"
+                    className={`w-full rounded-xl p-4 border outline-none font-bold ${inputBgClass}`}
                     value={config.maxSquadSize}
                     onChange={(e) =>
                       setConfig({ ...config, maxSquadSize: e.target.value })
@@ -965,12 +1108,13 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-500 uppercase">
+                  <label
+                    className={`text-[10px] font-black ${theme.sub} uppercase`}>
                     Min Base Price
                   </label>
                   <input
                     type="number"
-                    className="w-full bg-[#0F1115] border border-white/10 rounded-xl p-4 text-slate-200"
+                    className={`w-full rounded-xl p-4 border outline-none font-bold ${inputBgClass}`}
                     value={config.minBasePrice}
                     onChange={(e) =>
                       setConfig({ ...config, minBasePrice: e.target.value })
@@ -978,12 +1122,13 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-500 uppercase">
+                  <label
+                    className={`text-[10px] font-black ${theme.sub} uppercase`}>
                     Fallback Increment
                   </label>
                   <input
                     type="number"
-                    className="w-full bg-[#0F1115] border border-white/10 rounded-xl p-4 text-slate-200"
+                    className={`w-full rounded-xl p-4 border outline-none font-bold ${inputBgClass}`}
                     value={config.bidIncrement}
                     onChange={(e) =>
                       setConfig({ ...config, bidIncrement: e.target.value })
@@ -991,12 +1136,12 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-orange-400 uppercase">
+                  <label className="text-[10px] font-black text-amber-500 uppercase">
                     Max Bid Per Player
                   </label>
                   <input
                     type="number"
-                    className="w-full bg-[#0F1115] border border-orange-500/20 rounded-xl p-4 text-slate-200 focus:border-orange-500/50"
+                    className={`w-full rounded-xl p-4 border outline-none font-bold ${lightMode ? "bg-amber-50 border-amber-200 focus:border-amber-400 text-gray-900" : "bg-[#0F1115] border-amber-500/20 focus:border-amber-500/50 text-slate-200"}`}
                     value={config.maxBidPerPlayer}
                     onChange={(e) =>
                       setConfig({ ...config, maxBidPerPlayer: e.target.value })
@@ -1004,12 +1149,12 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-orange-400 uppercase">
+                  <label className="text-[10px] font-black text-amber-500 uppercase">
                     Max Icons Per Team
                   </label>
                   <input
                     type="number"
-                    className="w-full bg-[#0F1115] border border-orange-500/20 rounded-xl p-4 text-slate-200 focus:border-orange-500/50"
+                    className={`w-full rounded-xl p-4 border outline-none font-bold ${lightMode ? "bg-amber-50 border-amber-200 focus:border-amber-400 text-gray-900" : "bg-[#0F1115] border-amber-500/20 focus:border-amber-500/50 text-slate-200"}`}
                     value={config.maxIconsPerTeam}
                     onChange={(e) =>
                       setConfig({ ...config, maxIconsPerTeam: e.target.value })
@@ -1020,12 +1165,12 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
               <div className="flex gap-4 mt-12">
                 <button
                   onClick={handleResetRules}
-                  className="flex-1 bg-red-900/20 text-red-500 border border-red-500/20 font-black py-5 rounded-xl uppercase text-xs">
+                  className={`flex-1 font-black py-5 rounded-xl uppercase text-xs border transition-colors ${lightMode ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100" : "bg-red-900/20 text-red-500 border-red-500/20 hover:bg-red-900/30"}`}>
                   Reset Rules
                 </button>
                 <button
                   onClick={handleUpdateConfig}
-                  className="flex-[2] bg-teal-600 text-white font-black py-5 rounded-xl uppercase text-xs shadow-lg">
+                  className="flex-[2] bg-teal-600 hover:bg-teal-700 text-white font-black py-5 rounded-xl uppercase text-xs shadow-lg transition-all active:scale-[0.98]">
                   Update Rules
                 </button>
               </div>
@@ -1045,52 +1190,59 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
           <div className="space-y-6">
             {/* Stats Overview */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-[#1C2128] p-4 rounded-2xl border border-white/5">
-                <div className="text-[10px] text-slate-500 uppercase font-black">
+              <div
+                className={`${theme.card} p-4 rounded-2xl border ${borderClass} shadow-sm`}>
+                <div
+                  className={`text-[10px] ${theme.sub} uppercase font-black`}>
                   Total Pooled
                 </div>
-                <div className="text-2xl text-white font-black">
+                <div className={`text-2xl ${theme.text} font-black`}>
                   {stats.total}
                 </div>
               </div>
-              <div className="bg-[#1C2128] p-4 rounded-2xl border border-white/5">
-                <div className="text-[10px] text-teal-500 uppercase font-black">
+              <div
+                className={`${theme.card} p-4 rounded-2xl border ${borderClass} shadow-sm`}>
+                <div className="text-[10px] text-teal-600 dark:text-teal-500 uppercase font-black">
                   Sold
                 </div>
-                <div className="text-2xl text-teal-400 font-black">
+                <div className="text-2xl text-teal-600 dark:text-teal-400 font-black">
                   {stats.sold}
                 </div>
               </div>
-              <div className="bg-[#1C2128] p-4 rounded-2xl border border-white/5">
-                <div className="text-[10px] text-orange-500 uppercase font-black">
+              <div
+                className={`${theme.card} p-4 rounded-2xl border ${borderClass} shadow-sm`}>
+                <div className="text-[10px] text-amber-600 dark:text-orange-500 uppercase font-black">
                   Pending
                 </div>
-                <div className="text-2xl text-orange-400 font-black">
+                <div className="text-2xl text-amber-600 dark:text-orange-400 font-black">
                   {stats.pending}
                 </div>
               </div>
-              <div className="bg-[#1C2128] p-4 rounded-2xl border border-white/5">
-                <div className="text-[10px] text-red-500 uppercase font-black">
+              <div
+                className={`${theme.card} p-4 rounded-2xl border ${borderClass} shadow-sm`}>
+                <div className="text-[10px] text-red-600 dark:text-red-500 uppercase font-black">
                   Unsold
                 </div>
-                <div className="text-2xl text-red-400 font-black">
+                <div className="text-2xl text-red-600 dark:text-red-400 font-black">
                   {stats.unsold}
                 </div>
               </div>
             </div>
 
             {/* Toolbar */}
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-[#1C2128] p-4 rounded-2xl border border-white/5">
+            <div
+              className={`flex flex-col md:flex-row justify-between items-center gap-4 ${theme.card} p-4 rounded-2xl border ${borderClass} shadow-sm`}>
               <div className="flex flex-wrap gap-3 items-center w-full md:w-auto">
-                <div className="flex bg-[#0F1115] rounded-xl p-1 border border-white/5">
+                <div
+                  className={`flex ${lightMode ? "bg-gray-100" : "bg-[#0F1115]"} rounded-xl p-1 border ${borderClass}`}>
                   {["PENDING", "SOLD", "UNSOLD"].map((f) => (
                     <button
                       key={f}
                       onClick={() => setPoolFilter(f)}
                       className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${
                         poolFilter === f
-                          ? "bg-teal-600 text-white shadow-lg"
-                          : "text-slate-500 hover:text-slate-300"
+                          ? "bg-teal-600 text-white shadow-sm"
+                          : `${theme.sub} hover:${theme.text}`
                       }`}>
                       {f}{" "}
                       <span className="opacity-50 text-[9px] ml-1">
@@ -1098,8 +1250,8 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                         {f === "PENDING"
                           ? stats.pending
                           : f === "SOLD"
-                          ? stats.sold
-                          : stats.unsold}
+                            ? stats.sold
+                            : stats.unsold}
                         )
                       </span>
                     </button>
@@ -1108,7 +1260,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 <select
                   value={roleFilter}
                   onChange={(e) => setRoleFilter(e.target.value)}
-                  className="bg-[#0F1115] text-slate-300 text-xs font-bold px-4 py-2.5 rounded-xl border border-white/10 outline-none focus:border-teal-500/50">
+                  className={`${inputBgClass} text-xs font-bold px-4 py-2.5 rounded-xl border outline-none focus:border-teal-500`}>
                   <option value="All">All Roles ({stats.total})</option>
                   <option value="Batsman">Batsman ({stats.batsmen})</option>
                   <option value="Bowler">Bowler ({stats.bowlers})</option>
@@ -1120,7 +1272,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 <select
                   value={slotFilter}
                   onChange={(e) => setSlotFilter(e.target.value)}
-                  className="bg-[#0F1115] text-slate-300 text-xs font-bold px-4 py-2.5 rounded-xl border border-white/10 outline-none focus:border-teal-500/50">
+                  className={`${inputBgClass} text-xs font-bold px-4 py-2.5 rounded-xl border outline-none focus:border-teal-500`}>
                   <option value="All">All Slots</option>
                   <option value="Unassigned">
                     Unassigned ({unassignedCount})
@@ -1141,12 +1293,16 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
             </div>
 
             {/* Table */}
-            <div className="bg-[#1C2128] border border-white/5 rounded-2xl overflow-hidden shadow-2xl overflow-x-auto">
-              <div className="p-4 border-b border-white/5 bg-[#161920] text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+            <div
+              className={`${theme.card} border ${borderClass} rounded-2xl overflow-hidden shadow-xl overflow-x-auto`}>
+              <div
+                className={`p-4 border-b ${borderClass} ${lightMode ? "bg-gray-50" : "bg-[#161920]"} text-[10px] font-bold ${theme.sub} uppercase tracking-widest`}>
                 Showing {displayList.length} Players
               </div>
-              <table className="w-full text-left text-sm text-slate-400 min-w-[1000px]">
-                <thead className="bg-[#0F1115] text-[10px] font-black text-slate-500 border-b border-white/5 uppercase tracking-widest">
+              <table
+                className={`w-full text-left text-sm ${theme.text} min-w-[1000px]`}>
+                <thead
+                  className={`${lightMode ? "bg-gray-100" : "bg-[#0F1115]"} text-[10px] font-black ${theme.sub} border-b ${borderClass} uppercase tracking-widest`}>
                   <tr>
                     <th className="p-5">Name</th>
                     <th className="p-5">Force Assign</th>
@@ -1155,7 +1311,8 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                     <th className="p-5 text-right">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5">
+                <tbody
+                  className={`divide-y ${lightMode ? "divide-gray-200" : "divide-white/5"}`}>
                   {displayList.map((p) => (
                     <PlayerRow
                       key={p.id}
@@ -1175,7 +1332,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 </tbody>
               </table>
               {displayList.length === 0 && (
-                <div className="p-10 text-center text-slate-500 italic text-xs">
+                <div className={`p-10 text-center ${theme.sub} italic text-xs`}>
                   No players found matching current filters.
                 </div>
               )}
@@ -1185,17 +1342,18 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
 
         {tab === "slots" && (
           <div className="space-y-6">
-            <div className="bg-[#1C2128] border border-white/5 p-6 rounded-[2rem]">
+            <div
+              className={`${theme.card} border ${borderClass} p-6 rounded-[2rem] shadow-sm`}>
               <div className="flex gap-3">
                 <input
-                  className="flex-1 bg-[#0F1115] border border-white/10 rounded-xl px-5 py-3 text-slate-200 outline-none"
+                  className={`flex-1 rounded-xl px-5 py-3 outline-none font-bold border ${inputBgClass}`}
                   placeholder="Round Name"
                   value={newSlotName}
                   onChange={(e) => setNewSlotName(e.target.value)}
                 />
                 <button
                   onClick={handleCreateSlot}
-                  className="bg-orange-600 hover:bg-orange-500 text-white px-8 py-2 rounded-xl font-black uppercase tracking-wider text-xs transition-colors shadow-lg">
+                  className="bg-amber-600 hover:bg-amber-500 text-white px-8 py-2 rounded-xl font-black uppercase tracking-wider text-xs transition-colors shadow-sm">
                   Add Round
                 </button>
               </div>
@@ -1203,17 +1361,17 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
             {slots.map((s) => (
               <div
                 key={s.id}
-                className="bg-[#1C2128] p-4 rounded-xl flex justify-between items-center mb-2 border border-white/5">
+                className={`${theme.card} p-4 rounded-xl flex justify-between items-center mb-2 border ${borderClass} shadow-sm`}>
                 <div className="flex-1">
                   {editingSlotId === s.id ? (
                     <input
-                      className="w-full bg-[#0F1115] border border-white/10 rounded-lg px-4 py-2 text-slate-200 outline-none"
+                      className={`w-full rounded-lg px-4 py-2 outline-none font-bold border focus:border-teal-500 ${inputBgClass}`}
                       value={editingSlotName}
                       onChange={(e) => setEditingSlotName(e.target.value)}
                       autoFocus
                     />
                   ) : (
-                    <span className="text-white font-bold">
+                    <span className={`${theme.text} font-bold`}>
                       {s.order}. {s.name}
                     </span>
                   )}
@@ -1223,12 +1381,12 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                     <>
                       <button
                         onClick={() => handleUpdateSlot(s.id)}
-                        className="text-green-500 font-bold text-xs">
+                        className="text-emerald-600 dark:text-green-500 font-bold text-xs hover:underline">
                         Save
                       </button>
                       <button
                         onClick={handleCancelEdit}
-                        className="text-slate-500 text-xs">
+                        className={`${theme.sub} hover:${theme.text} text-xs font-bold hover:underline`}>
                         Cancel
                       </button>
                     </>
@@ -1236,12 +1394,12 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                     <>
                       <button
                         onClick={() => handleEditSlot(s)}
-                        className="text-slate-500 hover:text-cyan-400">
+                        className={`${theme.sub} hover:text-teal-500 transition-colors`}>
                         ✎
                       </button>
                       <button
                         onClick={() => handleDeleteSlot(s.id)}
-                        className="text-slate-600 hover:text-red-500">
+                        className={`${theme.sub} hover:text-red-500 transition-colors`}>
                         🗑
                       </button>
                     </>
