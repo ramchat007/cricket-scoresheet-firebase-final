@@ -21,15 +21,26 @@ const TournamentDetails = lazy(
 );
 const MatchScorecard = lazy(() => import("./components/MatchScorecard.jsx"));
 import Dashboard from "./components/Dashboard.jsx";
-const CreateTournament = lazy(() => import("./components/CreateTournament.jsx"));
-const GlobalPlayersView = lazy(() => import("./components/GlobalPlayersView.jsx"));
+const CreateTournament = lazy(
+  () => import("./components/CreateTournament.jsx"),
+);
+const GlobalPlayersView = lazy(
+  () => import("./components/GlobalPlayersView.jsx"),
+);
 const MigrationTool = lazy(() => import("./components/MigrationTool.jsx"));
-const AuctionDashboard = lazy(() => import("./components/AuctionDashboard.jsx"));
+const AuctionDashboard = lazy(
+  () => import("./components/AuctionDashboard.jsx"),
+);
 const GlobalPlayerRegistration = lazy(
   () => import("./components/GlobalPlayerRegistration.jsx"),
 );
+const TournamentPlayerList = lazy(
+  () => import("./components/TournamentPlayerList.jsx"),
+);
 const PastLeague = lazy(() => import("./components/PastLeague.jsx"));
-const MatchOverlay = lazy(() => import("./components/Overlay/MatchOverlay.jsx"));
+const MatchOverlay = lazy(
+  () => import("./components/Overlay/MatchOverlay.jsx"),
+);
 const TournamentBanner = lazy(
   () => import("./components/Overlay/TournamentBanner"),
 );
@@ -58,6 +69,7 @@ function AppContent() {
 
   // Route Helpers
   const isOverlay = location.pathname.startsWith("/overlay");
+  const isRegistration = location.pathname.startsWith("/register-player");
   const isMatchesPage =
     location.pathname === "/" || location.pathname === "/scoreboard";
 
@@ -124,6 +136,21 @@ function AppContent() {
           </Routes>
         </Suspense>
       </div>
+    );
+  }
+  if (isRegistration) {
+    return (
+      <Routes>
+        <Route path="/register-player" element={<GlobalPlayerRegistration />} />
+        <Route
+          path="/register/:tournamentId"
+          element={<GlobalPlayerRegistration />}
+        />
+        <Route
+          path="/view-players/:tournamentId"
+          element={<TournamentPlayerList />}
+        />
+      </Routes>
     );
   }
 
@@ -208,176 +235,161 @@ function AppContent() {
             </div>
           }>
           <Routes>
-          {user ? (
-            <Route
-              path="/"
-              element={
-                matchId === "new" ? (
-                  <div className="max-w-4xl mx-auto animate-in fade-in zoom-in duration-300 p-4">
-                    {/* Scheduler Header */}
-                    <div className="flex justify-between items-end mb-8">
-                      <div>
-                        <h2
-                          className={`text-3xl font-black ${theme.text} uppercase tracking-tighter italic`}>
-                          Match Control
-                        </h2>
-                        <p
-                          className={`text-[10px] ${theme.sub} font-bold uppercase tracking-widest`}>
-                          {tournamentId
-                            ? `Scheduling for: ${availableTournaments.find((t) => t.id === tournamentId)?.name || "Selected Tournament"}`
-                            : "Select a Tournament to Schedule"}
-                        </p>
+            {user ? (
+              <Route
+                path="/"
+                element={
+                  matchId === "new" ? (
+                    <div className="max-w-4xl mx-auto animate-in fade-in zoom-in duration-300 p-4">
+                      {/* Scheduler Header */}
+                      <div className="flex justify-between items-end mb-8">
+                        <div>
+                          <h2
+                            className={`text-3xl font-black ${theme.text} uppercase tracking-tighter italic`}>
+                            Match Control
+                          </h2>
+                          <p
+                            className={`text-[10px] ${theme.sub} font-bold uppercase tracking-widest`}>
+                            {tournamentId
+                              ? `Scheduling for: ${availableTournaments.find((t) => t.id === tournamentId)?.name || "Selected Tournament"}`
+                              : "Select a Tournament to Schedule"}
+                          </p>
+                        </div>
                       </div>
-                    </div>
 
-                    {/* ✅ UNIFIED SCHEDULER: Ensures Teams & ID are passed */}
-                    {tournamentId ? (
-                      <MatchScheduler
-                        tournamentId={tournamentId}
-                        teams={allTeams} // <--- Fixes Empty Dropdown
-                        onCancel={() => setMatchId(null)}
-                      />
-                    ) : (
+                      {/* ✅ UNIFIED SCHEDULER: Ensures Teams & ID are passed */}
+                      {tournamentId ? (
+                        <MatchScheduler
+                          tournamentId={tournamentId}
+                          teams={allTeams} // <--- Fixes Empty Dropdown
+                          onCancel={() => setMatchId(null)}
+                        />
+                      ) : (
+                        <div
+                          className={`p-8 rounded-2xl text-center border border-dashed ${lightMode ? "bg-red-50 border-red-200 text-red-600" : "bg-red-900/10 border-red-500/30 text-red-400"}`}>
+                          <h3 className="font-bold uppercase tracking-widest mb-2">
+                            Tournament Required
+                          </h3>
+                          <p className="text-xs opacity-70">
+                            Please select a tournament from the dropdown above
+                            to start scheduling matches.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    // Default Dashboard State
+                    <div className="flex flex-col items-center justify-center min-h-[40vh] text-center space-y-6">
                       <div
-                        className={`p-8 rounded-2xl text-center border border-dashed ${lightMode ? "bg-red-50 border-red-200 text-red-600" : "bg-red-900/10 border-red-500/30 text-red-400"}`}>
-                        <h3 className="font-bold uppercase tracking-widest mb-2">
-                          Tournament Required
+                        className={`w-20 h-20 ${theme.card} rounded-3xl flex items-center justify-center text-3xl animate-bounce shadow-2xl`}>
+                        🚀
+                      </div>
+                      <div>
+                        <h3
+                          className={`font-black uppercase tracking-tighter text-lg ${theme.text}`}>
+                          System Ready
                         </h3>
-                        <p className="text-xs opacity-70">
-                          Please select a tournament from the dropdown above to
-                          start scheduling matches.
+                        <p
+                          className={`text-[10px] ${theme.sub} font-bold uppercase tracking-widest mt-1`}>
+                          Select an action above to start scoring
                         </p>
                       </div>
-                    )}
-                  </div>
-                ) : (
-                  // Default Dashboard State
-                  <div className="flex flex-col items-center justify-center min-h-[40vh] text-center space-y-6">
-                    <div
-                      className={`w-20 h-20 ${theme.card} rounded-3xl flex items-center justify-center text-3xl animate-bounce shadow-2xl`}>
-                      🚀
                     </div>
-                    <div>
-                      <h3
-                        className={`font-black uppercase tracking-tighter text-lg ${theme.text}`}>
-                        System Ready
-                      </h3>
-                      <p
-                        className={`text-[10px] ${theme.sub} font-bold uppercase tracking-widest mt-1`}>
-                        Select an action above to start scoring
-                      </p>
-                    </div>
-                  </div>
-                )
+                  )
+                }
+              />
+            ) : (
+              <Route path="/" element={<Dashboard />} />
+            )}
+
+            {/* Sub-Pages */}
+            <Route
+              path="/live/:tournamentId/:matchId"
+              element={
+                <RequireTournamentAccess>
+                  <LiveScoring />
+                </RequireTournamentAccess>
               }
             />
-          ) : (
-            <Route path="/" element={<Dashboard />} />
-          )}
-
-          {/* Sub-Pages */}
-          <Route
-            path="/live/:tournamentId/:matchId"
-            element={
-              <RequireTournamentAccess>
-                <LiveScoring />
-              </RequireTournamentAccess>
-            }
-          />
-          <Route path="/scoreboard" element={<Scoreboard />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route
-            path="/create-tournament"
-            element={
-              <RequireAuth>
-                <CreateTournament />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/tournaments/:id/auction"
-            element={
-              <RequireTournamentAccess requireEdit>
-                <AuctionDashboard />
-              </RequireTournamentAccess>
-            }
-          />
-          <Route
-            path="/matches"
-            element={
-              <MatchesPage
-                availableTournaments={availableTournaments}
-                onSelect={handleMatchesPageSelect}
-                readOnly={!user}
-              />
-            }
-          />
-          <Route
-            path="/players"
-            element={
-              <RequireAuth>
-                <GlobalPlayersView />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/profile"
-            element={
-              <RequireAuth>
-                <Profile />
-              </RequireAuth>
-            }
-          />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route
-            path="/register-player"
-            element={
-              <RequireAuth>
-                <GlobalPlayerRegistration />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/migrate"
-            element={
-              <RequireAuth>
-                <MigrationTool />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/tournaments/:id"
-            element={
-              <RequireTournamentAccess>
-                <TournamentDetails />
-              </RequireTournamentAccess>
-            }
-          />
-          <Route
-            path="/tournaments/:tournamentId/scorecard/:matchId"
-            element={
-              <RequireTournamentAccess>
-                <MatchScorecard />
-              </RequireTournamentAccess>
-            }
-          />
-          <Route
-            path="/teams"
-            element={
-              <RequireAuth>
-                <TeamsManager />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/past-leagues"
-            element={
-              <RequireAuth>
-                <PastLeague />
-              </RequireAuth>
-            }
-          />
+            <Route path="/scoreboard" element={<Scoreboard />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route
+              path="/create-tournament"
+              element={
+                <RequireAuth>
+                  <CreateTournament />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/tournaments/:id/auction"
+              element={
+                <RequireTournamentAccess requireEdit>
+                  <AuctionDashboard />
+                </RequireTournamentAccess>
+              }
+            />
+            <Route
+              path="/matches"
+              element={
+                <MatchesPage
+                  availableTournaments={availableTournaments}
+                  onSelect={handleMatchesPageSelect}
+                  readOnly={!user}
+                />
+              }
+            />
+            <Route path="/players" element={<GlobalPlayersView />} />
+            <Route
+              path="/profile"
+              element={
+                <RequireAuth>
+                  <Profile />
+                </RequireAuth>
+              }
+            />
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route
+              path="/migrate"
+              element={
+                <RequireAuth>
+                  <MigrationTool />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/tournaments/:id"
+              element={
+                <RequireTournamentAccess>
+                  <TournamentDetails />
+                </RequireTournamentAccess>
+              }
+            />
+            <Route
+              path="/tournaments/:tournamentId/scorecard/:matchId"
+              element={
+                <RequireTournamentAccess>
+                  <MatchScorecard />
+                </RequireTournamentAccess>
+              }
+            />
+            <Route
+              path="/teams"
+              element={
+                <RequireAuth>
+                  <TeamsManager />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/past-leagues"
+              element={
+                <RequireAuth>
+                  <PastLeague />
+                </RequireAuth>
+              }
+            />
           </Routes>
         </Suspense>
       </div>

@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { useAuth } from "../hooks/useAuth";
+import { useParams } from "react-router-dom";
 // 1. Theme & Icons
 import { useTheme } from "../context/ThemeContext";
 import {
@@ -52,6 +53,7 @@ const NotificationToast = ({ message, type, onClose }) => {
 };
 
 export default function GlobalPlayerRegistration() {
+  const { tournamentId } = useParams();
   const { user } = useAuth();
 
   // 2. Consume Theme
@@ -168,6 +170,7 @@ export default function GlobalPlayerRegistration() {
           photoURL: photoBase64,
           paymentScreenshotURL: paymentBase64,
           updatedAt: isoDate,
+          tournamentId: tournamentId || "global",
         });
         setStatus("updated");
       } else {
