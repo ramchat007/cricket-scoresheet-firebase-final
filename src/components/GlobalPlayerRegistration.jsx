@@ -338,22 +338,27 @@ export default function GlobalPlayerRegistration() {
       />
       <h1 className="text-4xl font-black italic tracking-tighter mb-2">
         <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-indigo-500 uppercase px-2">
-          {/* Show fetched name, fallback to generic title if no tournamentId exists */}
           {tournamentName
             ? tournamentName
             : isEditing
               ? "Update Profile"
               : "Player Registration"}
         </span>
+        {/* <br />
+        <div className="text-transparent text-center bg-clip-text bg-gradient-to-r from-teal-400 to-indigo-500 uppercase px-2">
+          Season 2
+        </div> */}
       </h1>
 
       <div className="relative z-10 w-full max-w-lg">
         <div className="text-center mb-10">
           <p
             className={`text-xs font-bold uppercase tracking-widest ${theme.sub}`}>
-            {isEditing
-              ? "Modify your details below"
-              : "Join the league • Create your profile"}
+            {tournamentName
+              ? "Join the tournament • Create your profile"
+              : isEditing
+                ? "Modify your details below"
+                : "Join the league • Create your profile"}
           </p>
         </div>
 
