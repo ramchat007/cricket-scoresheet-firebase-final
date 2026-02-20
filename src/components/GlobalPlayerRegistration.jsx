@@ -10,6 +10,7 @@ import {
   doc,
   getDoc,
   arrayUnion,
+  setDoc,
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { useAuth } from "../hooks/useAuth";
@@ -262,19 +263,25 @@ export default function GlobalPlayerRegistration() {
       const isoDate = new Date().toISOString();
       const currentTournament = tournamentId || "global";
 
+      // --- ADMIN EDITING AN EXISTING PROFILE ---
       if (isEditing && existingPlayerId) {
         const playerDocRef = doc(db, "players", existingPlayerId);
-        await updateDoc(playerDocRef, {
-          name: formData.name.trim(),
-          role: formData.role,
-          battingStyle: formData.battingStyle,
-          bowlingStyle: formData.bowlingStyle,
-          photoURL: photoBase64,
-          paymentScreenshotURL: paymentBase64,
-          updatedAt: isoDate,
-        });
+        await setDoc(
+          playerDocRef,
+          {
+            name: formData.name.trim() || "Unknown",
+            role: formData.role || "All-Rounder",
+            battingStyle: formData.battingStyle || "Right Hand Bat",
+            bowlingStyle: formData.bowlingStyle || "Right Arm Medium",
+            photoURL: photoBase64,
+            paymentScreenshotURL: paymentBase64,
+            updatedAt: isoDate,
+          },
+          { merge: true },
+        );
         setStatus("updated");
       } else {
+        // --- NEW REGISTRATION FLOW ---
         const q = query(playersRef, where("mobile", "==", cleanMobile));
         const querySnapshot = await getDocs(q);
 
@@ -283,26 +290,37 @@ export default function GlobalPlayerRegistration() {
           const existingData = docSnap.data();
           const enrolledTournaments = existingData.registeredTournaments || [];
 
+          // 1. Check if already in this tournament
           if (enrolledTournaments.includes(currentTournament)) {
             setStatus("exists");
             setLoading(false);
             return;
           }
 
+          // 2. Add existing player to this NEW tournament
           const playerDocRef = doc(db, "players", docSnap.id);
-          await updateDoc(playerDocRef, {
-            name: formData.name.trim(),
-            registeredTournaments: arrayUnion(currentTournament),
-            [`tournamentData.${currentTournament}`]: {
-              role: formData.role,
-              battingStyle: formData.battingStyle,
-              bowlingStyle: formData.bowlingStyle,
-              photoURL: photoBase64,
-              paymentScreenshotURL: paymentBase64,
-              registeredAt: isoDate,
+
+          // 🔥 FIX: Use setDoc with merge: true instead of updateDoc.
+          // This safely merges the new tournament into the map without overwriting old ones.
+          await setDoc(
+            playerDocRef,
+            {
+              name: formData.name.trim() || "Unknown",
+              registeredTournaments: arrayUnion(currentTournament),
+              tournamentData: {
+                [currentTournament]: {
+                  role: formData.role || "All-Rounder",
+                  battingStyle: formData.battingStyle || "Right Hand Bat",
+                  bowlingStyle: formData.bowlingStyle || "Right Arm Medium",
+                  photoURL: photoBase64 || "",
+                  paymentScreenshotURL: paymentBase64 || "",
+                  registeredAt: isoDate,
+                },
+              },
+              updatedAt: isoDate,
             },
-            updatedAt: isoDate,
-          });
+            { merge: true },
+          );
 
           setStatus("success");
           showToast(
@@ -313,8 +331,9 @@ export default function GlobalPlayerRegistration() {
           return;
         }
 
+        // 3. Completely new player
         await addDoc(playersRef, {
-          name: formData.name.trim(),
+          name: formData.name.trim() || "Unknown",
           mobile: cleanMobile,
           stats: { matches: 0, runs: 0, wickets: 0 },
           isVerified: false,
@@ -323,11 +342,11 @@ export default function GlobalPlayerRegistration() {
           registeredTournaments: [currentTournament],
           tournamentData: {
             [currentTournament]: {
-              role: formData.role,
-              battingStyle: formData.battingStyle,
-              bowlingStyle: formData.bowlingStyle,
-              photoURL: photoBase64,
-              paymentScreenshotURL: paymentBase64,
+              role: formData.role || "All-Rounder",
+              battingStyle: formData.battingStyle || "Right Hand Bat",
+              bowlingStyle: formData.bowlingStyle || "Right Arm Medium",
+              photoURL: photoBase64 || "",
+              paymentScreenshotURL: paymentBase64 || "",
               registeredAt: isoDate,
             },
           },
@@ -337,7 +356,13 @@ export default function GlobalPlayerRegistration() {
     } catch (error) {
       console.error("Error registering:", error);
       setStatus("error");
-      showToast(error.message, "error");
+
+      // 🔥 Make the error super obvious so you know EXACTLY what failed
+      if (error.code === "permission-denied") {
+        showToast("Database Permission Denied. Contact Admin.", "error");
+      } else {
+        showToast(`Error: ${error.message}`, "error");
+      }
     } finally {
       setLoading(false);
     }
