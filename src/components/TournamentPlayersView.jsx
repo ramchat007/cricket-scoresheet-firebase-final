@@ -12,9 +12,8 @@ import {
   where,
   getDocs,
   doc,
-  updateDoc,
   addDoc,
-  setDoc, // 🔥 Added setDoc for safer merging
+  setDoc,
   arrayUnion,
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
@@ -43,6 +42,9 @@ import {
   AlertCircle,
   Sun,
   Moon,
+  ArrowUpDown,
+  LayoutGrid,
+  List,
 } from "lucide-react";
 
 // 2. Cropper Import
@@ -59,15 +61,15 @@ const NotificationToast = ({ message, type, onClose }) => {
           ? "bg-red-500/10 border-red-500/20 text-red-500 bg-white dark:bg-red-900/10"
           : "bg-teal-500/10 border-teal-500/20 text-teal-600 dark:text-teal-400 bg-white dark:bg-teal-900/10"
       }`}>
-      {isError ? <AlertCircle size={20} /> : <Check size={20} />}
+      {isError ? <AlertCircle size={24} /> : <Check size={24} />}
       <div>
-        <h4 className="font-bold text-sm uppercase tracking-wider">
+        <h4 className="font-bold text-base uppercase tracking-wider">
           {isError ? "Error" : "Success"}
         </h4>
-        <p className="text-xs opacity-90">{message}</p>
+        <p className="text-sm opacity-90">{message}</p>
       </div>
       <button onClick={onClose} className="ml-4 opacity-50 hover:opacity-100">
-        <X size={16} />
+        <X size={20} />
       </button>
     </div>
   );
@@ -89,7 +91,7 @@ async function getCroppedImg(imageSrc, pixelCrop) {
 
   if (!ctx) return null;
 
-  const TARGET_SIZE = 300; // Final compressed size for DB
+  const TARGET_SIZE = 300;
   canvas.width = TARGET_SIZE;
   canvas.height = TARGET_SIZE;
 
@@ -109,14 +111,11 @@ async function getCroppedImg(imageSrc, pixelCrop) {
 }
 
 export default function TournamentPlayersView() {
-  const { tournamentId } = useParams(); // Captured from the URL
+  const { tournamentId } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
-
-  // 2. Consume Theme
   const { theme, lightMode, toggleTheme } = useTheme();
 
-  // Refs
   const fileInputRef = useRef(null);
   const paymentInputRef = useRef(null);
 
@@ -126,7 +125,11 @@ export default function TournamentPlayersView() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("All");
-  const [expandedPlayerId, setExpandedPlayerId] = useState(null);
+
+  // VIEW MODE STATE (grid vs list)
+  const [viewMode, setViewMode] = useState("grid");
+
+  const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
   const [notification, setNotification] = useState(null);
 
@@ -135,11 +138,11 @@ export default function TournamentPlayersView() {
     direction: "desc",
   });
 
-  const [showModal, setShowModal] = useState(false);
+  const [showFormModal, setShowFormModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [processingImage, setProcessingImage] = useState(false);
 
-  // --- CROPPER STATE ---
+  // CROPPER STATE
   const [cropModalOpen, setCropModalOpen] = useState(false);
   const [imageToCrop, setImageToCrop] = useState(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -162,17 +165,14 @@ export default function TournamentPlayersView() {
     setTimeout(() => setNotification(null), 4000);
   };
 
-  // --- 1. DATA FETCHING (FILTERED BY TOURNAMENT) ---
   const loadTournamentData = async () => {
     setLoading(true);
     try {
       const playersRef = collection(db, "players");
-
       const q = query(
         playersRef,
         where("registeredTournaments", "array-contains", tournamentId),
       );
-
       const querySnapshot = await getDocs(q);
       const tournamentPlayers = querySnapshot.docs.map((doc) => ({
         id: doc.id,
@@ -195,12 +195,10 @@ export default function TournamentPlayersView() {
   };
 
   useEffect(() => {
-    if (tournamentId) {
-      loadTournamentData();
-    }
+    if (tournamentId) loadTournamentData();
   }, [tournamentId]);
 
-  // --- 2. LIVE STATS CALCULATION ENGINE ---
+  // --- ENGINE ---
   const { processedPlayers, orangeCap, purpleCap } = useMemo(() => {
     if (players.length === 0)
       return { processedPlayers: [], orangeCap: null, purpleCap: null };
@@ -208,11 +206,9 @@ export default function TournamentPlayersView() {
     const statsMap = {};
     players.forEach((p) => {
       const tData = p.tournamentData?.[tournamentId] || {};
-      const activeRole = tData.role || p.role;
-
       statsMap[p.id] = {
         ...p,
-        activeRole,
+        activeRole: tData.role || p.role,
         calculatedStats: {
           matches: 0,
           runs: 0,
@@ -248,7 +244,6 @@ export default function TournamentPlayersView() {
         identityMap[(name || "").trim().toLowerCase()];
 
       inningsArray.forEach((inn) => {
-        // Batting Stats
         if (inn.batsmenStats) {
           Object.entries(inn.batsmenStats).forEach(([pName, s]) => {
             const gid = findGlobalId(pName);
@@ -261,8 +256,6 @@ export default function TournamentPlayersView() {
               if (b > 0 || isOut) {
                 p.calculatedStats.runs += r;
                 p.calculatedStats.ballsFaced += b;
-                p.calculatedStats.fours += Number(s.fours) || 0;
-                p.calculatedStats.sixes += Number(s.sixes) || 0;
                 if (!isOut) p.calculatedStats.notOuts += 1;
                 if (r > p.calculatedStats.highestScore)
                   p.calculatedStats.highestScore = r;
@@ -288,8 +281,6 @@ export default function TournamentPlayersView() {
             }
           });
         }
-
-        // Bowling Stats
         if (inn.bowlerStats) {
           Object.entries(inn.bowlerStats).forEach(([pName, s]) => {
             const gid = findGlobalId(pName);
@@ -332,33 +323,12 @@ export default function TournamentPlayersView() {
       return p;
     });
 
-    const orange = [...allStats].sort((a, b) => {
-      if (b.calculatedStats.runs !== a.calculatedStats.runs) {
-        return b.calculatedStats.runs - a.calculatedStats.runs;
-      }
-      const srA =
-        a.calculatedStats.ballsFaced > 0
-          ? (a.calculatedStats.runs / a.calculatedStats.ballsFaced) * 100
-          : 0;
-      const srB =
-        b.calculatedStats.ballsFaced > 0
-          ? (b.calculatedStats.runs / b.calculatedStats.ballsFaced) * 100
-          : 0;
-      return srB - srA;
-    })[0];
-
-    const purple = [...allStats].sort((a, b) => {
-      if (b.calculatedStats.wickets !== a.calculatedStats.wickets) {
-        return b.calculatedStats.wickets - a.calculatedStats.wickets;
-      }
-      const ballsA = a.calculatedStats.ballsBowled;
-      const ballsB = b.calculatedStats.ballsBowled;
-      const ecoA =
-        ballsA > 0 ? a.calculatedStats.runsConceded / (ballsA / 6) : 9999;
-      const ecoB =
-        ballsB > 0 ? b.calculatedStats.runsConceded / (ballsB / 6) : 9999;
-      return ecoA - ecoB;
-    })[0];
+    const orange = [...allStats].sort(
+      (a, b) => b.calculatedStats.runs - a.calculatedStats.runs,
+    )[0];
+    const purple = [...allStats].sort(
+      (a, b) => b.calculatedStats.wickets - a.calculatedStats.wickets,
+    )[0];
 
     let result = [...allStats];
 
@@ -372,28 +342,16 @@ export default function TournamentPlayersView() {
     }
 
     result.sort((a, b) => {
-      let valA, valB;
-      if (
-        ["runs", "wickets", "highestScore", "matches"].includes(sortConfig.key)
-      ) {
-        valA = a.calculatedStats[sortConfig.key] || 0;
-        valB = b.calculatedStats[sortConfig.key] || 0;
-      } else if (
-        ["name", "role", "battingStyle", "bowlingStyle"].includes(
-          sortConfig.key,
-        )
-      ) {
-        if (sortConfig.key === "role") {
-          valA = a.activeRole;
-          valB = b.activeRole;
-        } else {
-          valA = a[sortConfig.key];
-          valB = b[sortConfig.key];
-        }
-      } else {
-        valA = 0;
-        valB = 0;
-      }
+      let valA =
+        a.calculatedStats[sortConfig.key] ??
+        a[sortConfig.key] ??
+        a.activeRole ??
+        0;
+      let valB =
+        b.calculatedStats[sortConfig.key] ??
+        b[sortConfig.key] ??
+        b.activeRole ??
+        0;
 
       if (typeof valA === "string") valA = valA.toLowerCase();
       if (typeof valB === "string") valB = valB.toLowerCase();
@@ -410,9 +368,8 @@ export default function TournamentPlayersView() {
     };
   }, [players, allMatches, searchTerm, roleFilter, sortConfig, tournamentId]);
 
-  // --- ACTIONS ---
   const handleDelete = async (playerId, e) => {
-    e.stopPropagation();
+    if (e) e.stopPropagation();
     if (
       !window.confirm("⚠ Permanently delete this player from the tournament?")
     )
@@ -420,6 +377,7 @@ export default function TournamentPlayersView() {
     try {
       await deleteGlobalPlayer(playerId);
       setPlayers((prev) => prev.filter((p) => p.id !== playerId));
+      setSelectedPlayer(null);
       showToast("Player deleted successfully");
     } catch (error) {
       showToast("Failed to delete player", "error");
@@ -427,9 +385,7 @@ export default function TournamentPlayersView() {
   };
 
   const goToMatch = (tId, matchId) => {
-    if (tId && matchId) {
-      navigate(`/tournaments/${tId}/scorecard/${matchId}`);
-    }
+    if (tId && matchId) navigate(`/tournaments/${tId}/scorecard/${matchId}`);
   };
 
   const handleSort = (key) => {
@@ -440,7 +396,14 @@ export default function TournamentPlayersView() {
     setSortConfig({ key, direction });
   };
 
-  // --- CROP & UPLOAD HANDLERS ---
+  const SortIcon = ({ colKey }) => (
+    <span
+      className={`ml-1 transition-opacity inline-block ${sortConfig.key === colKey ? "opacity-100" : "opacity-0 group-hover:opacity-50"}`}>
+      {sortConfig.key === colKey && sortConfig.direction === "asc" ? "↑" : "↓"}
+    </span>
+  );
+
+  // CROP & UPLOAD
   const handleProfileImageSelect = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -455,7 +418,7 @@ export default function TournamentPlayersView() {
     }
   };
 
-  const onCropComplete = useCallback((croppedArea, croppedAreaPixels) => {
+  const onCropComplete = useCallback((_, croppedAreaPixels) => {
     setCroppedAreaPixels(croppedAreaPixels);
   }, []);
 
@@ -467,19 +430,13 @@ export default function TournamentPlayersView() {
       setCropModalOpen(false);
       setImageToCrop(null);
     } catch (e) {
-      console.error(e);
       showToast("Failed to crop image", "error");
     } finally {
       setProcessingImage(false);
     }
   };
 
-  const handleCancelCrop = () => {
-    setCropModalOpen(false);
-    setImageToCrop(null);
-  };
-
-  const compressImage = (file, maxWidth = 400) => {
+  const compressImage = (file, maxWidth = 500) => {
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
@@ -504,7 +461,7 @@ export default function TournamentPlayersView() {
     if (!file) return;
     setProcessingImage(true);
     try {
-      const compressedBase64 = await compressImage(file, 500);
+      const compressedBase64 = await compressImage(file, 600);
       setFormData((prev) => ({
         ...prev,
         paymentScreenshotURL: compressedBase64,
@@ -516,6 +473,7 @@ export default function TournamentPlayersView() {
     }
   };
 
+  // FORM HANDLING
   const openAddModal = () => {
     setFormData({
       id: "",
@@ -528,42 +486,32 @@ export default function TournamentPlayersView() {
       paymentScreenshotURL: "",
     });
     setIsEditing(false);
-    setShowModal(true);
+    setShowFormModal(true);
   };
 
   const openEditModal = (player, e) => {
-    e.stopPropagation();
-
+    if (e) e.stopPropagation();
     const tData = player.tournamentData?.[tournamentId] || {};
-
-    const sanitizeStyle = (val, defaultVal) =>
-      !val || val === "Unknown" ? defaultVal : val;
-
     setFormData({
       id: player.id,
       name: player.name,
       role: tData.role || player.role || "All-Rounder",
-      battingStyle: sanitizeStyle(
-        tData.battingStyle || player.battingStyle,
-        "Right Hand Bat",
-      ),
-      bowlingStyle: sanitizeStyle(
-        tData.bowlingStyle || player.bowlingStyle,
-        "Right Arm Medium",
-      ),
+      battingStyle:
+        tData.battingStyle || player.battingStyle || "Right Hand Bat",
+      bowlingStyle:
+        tData.bowlingStyle || player.bowlingStyle || "Right Arm Medium",
       mobile: player.mobile || "",
       photoURL: tData.photoURL || player.photoURL || "",
       paymentScreenshotURL:
         tData.paymentScreenshotURL || player.paymentScreenshotURL || "",
     });
     setIsEditing(true);
-    setShowModal(true);
+    setShowFormModal(true);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.name) return showToast("Name is required", "error");
-
     setProcessingImage(true);
 
     try {
@@ -574,16 +522,13 @@ export default function TournamentPlayersView() {
       const isoDate = new Date().toISOString();
 
       if (isEditing && formData.id) {
-        // --- 1. ADMIN EDITS EXISTING PLAYER ---
         const playerDocRef = doc(db, "players", formData.id);
-
         await setDoc(
           playerDocRef,
           {
-            name: formData.name, // Keep name global
-            mobile: cleanMobile, // Keep mobile global
+            name: formData.name,
+            mobile: cleanMobile,
             updatedAt: isoDate,
-            // Safe Merge for tournament map
             tournamentData: {
               [tournamentId]: {
                 role: formData.role,
@@ -595,22 +540,20 @@ export default function TournamentPlayersView() {
               },
             },
           },
-          { merge: true }, // 🔥 Prevents overwriting other tournaments
+          { merge: true },
         );
         showToast("Player Updated!");
+        setSelectedPlayer(null);
       } else {
-        // --- 2. ADMIN ADDING NEW PLAYER ---
         if (cleanMobile) {
           const q = query(playersRef, where("mobile", "==", cleanMobile));
           const querySnapshot = await getDocs(q);
-
           if (!querySnapshot.empty) {
             const existingDoc = querySnapshot.docs[0];
             const existingData = existingDoc.data();
-            const enrolledTournaments =
-              existingData.registeredTournaments || [];
-
-            if (enrolledTournaments.includes(tournamentId)) {
+            if (
+              (existingData.registeredTournaments || []).includes(tournamentId)
+            ) {
               showToast(
                 "This player is already registered in this tournament.",
                 "error",
@@ -618,11 +561,8 @@ export default function TournamentPlayersView() {
               setProcessingImage(false);
               return;
             }
-
-            // Auto-link and safe merge
-            const playerDocRef = doc(db, "players", existingDoc.id);
             await setDoc(
-              playerDocRef,
+              doc(db, "players", existingDoc.id),
               {
                 registeredTournaments: arrayUnion(tournamentId),
                 updatedAt: isoDate,
@@ -637,19 +577,15 @@ export default function TournamentPlayersView() {
                   },
                 },
               },
-              { merge: true }, // 🔥 Prevents data loss
+              { merge: true },
             );
-
             showToast("Global player found! Linked to this tournament.");
-            setShowModal(false);
+            setShowFormModal(false);
             loadTournamentData();
             setProcessingImage(false);
             return;
           }
         }
-
-        // --- 3. COMPLETELY NEW PLAYER ---
-        const { id, ...payload } = formData;
         await addDoc(playersRef, {
           name: formData.name,
           mobile: cleanMobile,
@@ -671,33 +607,20 @@ export default function TournamentPlayersView() {
         });
         showToast("New Tournament Player Created!");
       }
-
-      setShowModal(false);
+      setShowFormModal(false);
       loadTournamentData();
     } catch (error) {
-      console.error("Error saving player", error);
       showToast("Error saving player", "error");
     } finally {
       setProcessingImage(false);
     }
   };
 
-  const toggleRowExpansion = (playerId) => {
-    setExpandedPlayerId(expandedPlayerId === playerId ? null : playerId);
-  };
-
-  const SortIcon = ({ colKey }) => (
-    <span
-      className={`ml-1 transition-opacity ${sortConfig.key === colKey ? "opacity-100" : "opacity-0 group-hover:opacity-50"}`}>
-      {sortConfig.key === colKey && sortConfig.direction === "asc" ? "↑" : "↓"}
-    </span>
-  );
-
   const DetailItem = ({ label, value, isMono = false }) => (
     <div
-      className={`flex flex-col p-3 rounded-xl border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#161920] border-white/5"}`}>
+      className={`flex flex-col p-4 rounded-xl border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#161920] border-white/5"}`}>
       <span
-        className={`text-[9px] uppercase font-black mb-1 tracking-wider ${theme.sub}`}>
+        className={`text-[10px] uppercase font-black mb-1.5 tracking-wider ${theme.sub}`}>
         {label}
       </span>
       <span
@@ -707,121 +630,276 @@ export default function TournamentPlayersView() {
     </div>
   );
 
-  // --- CROP MODAL RENDER ---
-  const renderCropModal = () => {
-    if (!cropModalOpen || !imageToCrop) return null;
-
-    return (
-      <div className="fixed inset-0 z-[400] bg-black/95 flex flex-col animate-in fade-in duration-200">
-        <div className="flex-grow relative">
-          <Cropper
-            image={imageToCrop}
-            crop={crop}
-            zoom={zoom}
-            aspect={1}
-            cropShape="round"
-            showGrid={false}
-            onCropChange={setCrop}
-            onZoomChange={setZoom}
-            onCropComplete={onCropComplete}
-          />
-        </div>
-        <div className="bg-[#111] p-6 pb-12 flex flex-col gap-6">
-          <div className="flex items-center gap-4 px-4">
-            <span className="text-white text-xs font-bold uppercase">Zoom</span>
-            <input
-              type="range"
-              value={zoom}
-              min={1}
-              max={3}
-              step={0.1}
-              aria-labelledby="Zoom"
-              onChange={(e) => setZoom(e.target.value)}
-              className="w-full accent-indigo-500"
-            />
-          </div>
-          <div className="flex justify-between gap-4 px-4">
-            <button
-              onClick={handleCancelCrop}
-              className="flex-1 py-4 rounded-xl border border-white/20 text-white font-bold uppercase tracking-widest text-xs hover:bg-white/10 transition-colors">
-              Cancel
-            </button>
-            <button
-              onClick={handleSaveCrop}
-              className="flex-1 py-4 rounded-xl bg-indigo-500 text-white font-black uppercase tracking-widest text-xs shadow-lg shadow-indigo-500/20 active:scale-95 transition-all">
-              Save Picture
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // --- STYLES ---
-  const inputClass = `w-full border rounded-xl px-4 py-3 outline-none transition-all font-bold placeholder:font-normal focus:ring-2
-    ${
-      lightMode
-        ? "bg-gray-50 border-gray-200 text-gray-900 focus:bg-white focus:ring-teal-100 focus:border-teal-500"
-        : "bg-[#0F1115] border-white/10 text-slate-200 focus:bg-black focus:border-teal-500/50"
-    }`;
+  const inputClass = `w-full border rounded-xl px-4 py-3 outline-none transition-all font-bold text-sm focus:ring-2
+    ${lightMode ? "bg-white border-gray-200 text-gray-900 focus:ring-teal-100 focus:border-teal-500" : "bg-[#0F1115] border-white/10 text-slate-200 focus:border-teal-500/50"}`;
 
   return (
     <div
-      className={`min-h-screen p-2 md:p-4 pb-20 font-sans transition-colors duration-300 ${theme.bg} ${theme.text}`}>
+      className={`min-h-screen p-4 md:p-6 pb-20 font-sans transition-colors duration-300 ${theme.bg} ${theme.text}`}>
       <NotificationToast
         message={notification?.message}
         type={notification?.type}
         onClose={() => setNotification(null)}
       />
 
-      {/* RENDER CROP MODAL */}
-      {renderCropModal()}
+      {/* CROP MODAL */}
+      {cropModalOpen && imageToCrop && (
+        <div className="fixed inset-0 z-[600] bg-black/95 flex flex-col animate-in fade-in duration-200">
+          <div className="flex-grow relative">
+            <Cropper
+              image={imageToCrop}
+              crop={crop}
+              zoom={zoom}
+              aspect={1}
+              cropShape="round"
+              showGrid={false}
+              onCropChange={setCrop}
+              onZoomChange={setZoom}
+              onCropComplete={onCropComplete}
+            />
+          </div>
+          <div className="bg-[#111] p-6 pb-12 flex flex-col gap-6">
+            <div className="flex items-center gap-4 px-4">
+              <span className="text-white text-sm font-bold uppercase">
+                Zoom
+              </span>
+              <input
+                type="range"
+                value={zoom}
+                min={1}
+                max={3}
+                step={0.1}
+                onChange={(e) => setZoom(e.target.value)}
+                className="w-full accent-indigo-500"
+              />
+            </div>
+            <div className="flex justify-between gap-4 px-4">
+              <button
+                onClick={handleCancelCrop}
+                className="flex-1 py-4 rounded-xl border border-white/20 text-white font-bold uppercase tracking-widest text-sm hover:bg-white/10 transition-colors">
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveCrop}
+                className="flex-1 py-4 rounded-xl bg-indigo-500 text-white font-black uppercase tracking-widest text-sm shadow-lg shadow-indigo-500/20 active:scale-95 transition-all">
+                Save Picture
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PLAYER DETAILS MODAL (Pop-up) */}
+      {selectedPlayer && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div
+            className={`relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-3xl shadow-2xl p-6 md:p-8 custom-scrollbar ${lightMode ? "bg-white border border-gray-200" : "bg-[#1C2128] border border-white/10"}`}>
+            <button
+              onClick={() => setSelectedPlayer(null)}
+              className="absolute top-4 right-4 md:top-6 md:right-6 p-2 rounded-full bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 transition-colors z-10">
+              <X size={24} />
+            </button>
+
+            <div className="flex flex-col md:flex-row gap-6 items-start mb-8">
+              <img
+                src={
+                  selectedPlayer.tournamentData?.[tournamentId]?.photoURL ||
+                  selectedPlayer.photoURL ||
+                  "https://cdn-icons-png.flaticon.com/512/847/847969.png"
+                }
+                alt={selectedPlayer.name}
+                className={`w-32 h-32 md:w-48 md:h-48 rounded-3xl object-cover border-4 shadow-xl cursor-pointer ${lightMode ? "border-white" : "border-[#0F1115]"}`}
+                onClick={(e) => setPreviewImage(e.target.src)}
+              />
+              <div className="flex-grow pt-2 w-full">
+                <div className="flex flex-wrap sm:flex-nowrap items-start sm:items-center gap-3 mb-2 pr-12 md:pr-14">
+                  <h2
+                    className={`text-2xl md:text-3xl font-black italic tracking-tight break-words ${theme.text}`}>
+                    {selectedPlayer.name}
+                  </h2>
+                  {user && (
+                    <div className="flex gap-2 sm:ml-auto shrink-0 mt-1 sm:mt-0">
+                      <button
+                        onClick={() => {
+                          setSelectedPlayer(null);
+                          openEditModal(selectedPlayer);
+                        }}
+                        className={`p-2.5 rounded-lg transition-all ${lightMode ? "bg-gray-100 hover:bg-gray-200 text-gray-700" : "bg-white/5 hover:bg-white/10 text-white"}`}>
+                        <Edit3 size={18} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(selectedPlayer.id)}
+                        className="p-2.5 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-all">
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <span
+                  className={`inline-block text-xs px-4 py-1.5 rounded-full uppercase font-black tracking-widest border mb-6 ${lightMode ? "bg-gray-100 border-gray-200 text-gray-600" : "bg-white/5 border-white/10 text-slate-300"}`}>
+                  {selectedPlayer.activeRole}
+                </span>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <DetailItem
+                    label="Batting"
+                    value={
+                      selectedPlayer.tournamentData?.[tournamentId]
+                        ?.battingStyle || selectedPlayer.battingStyle
+                    }
+                  />
+                  <DetailItem
+                    label="Bowling"
+                    value={
+                      selectedPlayer.tournamentData?.[tournamentId]
+                        ?.bowlingStyle || selectedPlayer.bowlingStyle
+                    }
+                  />
+                  <DetailItem
+                    label="Phone"
+                    value={selectedPlayer.mobile}
+                    isMono={true}
+                  />
+                  <DetailItem
+                    label="Matches"
+                    value={selectedPlayer.calculatedStats.matches}
+                    isMono={true}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Receipt & History Row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-8 border-t border-black/5 dark:border-white/10">
+              {user &&
+                (selectedPlayer.tournamentData?.[tournamentId]
+                  ?.paymentScreenshotURL ||
+                  selectedPlayer.paymentScreenshotURL) && (
+                  <div>
+                    <h4
+                      className={`text-xs font-black uppercase mb-4 tracking-widest ${theme.sub}`}>
+                      Payment Proof
+                    </h4>
+                    <img
+                      src={
+                        selectedPlayer.tournamentData?.[tournamentId]
+                          ?.paymentScreenshotURL ||
+                        selectedPlayer.paymentScreenshotURL
+                      }
+                      onClick={(e) => setPreviewImage(e.target.src)}
+                      className={`w-full h-40 object-cover rounded-xl border cursor-pointer hover:opacity-80 transition-opacity ${lightMode ? "border-gray-200" : "border-white/10"}`}
+                    />
+                  </div>
+                )}
+              <div
+                className={
+                  user &&
+                  (selectedPlayer.tournamentData?.[tournamentId]
+                    ?.paymentScreenshotURL ||
+                    selectedPlayer.paymentScreenshotURL)
+                    ? ""
+                    : "md:col-span-2"
+                }>
+                <h4
+                  className={`text-xs font-black uppercase mb-4 tracking-widest ${theme.sub}`}>
+                  Recent Matches
+                </h4>
+                {selectedPlayer.calculatedStats.history.length > 0 ? (
+                  <div className="space-y-3 max-h-48 overflow-y-auto custom-scrollbar pr-2">
+                    {selectedPlayer.calculatedStats.history.map(
+                      (match, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() =>
+                            goToMatch(match.tournamentId, match.matchId)
+                          }
+                          className={`flex justify-between items-center p-4 rounded-xl cursor-pointer border hover:border-teal-500 transition-colors ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
+                          <div>
+                            <div
+                              className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${theme.sub}`}>
+                              {new Date(match.date).toLocaleDateString()}
+                            </div>
+                            <div className={`text-sm font-bold ${theme.text}`}>
+                              vs {match.opponent}
+                            </div>
+                          </div>
+                          <div className="flex gap-4 text-sm font-mono font-bold">
+                            {match.runs > 0 && (
+                              <span className="text-teal-500">
+                                🏏 {match.runs}
+                              </span>
+                            )}
+                            {match.wickets > 0 && (
+                              <span className="text-purple-500">
+                                🥎 {match.wickets}
+                              </span>
+                            )}
+                            {match.runs === 0 && match.wickets === 0 && (
+                              <span className={theme.sub}>-</span>
+                            )}
+                          </div>
+                        </div>
+                      ),
+                    )}
+                  </div>
+                ) : (
+                  <div
+                    className={`p-6 text-center text-sm font-medium italic rounded-xl border border-dashed ${theme.sub} ${lightMode ? "border-gray-300" : "border-white/10"}`}>
+                    No matches played yet.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-[1400px] mx-auto">
-        {/* HEADER */}
-        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
-          <div className="text-center md:text-left">
+        {/* HEADER CONTROLS */}
+        <div className="flex flex-col lg:flex-row justify-between items-center mb-8 gap-6">
+          <div className="text-center lg:text-left">
             <h1
-              className={`text-2xl font-black uppercase tracking-tighter italic flex items-center gap-2 justify-center md:justify-start ${theme.text}`}>
+              className={`text-3xl font-black uppercase tracking-tighter italic flex items-center gap-3 justify-center lg:justify-start ${theme.text}`}>
               <span
-                className={`p-2 rounded-xl ${lightMode ? "bg-indigo-100 text-indigo-600" : "bg-indigo-500/10 text-indigo-500"}`}>
-                <Trophy size={20} />
+                className={`p-3 rounded-2xl ${lightMode ? "bg-indigo-100 text-indigo-600" : "bg-indigo-500/10 text-indigo-500"}`}>
+                <Trophy size={24} />
               </span>
-              {tournamentId ? tournamentId.replace(/-/g, " ") : "Tournament"}{" "}
-              Players
+              {tournamentId ? tournamentId.replace(/-/g, " ") : "Tournament"}
             </h1>
             <p
-              className={`text-xs mt-2 font-bold uppercase tracking-widest flex items-center gap-2 justify-center md:justify-start ${theme.sub}`}>
-              {processedPlayers.length} players found
+              className={`text-sm mt-3 font-bold uppercase tracking-widest flex items-center gap-2 justify-center lg:justify-start ${theme.sub}`}>
+              {processedPlayers.length} profiles registered
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-3 w-full md:w-auto justify-center md:justify-end items-center">
-            {/* Search Input */}
-            <div className="relative w-full md:w-56">
+          <div className="flex flex-wrap gap-3 w-full lg:w-auto justify-center lg:justify-end items-center">
+            {/* TIGHTENED SEARCH */}
+            <div className="relative w-full sm:w-[130px] flex-grow sm:flex-grow-0">
               <Search
                 className={`absolute left-3 top-1/2 -translate-y-1/2 ${theme.sub}`}
-                size={16}
+                size={14}
               />
               <input
                 type="text"
-                placeholder="Search name..."
-                className={`${inputClass} pl-10`}
+                placeholder="Search..."
+                className={inputClass
+                  .replace("px-4", "pl-8 pr-3")
+                  .replace("text-sm", "text-xs")}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
 
-            {/* Role Filter */}
-            <div className="relative w-full md:w-auto">
+            {/* TIGHTENED DROPDOWNS: Role Filter */}
+            <div className="relative w-full sm:w-[130px] flex-grow sm:flex-grow-0">
               <Filter
                 className={`absolute left-3 top-1/2 -translate-y-1/2 ${theme.sub}`}
-                size={16}
+                size={14}
               />
               <select
                 value={roleFilter}
                 onChange={(e) => setRoleFilter(e.target.value)}
-                className={`${inputClass} pl-10 cursor-pointer appearance-none pr-8`}>
+                className={`${inputClass.replace("px-4", "pl-8 pr-7").replace("text-sm", "text-xs")} appearance-none cursor-pointer`}>
                 <option value="All">All Roles</option>
                 <option value="Batsman">Batsman</option>
                 <option value="Bowler">Bowler</option>
@@ -834,38 +912,74 @@ export default function TournamentPlayersView() {
               />
             </div>
 
-            {/* THEME TOGGLE BUTTON */}
+            {/* TIGHTENED DROPDOWNS: Sort Filter */}
+            <div className="relative w-full sm:w-[125px] flex-grow sm:flex-grow-0">
+              <ArrowUpDown
+                className={`absolute left-3 top-1/2 -translate-y-1/2 ${theme.sub}`}
+                size={14}
+              />
+              <select
+                value={`${sortConfig.key}-${sortConfig.direction}`}
+                onChange={(e) => {
+                  const [key, dir] = e.target.value.split("-");
+                  setSortConfig({ key, direction: dir });
+                }}
+                className={`${inputClass.replace("px-4", "pl-8 pr-7").replace("text-sm", "text-xs")} appearance-none cursor-pointer`}>
+                <option value="runs-desc">Most Runs</option>
+                <option value="wickets-desc">Most Wkts</option>
+                <option value="matches-desc">Most Mat</option>
+                <option value="name-asc">Name (A-Z)</option>
+              </select>
+              <ChevronDown
+                className={`absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none ${theme.sub}`}
+                size={14}
+              />
+            </div>
+
+            {/* VIEW TOGGLE */}
+            <div
+              className={`flex p-1 rounded-xl border ${lightMode ? "bg-gray-100 border-gray-200" : "bg-[#0F1115] border-white/10"}`}>
+              <button
+                onClick={() => setViewMode("grid")}
+                className={`p-2.5 rounded-lg transition-all ${viewMode === "grid" ? (lightMode ? "bg-white shadow-sm text-indigo-600" : "bg-white/10 text-indigo-400") : theme.sub}`}
+                title="Grid View">
+                <LayoutGrid size={18} />
+              </button>
+              <button
+                onClick={() => setViewMode("list")}
+                className={`p-2.5 rounded-lg transition-all ${viewMode === "list" ? (lightMode ? "bg-white shadow-sm text-indigo-600" : "bg-white/10 text-indigo-400") : theme.sub}`}
+                title="List View">
+                <List size={18} />
+              </button>
+            </div>
+
             {toggleTheme && (
               <button
                 onClick={toggleTheme}
-                className={`p-3 rounded-xl border transition-all flex items-center justify-center shadow-sm w-full md:w-auto ${
-                  lightMode
-                    ? "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
-                    : "bg-[#0F1115] border-white/10 text-slate-300 hover:bg-white/5"
-                }`}
+                className={`p-3.5 rounded-xl border transition-all ${lightMode ? "bg-white border-gray-200 text-gray-600 hover:bg-gray-50" : "bg-[#0F1115] border-white/10 text-slate-300 hover:bg-white/5"}`}
                 title="Toggle Theme">
-                {lightMode ? <Moon size={16} /> : <Sun size={16} />}
+                {lightMode ? <Moon size={18} /> : <Sun size={18} />}
               </button>
             )}
 
             {user && (
               <button
                 onClick={openAddModal}
-                className="bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg whitespace-nowrap transition-all active:scale-95 text-white w-full md:w-auto flex items-center justify-center gap-2">
-                <Plus size={14} /> Add
+                className="bg-gradient-to-r from-teal-600 to-indigo-600 hover:from-teal-500 hover:to-indigo-500 text-white p-3.5 px-6 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
+                <Plus size={16} /> Add Player
               </button>
             )}
           </div>
         </div>
 
         {/* CAPS SECTION */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-10">
           {orangeCap && (
             <div
-              className={`p-5 rounded-[2rem] flex items-center gap-5 shadow-xl relative overflow-hidden group border transition-all ${lightMode ? "bg-orange-50 border-orange-200" : "bg-gradient-to-br from-orange-900/30 to-[#161920] border-orange-500/20"}`}>
+              className={`p-6 rounded-[2rem] flex items-center gap-5 shadow-sm border transition-all ${lightMode ? "bg-orange-50/50 border-orange-200" : "bg-orange-900/10 border-orange-500/20"}`}>
               <div
-                className={`p-4 rounded-full text-3xl border group-hover:scale-110 transition-transform ${lightMode ? "bg-orange-100 border-orange-200 text-orange-600" : "bg-orange-500/10 border-orange-500/20 text-orange-500"}`}>
-                <Medal size={32} />
+                className={`p-4 rounded-full border ${lightMode ? "bg-orange-100 border-orange-200 text-orange-600" : "bg-orange-500/10 border-orange-500/20 text-orange-500"}`}>
+                <Medal size={28} />
               </div>
               <div>
                 <div className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-500 mb-1">
@@ -883,10 +997,10 @@ export default function TournamentPlayersView() {
           )}
           {purpleCap && (
             <div
-              className={`p-5 rounded-[2rem] flex items-center gap-5 shadow-xl relative overflow-hidden group border transition-all ${lightMode ? "bg-purple-50 border-purple-200" : "bg-gradient-to-br from-purple-900/30 to-[#161920] border-purple-500/20"}`}>
+              className={`p-6 rounded-[2rem] flex items-center gap-5 shadow-sm border transition-all ${lightMode ? "bg-purple-50/50 border-purple-200" : "bg-purple-900/10 border-purple-500/20"}`}>
               <div
-                className={`p-4 rounded-full text-3xl border group-hover:scale-110 transition-transform ${lightMode ? "bg-purple-100 border-purple-200 text-purple-600" : "bg-purple-500/10 border-purple-500/20 text-purple-500"}`}>
-                <Medal size={32} />
+                className={`p-4 rounded-full border ${lightMode ? "bg-purple-100 border-purple-200 text-purple-600" : "bg-purple-500/10 border-purple-500/20 text-purple-500"}`}>
+                <Medal size={28} />
               </div>
               <div>
                 <div className="text-[10px] font-black uppercase tracking-[0.2em] text-purple-500 mb-1">
@@ -904,367 +1018,254 @@ export default function TournamentPlayersView() {
           )}
         </div>
 
-        {/* TABLE */}
-        <div
-          className={`border rounded-[2rem] overflow-hidden shadow-2xl ${theme.card}`}>
-          {loading ? (
-            <div className="p-12 flex flex-col items-center justify-center text-indigo-500 animate-pulse text-xs font-black uppercase tracking-widest gap-3">
-              <Loader2 className="animate-spin" size={32} />
-              Fetching Tournament Data...
-            </div>
-          ) : (
+        {/* PLAYERS RENDERING (Grid OR List based on viewMode state) */}
+        {loading ? (
+          <div className="py-24 flex flex-col items-center justify-center text-indigo-500 animate-pulse text-sm font-black uppercase tracking-widest gap-4">
+            <Loader2 className="animate-spin" size={40} /> Loading Roster...
+          </div>
+        ) : processedPlayers.length === 0 ? (
+          <div className={`text-center py-20 italic text-base ${theme.sub}`}>
+            No players found.
+          </div>
+        ) : viewMode === "grid" ? (
+          // GRID VIEW
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            {processedPlayers.map((player) => {
+              const tData = player.tournamentData?.[tournamentId] || {};
+              const displayPhoto =
+                tData.photoURL ||
+                player.photoURL ||
+                "https://cdn-icons-png.flaticon.com/512/847/847969.png";
+              const displayRole = tData.role || player.role;
+
+              return (
+                <div
+                  key={player.id}
+                  onClick={() => setSelectedPlayer(player)}
+                  className={`relative p-5 rounded-[2rem] border cursor-pointer transition-all shadow-sm hover:shadow-xl group flex flex-col gap-5 ${
+                    lightMode
+                      ? "bg-white border-gray-200 hover:border-indigo-300"
+                      : "bg-[#1C2128] border-white/5 hover:border-indigo-500/50"
+                  }`}>
+                  <div className="flex items-center gap-4">
+                    <img
+                      src={displayPhoto}
+                      alt={player.name}
+                      className={`w-16 h-16 rounded-2xl object-cover border-2 shadow-md ${lightMode ? "border-white" : "border-white/10"}`}
+                      onError={(e) => {
+                        e.target.src =
+                          "https://cdn-icons-png.flaticon.com/512/847/847969.png";
+                      }}
+                    />
+                    <div className="flex flex-col overflow-hidden">
+                      <span
+                        className={`font-black text-lg leading-tight truncate ${theme.text}`}>
+                        {player.name}
+                      </span>
+                      <span
+                        className={`text-[10px] uppercase font-bold tracking-widest mt-1 ${theme.sub}`}>
+                        {displayRole}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div
+                    className={`grid grid-cols-3 gap-3 pt-4 border-t text-center ${lightMode ? "border-gray-100" : "border-white/5"}`}>
+                    <div className="flex flex-col">
+                      <span
+                        className={`text-[9px] uppercase font-black tracking-widest mb-1 ${theme.sub}`}>
+                        Matches
+                      </span>
+                      <span
+                        className={`text-base font-mono font-bold ${theme.text}`}>
+                        {player.calculatedStats.matches}
+                      </span>
+                    </div>
+                    <div className="flex flex-col border-l border-r border-black/5 dark:border-white/5">
+                      <span
+                        className={`text-[9px] uppercase font-black tracking-widest mb-1 text-teal-500/80`}>
+                        Runs
+                      </span>
+                      <span className="text-base font-mono font-bold text-teal-500">
+                        {player.calculatedStats.runs}
+                      </span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span
+                        className={`text-[9px] uppercase font-black tracking-widest mb-1 text-purple-500/80`}>
+                        Wickets
+                      </span>
+                      <span className="text-base font-mono font-bold text-purple-500">
+                        {player.calculatedStats.wickets}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          // LIST VIEW (TABLE)
+          <div
+            className={`border rounded-[2.5rem] overflow-hidden shadow-2xl ${theme.card}`}>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm text-left border-collapse">
+              <table className="w-full text-left border-collapse">
                 <thead
-                  className={`text-[10px] uppercase font-black tracking-[0.2em] border-b ${lightMode ? "bg-gray-100 text-gray-500 border-gray-200" : "bg-[#0F1115] text-slate-500 border-white/5"}`}>
+                  className={`text-[11px] uppercase font-black tracking-[0.2em] border-b ${lightMode ? "bg-gray-100 text-gray-500 border-gray-200" : "bg-[#0F1115] text-slate-500 border-white/5"}`}>
                   <tr>
                     <th
-                      className="px-6 py-4 cursor-pointer hover:opacity-70 group w-[40%] md:w-[30%] transition-opacity"
+                      className="px-6 py-5 cursor-pointer hover:opacity-70 group transition-opacity"
                       onClick={() => handleSort("name")}>
-                      Player Details <SortIcon colKey="name" />
+                      Player <SortIcon colKey="name" />
                     </th>
                     <th
-                      className="px-4 py-4 text-center cursor-pointer hover:opacity-70 group transition-opacity"
+                      className="px-6 py-5 text-center cursor-pointer hover:opacity-70 group transition-opacity"
                       onClick={() => handleSort("matches")}>
                       Mat <SortIcon colKey="matches" />
                     </th>
                     <th
-                      className="px-4 py-4 text-center cursor-pointer hover:opacity-70 group transition-opacity"
+                      className="px-6 py-5 text-center cursor-pointer hover:opacity-70 group transition-opacity"
                       onClick={() => handleSort("runs")}>
                       Runs <SortIcon colKey="runs" />
                     </th>
                     <th
-                      className="px-4 py-4 text-center cursor-pointer hover:opacity-70 group hidden md:table-cell transition-opacity"
+                      className="px-6 py-5 text-center cursor-pointer hover:opacity-70 group hidden md:table-cell transition-opacity"
                       onClick={() => handleSort("highestScore")}>
                       HS <SortIcon colKey="highestScore" />
                     </th>
                     <th
-                      className="px-4 py-4 text-center cursor-pointer hover:opacity-70 group transition-opacity"
+                      className="px-6 py-5 text-center cursor-pointer hover:opacity-70 group transition-opacity"
                       onClick={() => handleSort("wickets")}>
                       Wkts <SortIcon colKey="wickets" />
                     </th>
-                    <th className="px-6 py-4 text-right">Action</th>
+                    <th className="px-6 py-5 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody
                   className={`divide-y ${lightMode ? "divide-gray-100" : "divide-white/5"}`}>
-                  {processedPlayers.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={8}
-                        className={`text-center py-16 italic text-sm ${theme.sub}`}>
-                        No players registered for this tournament yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    processedPlayers.map((player) => {
-                      // 🔥 DYNAMIC VARIABLES ESTABLISHED HERE 🔥
-                      const tData = player.tournamentData?.[tournamentId] || {};
-                      const displayPhoto =
-                        tData.photoURL ||
-                        player.photoURL ||
-                        "https://cdn-icons-png.flaticon.com/512/847/847969.png";
-                      const displayPayment =
-                        tData.paymentScreenshotURL ||
-                        player.paymentScreenshotURL;
-                      const displayRole = tData.role || player.role;
-                      const displayBatting =
-                        tData.battingStyle || player.battingStyle;
-                      const displayBowling =
-                        tData.bowlingStyle || player.bowlingStyle;
+                  {processedPlayers.map((player) => {
+                    const tData = player.tournamentData?.[tournamentId] || {};
+                    const displayPhoto =
+                      tData.photoURL ||
+                      player.photoURL ||
+                      "https://cdn-icons-png.flaticon.com/512/847/847969.png";
+                    const displayRole = tData.role || player.role;
 
-                      return (
-                        <React.Fragment key={player.id}>
-                          <tr
-                            onClick={() => toggleRowExpansion(player.id)}
-                            className={`cursor-pointer group transition-colors ${
-                              expandedPlayerId === player.id
-                                ? lightMode
-                                  ? "bg-indigo-50"
-                                  : "bg-white/5"
-                                : lightMode
-                                  ? "hover:bg-gray-50"
-                                  : "hover:bg-white/5"
-                            }`}>
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-4">
-                                <img
-                                  src={displayPhoto}
-                                  alt=""
-                                  className={`w-12 h-12 rounded-xl object-cover border flex-shrink-0 shadow-sm ${lightMode ? "bg-gray-200 border-gray-200" : "bg-[#0F1115] border-white/10"}`}
-                                  onError={(e) => {
-                                    e.target.src =
-                                      "https://cdn-icons-png.flaticon.com/512/847/847969.png";
-                                  }}
-                                />
-                                <div className="flex flex-col overflow-hidden">
-                                  <span
-                                    className={`font-bold text-sm leading-tight truncate max-w-[120px] md:max-w-none transition-colors ${theme.text}`}>
-                                    {player.name}
-                                  </span>
-                                  <div className="flex flex-wrap gap-1 mt-1.5">
-                                    <span
-                                      className={`text-[9px] px-2 py-0.5 rounded border truncate uppercase font-bold tracking-wider ${lightMode ? "bg-white border-gray-200 text-gray-500" : "bg-[#0F1115] text-slate-500 border-white/10"}`}>
-                                      {displayRole}
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-                            <td
-                              className={`px-4 py-4 text-center font-mono font-bold ${theme.sub}`}>
-                              {player.calculatedStats.matches}
-                            </td>
-                            <td className="px-4 py-4 text-center font-bold text-teal-500 font-mono text-base">
-                              {player.calculatedStats.runs}
-                            </td>
-                            <td
-                              className={`px-4 py-4 text-center font-mono font-bold hidden md:table-cell ${theme.sub}`}>
-                              {player.calculatedStats.highestScore}
-                            </td>
-                            <td className="px-4 py-4 text-center font-bold text-purple-500 font-mono text-base">
-                              {player.calculatedStats.wickets}
-                            </td>
-                            <td className="px-6 py-4 text-right">
-                              <div className="flex justify-end gap-3 items-center">
-                                <ChevronDown
-                                  className={`transition-transform duration-200 ${expandedPlayerId === player.id ? "rotate-180" : ""} ${theme.sub}`}
-                                  size={16}
-                                />
-                                {user && (
-                                  <>
-                                    <button
-                                      onClick={(e) => openEditModal(player, e)}
-                                      className={`p-2 rounded-lg transition-all ${lightMode ? "text-gray-400 hover:bg-gray-100 hover:text-gray-900" : "text-slate-500 hover:bg-white/10 hover:text-white"}`}>
-                                      <Edit3 size={16} />
-                                    </button>
-                                    <button
-                                      onClick={(e) =>
-                                        handleDelete(player.id, e)
-                                      }
-                                      className="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-500/10 transition-all">
-                                      <Trash2 size={16} />
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-
-                          {expandedPlayerId === player.id && (
-                            <tr
-                              className={`border-t border-b animate-in slide-in-from-top-1 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
-                              <td colSpan={8} className="p-6">
-                                <div className="flex flex-col md:flex-row gap-8 items-start">
-                                  <div className="flex-shrink-0">
-                                    <img
-                                      src={displayPhoto}
-                                      alt={player.name}
-                                      className={`w-32 h-32 md:w-40 md:h-40 rounded-2xl object-cover border-2 shadow-2xl cursor-pointer ${lightMode ? "border-indigo-100 bg-white shadow-indigo-500/10" : "border-indigo-500/30 bg-[#161920] shadow-indigo-900/20"}`}
-                                      onClick={() =>
-                                        displayPhoto &&
-                                        setPreviewImage(displayPhoto)
-                                      }
-                                      onError={(e) => {
-                                        e.target.src =
-                                          "https://cdn-icons-png.flaticon.com/512/847/847969.png";
-                                      }}
-                                    />
-                                  </div>
-                                  <div className="flex-grow w-full">
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                                      <DetailItem
-                                        label="Full Name"
-                                        value={player.name}
-                                      />
-                                      <DetailItem
-                                        label="Role"
-                                        value={displayRole}
-                                      />
-                                      <DetailItem
-                                        label="Batting"
-                                        value={displayBatting}
-                                      />
-                                      <DetailItem
-                                        label="Bowling"
-                                        value={displayBowling}
-                                      />
-                                      <DetailItem
-                                        label="Mobile"
-                                        value={player.mobile}
-                                        isMono={true}
-                                      />
-                                      <DetailItem
-                                        label="Registered"
-                                        value={
-                                          player.createdAt
-                                            ? new Date(
-                                                player.createdAt,
-                                              ).toLocaleDateString()
-                                            : "N/A"
-                                        }
-                                      />
-                                    </div>
-
-                                    {user && displayPayment && (
-                                      <div
-                                        className={`mb-8 pt-6 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}>
-                                        <h4
-                                          className={`text-xs font-black uppercase mb-4 tracking-widest ${theme.sub}`}>
-                                          Receipt / Proof
-                                        </h4>
-                                        <div
-                                          className="relative group w-full md:w-64 cursor-pointer"
-                                          onClick={() =>
-                                            setPreviewImage(displayPayment)
-                                          }>
-                                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-xl">
-                                            <span className="text-white font-bold text-xs uppercase tracking-widest">
-                                              Enlarge
-                                            </span>
-                                          </div>
-                                          <img
-                                            src={displayPayment}
-                                            alt="Payment"
-                                            className={`w-full h-32 object-cover rounded-xl border ${lightMode ? "border-gray-200" : "border-white/10"}`}
-                                          />
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    <div
-                                      className={`pt-6 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}>
-                                      <h4
-                                        className={`text-xs font-black uppercase mb-4 flex items-center gap-2 tracking-widest ${theme.sub}`}>
-                                        Match History (
-                                        {player.calculatedStats.history.length})
-                                      </h4>
-                                      {player.calculatedStats.history.length >
-                                      0 ? (
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                          {player.calculatedStats.history
-                                            .slice(0, 10)
-                                            .map((match, idx) => (
-                                              <div
-                                                key={idx}
-                                                onClick={() =>
-                                                  goToMatch(
-                                                    match.tournamentId,
-                                                    match.matchId,
-                                                  )
-                                                }
-                                                className={`p-4 rounded-xl cursor-pointer transition-all flex justify-between items-center group/card border ${lightMode ? "bg-white border-gray-200 hover:border-indigo-500/50 hover:shadow-md" : "bg-[#161920] border-white/5 hover:border-indigo-500/40 hover:bg-[#1C2128]"}`}>
-                                                <div>
-                                                  <div
-                                                    className={`text-[9px] font-bold uppercase tracking-wider mb-1 ${theme.sub}`}>
-                                                    {new Date(
-                                                      match.date,
-                                                    ).toLocaleDateString() ||
-                                                      "Date"}
-                                                  </div>
-                                                  <div
-                                                    className={`font-bold text-sm transition-colors group-hover/card:text-indigo-500 ${theme.text}`}>
-                                                    vs{" "}
-                                                    {match.opponent ||
-                                                      "Opponent"}
-                                                  </div>
-                                                </div>
-                                                <div className="text-right flex flex-col items-end">
-                                                  <div className="flex gap-3 text-xs">
-                                                    {match.runs > 0 && (
-                                                      <span className="text-teal-500 font-bold font-mono">
-                                                        🏏 {match.runs}
-                                                      </span>
-                                                    )}
-                                                    {match.wickets > 0 && (
-                                                      <span className="text-purple-500 font-bold font-mono">
-                                                        🥎 {match.wickets}
-                                                      </span>
-                                                    )}
-                                                    {match.runs === 0 &&
-                                                      match.wickets === 0 && (
-                                                        <span
-                                                          className={theme.sub}>
-                                                          -
-                                                        </span>
-                                                      )}
-                                                  </div>
-                                                </div>
-                                              </div>
-                                            ))}
-                                        </div>
-                                      ) : (
-                                        <div
-                                          className={`text-xs italic p-6 border border-dashed rounded-xl text-center font-medium ${lightMode ? "text-gray-400 bg-white border-gray-200" : "text-slate-600 bg-[#161920] border-white/5"}`}>
-                                          No match history recorded for this
-                                          tournament.
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
+                    return (
+                      <tr
+                        key={player.id}
+                        onClick={() => setSelectedPlayer(player)}
+                        className={`cursor-pointer group transition-colors ${lightMode ? "hover:bg-gray-50" : "hover:bg-white/5"}`}>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-4">
+                            <img
+                              src={displayPhoto}
+                              alt=""
+                              className={`w-12 h-12 rounded-xl object-cover shadow-sm border ${lightMode ? "border-gray-200" : "border-white/10"}`}
+                              onError={(e) => {
+                                e.target.src =
+                                  "https://cdn-icons-png.flaticon.com/512/847/847969.png";
+                              }}
+                            />
+                            <div className="flex flex-col">
+                              <span
+                                className={`font-bold text-base ${theme.text}`}>
+                                {player.name}
+                              </span>
+                              <span
+                                className={`text-[10px] uppercase font-bold tracking-widest mt-0.5 ${theme.sub}`}>
+                                {displayRole}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td
+                          className={`px-6 py-4 text-center text-sm font-mono font-bold ${theme.sub}`}>
+                          {player.calculatedStats.matches}
+                        </td>
+                        <td className="px-6 py-4 text-center font-bold text-teal-500 font-mono text-base">
+                          {player.calculatedStats.runs}
+                        </td>
+                        <td
+                          className={`px-6 py-4 text-center text-sm font-mono font-bold hidden md:table-cell ${theme.sub}`}>
+                          {player.calculatedStats.highestScore}
+                        </td>
+                        <td className="px-6 py-4 text-center font-bold text-purple-500 font-mono text-base">
+                          {player.calculatedStats.wickets}
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          {user && (
+                            <div className="flex justify-end gap-2">
+                              <button
+                                onClick={(e) => openEditModal(player, e)}
+                                className={`p-2 rounded-lg transition-all ${lightMode ? "text-gray-400 hover:bg-gray-200 hover:text-gray-900" : "text-slate-500 hover:bg-white/10 hover:text-white"}`}>
+                                <Edit3 size={18} />
+                              </button>
+                              <button
+                                onClick={(e) => handleDelete(player.id, e)}
+                                className="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-500/10 transition-all">
+                                <Trash2 size={18} />
+                              </button>
+                            </div>
                           )}
-                        </React.Fragment>
-                      );
-                    })
-                  )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* IMAGE LIGHTBOX */}
         {previewImage && (
           <div
-            className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+            className="fixed inset-0 z-[600] bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
             onClick={() => setPreviewImage(null)}>
-            <div className="relative max-w-4xl max-h-[90vh]">
+            <div className="relative max-w-5xl max-h-[90vh]">
               <img
                 src={previewImage}
                 alt="Preview"
                 className="rounded-xl shadow-2xl border border-white/10"
-                style={{ maxWidth: "70vw", maxHeight: "70vh" }}
+                style={{ maxWidth: "80vw", maxHeight: "80vh" }}
                 onClick={(e) => e.stopPropagation()}
               />
               <button
                 className="absolute -top-12 right-0 text-white hover:text-red-400 font-bold text-sm uppercase tracking-widest transition-colors flex items-center gap-2"
                 onClick={() => setPreviewImage(null)}>
-                Close <X size={16} />
+                Close <X size={20} />
               </button>
             </div>
           </div>
         )}
 
-        {/* MODAL */}
-        {showModal && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-in fade-in">
+        {/* FORM MODAL */}
+        {showFormModal && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[500] flex items-center justify-center p-4 animate-in fade-in">
             <div
               className={`border w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${theme.card} ${theme.text}`}>
               <div
                 className={`p-6 border-b flex justify-between items-center sticky top-0 z-10 ${lightMode ? "bg-white border-gray-200" : "bg-[#1C2128] border-white/5"}`}>
                 <h3
-                  className={`text-lg font-black uppercase tracking-tight italic ${theme.text}`}>
-                  {isEditing ? "Edit Player Profile" : "Register New Player"}
+                  className={`text-xl font-black uppercase tracking-tight italic ${theme.text}`}>
+                  {isEditing ? "Edit Player" : "Register Player"}
                 </h3>
                 <button
-                  onClick={() => setShowModal(false)}
-                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${lightMode ? "bg-gray-100 text-gray-500 hover:bg-gray-200" : "bg-white/5 text-slate-400 hover:text-white"}`}>
-                  <X size={16} />
+                  onClick={() => setShowFormModal(false)}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${lightMode ? "bg-gray-100 hover:bg-gray-200" : "bg-white/5 hover:bg-white/10"}`}>
+                  <X size={20} />
                 </button>
               </div>
-              <div className="overflow-y-auto p-8 custom-scrollbar">
-                <form onSubmit={handleSubmit} className="space-y-6">
-                  <div className="flex gap-4 justify-center">
-                    {/* Profile Photo */}
+              <div className="overflow-y-auto p-6 md:p-8 custom-scrollbar">
+                <form onSubmit={handleSubmit} className="space-y-8">
+                  <div className="flex gap-6 justify-center">
                     <div className="flex flex-col items-center">
                       <div
                         className="relative group cursor-pointer"
                         onClick={() => fileInputRef.current.click()}>
                         <div
-                          className={`w-24 h-24 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl ${formData.photoURL ? "border-indigo-500 shadow-indigo-500/20" : lightMode ? "bg-gray-100 border-gray-200 border-dashed" : "bg-[#0F1115] border-white/10 border-dashed"}`}>
+                          className={`w-28 h-28 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl ${formData.photoURL ? "border-indigo-500 shadow-indigo-500/20" : lightMode ? "bg-gray-100 border-gray-200 border-dashed" : "bg-[#0F1115] border-white/10 border-dashed"}`}>
                           {formData.photoURL ? (
                             <img
                               src={formData.photoURL}
@@ -1272,32 +1273,34 @@ export default function TournamentPlayersView() {
                               className="w-full h-full object-cover"
                             />
                           ) : (
-                            <Camera className={`opacity-50 ${theme.sub}`} />
+                            <Camera
+                              className={`opacity-50 ${theme.sub}`}
+                              size={32}
+                            />
                           )}
                         </div>
                         <input
                           type="file"
                           ref={fileInputRef}
-                          onChange={handleProfileImageSelect} // 🔥 Replaced with Cropper Logic
+                          onChange={handleProfileImageSelect}
                           className="hidden"
                           accept="image/*"
                           onClick={(e) => {
-                            e.target.value = null; // Allows re-selecting the same image
+                            e.target.value = null;
                           }}
                         />
                       </div>
                       <p
-                        className={`text-[9px] uppercase mt-2 font-black tracking-widest text-center ${theme.sub}`}>
+                        className={`text-[10px] uppercase mt-3 font-black tracking-widest text-center ${theme.sub}`}>
                         Profile
                       </p>
                     </div>
-                    {/* Payment */}
                     <div className="flex flex-col items-center">
                       <div
                         className="relative group cursor-pointer"
                         onClick={() => paymentInputRef.current.click()}>
                         <div
-                          className={`w-24 h-24 rounded-xl border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl ${formData.paymentScreenshotURL ? "border-purple-500 shadow-purple-500/20" : lightMode ? "bg-gray-100 border-gray-200 border-dashed" : "bg-[#0F1115] border-white/10 border-dashed"}`}>
+                          className={`w-28 h-28 rounded-xl border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl ${formData.paymentScreenshotURL ? "border-purple-500 shadow-purple-500/20" : lightMode ? "bg-gray-100 border-gray-200 border-dashed" : "bg-[#0F1115] border-white/10 border-dashed"}`}>
                           {formData.paymentScreenshotURL ? (
                             <img
                               src={formData.paymentScreenshotURL}
@@ -1305,7 +1308,10 @@ export default function TournamentPlayersView() {
                               className="w-full h-full object-cover"
                             />
                           ) : (
-                            <Receipt className={`opacity-50 ${theme.sub}`} />
+                            <Receipt
+                              className={`opacity-50 ${theme.sub}`}
+                              size={32}
+                            />
                           )}
                         </div>
                         <input
@@ -1317,13 +1323,13 @@ export default function TournamentPlayersView() {
                         />
                       </div>
                       <p
-                        className={`text-[9px] uppercase mt-2 font-black tracking-widest text-center ${theme.sub}`}>
+                        className={`text-[10px] uppercase mt-3 font-black tracking-widest text-center ${theme.sub}`}>
                         Payment
                       </p>
                     </div>
                   </div>
 
-                  <div className="space-y-4">
+                  <div className="space-y-5">
                     <input
                       className={inputClass}
                       value={formData.name}
@@ -1341,7 +1347,6 @@ export default function TournamentPlayersView() {
                       }
                       placeholder="Mobile Number"
                     />
-
                     <div className="grid grid-cols-2 gap-3">
                       {[
                         "Batsman",
@@ -1353,12 +1358,11 @@ export default function TournamentPlayersView() {
                           key={role}
                           type="button"
                           onClick={() => setFormData({ ...formData, role })}
-                          className={`py-3 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all ${formData.role === role ? "bg-indigo-500/10 border-indigo-500/50 text-indigo-500" : lightMode ? "bg-white border-gray-200 text-gray-500 hover:bg-gray-50" : "bg-[#0F1115] border-white/5 text-slate-500 hover:text-slate-300"}`}>
+                          className={`py-3.5 px-2 rounded-xl text-xs font-black uppercase tracking-wider border transition-all ${formData.role === role ? "bg-teal-500/10 border-teal-500/50 text-teal-600 dark:text-teal-400" : lightMode ? "bg-white border-gray-200 text-gray-500 hover:bg-gray-50" : "bg-[#0F1115] border-white/5 text-slate-500 hover:text-slate-300"}`}>
                           {role}
                         </button>
                       ))}
                     </div>
-
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <select
                         className={inputClass}
@@ -1391,11 +1395,10 @@ export default function TournamentPlayersView() {
                       </select>
                     </div>
                   </div>
-
                   <button
                     type="submit"
                     disabled={processingImage}
-                    className="w-full bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-black uppercase tracking-widest text-xs py-4 rounded-xl shadow-lg transition-all disabled:opacity-50 active:scale-[0.98]">
+                    className="w-full bg-gradient-to-r from-teal-600 to-indigo-600 hover:from-teal-500 hover:to-indigo-500 text-white font-black uppercase tracking-widest text-sm py-5 rounded-xl shadow-lg transition-all disabled:opacity-50 active:scale-[0.98]">
                     {processingImage
                       ? "Processing..."
                       : isEditing
