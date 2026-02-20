@@ -33,6 +33,8 @@ import {
   Loader2,
   Check,
   AlertCircle,
+  Sun,
+  Moon,
 } from "lucide-react";
 
 // --- TOAST COMPONENT ---
@@ -66,7 +68,8 @@ export default function TournamentPlayersView() {
   const navigate = useNavigate();
 
   // 2. Consume Theme
-  const { theme, lightMode } = useTheme();
+  // Make sure 'toggleTheme' (or your equivalent function) is exported from your ThemeContext
+  const { theme, lightMode, toggleTheme } = useTheme();
 
   // Refs
   const fileInputRef = useRef(null);
@@ -699,6 +702,20 @@ export default function TournamentPlayersView() {
                 size={14}
               />
             </div>
+
+            {/* 🔥 NEW THEME TOGGLE BUTTON 🔥 */}
+            {toggleTheme && (
+              <button
+                onClick={toggleTheme}
+                className={`p-3 rounded-xl border transition-all flex items-center justify-center shadow-sm w-full md:w-auto ${
+                  lightMode
+                    ? "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                    : "bg-[#0F1115] border-white/10 text-slate-300 hover:bg-white/5"
+                }`}
+                title="Toggle Theme">
+                {lightMode ? <Moon size={16} /> : <Sun size={16} />}
+              </button>
+            )}
 
             {user && (
               <button

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import React, { useState, useEffect, useCallback } from "react";
+import { Link, useParams } from "react-router-dom";
 import {
   collection,
   query,
@@ -13,7 +13,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { useAuth } from "../hooks/useAuth";
-import { useParams } from "react-router-dom";
+
 // 1. Theme & Icons
 import { useTheme } from "../context/ThemeContext";
 import {
@@ -26,7 +26,12 @@ import {
   User,
   Phone,
   Receipt,
+  Sun,
+  Moon,
 } from "lucide-react";
+
+// 2. Cropper Import
+import Cropper from "react-easy-crop";
 
 // --- INTERNAL TOAST COMPONENT ---
 const NotificationToast = ({ message, type, onClose }) => {
@@ -53,24 +58,59 @@ const NotificationToast = ({ message, type, onClose }) => {
   );
 };
 
+// --- CROP UTILITY FUNCTION ---
+const createImage = (url) =>
+  new Promise((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener("load", () => resolve(image));
+    image.addEventListener("error", (error) => reject(error));
+    image.src = url;
+  });
+
+async function getCroppedImg(imageSrc, pixelCrop) {
+  const image = await createImage(imageSrc);
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+
+  if (!ctx) return null;
+
+  // Set the canvas size to match the cropped area exactly
+  const TARGET_SIZE = 300; // Final compressed size
+  canvas.width = TARGET_SIZE;
+  canvas.height = TARGET_SIZE;
+
+  // Draw the cropped image onto the canvas, scaling it down
+  ctx.drawImage(
+    image,
+    pixelCrop.x,
+    pixelCrop.y,
+    pixelCrop.width,
+    pixelCrop.height,
+    0,
+    0,
+    TARGET_SIZE,
+    TARGET_SIZE,
+  );
+
+  return canvas.toDataURL("image/jpeg", 0.8);
+}
+
 export default function GlobalPlayerRegistration() {
   const { tournamentId } = useParams();
   const [tournamentName, setTournamentName] = useState("");
   const { user } = useAuth();
 
-  // --- ADD THIS USEEFFECT ---
   useEffect(() => {
     const fetchTournamentDetails = async () => {
-      if (!tournamentId) return; // Skip if it's the global generic link
+      if (!tournamentId) return;
 
       try {
         const tDocRef = doc(db, "tournaments", tournamentId);
         const tDocSnap = await getDoc(tDocRef);
 
         if (tDocSnap.exists()) {
-          setTournamentName(tDocSnap.data().name); // Assuming your tournament name field is 'name'
+          setTournamentName(tDocSnap.data().name);
         } else {
-          // Fallback just in case the document name is missing: replaces hyphens with spaces
           setTournamentName(tournamentId.replace(/-/g, " "));
         }
       } catch (error) {
@@ -81,8 +121,7 @@ export default function GlobalPlayerRegistration() {
     fetchTournamentDetails();
   }, [tournamentId]);
 
-  // 2. Consume Theme
-  const { theme, lightMode } = useTheme();
+  const { theme, lightMode, toggleTheme } = useTheme();
 
   const [formData, setFormData] = useState({
     name: "",
@@ -95,12 +134,19 @@ export default function GlobalPlayerRegistration() {
   const [photoBase64, setPhotoBase64] = useState("");
   const [paymentBase64, setPaymentBase64] = useState("");
 
+  // --- CROPPER STATE ---
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [imageToCrop, setImageToCrop] = useState(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
+
   const [existingPlayerId, setExistingPlayerId] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("idle");
-  const [notification, setNotification] = useState(null); // Replaces errorMessage
+  const [notification, setNotification] = useState(null);
 
   const showToast = (message, type = "success") => {
     setNotification({ message, type });
@@ -127,14 +173,43 @@ export default function GlobalPlayerRegistration() {
     });
   };
 
-  const handleProfileImageChange = async (e) => {
+  // --- CROP HANDLERS ---
+  const handleProfileImageSelect = (e) => {
     const file = e.target.files[0];
     if (file) {
-      const compressed = await compressImage(file, 300);
-      setPhotoBase64(compressed);
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => {
+        setImageToCrop(reader.result);
+        setCrop({ x: 0, y: 0 });
+        setZoom(1);
+        setCropModalOpen(true);
+      };
     }
   };
 
+  const onCropComplete = useCallback((croppedArea, croppedAreaPixels) => {
+    setCroppedAreaPixels(croppedAreaPixels);
+  }, []);
+
+  const handleSaveCrop = async () => {
+    try {
+      const croppedImage = await getCroppedImg(imageToCrop, croppedAreaPixels);
+      setPhotoBase64(croppedImage);
+      setCropModalOpen(false);
+      setImageToCrop(null);
+    } catch (e) {
+      console.error(e);
+      showToast("Failed to crop image", "error");
+    }
+  };
+
+  const handleCancelCrop = () => {
+    setCropModalOpen(false);
+    setImageToCrop(null);
+  };
+
+  // --- PAYMENT HANDLER ---
   const handlePaymentImageChange = async (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -185,10 +260,9 @@ export default function GlobalPlayerRegistration() {
     try {
       const playersRef = collection(db, "players");
       const isoDate = new Date().toISOString();
-      const currentTournament = tournamentId || "global"; // Use URL ID or global
+      const currentTournament = tournamentId || "global";
 
       if (isEditing && existingPlayerId) {
-        // ... (Keep your existing Update Logic here) ...
         const playerDocRef = doc(db, "players", existingPlayerId);
         await updateDoc(playerDocRef, {
           name: formData.name.trim(),
@@ -201,7 +275,6 @@ export default function GlobalPlayerRegistration() {
         });
         setStatus("updated");
       } else {
-        // --- THE MAGIC HAPPENS HERE ---
         const q = query(playersRef, where("mobile", "==", cleanMobile));
         const querySnapshot = await getDocs(q);
 
@@ -210,25 +283,16 @@ export default function GlobalPlayerRegistration() {
           const existingData = docSnap.data();
           const enrolledTournaments = existingData.registeredTournaments || [];
 
-          // 1. Check if they are ALREADY in this specific tournament
           if (enrolledTournaments.includes(currentTournament)) {
             setStatus("exists");
             setLoading(false);
             return;
           }
 
-          // 2. They exist globally, but are NEW to this tournament.
-          // Let's auto-enroll them AND update their data!
           const playerDocRef = doc(db, "players", docSnap.id);
-
           await updateDoc(playerDocRef, {
-            // Keep the global name updated just in case they fixed a typo
             name: formData.name.trim(),
-
-            // Add to the array for easy querying
             registeredTournaments: arrayUnion(currentTournament),
-
-            // 🔥 Store the specific details FOR THIS TOURNAMENT ONLY
             [`tournamentData.${currentTournament}`]: {
               role: formData.role,
               battingStyle: formData.battingStyle,
@@ -237,7 +301,6 @@ export default function GlobalPlayerRegistration() {
               paymentScreenshotURL: paymentBase64,
               registeredAt: isoDate,
             },
-
             updatedAt: isoDate,
           });
 
@@ -250,7 +313,6 @@ export default function GlobalPlayerRegistration() {
           return;
         }
 
-        // 3. Completely new player
         await addDoc(playersRef, {
           name: formData.name.trim(),
           mobile: cleanMobile,
@@ -258,10 +320,7 @@ export default function GlobalPlayerRegistration() {
           isVerified: false,
           createdAt: isoDate,
           updatedAt: isoDate,
-
           registeredTournaments: [currentTournament],
-
-          // 🔥 Initialize the map with their first tournament
           tournamentData: {
             [currentTournament]: {
               role: formData.role,
@@ -284,7 +343,6 @@ export default function GlobalPlayerRegistration() {
     }
   };
 
-  // --- Styles ---
   const inputClass = `w-full border rounded-xl px-5 py-4 outline-none transition-all font-bold placeholder:font-normal focus:ring-2
     ${
       lightMode
@@ -292,11 +350,74 @@ export default function GlobalPlayerRegistration() {
         : "bg-[#0F1115] border-white/10 text-slate-200 focus:border-teal-500/50 focus:bg-black"
     }`;
 
+  // --- CROP MODAL RENDER ---
+  const renderCropModal = () => {
+    if (!cropModalOpen || !imageToCrop) return null;
+
+    return (
+      <div className="fixed inset-0 z-[300] bg-black/95 flex flex-col animate-in fade-in duration-200">
+        <div className="flex-grow relative">
+          <Cropper
+            image={imageToCrop}
+            crop={crop}
+            zoom={zoom}
+            aspect={1}
+            cropShape="round"
+            showGrid={false}
+            onCropChange={setCrop}
+            onZoomChange={setZoom}
+            onCropComplete={onCropComplete}
+          />
+        </div>
+        <div className="bg-[#111] p-6 pb-12 flex flex-col gap-6">
+          <div className="flex items-center gap-4 px-4">
+            <span className="text-white text-xs font-bold uppercase">Zoom</span>
+            <input
+              type="range"
+              value={zoom}
+              min={1}
+              max={3}
+              step={0.1}
+              aria-labelledby="Zoom"
+              onChange={(e) => setZoom(e.target.value)}
+              className="w-full accent-teal-500"
+            />
+          </div>
+          <div className="flex justify-between gap-4 px-4">
+            <button
+              onClick={handleCancelCrop}
+              className="flex-1 py-4 rounded-xl border border-white/20 text-white font-bold uppercase tracking-widest text-xs hover:bg-white/10 transition-colors">
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveCrop}
+              className="flex-1 py-4 rounded-xl bg-teal-500 text-white font-black uppercase tracking-widest text-xs shadow-lg shadow-teal-500/20 active:scale-95 transition-all">
+              Save Picture
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // --- SUCCESS VIEW ---
   if (status === "success" || status === "updated") {
     return (
       <div
         className={`min-h-screen flex items-center justify-center p-4 font-sans ${theme.bg}`}>
+        {toggleTheme && (
+          <button
+            onClick={toggleTheme}
+            className={`fixed top-4 right-4 p-3 rounded-xl border transition-all flex items-center justify-center shadow-sm z-50 ${
+              lightMode
+                ? "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                : "bg-[#0F1115] border-white/10 text-slate-300 hover:bg-white/5"
+            }`}
+            title="Toggle Theme">
+            {lightMode ? <Moon size={16} /> : <Sun size={16} />}
+          </button>
+        )}
+
         <div
           className={`border p-8 rounded-3xl max-w-md w-full text-center shadow-2xl animate-in zoom-in-95 ${theme.card}`}>
           <div className="w-20 h-20 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center text-4xl mx-auto mb-6 border border-green-500/20 shadow-lg shadow-green-500/10">
@@ -336,6 +457,22 @@ export default function GlobalPlayerRegistration() {
         type={notification?.type}
         onClose={() => setNotification(null)}
       />
+
+      {renderCropModal()}
+
+      {toggleTheme && (
+        <button
+          onClick={toggleTheme}
+          className={`fixed top-4 right-4 p-3 rounded-xl border transition-all flex items-center justify-center shadow-sm z-50 ${
+            lightMode
+              ? "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+              : "bg-[#0F1115] border-white/10 text-slate-300 hover:bg-white/5"
+          }`}
+          title="Toggle Theme">
+          {lightMode ? <Moon size={16} /> : <Sun size={16} />}
+        </button>
+      )}
+
       <h1 className="text-4xl font-black italic tracking-tighter mb-2">
         <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-indigo-500 uppercase px-2">
           {tournamentName
@@ -344,10 +481,6 @@ export default function GlobalPlayerRegistration() {
               ? "Update Profile"
               : "Player Registration"}
         </span>
-        {/* <br />
-        <div className="text-transparent text-center bg-clip-text bg-gradient-to-r from-teal-400 to-indigo-500 uppercase px-2">
-          Season 2
-        </div> */}
       </h1>
 
       <div className="relative z-10 w-full max-w-lg">
@@ -364,31 +497,46 @@ export default function GlobalPlayerRegistration() {
 
         <div
           className={`border rounded-[2.5rem] p-8 shadow-2xl backdrop-blur-md ${theme.card}`}>
-          {/* EXISTS ERROR */}
           {status === "exists" && (
             <div
-              className={`border p-6 rounded-3xl mb-8 animate-in shake ${lightMode ? "bg-amber-50 border-amber-200" : "bg-amber-900/30 border-amber-500/50"}`}>
+              className={`border p-6 rounded-3xl mb-8 animate-in shake ${
+                lightMode
+                  ? "bg-amber-50 border-amber-200"
+                  : "bg-amber-900/30 border-amber-500/50"
+              }`}>
               <div className="flex items-center gap-3 mb-3">
                 <AlertCircle className="text-amber-500" />
                 <h4
-                  className={`font-black uppercase text-sm italic tracking-tight ${lightMode ? "text-amber-800" : "text-amber-200"}`}>
+                  className={`font-black uppercase text-sm italic tracking-tight ${
+                    lightMode ? "text-amber-800" : "text-amber-200"
+                  }`}>
                   Profile Already Registered
                 </h4>
               </div>
               <p
-                className={`text-xs leading-relaxed mb-4 font-bold ${lightMode ? "text-amber-700" : "text-slate-200"}`}>
+                className={`text-xs leading-relaxed mb-4 font-bold ${
+                  lightMode ? "text-amber-700" : "text-slate-200"
+                }`}>
                 This mobile number is already registered in our global
                 directory.
               </p>
               <div
-                className={`p-4 rounded-xl border text-center ${lightMode ? "bg-white border-amber-100" : "bg-[#0F1115] border-white/5"}`}>
+                className={`p-4 rounded-xl border text-center ${
+                  lightMode
+                    ? "bg-white border-amber-100"
+                    : "bg-[#0F1115] border-white/5"
+                }`}>
                 <p className="text-teal-500 text-[10px] font-black uppercase tracking-widest">
                   Please contact the Admin to update your profile.
                 </p>
               </div>
               <button
                 onClick={() => setStatus("idle")}
-                className={`mt-6 w-full py-2 text-[9px] font-black uppercase transition-colors border-t pt-4 ${lightMode ? "text-amber-600 border-amber-200 hover:text-amber-800" : "text-slate-500 border-white/5 hover:text-white"}`}>
+                className={`mt-6 w-full py-2 text-[9px] font-black uppercase transition-colors border-t pt-4 ${
+                  lightMode
+                    ? "text-amber-600 border-amber-200 hover:text-amber-800"
+                    : "text-slate-500 border-white/5 hover:text-white"
+                }`}>
                 Register a different number
               </button>
             </div>
@@ -401,14 +549,17 @@ export default function GlobalPlayerRegistration() {
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={handleProfileImageChange}
+                  onChange={handleProfileImageSelect}
                   className="hidden"
                   id="profile-upload"
+                  onClick={(e) => {
+                    // Reset value so selecting the same file triggers onChange again
+                    e.target.value = null;
+                  }}
                 />
                 <label
                   htmlFor="profile-upload"
                   className="cursor-pointer group relative block">
-                  {/* Circle Container */}
                   <div
                     className={`w-32 h-32 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl relative z-10 
                     ${
@@ -436,7 +587,6 @@ export default function GlobalPlayerRegistration() {
                       </div>
                     )}
                   </div>
-                  {/* Edit Badge */}
                   <div className="absolute bottom-1 right-1 z-20 bg-teal-500 text-white rounded-full p-2 shadow-lg border-2 border-white dark:border-black">
                     <Upload size={14} />
                   </div>
@@ -473,7 +623,9 @@ export default function GlobalPlayerRegistration() {
                   placeholder="Mobile Number *"
                   maxLength={10}
                   disabled={isEditing}
-                  className={`${inputClass} pl-12 ${isEditing ? "opacity-50 cursor-not-allowed" : ""}`}
+                  className={`${inputClass} pl-12 ${
+                    isEditing ? "opacity-50 cursor-not-allowed" : ""
+                  }`}
                   value={formData.mobile}
                   onChange={(e) =>
                     setFormData({ ...formData, mobile: e.target.value })
@@ -481,7 +633,6 @@ export default function GlobalPlayerRegistration() {
                 />
               </div>
 
-              {/* Roles Grid */}
               <div className="grid grid-cols-2 gap-3">
                 {["Batsman", "Bowler", "All-Rounder", "Wicket Keeper"].map(
                   (role) => (
@@ -563,7 +714,9 @@ export default function GlobalPlayerRegistration() {
                   </div>
                 ) : (
                   <div
-                    className={`h-32 flex flex-col items-center justify-center rounded-xl transition-colors ${lightMode ? "bg-white border" : "bg-[#161920]"}`}>
+                    className={`h-32 flex flex-col items-center justify-center rounded-xl transition-colors ${
+                      lightMode ? "bg-white border" : "bg-[#161920]"
+                    }`}>
                     <Receipt
                       className={`mb-3 opacity-30 ${theme.text}`}
                       size={32}
