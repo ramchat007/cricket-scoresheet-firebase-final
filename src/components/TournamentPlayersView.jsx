@@ -1,4 +1,10 @@
-import React, { useEffect, useState, useRef, useMemo } from "react";
+import React, {
+  useEffect,
+  useState,
+  useRef,
+  useMemo,
+  useCallback,
+} from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   collection,
@@ -8,6 +14,7 @@ import {
   doc,
   updateDoc,
   addDoc,
+  setDoc, // 🔥 Added setDoc for safer merging
   arrayUnion,
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
@@ -16,6 +23,7 @@ import {
   listMatchesForTournament,
 } from "../utils/firestore";
 import { useAuth } from "../hooks/useAuth";
+
 // 1. Theme & Icons
 import { useTheme } from "../context/ThemeContext";
 import {
@@ -37,13 +45,16 @@ import {
   Moon,
 } from "lucide-react";
 
+// 2. Cropper Import
+import Cropper from "react-easy-crop";
+
 // --- TOAST COMPONENT ---
 const NotificationToast = ({ message, type, onClose }) => {
   if (!message) return null;
   const isError = type === "error";
   return (
     <div
-      className={`fixed top-6 right-6 z-[200] flex items-center gap-3 px-6 py-4 rounded-xl shadow-2xl animate-in slide-in-from-right duration-300 border backdrop-blur-md ${
+      className={`fixed top-6 right-6 z-[500] flex items-center gap-3 px-6 py-4 rounded-xl shadow-2xl animate-in slide-in-from-right duration-300 border backdrop-blur-md ${
         isError
           ? "bg-red-500/10 border-red-500/20 text-red-500 bg-white dark:bg-red-900/10"
           : "bg-teal-500/10 border-teal-500/20 text-teal-600 dark:text-teal-400 bg-white dark:bg-teal-900/10"
@@ -62,13 +73,47 @@ const NotificationToast = ({ message, type, onClose }) => {
   );
 };
 
+// --- CROP UTILITY FUNCTION ---
+const createImage = (url) =>
+  new Promise((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener("load", () => resolve(image));
+    image.addEventListener("error", (error) => reject(error));
+    image.src = url;
+  });
+
+async function getCroppedImg(imageSrc, pixelCrop) {
+  const image = await createImage(imageSrc);
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+
+  if (!ctx) return null;
+
+  const TARGET_SIZE = 300; // Final compressed size for DB
+  canvas.width = TARGET_SIZE;
+  canvas.height = TARGET_SIZE;
+
+  ctx.drawImage(
+    image,
+    pixelCrop.x,
+    pixelCrop.y,
+    pixelCrop.width,
+    pixelCrop.height,
+    0,
+    0,
+    TARGET_SIZE,
+    TARGET_SIZE,
+  );
+
+  return canvas.toDataURL("image/jpeg", 0.8);
+}
+
 export default function TournamentPlayersView() {
   const { tournamentId } = useParams(); // Captured from the URL
   const { user } = useAuth();
   const navigate = useNavigate();
 
   // 2. Consume Theme
-  // Make sure 'toggleTheme' (or your equivalent function) is exported from your ThemeContext
   const { theme, lightMode, toggleTheme } = useTheme();
 
   // Refs
@@ -94,6 +139,13 @@ export default function TournamentPlayersView() {
   const [isEditing, setIsEditing] = useState(false);
   const [processingImage, setProcessingImage] = useState(false);
 
+  // --- CROPPER STATE ---
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [imageToCrop, setImageToCrop] = useState(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
+
   const [formData, setFormData] = useState({
     id: "",
     name: "",
@@ -116,7 +168,6 @@ export default function TournamentPlayersView() {
     try {
       const playersRef = collection(db, "players");
 
-      // 🔥 UPDATED: Use array-contains to find players enrolled in this tournament
       const q = query(
         playersRef,
         where("registeredTournaments", "array-contains", tournamentId),
@@ -129,7 +180,6 @@ export default function TournamentPlayersView() {
       }));
       setPlayers(tournamentPlayers);
 
-      // Fetch ONLY matches for this specific tournament
       const matches = await listMatchesForTournament(tournamentId);
       const taggedMatches = matches.map((m) => ({
         ...m,
@@ -155,16 +205,14 @@ export default function TournamentPlayersView() {
     if (players.length === 0)
       return { processedPlayers: [], orangeCap: null, purpleCap: null };
 
-    // 1. Initialize Map
     const statsMap = {};
     players.forEach((p) => {
-      // Use specific tournament role for filtering if it exists, fallback to global
       const tData = p.tournamentData?.[tournamentId] || {};
       const activeRole = tData.role || p.role;
 
       statsMap[p.id] = {
         ...p,
-        activeRole, // Store the resolved role for accurate filtering
+        activeRole,
         calculatedStats: {
           matches: 0,
           runs: 0,
@@ -181,14 +229,12 @@ export default function TournamentPlayersView() {
       };
     });
 
-    // 2. Identity Map
     const identityMap = {};
     players.forEach((p) => {
       identityMap[p.name.trim().toLowerCase()] = p.id;
       identityMap[p.id] = p.id;
     });
 
-    // 3. Process Matches
     allMatches.forEach((match) => {
       const status = (match.status || match.meta?.status || "").toLowerCase();
       if (!["finished", "completed"].includes(status)) return;
@@ -286,7 +332,6 @@ export default function TournamentPlayersView() {
       return p;
     });
 
-    // 5. Cap Calculation
     const orange = [...allStats].sort((a, b) => {
       if (b.calculatedStats.runs !== a.calculatedStats.runs) {
         return b.calculatedStats.runs - a.calculatedStats.runs;
@@ -315,7 +360,6 @@ export default function TournamentPlayersView() {
       return ecoA - ecoB;
     })[0];
 
-    // 6. Filter & Sort
     let result = [...allStats];
 
     if (searchTerm) {
@@ -324,7 +368,7 @@ export default function TournamentPlayersView() {
       );
     }
     if (roleFilter !== "All") {
-      result = result.filter((p) => p.activeRole === roleFilter); // Use activeRole!
+      result = result.filter((p) => p.activeRole === roleFilter);
     }
 
     result.sort((a, b) => {
@@ -339,7 +383,6 @@ export default function TournamentPlayersView() {
           sortConfig.key,
         )
       ) {
-        // Ensure we sort by the specific tournament role
         if (sortConfig.key === "role") {
           valA = a.activeRole;
           valB = b.activeRole;
@@ -397,6 +440,45 @@ export default function TournamentPlayersView() {
     setSortConfig({ key, direction });
   };
 
+  // --- CROP & UPLOAD HANDLERS ---
+  const handleProfileImageSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => {
+        setImageToCrop(reader.result);
+        setCrop({ x: 0, y: 0 });
+        setZoom(1);
+        setCropModalOpen(true);
+      };
+    }
+  };
+
+  const onCropComplete = useCallback((croppedArea, croppedAreaPixels) => {
+    setCroppedAreaPixels(croppedAreaPixels);
+  }, []);
+
+  const handleSaveCrop = async () => {
+    try {
+      setProcessingImage(true);
+      const croppedImage = await getCroppedImg(imageToCrop, croppedAreaPixels);
+      setFormData((prev) => ({ ...prev, photoURL: croppedImage }));
+      setCropModalOpen(false);
+      setImageToCrop(null);
+    } catch (e) {
+      console.error(e);
+      showToast("Failed to crop image", "error");
+    } finally {
+      setProcessingImage(false);
+    }
+  };
+
+  const handleCancelCrop = () => {
+    setCropModalOpen(false);
+    setImageToCrop(null);
+  };
+
   const compressImage = (file, maxWidth = 400) => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -415,20 +497,6 @@ export default function TournamentPlayersView() {
         };
       };
     });
-  };
-
-  const handleImageUpload = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    setProcessingImage(true);
-    try {
-      const compressedBase64 = await compressImage(file, 400);
-      setFormData((prev) => ({ ...prev, photoURL: compressedBase64 }));
-    } catch (error) {
-      showToast("Failed to process image", "error");
-    } finally {
-      setProcessingImage(false);
-    }
   };
 
   const handlePaymentImageUpload = async (event) => {
@@ -466,7 +534,6 @@ export default function TournamentPlayersView() {
   const openEditModal = (player, e) => {
     e.stopPropagation();
 
-    // Load Specific Tournament Data into form, fallback to global
     const tData = player.tournamentData?.[tournamentId] || {};
 
     const sanitizeStyle = (val, defaultVal) =>
@@ -507,23 +574,29 @@ export default function TournamentPlayersView() {
       const isoDate = new Date().toISOString();
 
       if (isEditing && formData.id) {
-        // --- 1. ADMIN EDITS EXISTING PLAYER (Tournament Specific) ---
+        // --- 1. ADMIN EDITS EXISTING PLAYER ---
         const playerDocRef = doc(db, "players", formData.id);
 
-        await updateDoc(playerDocRef, {
-          name: formData.name, // Keep name global
-          mobile: cleanMobile, // Keep mobile global
-          updatedAt: isoDate,
-          // Update the specific tournament map
-          [`tournamentData.${tournamentId}`]: {
-            role: formData.role,
-            battingStyle: formData.battingStyle,
-            bowlingStyle: formData.bowlingStyle,
-            photoURL: formData.photoURL,
-            paymentScreenshotURL: formData.paymentScreenshotURL,
-            lastEdited: isoDate,
+        await setDoc(
+          playerDocRef,
+          {
+            name: formData.name, // Keep name global
+            mobile: cleanMobile, // Keep mobile global
+            updatedAt: isoDate,
+            // Safe Merge for tournament map
+            tournamentData: {
+              [tournamentId]: {
+                role: formData.role,
+                battingStyle: formData.battingStyle,
+                bowlingStyle: formData.bowlingStyle,
+                photoURL: formData.photoURL,
+                paymentScreenshotURL: formData.paymentScreenshotURL,
+                lastEdited: isoDate,
+              },
+            },
           },
-        });
+          { merge: true }, // 🔥 Prevents overwriting other tournaments
+        );
         showToast("Player Updated!");
       } else {
         // --- 2. ADMIN ADDING NEW PLAYER ---
@@ -546,20 +619,26 @@ export default function TournamentPlayersView() {
               return;
             }
 
-            // Auto-link and add specific map data
+            // Auto-link and safe merge
             const playerDocRef = doc(db, "players", existingDoc.id);
-            await updateDoc(playerDocRef, {
-              registeredTournaments: arrayUnion(tournamentId),
-              updatedAt: isoDate,
-              [`tournamentData.${tournamentId}`]: {
-                role: formData.role,
-                battingStyle: formData.battingStyle,
-                bowlingStyle: formData.bowlingStyle,
-                photoURL: formData.photoURL,
-                paymentScreenshotURL: formData.paymentScreenshotURL,
-                registeredAt: isoDate,
+            await setDoc(
+              playerDocRef,
+              {
+                registeredTournaments: arrayUnion(tournamentId),
+                updatedAt: isoDate,
+                tournamentData: {
+                  [tournamentId]: {
+                    role: formData.role,
+                    battingStyle: formData.battingStyle,
+                    bowlingStyle: formData.bowlingStyle,
+                    photoURL: formData.photoURL,
+                    paymentScreenshotURL: formData.paymentScreenshotURL,
+                    registeredAt: isoDate,
+                  },
+                },
               },
-            });
+              { merge: true }, // 🔥 Prevents data loss
+            );
 
             showToast("Global player found! Linked to this tournament.");
             setShowModal(false);
@@ -579,7 +658,6 @@ export default function TournamentPlayersView() {
           isVerified: true,
           createdAt: isoDate,
           updatedAt: isoDate,
-          // Initialize map with current details
           tournamentData: {
             [tournamentId]: {
               role: formData.role,
@@ -629,6 +707,56 @@ export default function TournamentPlayersView() {
     </div>
   );
 
+  // --- CROP MODAL RENDER ---
+  const renderCropModal = () => {
+    if (!cropModalOpen || !imageToCrop) return null;
+
+    return (
+      <div className="fixed inset-0 z-[400] bg-black/95 flex flex-col animate-in fade-in duration-200">
+        <div className="flex-grow relative">
+          <Cropper
+            image={imageToCrop}
+            crop={crop}
+            zoom={zoom}
+            aspect={1}
+            cropShape="round"
+            showGrid={false}
+            onCropChange={setCrop}
+            onZoomChange={setZoom}
+            onCropComplete={onCropComplete}
+          />
+        </div>
+        <div className="bg-[#111] p-6 pb-12 flex flex-col gap-6">
+          <div className="flex items-center gap-4 px-4">
+            <span className="text-white text-xs font-bold uppercase">Zoom</span>
+            <input
+              type="range"
+              value={zoom}
+              min={1}
+              max={3}
+              step={0.1}
+              aria-labelledby="Zoom"
+              onChange={(e) => setZoom(e.target.value)}
+              className="w-full accent-indigo-500"
+            />
+          </div>
+          <div className="flex justify-between gap-4 px-4">
+            <button
+              onClick={handleCancelCrop}
+              className="flex-1 py-4 rounded-xl border border-white/20 text-white font-bold uppercase tracking-widest text-xs hover:bg-white/10 transition-colors">
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveCrop}
+              className="flex-1 py-4 rounded-xl bg-indigo-500 text-white font-black uppercase tracking-widest text-xs shadow-lg shadow-indigo-500/20 active:scale-95 transition-all">
+              Save Picture
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // --- STYLES ---
   const inputClass = `w-full border rounded-xl px-4 py-3 outline-none transition-all font-bold placeholder:font-normal focus:ring-2
     ${
@@ -645,6 +773,9 @@ export default function TournamentPlayersView() {
         type={notification?.type}
         onClose={() => setNotification(null)}
       />
+
+      {/* RENDER CROP MODAL */}
+      {renderCropModal()}
 
       <div className="max-w-[1400px] mx-auto">
         {/* HEADER */}
@@ -703,7 +834,7 @@ export default function TournamentPlayersView() {
               />
             </div>
 
-            {/* 🔥 NEW THEME TOGGLE BUTTON 🔥 */}
+            {/* THEME TOGGLE BUTTON */}
             {toggleTheme && (
               <button
                 onClick={toggleTheme}
@@ -1147,9 +1278,12 @@ export default function TournamentPlayersView() {
                         <input
                           type="file"
                           ref={fileInputRef}
-                          onChange={handleImageUpload}
+                          onChange={handleProfileImageSelect} // 🔥 Replaced with Cropper Logic
                           className="hidden"
                           accept="image/*"
+                          onClick={(e) => {
+                            e.target.value = null; // Allows re-selecting the same image
+                          }}
                         />
                       </div>
                       <p
