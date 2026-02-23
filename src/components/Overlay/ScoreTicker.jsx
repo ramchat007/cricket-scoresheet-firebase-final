@@ -257,9 +257,9 @@ export default function ScoreTicker({ match }) {
                   </div>
                   <div className="flex justify-between items-baseline font-bold text-white">
                     <span className="truncate max-w-[130px] text-base">
-                      {bowler || "Bowler"}{" "}
+                      {bowler || "Bowler"}
                     </span>
-                    <span className="font-mono text-xl text-amber-400 font-black">
+                    <span className="font-mono text-xl text-amber-400 font-black pl-1">
                       {bStats.wickets}-{bStats.runs}{" "}
                       <span className="text-xs font-sans text-slate-300 font-normal ml-1">
                         ({bOvers} Ov)
