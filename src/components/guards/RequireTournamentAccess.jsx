@@ -1,16 +1,26 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
+import {
+  Navigate,
+  useLocation,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
 import { doc, getDoc } from "firebase/firestore";
 import { useAuth } from "../../hooks/useAuth.jsx";
 import { db } from "../../utils/firebase";
 
-function AccessDenied({ title = "Access denied", detail = "You do not have permission to view this page." }) {
+function AccessDenied({
+  title = "Access denied",
+  detail = "You do not have permission to view this page.",
+}) {
   const navigate = useNavigate();
 
   return (
     <div className="min-h-[60vh] flex items-center justify-center px-4">
       <div className="max-w-md w-full rounded-2xl border border-red-500/30 bg-red-500/5 p-6 text-center">
-        <h2 className="text-lg font-black uppercase tracking-wider text-red-400">{title}</h2>
+        <h2 className="text-lg font-black uppercase tracking-wider text-red-400">
+          {title}
+        </h2>
         <p className="mt-2 text-sm opacity-80">{detail}</p>
         <button
           onClick={() => navigate("/dashboard")}
@@ -22,11 +32,17 @@ function AccessDenied({ title = "Access denied", detail = "You do not have permi
   );
 }
 
-export default function RequireTournamentAccess({ children, requireEdit = false }) {
+export default function RequireTournamentAccess({
+  children,
+  requireEdit = false,
+}) {
   const location = useLocation();
   const { user, loading } = useAuth();
   const { tournamentId, id } = useParams();
-  const activeTournamentId = useMemo(() => tournamentId || id || "", [tournamentId, id]);
+  const activeTournamentId = useMemo(
+    () => tournamentId || id || "",
+    [tournamentId, id],
+  );
 
   const [checking, setChecking] = useState(true);
   const [deniedReason, setDeniedReason] = useState("");
@@ -66,19 +82,25 @@ export default function RequireTournamentAccess({ children, requireEdit = false 
         }
 
         const data = snap.data() || {};
+
+        // --- NEW LOGIC: Superadmin Check ---
+        const isSuperAdmin = user.email === "ramchat007@gmail.com";
+
         const owner = data.ownerId === user.uid;
-        const scorer = Array.isArray(data.scorers) && data.scorers.includes(user.uid);
-        const viewer = Array.isArray(data.viewers) && data.viewers.includes(user.uid);
+        const scorer =
+          Array.isArray(data.scorers) && data.scorers.includes(user.uid);
 
-        const canView = owner || scorer || viewer;
-        const canEdit = owner || scorer;
+        // --- NEW LOGIC: View & Edit Permissions ---
+        // 1. If they are logged in, they can view (we already checked !user above)
+        const canView = true;
 
-        if (!canView || (requireEdit && !canEdit)) {
+        // 2. They can edit if they are the owner, a scorer, OR the superadmin
+        const canEdit = owner || scorer || isSuperAdmin;
+
+        if (requireEdit && !canEdit) {
           if (active) {
             setDeniedReason(
-              requireEdit
-                ? "You need scorer/owner access for this tournament."
-                : "You are not listed as owner, scorer, or viewer for this tournament.",
+              "You need scorer, owner, or admin access to edit this tournament.",
             );
             setChecking(false);
           }
@@ -91,7 +113,9 @@ export default function RequireTournamentAccess({ children, requireEdit = false 
         }
       } catch (e) {
         if (active) {
-          setDeniedReason("Could not verify your access right now. Please retry.");
+          setDeniedReason(
+            "Could not verify your access right now. Please retry.",
+          );
           setChecking(false);
         }
       }

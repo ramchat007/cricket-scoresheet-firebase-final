@@ -1,4 +1,5 @@
 import React from "react";
+import { Zap } from "lucide-react";
 
 // --- HELPER: Handle Object vs String names ---
 const normalizeName = (p) => {
@@ -8,75 +9,67 @@ const normalizeName = (p) => {
 };
 
 export default function ScoreTicker({ match }) {
-  const currentInn = match?.innings?.[match?.currentInnings || 0];
+  if (!match) return null;
+
+  const currentInnIdx = match.currentInnings || 0;
+  const currentInn = match.innings?.[currentInnIdx];
   if (!currentInn) return null;
 
   // --- 1. CALCULATE SITUATION ---
   const battingTeam = currentInn.battingTeam;
   const bowlingTeam = currentInn.bowlingTeam;
-  const score = currentInn.score;
-  const wickets = currentInn.wickets;
-  const overs = `${currentInn.over}.${currentInn.overBallCount}`;
+  const score = currentInn.score || 0;
+  const wickets = currentInn.wickets || 0;
+  const overs = currentInn.over || 0;
+  const balls = currentInn.overBallCount || 0;
+  const displayOvers = `${overs}.${balls}`;
+  const totalBalls = overs * 6 + balls;
+
+  const crr = totalBalls > 0 ? ((score / totalBalls) * 6).toFixed(1) : "0.0";
 
   // Target Logic
-  const isChasing = match.currentInnings === 1;
+  const isChasing = currentInnIdx === 1;
   const inn1 = match.innings?.[0];
-  const target = match.meta?.target || (inn1 ? inn1.score + 1 : 0);
+  const target = match.meta?.target || (inn1 ? inn1.score + 1 : null);
+
+  let reqStr = "";
+  if (isChasing && target) {
+    const runsNeeded = target - score;
+    const totalMatchOvers = match.meta?.overs || 20;
+    const totalMatchBalls = totalMatchOvers * 6;
+    const ballsRemaining = totalMatchBalls - totalBalls;
+
+    if (runsNeeded <= 0) reqStr = "Scores Level";
+    else if (ballsRemaining > 0) {
+      const rrr = ((runsNeeded / ballsRemaining) * 6).toFixed(1);
+      reqStr = `Req Rate: ${rrr} (${runsNeeded} off ${ballsRemaining})`;
+    }
+  }
 
   // --- 2. CHECK IF MATCH IS FINISHED ---
   const hasWon = isChasing && score >= target;
   const isMatchFinished =
     match.status === "completed" || match.result || hasWon;
 
-  // Need / Balls Left
-  const need = Math.max(0, target - score);
-  const ballsLeft =
-    (match.meta?.overs || 20) * 6 -
-    (currentInn.over * 6 + currentInn.overBallCount);
-
-  const projectedScore = Math.round(
-    (score / (currentInn.over * 6 + currentInn.overBallCount || 1)) *
-      ((match.meta?.overs || 20) * 6),
-  );
-
-  // Batsmen
   const striker = normalizeName(currentInn.striker);
-  const sStats = currentInn.batsmenStats?.[striker] || { runs: 0, balls: 0 };
-
   const nonStriker = normalizeName(currentInn.nonStriker);
+  const bowler = normalizeName(currentInn.currentBowler);
+
+  const sStats = currentInn.batsmenStats?.[striker] || { runs: 0, balls: 0 };
   const nsStats = currentInn.batsmenStats?.[nonStriker] || {
     runs: 0,
     balls: 0,
   };
 
-  // Bowler
-  const bowler = normalizeName(currentInn.currentBowler);
   const bStats = currentInn.bowlerStats?.[bowler] || {
     wickets: 0,
     runs: 0,
     balls: 0,
   };
-
   const ballsInThisOver = bStats.balls % 6;
   const bOvers = `${Math.floor(bStats.balls / 6)}.${ballsInThisOver}`;
 
-  // --- RESULT TEXT GENERATION ---
-  let resultText = "";
-  if (isMatchFinished) {
-    if (match.result) {
-      resultText = match.result;
-    } else if (hasWon) {
-      resultText = `${battingTeam} won by ${10 - wickets} wickets`;
-    } else if (isChasing && ballsLeft <= 0 && score < target - 1) {
-      resultText = `${bowlingTeam} won by ${target - score - 1} runs`;
-    } else if (isChasing && score === target - 1 && ballsLeft <= 0) {
-      resultText = "MATCH TIED";
-    } else {
-      resultText = "MATCH ENDED";
-    }
-  }
-
-  // --- TIMELINE LOGIC ---
+  // --- 3. TIMELINE LOGIC ---
   const allBalls = currentInn.timeline || [];
   const currentOverIndex = parseInt(currentInn.over || 0);
   let timeline = allBalls.filter(
@@ -89,10 +82,30 @@ export default function ScoreTicker({ match }) {
       .filter((b) => normalizeName(b.bowler) === bowler);
   }
 
+  // 🔥 DYNAMIC SIZING FOR LONG OVERS
+  const isLongOver = timeline.length > 6;
+  const timelineGap = isLongOver ? "gap-1.5" : "gap-2.5";
+
+  // --- 4. SMART TOSS / TARGET LOGIC ---
+  const tossWinner = match.toss?.winner || match.meta?.toss?.winner;
+  const tossDecision = match.toss?.decision || match.meta?.toss?.decision;
+  const showToss = currentInnIdx === 0 && overs < 1 && tossWinner;
+  const tossStr = showToss
+    ? `${tossWinner} won toss, elected to ${tossDecision}`
+    : "";
+
   // Logos
   const defaultLogo = "https://cdn-icons-png.flaticon.com/512/164/164449.png";
   const leftLogo = match?.meta?.teamALogo || match?.teamA_Image || defaultLogo;
   const rightLogo = match?.meta?.teamBLogo || match?.teamB_Image || defaultLogo;
+
+  let resultText = "";
+  if (isMatchFinished) {
+    if (match.result) resultText = match.result;
+    else if (hasWon)
+      resultText = `${battingTeam} won by ${10 - wickets} wickets`;
+    else resultText = "MATCH ENDED";
+  }
 
   return (
     <>
@@ -100,204 +113,239 @@ export default function ScoreTicker({ match }) {
         {`
           @keyframes obsPopIn {
             0% { transform: scale(0); opacity: 0; }
-            80% { transform: scale(1.1); opacity: 1; }
+            80% { transform: scale(1.05); opacity: 1; }
             100% { transform: scale(1); opacity: 1; }
           }
           .anim-entry { animation: obsPopIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
         `}
       </style>
 
-      <div className="w-full flex items-center justify-center font-sans px-4">
-        {/* 1. LEFT TEAM LOGO */}
-        <div className="w-24 h-24 flex-shrink-0 rounded-full bg-slate-900 border-4 border-slate-700 shadow-xl z-20 flex items-center justify-center overflow-hidden relative -mr-8 anim-entry">
+      <div className="w-full flex items-end justify-center font-sans px-4 pb-4">
+        {/* --- LEFT TEAM LOGO --- */}
+        <div className="w-32 h-32 flex-shrink-0 rounded-full bg-slate-900 border-[5px] border-slate-700 shadow-2xl z-30 flex items-center justify-center overflow-hidden relative -mr-8 anim-entry mb-1.5">
           <img
             src={leftLogo}
             alt="Team A"
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover bg-white"
             onError={(e) => (e.target.src = defaultLogo)}
           />
         </div>
 
-        {/* 2. CAPSULE CONTAINER (Matte Slate Theme) */}
-        <div className="w-full max-w-[1700px] h-[130px] bg-slate-900 rounded-full border-[3px] border-slate-700 shadow-2xl flex overflow-hidden relative z-10">
-          {/* --- LEFT SECTION (Batsman) --- */}
-          <div className="w-[32%] flex flex-col justify-center pl-14 pr-4 border-r border-slate-700 bg-slate-800 relative z-10">
-            {!isMatchFinished ? (
-              <>
-                <div className="flex justify-between items-center mb-1">
-                  <div className="flex items-center gap-3 overflow-hidden">
-                    {/* Active Striker Indicator */}
-                    <div className="w-0 h-0 border-l-[10px] border-l-teal-500 border-y-[6px] border-y-transparent"></div>
-                    <span className="text-white font-bold text-2xl uppercase tracking-tight truncate max-w-[180px]">
-                      {striker}
-                    </span>
-                  </div>
-                  <div className="text-teal-400 font-mono font-black text-3xl">
-                    {sStats.runs}{" "}
-                    <span className="text-slate-500 text-lg font-sans font-bold">
-                      ({sStats.balls})
-                    </span>
-                  </div>
-                </div>
-                <div className="flex justify-between items-center opacity-60">
-                  <span className="text-slate-300 font-bold text-xl uppercase tracking-tight pl-5 truncate max-w-[180px]">
-                    {nonStriker}
+        {/* --- MAIN TICKER CONTAINER --- */}
+        <div className="w-full max-w-[1750px] flex flex-col items-center relative z-20">
+          {/* --- TOP TIER: Match Context Bar (Grid Layout for Perfect Centering) --- */}
+          <div className="bg-slate-900/95 border border-slate-700/50 border-b-0 rounded-t-xl px-10 py-1.5 grid grid-cols-3 items-center text-slate-300 w-[96%] shadow-lg">
+            {/* Left: Match Info */}
+            <div className="flex gap-4 items-center justify-start">
+              <span className="text-teal-400 font-black tracking-widest text-sm uppercase">
+                {match.name || "Match"}
+              </span>
+              <span className="opacity-40 text-xs">|</span>
+              <span className="font-bold text-[15px] tracking-wide text-white">
+                {match.meta?.teamA}{" "}
+                <span className="text-slate-500 font-normal mx-1">vs</span>{" "}
+                {match.meta?.teamB}
+              </span>
+            </div>
+
+            {/* Center: Current Run Rate */}
+            <div className="flex justify-center items-center gap-2">
+              {totalBalls > 0 && !isMatchFinished && (
+                <>
+                  <span className="text-slate-400 font-black text-[11px] uppercase tracking-widest">
+                    Curr Rate
                   </span>
-                  <div className="text-slate-300 font-mono font-bold text-2xl">
-                    {nsStats.runs}{" "}
-                    <span className="text-slate-500 text-base font-sans">
-                      ({nsStats.balls})
-                    </span>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="flex flex-col items-center">
-                <span className="text-slate-400 font-bold text-sm uppercase tracking-widest">
-                  {match.innings[0]?.battingTeam}
-                </span>
-                <span className="text-white font-black text-4xl">
-                  {match.innings[0]?.score}/{match.innings[0]?.wickets}
-                </span>
-                <span className="text-teal-500 font-mono text-sm font-bold">
-                  ({match.innings[0]?.over}.{match.innings[0]?.overBallCount}{" "}
-                  Ov)
-                </span>
-              </div>
-            )}
-          </div>
+                  <span className="text-white font-mono font-black text-base">
+                    {crr}
+                  </span>
+                </>
+              )}
+            </div>
 
-          {/* --- CENTER: SCOREBOARD --- */}
-          <div className="flex-1 bg-slate-900 relative flex flex-col items-center justify-center px-4 overflow-hidden border-x border-slate-700">
-            {!isMatchFinished ? (
-              <>
-                <div className="relative z-10 w-full flex items-center justify-between px-2">
-                  <div className="flex flex-col items-end mr-4">
-                    <span className="text-teal-500 font-black text-3xl uppercase tracking-widest leading-none">
-                      {battingTeam.substring(0, 3)}
-                    </span>
-                    <span className="text-slate-600 font-bold text-sm uppercase tracking-widest">
-                      Batting
-                    </span>
-                  </div>
+            {/* Right: Toss OR Target + Req Rate */}
+            <div className="flex justify-end items-center">
+              {showToss && (
+                <span className="text-amber-400/90 italic text-sm font-bold tracking-wide">
+                  {tossStr}
+                </span>
+              )}
 
-                  {/* MAIN SCORE CAPSULE (Matte) */}
-                  <div className="bg-slate-800 text-white px-10 py-1 rounded-xl border border-slate-600 transform scale-110 shadow-lg">
-                    <span className="font-black text-6xl tracking-tighter">
-                      {score}/{wickets}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-col items-start ml-4">
-                    <div className="bg-slate-800 text-white px-4 py-1 rounded-lg border border-slate-700 flex flex-col items-center min-w-[90px]">
-                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-                        Overs
+              {isChasing && target && (
+                <div className="flex items-center gap-3 text-amber-400 bg-amber-500/10 px-4 py-0.5 rounded-md border border-amber-500/20">
+                  <span className="font-black tracking-widest uppercase text-xs">
+                    Target:{" "}
+                    <span className="text-white text-base ml-1">{target}</span>
+                  </span>
+                  {reqStr && (
+                    <>
+                      <span className="w-px h-4 bg-amber-500/30"></span>
+                      <span className="font-bold text-xs tracking-wide text-amber-300">
+                        {reqStr}
                       </span>
-                      <span className="font-black text-3xl leading-none text-teal-500">
-                        {overs}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className="relative z-10 mt-3">
-                  {isChasing ? (
-                    <div className="text-amber-500 text-sm font-black uppercase tracking-[0.2em]">
-                      Need <span className="text-white text-lg">{need}</span>{" "}
-                      off{" "}
-                      <span className="text-white text-lg">{ballsLeft}</span>{" "}
-                      balls
-                    </div>
-                  ) : (
-                    <div className="text-slate-500 text-xs font-bold uppercase tracking-[0.2em]">
-                      Proj. Score:{" "}
-                      <span className="text-white">{projectedScore}</span>
-                    </div>
+                    </>
                   )}
                 </div>
-              </>
-            ) : (
-              <div className="flex flex-col items-center z-10">
-                <span className="text-amber-500 font-black text-xl uppercase tracking-[0.3em] mb-1">
-                  MATCH FINISHED
-                </span>
-                <span className="text-white font-black text-3xl uppercase tracking-wider text-center leading-none">
-                  {resultText}
-                </span>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
-          {/* --- RIGHT SECTION (Bowler) --- */}
-          <div className="w-[32%] flex flex-col justify-center pl-4 pr-14 border-l border-slate-700 bg-slate-800 relative z-10">
+          {/* --- BOTTOM TIER: Live Stats Capsule --- */}
+          <div className="w-full h-[72px] bg-slate-900 rounded-full border-[4px] border-slate-700 shadow-[0_15px_40px_rgba(0,0,0,0.6)] flex overflow-hidden">
+            {/* 1. Team & Main Score */}
+            <div className="bg-teal-600 px-8 flex items-center justify-between text-white min-w-[340px] shadow-[10px_0_20px_rgba(0,0,0,0.3)] z-30">
+              <span className="font-black text-2xl tracking-tight truncate max-w-[140px] uppercase">
+                {battingTeam}
+              </span>
+              <div className="flex items-baseline gap-4">
+                <div className="font-mono font-black text-[3.25rem] tracking-tighter leading-none mt-1">
+                  {score}
+                  <span className="text-[2rem] text-teal-200 opacity-90 leading-none">
+                    /{wickets}
+                  </span>
+                </div>
+                <div className="text-lg font-bold text-teal-100 bg-teal-800/40 px-2.5 py-0.5 rounded leading-none">
+                  {displayOvers}
+                </div>
+              </div>
+            </div>
+
             {!isMatchFinished ? (
               <>
-                <div className="flex justify-between items-center mb-2 border-b border-slate-700/50 pb-1">
-                  <span className="text-white font-bold text-xl uppercase tracking-tight truncate max-w-[180px]">
-                    {bowler}
-                  </span>
-                  <div className="text-right whitespace-nowrap">
-                    <span className="text-amber-400 font-mono font-bold text-2xl">
-                      {bStats.wickets}-{bStats.runs}
+                {/* 2. Batsmen */}
+                <div className="flex flex-col justify-center px-8 border-r border-slate-700 bg-slate-800 text-slate-200 min-w-[300px] z-20">
+                  <div
+                    className={`flex justify-between items-center ${striker ? "font-bold text-white" : ""}`}>
+                    <span className="truncate max-w-[160px] flex items-center gap-2 text-base">
+                      {striker || "Striker"}{" "}
+                      {striker && (
+                        <Zap
+                          size={12}
+                          className="text-teal-400 fill-teal-400"
+                        />
+                      )}
                     </span>
-                    <span className="text-slate-500 text-sm font-bold ml-2">
-                      {bOvers} Ov
+                    <span className="font-mono text-xl font-black">
+                      {sStats.runs}
+                      <span className="text-xs font-sans text-slate-400 font-bold ml-1">
+                        ({sStats.balls})
+                      </span>
+                    </span>
+                  </div>
+                  <div
+                    className={`flex justify-between items-center mt-0.5 ${!striker ? "font-bold text-white" : "text-slate-400"}`}>
+                    <span className="truncate max-w-[160px] text-sm">
+                      {nonStriker || "Non-Striker"}
+                    </span>
+                    <span className="font-mono text-base font-bold">
+                      {nsStats.runs}
+                      <span className="text-[10px] font-sans text-slate-500 ml-1">
+                        ({nsStats.balls})
+                      </span>
                     </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 justify-end">
-                  {timeline.map((b, i) => {
-                    // --- MATTE BUBBLE COLORS ---
-                    let bubbleClass =
-                      "bg-slate-700 border-slate-600 text-slate-300"; // Dot ball/Normal
 
-                    if (b.isWicket)
+                {/* 3. FUTURE EXPANSION ZONE (Blank Middle) */}
+                <div className="flex-1 bg-slate-900/40 relative flex items-center justify-center overflow-hidden">
+                  {/* Ready for future components, e.g., Projected Score, Flashing alerts, etc. */}
+                </div>
+
+                {/* 4. Bowler */}
+                <div className="flex flex-col justify-center px-8 border-l border-slate-700 bg-slate-800 min-w-[260px]">
+                  <div className="text-[10px] text-slate-400 uppercase tracking-widest mb-0.5 font-bold">
+                    Bowling - {bowlingTeam}
+                  </div>
+                  <div className="flex justify-between items-baseline font-bold text-white">
+                    <span className="truncate max-w-[130px] text-base">
+                      {bowler || "Bowler"}
+                    </span>
+                    <span className="font-mono text-xl text-amber-400 font-black">
+                      {bStats.wickets}-{bStats.runs}{" "}
+                      <span className="text-xs font-sans text-slate-300 font-normal ml-1">
+                        ({bOvers} Ov)
+                      </span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* 5. Timeline (Ball by Ball with Dynamic Sizing) */}
+                <div
+                  className={`flex items-center px-6 border-l border-slate-700 bg-slate-900 justify-end ${timelineGap} min-w-[250px] max-w-[320px] overflow-hidden`}>
+                  {timeline.map((b, i) => {
+                    let text = b.runs === 0 ? "•" : b.runs;
+                    let bubbleClass =
+                      "bg-slate-700 border-slate-600 text-slate-300";
+
+                    if (b.isWicket) {
+                      text = "W";
                       bubbleClass = "bg-rose-600 border-rose-500 text-white";
-                    else if (b.runs === 4)
+                    } else if (b.isWide) {
+                      text = b.runs > 0 ? `${b.runs}wd` : "wd";
+                      bubbleClass =
+                        "bg-indigo-600 border-indigo-500 text-white";
+                    } else if (b.isNoBall) {
+                      text = b.runs > 0 ? `${b.runs}nb` : "nb";
+                      bubbleClass =
+                        "bg-indigo-600 border-indigo-500 text-white";
+                    } else if (b.isLegBye) {
+                      text = b.runs > 0 ? `${b.runs}lb` : "lb";
+                      bubbleClass = "bg-slate-600 border-slate-500 text-white";
+                    } else if (b.isBye) {
+                      text = b.runs > 0 ? `${b.runs}b` : "b";
+                      bubbleClass = "bg-slate-600 border-slate-500 text-white";
+                    } else if (b.runs === 4) {
+                      text = "4";
                       bubbleClass =
                         "bg-teal-500 border-teal-400 text-slate-900 font-black";
-                    else if (b.runs === 6)
+                    } else if (b.runs === 6) {
+                      text = "6";
                       bubbleClass =
                         "bg-amber-500 border-amber-400 text-slate-900 font-black";
-                    else if (b.runs > 0)
+                    } else if (b.runs > 0) {
+                      text = b.runs;
                       bubbleClass = "bg-slate-600 border-slate-500 text-white";
+                    }
+
+                    const textStr = text.toString();
+                    let textSize = isLongOver ? "text-sm" : "text-base";
+                    if (textStr.length > 2)
+                      textSize = "text-[9px] tracking-tighter";
+                    else if (textStr.length > 1)
+                      textSize = isLongOver ? "text-[10px]" : "text-xs";
+
+                    const bubbleSize = isLongOver
+                      ? "w-8 h-8 border"
+                      : "w-10 h-10 border-2";
 
                     return (
                       <div
                         key={i}
-                        className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm border ${bubbleClass}`}>
-                        {b.isWicket ? "W" : b.runs}
+                        className={`${bubbleSize} rounded-full shrink-0 flex items-center justify-center font-black shadow-sm ${bubbleClass} ${textSize} uppercase transition-all duration-300`}>
+                        {text}
                       </div>
                     );
                   })}
                 </div>
               </>
-            ) : match.innings[1] ? (
-              <div className="flex flex-col items-center">
-                <span className="text-slate-400 font-bold text-sm uppercase tracking-widest">
-                  {match.innings[1]?.battingTeam}
-                </span>
-                <span className="text-white font-black text-4xl">
-                  {match.innings[1]?.score}/{match.innings[1]?.wickets}
-                </span>
-                <span className="text-teal-500 font-mono text-sm font-bold">
-                  ({match.innings[1]?.over}.{match.innings[1]?.overBallCount}{" "}
-                  Ov)
-                </span>
-              </div>
             ) : (
-              <div className="flex items-center justify-center h-full text-slate-500 uppercase font-bold text-sm tracking-widest">
-                Innings Break
+              <div className="flex-1 flex items-center justify-center bg-slate-800/80">
+                <span className="text-amber-500 font-black text-2xl uppercase tracking-[0.4em] mr-6">
+                  MATCH FINISHED:
+                </span>
+                <span className="text-white font-black text-3xl uppercase tracking-wider">
+                  {resultText}
+                </span>
               </div>
             )}
           </div>
         </div>
 
-        {/* 3. RIGHT TEAM LOGO */}
-        <div className="w-24 h-24 flex-shrink-0 rounded-full bg-slate-900 border-4 border-slate-700 shadow-xl z-20 flex items-center justify-center overflow-hidden relative -ml-8 anim-entry">
+        {/* --- RIGHT TEAM LOGO --- */}
+        <div className="w-32 h-32 flex-shrink-0 rounded-full bg-slate-900 border-[5px] border-slate-700 shadow-2xl z-30 flex items-center justify-center overflow-hidden relative -ml-10 anim-entry mb-1.5">
           <img
             src={rightLogo}
             alt="Team B"
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover bg-white"
             onError={(e) => (e.target.src = defaultLogo)}
           />
         </div>

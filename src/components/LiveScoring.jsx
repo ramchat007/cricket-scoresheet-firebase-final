@@ -28,7 +28,8 @@ import {
   Loader2,
   FileQuestion,
   Home,
-  Layers, // Added for Overlay Icon
+  Layers,
+  Sliders, // Added for Overlay Icon
 } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 import { syncPendingActions } from "../utils/offlineQueue";
@@ -429,6 +430,7 @@ export default function LiveScoring() {
               )}
             </div>
 
+            {/* 1. OBS Source Link (To paste into OBS) */}
             <div
               className={`border rounded-xl p-2 flex gap-2 items-center ${
                 lightMode
@@ -469,7 +471,24 @@ export default function LiveScoring() {
                 <ExternalLink size={16} />
               </a>
             </div>
-            <p className={`text-[9px] mt-2 text-center ${theme.sub}`}>
+
+            {/* 2. OVERLAY CONTROLLER BUTTON (To open your control dashboard) */}
+            <div className="mt-3">
+              <a
+                // IMPORTANT: Adjust this href to match whatever route you set up in App.js for the controller
+                href={`/broadcast-control/${tournamentId}/${match.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className={`w-full flex items-center justify-center gap-2 p-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${
+                  lightMode
+                    ? "bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-200"
+                    : "bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 border border-indigo-500/20"
+                }`}>
+                <Sliders size={14} /> Open Overlay Controller
+              </a>
+            </div>
+
+            <p className={`text-[9px] mt-3 text-center ${theme.sub}`}>
               <strong>Universal Link:</strong> Works for ALL matches. No need to
               update OBS between games.
             </p>
