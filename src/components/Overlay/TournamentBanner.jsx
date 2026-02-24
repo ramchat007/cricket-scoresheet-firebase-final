@@ -1,10 +1,8 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { useParams } from "react-router-dom";
 import { doc, collection, onSnapshot } from "firebase/firestore";
 import { db } from "../../utils/firebase";
 
-export default function TournamentBanner() {
-  const { tournamentId } = useParams();
+export default function TournamentBanner({ tournamentId }) {
   const [tournament, setTournament] = useState(null);
   const [teams, setTeams] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -44,7 +42,7 @@ export default function TournamentBanner() {
     if (teams.length <= 1) return;
     const interval = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % teams.length);
-    }, 10000);
+    }, 3000);
     return () => clearInterval(interval);
   }, [teams.length]);
 
@@ -57,12 +55,10 @@ export default function TournamentBanner() {
     const rawRoster = activeTeam.roster || [];
     const ownerName = activeTeam.ownerName || activeTeam.owner;
 
-    // Step 1: Separate the Owner from the Roster
     let ownerObj = null;
     let playingRoster = [];
 
     if (ownerName) {
-      // Check if owner is actually in the roster
       const ownerInRoster = rawRoster.find(
         (p) =>
           p.name &&
@@ -70,14 +66,11 @@ export default function TournamentBanner() {
       );
 
       if (ownerInRoster) {
-        // Use the roster data (so we get the photo!) but override role
         ownerObj = { ...ownerInRoster, role: "TEAM OWNER", isOwner: true };
-        // Remove them from the general player pool
         playingRoster = rawRoster.filter(
           (p) => p.name.trim().toLowerCase() !== ownerName.trim().toLowerCase(),
         );
       } else {
-        // Owner is not a player, create a manual card
         ownerObj = {
           name: ownerName,
           role: "TEAM OWNER",
@@ -90,16 +83,11 @@ export default function TournamentBanner() {
       playingRoster = [...rawRoster];
     }
 
-    // Step 2: Sort the remaining players (Icons first)
     playingRoster.sort((a, b) => (b.isIcon ? 1 : 0) - (a.isIcon ? 1 : 0));
 
-    // Step 3: Build Final List (Max 10)
     const finalList = [];
-
-    // Add Owner First
     if (ownerObj) finalList.push(ownerObj);
 
-    // Fill remaining slots
     const slotsRemaining = 10 - finalList.length;
     finalList.push(...playingRoster.slice(0, slotsRemaining));
 
@@ -122,23 +110,25 @@ export default function TournamentBanner() {
     tournament?.logo ||
     "https://placehold.co/400x400/00b4d8/ffffff?text=CUP";
 
+  // 🔥 FIX 1: Transparent loading states so it doesn't block the screen!
   if (loading)
     return (
-      <div className="w-[1920px] h-[1080px] bg-black text-white flex items-center justify-center text-6xl font-black">
+      <div className="absolute inset-0 w-[1920px] h-[1080px] bg-black/80 backdrop-blur-md text-white flex items-center justify-center text-6xl font-black z-[500]">
         LOADING DATA...
       </div>
     );
   if (!tournament || teams.length === 0)
     return (
-      <div className="w-[1920px] h-[1080px] bg-black text-white flex items-center justify-center text-6xl font-black">
+      <div className="absolute inset-0 w-[1920px] h-[1080px] bg-black/80 backdrop-blur-md text-white flex items-center justify-center text-6xl font-black z-[500]">
         WAITING FOR TEAMS...
       </div>
     );
 
+  // 🔥 FIX 2: Strict 1920x1080 bounds applied to the main container
   return (
-    <div className="w-[1920px] h-[1080px] bg-[#0b0f19] text-white overflow-hidden font-sans relative flex flex-col selection:bg-none">
+    <div className="absolute inset-0 w-[1920px] h-[1080px] bg-[#0b0f19] text-white overflow-hidden font-sans flex flex-col selection:bg-none z-[500]">
       {/* Background */}
-      <div className="absolute inset-0 z-0">
+      <div className="absolute inset-0 z-0 pointer-events-none">
         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
         <div
           key={activeTeam?.id}
@@ -191,7 +181,8 @@ export default function TournamentBanner() {
         </div>
 
         {/* PLAYERS GRID (5x2) */}
-        <div className="grid grid-cols-5 gap-8 w-[1600px]">
+        {/* 🔥 FIX 3: Added px-10 so the grid items don't bleed out of the 1600px wrapper */}
+        <div className="grid grid-cols-5 gap-8 w-[1600px] px-10">
           {displayList.map((person, idx) => (
             <div
               key={idx}
@@ -203,15 +194,13 @@ export default function TournamentBanner() {
 
               {/* Photo */}
               <div
-                className={`w-24 h-24 rounded-full border-[3px] ${person.isOwner ? "border-yellow-500" : person.isIcon ? "border-[#00b4d8]" : "border-slate-600"} overflow-hidden bg-black shadow-lg mb-3`}>
+                className={`w-24 h-24 rounded-full border-[3px] ${person.isOwner ? "border-yellow-500" : person.isIcon ? "border-[#00b4d8]" : "border-slate-600"} overflow-hidden bg-black shadow-lg mb-3 flex items-center justify-center`}>
                 {person.isOwner && !person.photo ? (
-                  <div className="w-full h-full flex items-center justify-center bg-yellow-500 text-black text-4xl font-bold">
-                    <img
+                  <img
                     src={getPlayerPhoto(person)}
                     className="w-full h-full object-cover"
                     alt={person.name}
                   />
-                  </div>
                 ) : (
                   <img
                     src={getPlayerPhoto(person)}
@@ -263,7 +252,7 @@ export default function TournamentBanner() {
             to { transform: scaleX(1); }
         }
         .animate-progress-bar {
-            animation: progressBar 10s linear forwards;
+            animation: progressBar 3s linear forwards;
         }
       `}</style>
     </div>

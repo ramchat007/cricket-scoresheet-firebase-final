@@ -3,14 +3,18 @@ import React from "react";
 export default function BroadcastSummaryCard({ tournamentName, match, type }) {
   const currentInn = match?.innings?.[match?.currentInnings || 0];
 
-  if (!currentInn && type !== "TOSS") return null;
+  // 🔥 FIX 1: Removed strict early return so manual cards always render something!
+  if (!match) return null;
 
-  const isResult = type === "RESULT" || match.status === "completed";
+  const isResult =
+    type === "RESULT" ||
+    match.status === "completed" ||
+    match?.meta?.matchStatus === "finished";
   const isToss = type === "TOSS";
   const isInningsBreak = type === "INNINGS_BREAK";
   const isSecondInnings = match.currentInnings === 1;
 
-  // --- 1. APPEARANCE-BASED SORTING ---
+  // --- 1. APPEARANCE-BASED SORTING (Safe Fallbacks Added) ---
   const timeline = currentInn?.timeline || [];
 
   const batsmenByAppearance = Object.keys(currentInn?.batsmenStats || {}).sort(
@@ -51,9 +55,12 @@ export default function BroadcastSummaryCard({ tournamentName, match, type }) {
 
   let targetScore = 0;
   let rrr = "0.00";
-  let targetSummary = "";
+  let targetSummary = "TARGET PENDING...";
 
-  if (match.innings?.[0]) {
+  if (
+    match.innings?.[0] &&
+    (match.currentInnings === 1 || isResult || isInningsBreak)
+  ) {
     targetScore = match.innings[0].score + 1;
     const ballsRemaining = totalBallsInInnings - ballsBowled;
     const runsNeeded = targetScore - score;
@@ -62,7 +69,10 @@ export default function BroadcastSummaryCard({ tournamentName, match, type }) {
       rrr = ((runsNeeded / ballsRemaining) * 6).toFixed(2);
     }
 
-    targetSummary = `${match.innings[1]?.battingTeam || "Chasing Team"} needs ${runsNeeded} runs in ${totalOvers.toFixed(1)} overs`;
+    // Only show "needs X runs" if the match isn't over
+    if (!isResult) {
+      targetSummary = `${match.innings[1]?.battingTeam || match.meta?.teamB || "Chasing Team"} needs ${runsNeeded} runs in ${totalOvers} overs`;
+    }
   }
 
   // --- 3. THEME CONFIG ---
@@ -72,7 +82,9 @@ export default function BroadcastSummaryCard({ tournamentName, match, type }) {
     headerBorder: "border-b-4 border-teal-500",
     accentColor: "text-teal-400",
     activeRow: "bg-teal-500/10 border-l-4 border-teal-500",
-    statusText: `END OF OVER ${currentInn?.over || 0}`,
+    statusText: currentInn
+      ? `END OF OVER ${currentInn?.over || 0}`
+      : "MATCH PREVIEW",
   };
 
   if (type === "WICKET") {
@@ -110,12 +122,18 @@ export default function BroadcastSummaryCard({ tournamentName, match, type }) {
   }
 
   const ScoreBlock = ({ inn, label }) => {
-    if (!inn)
+    if (!inn || inn.score === undefined)
       return (
-        <div className="text-slate-500 text-center text-xl font-bold opacity-50 flex items-center justify-center h-full">
-          YET TO BAT
+        <div
+          className={`flex flex-col items-center justify-center p-6 ${mainTheme.bg} rounded-xl border border-slate-700 w-full relative overflow-hidden shadow-xl h-full opacity-60`}>
+          <div
+            className={`absolute top-0 w-full h-2 ${mainTheme.headerGradient}`}></div>
+          <span className="text-slate-500 font-black text-2xl uppercase tracking-widest">
+            YET TO BAT
+          </span>
         </div>
       );
+
     const topBatters = Object.entries(inn.batsmenStats || {})
       .sort((a, b) => b[1].runs - a[1].runs)
       .slice(0, 2);
@@ -129,29 +147,39 @@ export default function BroadcastSummaryCard({ tournamentName, match, type }) {
           {label}
         </div>
         <h3
-          className={`${mainTheme.accentColor} font-black uppercase text-2xl mb-1 mt-4`}>
-          {inn.battingTeam}
+          className={`${mainTheme.accentColor} font-black uppercase text-2xl mb-1 mt-4 text-center truncate w-full px-2`}>
+          {inn.battingTeam || "Team"}
         </h3>
         <div className="text-6xl font-black text-white mb-4 leading-none">
           {inn.score}/{inn.wickets}
         </div>
         <div className="w-full border-t border-slate-700/50 pt-4 space-y-3">
-          {topBatters.map(([name, s]) => (
-            <div
-              key={name}
-              className="flex justify-between items-center text-lg">
-              <span className="text-white font-bold uppercase truncate w-32">
-                {name}
-              </span>
-              <span className={`${mainTheme.accentColor} font-mono font-bold`}>
-                {s.runs} ({s.balls})
-              </span>
+          {topBatters.length > 0 ? (
+            topBatters.map(([name, s]) => (
+              <div
+                key={name}
+                className="flex justify-between items-center text-lg">
+                <span className="text-white font-bold uppercase truncate w-32">
+                  {name}
+                </span>
+                <span
+                  className={`${mainTheme.accentColor} font-mono font-bold`}>
+                  {s.runs} ({s.balls})
+                </span>
+              </div>
+            ))
+          ) : (
+            <div className="text-slate-500 italic text-center w-full">
+              No batting data
             </div>
-          ))}
+          )}
         </div>
       </div>
     );
   };
+
+  // 🔥 FIX 2: Check if toss actually exists!
+  const hasTossData = Boolean(match.meta?.toss?.winner);
 
   return (
     <div
@@ -172,39 +200,41 @@ export default function BroadcastSummaryCard({ tournamentName, match, type }) {
         <div
           className={`${mainTheme.headerGradient} h-28 flex items-center justify-between px-10 relative overflow-hidden`}>
           <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px]"></div>
+
           {isToss ? (
             <div className="w-full text-center z-10">
-              <span className="text-white font-black text-5xl uppercase italic">
+              <span className="text-white font-black text-5xl uppercase italic tracking-wider">
                 TOSS REPORT
               </span>
             </div>
           ) : isResult || isInningsBreak ? (
             <div className="w-full text-center z-10">
-              <span className="text-white font-black text-5xl uppercase italic">
+              <span className="text-white font-black text-5xl uppercase italic tracking-wider">
                 {isInningsBreak ? "INNINGS BREAK" : "MATCH RESULT"}
               </span>
             </div>
           ) : (
             <>
-              <div className="flex flex-col z-10">
-                <span className="text-white font-black text-5xl uppercase leading-none">
-                  {currentInn.battingTeam}
+              {/* DEFAULT MATCH HEADER */}
+              <div className="flex flex-col z-10 w-1/3">
+                <span className="text-white font-black text-5xl uppercase leading-none truncate pr-4">
+                  {currentInn?.battingTeam || match?.meta?.teamA || "TEAM 1"}
                 </span>
               </div>
-              <div className="z-10 flex flex-col items-center">
+              <div className="z-10 flex flex-col items-center w-1/3">
                 <div className="text-7xl font-black text-white leading-none">
                   {score}/{wickets}
                 </div>
-                {isSecondInnings && (
+                {isSecondInnings && targetScore > 0 && (
                   <div className="bg-slate-900/50 px-3 py-1 rounded text-amber-400 font-bold text-sm tracking-widest mt-1 border border-white/5 uppercase">
                     Need {targetScore - score} off{" "}
                     {totalBallsInInnings - ballsBowled}
                   </div>
                 )}
               </div>
-              <div className="flex flex-col items-end z-10 text-right">
-                <span className="text-white font-mono font-black text-2xl uppercase leading-none">
-                  {currentInn.bowlingTeam}
+              <div className="flex flex-col items-end z-10 text-right w-1/3">
+                <span className="text-white font-mono font-black text-2xl uppercase leading-none truncate pl-4">
+                  {currentInn?.bowlingTeam || match?.meta?.teamB || "TEAM 2"}
                 </span>
                 <span className="text-slate-300 font-mono font-bold text-4xl leading-none">
                   {overs} <span className="text-lg text-slate-500">OV</span>
@@ -222,50 +252,81 @@ export default function BroadcastSummaryCard({ tournamentName, match, type }) {
       {/* BODY CONTENT */}
       {isResult || isInningsBreak ? (
         <div className="flex items-center justify-center gap-6 h-[450px] p-10 w-full bg-slate-900">
-          <ScoreBlock inn={match.innings[0]} label="1st INNINGS" />
+          <ScoreBlock inn={match.innings?.[0]} label="1st INNINGS" />
 
           {/* CENTER INFO BLOCK */}
-          <div className="flex flex-col items-center justify-center min-w-[300px] px-4">
+          <div className="flex flex-col items-center justify-center min-w-[350px] px-4 text-center">
             {isInningsBreak ? (
               <>
                 <span className="text-slate-500 text-sm font-black uppercase tracking-[0.3em] mb-1">
                   Target
                 </span>
                 <span className="text-white text-8xl font-black mb-2 drop-shadow-lg">
-                  {targetScore}
+                  {targetScore > 0 ? targetScore : "-"}
                 </span>
-                <div className="bg-emerald-500/10 border border-emerald-500/20 px-4 py-1 rounded-lg mb-4">
-                  <span className="text-emerald-400 text-xl font-mono font-black uppercase">
-                    RRR: {rrr}
-                  </span>
-                </div>
-                <span className="text-slate-400 text-xs font-bold text-center tracking-wider uppercase leading-tight max-w-[200px]">
-                  {targetSummary}
-                </span>
+                {targetScore > 0 && (
+                  <>
+                    <div className="bg-emerald-500/10 border border-emerald-500/20 px-4 py-1 rounded-lg mb-4">
+                      <span className="text-emerald-400 text-xl font-mono font-black uppercase">
+                        RRR: {rrr}
+                      </span>
+                    </div>
+                    <span className="text-slate-400 text-xs font-bold text-center tracking-wider uppercase leading-tight max-w-[200px]">
+                      {targetSummary}
+                    </span>
+                  </>
+                )}
               </>
             ) : (
-              <span className="text-6xl font-black text-slate-800 italic opacity-50">
-                VS
-              </span>
+              // 🔥 FIX 3: Actual Match Result Text inside the middle block instead of just "VS"
+              <>
+                <span className="text-amber-500/50 text-sm font-black uppercase tracking-[0.3em] mb-2">
+                  Final Verdict
+                </span>
+                <span className="text-white text-3xl font-black uppercase tracking-wider leading-tight drop-shadow-lg text-balance">
+                  {match?.meta?.result || "MATCH IN PROGRESS"}
+                </span>
+              </>
             )}
           </div>
 
-          <ScoreBlock inn={match.innings[1]} label="2nd INNINGS" />
+          <ScoreBlock inn={match.innings?.[1]} label="2nd INNINGS" />
         </div>
       ) : isToss ? (
         <div className="flex flex-col items-center justify-center h-[400px] bg-slate-900 p-12 space-y-8">
-          <div className="text-4xl text-slate-400 font-bold uppercase tracking-[0.2em]">
-            <span className={`${mainTheme.accentColor} font-black`}>
-              {match.meta?.toss?.winner}
-            </span>{" "}
-            WON THE TOSS
-          </div>
-          <div className="text-7xl text-white font-black uppercase italic tracking-tighter">
-            ELECTED TO{" "}
-            <span className="underline decoration-4 decoration-indigo-500 underline-offset-8">
-              {match.meta?.toss?.decision}
-            </span>
-          </div>
+          {/* 🔥 FIX 4: Safe Toss Fallback */}
+          {hasTossData ? (
+            <>
+              <div className="text-4xl text-slate-400 font-bold uppercase tracking-[0.2em] text-center">
+                <span
+                  className={`${mainTheme.accentColor} font-black drop-shadow-md`}>
+                  {match.meta.toss.winner}
+                </span>{" "}
+                WON THE TOSS
+              </div>
+              <div className="text-7xl text-white font-black uppercase italic tracking-tighter text-center drop-shadow-2xl">
+                ELECTED TO{" "}
+                <span className="underline decoration-4 decoration-indigo-500 underline-offset-8">
+                  {match.meta.toss.decision}
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-3xl text-slate-500 font-bold uppercase tracking-[0.2em] flex items-center gap-6">
+                <span className="text-white">
+                  {match?.meta?.teamA || "TEAM 1"}
+                </span>
+                <span className="text-indigo-500/50 italic text-2xl">VS</span>
+                <span className="text-white">
+                  {match?.meta?.teamB || "TEAM 2"}
+                </span>
+              </div>
+              <div className="text-7xl text-indigo-400 font-black uppercase italic tracking-tighter drop-shadow-lg animate-pulse">
+                TOSS PENDING...
+              </div>
+            </>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-2 h-[600px] bg-slate-900">
@@ -282,38 +343,46 @@ export default function BroadcastSummaryCard({ tournamentName, match, type }) {
               </div>
             </div>
             <div className="flex-1 overflow-y-auto">
-              {batsmenByAppearance.map((name, index) => {
-                const s = currentInn.batsmenStats[name];
-                const active =
-                  name === currentInn.striker || name === currentInn.nonStriker;
-                return (
-                  <div
-                    key={name}
-                    className={`flex justify-between items-center px-6 py-4 border-b border-slate-800/50 ${active ? mainTheme.activeRow : index % 2 === 0 ? "bg-transparent" : "bg-slate-800/30"}`}>
-                    <div className="flex items-center gap-3 w-[300px]">
-                      {active && (
-                        <div className="w-2 h-2 rounded-full bg-teal-400 animate-pulse"></div>
-                      )}
+              {batsmenByAppearance.length > 0 ? (
+                batsmenByAppearance.map((name, index) => {
+                  const s = currentInn.batsmenStats[name];
+                  const active =
+                    name === currentInn.striker ||
+                    name === currentInn.nonStriker;
+                  return (
+                    <div
+                      key={name}
+                      className={`flex justify-between items-center px-6 py-4 border-b border-slate-800/50 ${active ? mainTheme.activeRow : index % 2 === 0 ? "bg-transparent" : "bg-slate-800/30"}`}>
+                      <div className="flex items-center gap-3 w-[300px]">
+                        {active && (
+                          <div className="w-2 h-2 rounded-full bg-teal-400 animate-pulse"></div>
+                        )}
+                        <div
+                          className={`text-2xl font-bold uppercase truncate ${active ? "text-white" : s.out ? "text-slate-600 line-through" : "text-slate-500"}`}>
+                          {name}
+                        </div>
+                      </div>
                       <div
-                        className={`text-2xl font-bold uppercase truncate ${active ? "text-white" : s.out ? "text-slate-600 line-through" : "text-slate-500"}`}>
-                        {name}
+                        className={`flex gap-10 w-[240px] justify-end font-mono text-2xl font-bold ${active ? "text-white" : "text-slate-600"}`}>
+                        <span className="w-10 text-center">{s.runs}</span>
+                        <span className="w-10 text-center opacity-60">
+                          {s.balls}
+                        </span>
+                        <span className="w-12 text-center opacity-40">
+                          {s.balls ? ((s.runs / s.balls) * 100).toFixed(0) : 0}
+                        </span>
                       </div>
                     </div>
-                    <div
-                      className={`flex gap-10 w-[240px] justify-end font-mono text-2xl font-bold ${active ? "text-white" : "text-slate-600"}`}>
-                      <span className="w-10 text-center">{s.runs}</span>
-                      <span className="w-10 text-center opacity-60">
-                        {s.balls}
-                      </span>
-                      <span className="w-12 text-center opacity-40">
-                        {s.balls ? ((s.runs / s.balls) * 100).toFixed(0) : 0}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              ) : (
+                <div className="p-10 text-center text-slate-600 font-bold uppercase tracking-widest">
+                  Waiting for First Ball...
+                </div>
+              )}
             </div>
           </div>
+
           {/* BOWLING CARD */}
           <div className="flex flex-col relative bg-slate-900">
             <div className="bg-slate-950 p-4 flex justify-between items-center border-b border-slate-800">
@@ -327,31 +396,37 @@ export default function BroadcastSummaryCard({ tournamentName, match, type }) {
               </div>
             </div>
             <div className="flex-1 overflow-y-auto">
-              {bowlersByAppearance.map((name, index) => {
-                const s = currentInn.bowlerStats[name];
-                const active = name === currentInn.currentBowler;
-                return (
-                  <div
-                    key={name}
-                    className={`flex justify-between items-center px-6 py-4 border-b border-slate-800/50 ${active ? mainTheme.activeRow : index % 2 === 0 ? "bg-transparent" : "bg-slate-800/30"}`}>
+              {bowlersByAppearance.length > 0 ? (
+                bowlersByAppearance.map((name, index) => {
+                  const s = currentInn.bowlerStats[name];
+                  const active = name === currentInn.currentBowler;
+                  return (
                     <div
-                      className={`text-2xl font-bold uppercase truncate w-[300px] ${active ? "text-white" : "text-slate-500"}`}>
-                      {name}
+                      key={name}
+                      className={`flex justify-between items-center px-6 py-4 border-b border-slate-800/50 ${active ? mainTheme.activeRow : index % 2 === 0 ? "bg-transparent" : "bg-slate-800/30"}`}>
+                      <div
+                        className={`text-2xl font-bold uppercase truncate w-[300px] ${active ? "text-white" : "text-slate-500"}`}>
+                        {name}
+                      </div>
+                      <div
+                        className={`flex gap-10 w-[240px] justify-end font-mono text-2xl font-bold ${active ? "text-white" : "text-slate-600"}`}>
+                        <span className="w-12 text-center opacity-60">
+                          {Math.floor(s.balls / 6)}.{s.balls % 6}
+                        </span>
+                        <span className="w-10 text-center">{s.runs}</span>
+                        <span
+                          className={`w-8 text-center ${s.wickets > 0 ? mainTheme.accentColor : ""}`}>
+                          {s.wickets}
+                        </span>
+                      </div>
                     </div>
-                    <div
-                      className={`flex gap-10 w-[240px] justify-end font-mono text-2xl font-bold ${active ? "text-white" : "text-slate-600"}`}>
-                      <span className="w-12 text-center opacity-60">
-                        {Math.floor(s.balls / 6)}.{s.balls % 6}
-                      </span>
-                      <span className="w-10 text-center">{s.runs}</span>
-                      <span
-                        className={`w-8 text-center ${s.wickets > 0 ? mainTheme.accentColor : ""}`}>
-                        {s.wickets}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              ) : (
+                <div className="p-10 text-center text-slate-600 font-bold uppercase tracking-widest">
+                  Waiting for First Over...
+                </div>
+              )}
             </div>
           </div>
         </div>

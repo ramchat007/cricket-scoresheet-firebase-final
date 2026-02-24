@@ -25,6 +25,7 @@ import {
   X,
   Image as ImageIcon,
   Monitor,
+  Info,
 } from "lucide-react";
 
 export default function OverlayController({ tournamentId, matchId, match }) {
@@ -88,6 +89,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
 
   const isActive = (viewName) => config.activeViews?.includes(viewName);
 
+  // 🔥 RESTORED: Strict Validation for Manual Triggers
   const triggerManualAnimation = (type) => {
     const currentInn = match?.innings?.[match?.currentInnings || 0];
     const timeline = currentInn?.timeline || [];
@@ -134,7 +136,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
         const newSponsor = {
           id: Date.now().toString(),
           name: newSponsorName,
-          phone: newSponsorPhone, // 🔥 ADDED PHONE
+          phone: newSponsorPhone,
           image: base64,
         };
 
@@ -260,7 +262,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               OBS Overlay Manager
             </p>
             <a
-              href={`/overlay/${tournamentId}/broadcast/active`}
+              href={`/overlay/${tournamentId}/broadcast/${matchId}`}
               target="_blank"
               rel="noreferrer"
               className={`mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${lightMode ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200" : "bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30"}`}>
@@ -427,7 +429,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
             <div className="mb-4">
               <label className={labelClass}>Add Partner</label>
               <div className="flex gap-2 mb-2">
-                {/* 🔥 SPLIT INPUTS FOR NAME & PHONE */}
                 <input
                   className={`${inputClass} mb-0 flex-[2]`}
                   placeholder="Sponsor Name"
@@ -476,7 +477,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                         <span className="text-[10px] font-bold uppercase">
                           {s.name}
                         </span>
-                        {/* 🔥 SHOW PHONE IN LIST IF EXISTS */}
                         {s.phone && (
                           <span className="text-[9px] text-slate-500 font-mono tracking-widest">
                             {s.phone}
@@ -527,46 +527,77 @@ export default function OverlayController({ tournamentId, matchId, match }) {
           </div>
         </div>
 
-        {/* --- 4. MANUAL EVENTS TRIGGER --- */}
+        {/* 🔥 4. MATCH EVENTS & INFO CARDS */}
         <div
           className={`${cardClass} border-green-500/30 shadow-[0_0_15px_rgba(34,197,94,0.1)] relative overflow-hidden`}>
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-400 to-emerald-600"></div>
-          <div className="flex items-center gap-2 mb-5 text-green-500">
+          <div className="flex items-center gap-2 mb-4 text-green-500">
             <Zap size={20} />
             <h4 className="font-black uppercase italic tracking-tight text-sm">
-              Manual Triggers
+              Events & Info Cards
             </h4>
           </div>
+
           <div className="space-y-4 flex-grow flex flex-col">
-            <p
-              className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${theme.sub}`}>
-              Force events to display instantly. Validates against last ball.
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <TriggerButton
-                label="Trigger 4"
-                onClick={() => triggerManualAnimation("FOUR")}
-                colorClass="bg-teal-500"
-              />
-              <TriggerButton
-                label="Trigger 6"
-                onClick={() => triggerManualAnimation("SIX")}
-                colorClass="bg-amber-500"
-              />
+            <div>
+              <p
+                className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${theme.sub}`}>
+                Instant Event Triggers
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <TriggerButton
+                  label="4"
+                  onClick={() => triggerManualAnimation("FOUR")}
+                  colorClass="bg-teal-500"
+                />
+                <TriggerButton
+                  label="6"
+                  onClick={() => triggerManualAnimation("SIX")}
+                  colorClass="bg-amber-500"
+                />
+                <TriggerButton
+                  label="OUT"
+                  onClick={() => triggerManualAnimation("WICKET")}
+                  colorClass="bg-red-600"
+                />
+              </div>
             </div>
-            <TriggerButton
-              label="Trigger WICKET"
-              onClick={() => triggerManualAnimation("WICKET")}
-              colorClass="bg-red-600"
-            />
-            <div className="mt-auto pt-4 border-t border-black/5 dark:border-white/5">
-              <ToggleButton
-                label="Show Over Summary"
-                active={isActive("SUMMARY_CARD")}
-                onClick={() => toggleView("SUMMARY_CARD")}
-                icon={BarChart}
-                colorClass="bg-indigo-600"
-              />
+
+            <div className="pt-3 border-t border-black/5 dark:border-white/5">
+              <p
+                className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${theme.sub}`}>
+                Full-Screen Info Cards
+              </p>
+              <div className="space-y-2.5">
+                <ToggleButton
+                  label="Over Summary"
+                  active={isActive("SUMMARY_CARD")}
+                  onClick={() => toggleView("SUMMARY_CARD")}
+                  icon={BarChart}
+                  colorClass="bg-indigo-600"
+                />
+                <ToggleButton
+                  label="Toss Report"
+                  active={isActive("TOSS_CARD")}
+                  onClick={() => toggleView("TOSS_CARD")}
+                  icon={Info}
+                  colorClass="bg-indigo-600"
+                />
+                <ToggleButton
+                  label="Innings Break / Target"
+                  active={isActive("INNINGS_BREAK_CARD")}
+                  onClick={() => toggleView("INNINGS_BREAK_CARD")}
+                  icon={MonitorPlay}
+                  colorClass="bg-indigo-600"
+                />
+                <ToggleButton
+                  label="Match Result"
+                  active={isActive("RESULT_CARD")}
+                  onClick={() => toggleView("RESULT_CARD")}
+                  icon={Trophy}
+                  colorClass="bg-indigo-600"
+                />
+              </div>
             </div>
           </div>
         </div>

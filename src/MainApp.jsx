@@ -143,7 +143,7 @@ function AppContent() {
 
             {/* 🔴 SOURCE 3: NEW Auto-Broadcast Layer */}
             <Route
-              path="/overlay/:tournamentId/broadcast/active"
+              path="/overlay/:tournamentId/broadcast/:matchId"
               element={<BroadcastLayer />}
             />
           </Routes>

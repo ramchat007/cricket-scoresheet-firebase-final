@@ -1,50 +1,65 @@
 import React, { useEffect, useState, useLayoutEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
-import { collection, query, onSnapshot, getDoc, doc } from "firebase/firestore";
+import {
+  collection,
+  query,
+  onSnapshot,
+  getDoc,
+  doc,
+  where,
+  getDocs,
+} from "firebase/firestore";
 import { db } from "../../utils/firebase";
 import { Users, Zap, Activity, AlertTriangle } from "lucide-react";
 
 import ScoreTicker from "./ScoreTicker";
 import BroadcastSummaryCard from "./BroadcastSummaryCard";
-// 🔥 IMPORT YOUR APP'S ACTUAL TOURNAMENT BANNER
 import TournamentBanner from "./TournamentBanner";
 
-// --- ANIMATION COMPONENT ---
+// 🔥 EVENT ANIMATION COMPONENT WITH SLAM & SHAKE
 const EventAnimation = ({ type }) => {
   if (!type) return null;
+
   const styles = {
     FOUR: {
-      bg: "bg-gradient-to-br from-teal-400 to-teal-600",
-      border: "border-teal-200",
+      bg: "bg-gradient-to-r from-green-500 to-emerald-600",
+      border: "border-emerald-300",
       text: "4",
       sub: "BOUNDARY",
-      shadow: "shadow-[0_0_60px_rgba(45,212,191,0.6)]",
+      glow: "shadow-[0_0_120px_rgba(16,185,129,0.8)]",
     },
     SIX: {
-      bg: "bg-gradient-to-br from-amber-300 to-orange-500",
-      border: "border-yellow-100",
+      bg: "bg-gradient-to-r from-pink-600 to-rose-600",
+      border: "border-pink-300",
       text: "6",
       sub: "MAXIMUM",
-      shadow: "shadow-[0_0_60px_rgba(251,191,36,0.6)]",
+      glow: "shadow-[0_0_150px_rgba(244,63,94,0.9)]",
     },
     WICKET: {
-      bg: "bg-gradient-to-br from-red-400 to-red-700",
-      border: "border-red-200",
+      bg: "bg-gradient-to-r from-red-700 to-red-900",
+      border: "border-red-400",
       text: "OUT",
       sub: "WICKET",
-      shadow: "shadow-[0_0_60px_rgba(248,113,113,0.6)]",
+      glow: "shadow-[0_0_150px_rgba(220,38,38,0.9)]",
     },
   };
+
   const current = styles[type];
+
   return (
-    <div className="absolute top-[250px] left-1/2 -translate-x-1/2 z-[300] animate-in zoom-in duration-300">
+    <div
+      key={Date.now()}
+      className="absolute inset-0 flex items-center justify-center z-[300] pointer-events-none">
       <div
-        className={`relative ${current.bg} border-4 ${current.border} ${current.shadow} rounded-[3rem] px-24 py-10 flex flex-col items-center transform scale-110`}>
-        <div className="absolute inset-0 bg-gradient-to-b from-white/30 to-transparent rounded-[2.8rem] pointer-events-none"></div>
-        <div className="text-white font-black text-[14rem] leading-none drop-shadow-xl text-center italic tracking-tighter">
+        className="absolute w-[900px] h-[900px] rounded-full bg-white/10 animate-ping"
+        style={{ animationDuration: "1.5s" }}
+      />
+      <div
+        className={`relative ${current.bg} ${current.border} border-4 px-28 py-10 rounded-[4rem] flex flex-col items-center animate-slamAndShake ${current.glow}`}>
+        <div className="text-white font-black text-[11rem] leading-none tracking-tight drop-shadow-2xl">
           {current.text}
         </div>
-        <div className="absolute -bottom-8 bg-slate-900 text-white px-12 py-3 font-black text-4xl uppercase tracking-[0.3em] rounded-full border-4 border-white/20 shadow-2xl whitespace-nowrap">
+        <div className="mt-4 bg-white text-slate-900 px-12 py-3 text-4xl font-extrabold tracking-[0.3em] rounded-full uppercase shadow-xl">
           {current.sub}
         </div>
       </div>
@@ -205,42 +220,28 @@ export default function BroadcastLayer() {
   else if (!currentInn) viewMode = "WAITING";
   else viewMode = "LIVE";
 
-  // --- MANUAL & AUTO EVENTS ---
+  // --- MANUAL EVENTS TRIGGER ---
   useEffect(() => {
     if (overlayState.manualAnimation && overlayState.manualAnimationTrigger) {
       if (Date.now() - overlayState.manualAnimationTrigger < 5000) {
-        const lastBall =
-          currentInn?.timeline?.length > 0
-            ? currentInn.timeline[currentInn.timeline.length - 1]
-            : null;
-        let isValid = false;
-        if (lastBall) {
-          if (overlayState.manualAnimation === "FOUR" && lastBall.runs === 4)
-            isValid = true;
-          if (overlayState.manualAnimation === "SIX" && lastBall.runs === 6)
-            isValid = true;
-          if (overlayState.manualAnimation === "WICKET" && lastBall.isWicket)
-            isValid = true;
-        }
-        if (isValid) {
-          setAnimationType(overlayState.manualAnimation);
-          const timer = setTimeout(() => setAnimationType(null), 3500);
-          return () => clearTimeout(timer);
-        }
+        setAnimationType(overlayState.manualAnimation);
+        let delay = 3500;
+        if (overlayState.manualAnimation === "SIX") delay = 4000;
+        if (overlayState.manualAnimation === "WICKET") delay = 4500;
+        const timer = setTimeout(() => setAnimationType(null), delay);
+        return () => clearTimeout(timer);
       }
     }
-  }, [
-    overlayState.manualAnimationTrigger,
-    overlayState.manualAnimation,
-    currentInn,
-  ]);
+  }, [overlayState.manualAnimationTrigger, overlayState.manualAnimation]);
 
+  // --- AUTOMATED EVENTS TRIGGER ---
   useEffect(() => {
     if (viewMode !== "LIVE" || !currentInn) return;
     const timeline = currentInn.timeline || [];
     if (timeline.length > prevTimelineLength.current) {
       const lastBall = timeline[timeline.length - 1];
       let eventHandled = false;
+
       if (lastBall && lastBall.isWicket) {
         eventHandled = true;
         setAnimationType("WICKET");
@@ -251,11 +252,15 @@ export default function BroadcastLayer() {
           setPopupType("WICKET");
           setShowPopup(true);
           setTimeout(() => setShowPopup(false), 9000);
-        }, 2000);
-      } else if (lastBall && (lastBall.runs === 4 || lastBall.runs === 6)) {
-        setAnimationType(lastBall.runs === 4 ? "FOUR" : "SIX");
-        setTimeout(() => setAnimationType(null), 2000);
+        }, 4500);
+      } else if (lastBall && lastBall.runs === 4 && !lastBall.isWide) {
+        setAnimationType("FOUR");
+        setTimeout(() => setAnimationType(null), 3500);
+      } else if (lastBall && lastBall.runs === 6 && !lastBall.isWide) {
+        setAnimationType("SIX");
+        setTimeout(() => setAnimationType(null), 4000);
       }
+
       if (
         !eventHandled &&
         currentInn.overBallCount === 0 &&
@@ -275,7 +280,6 @@ export default function BroadcastLayer() {
 
   // --- COMPONENTS ---
 
-  // 🔥 UPDATED: Sponsor Bug with Optional Phone Number
   const SponsorBug = () => {
     const sponsors = overlayState.sponsors || [];
     const [idx, setIdx] = useState(0);
@@ -294,7 +298,6 @@ export default function BroadcastLayer() {
 
     return (
       <div className="flex items-center bg-[#0B1120]/95 border border-white/10 rounded-full pr-8 pl-2 py-2 shadow-[0_10px_30px_rgba(0,0,0,0.8)] animate-in fade-in slide-in-from-top-8">
-        {/* Left Side: Logo */}
         <div className="w-20 h-20 bg-white rounded-full border-4 border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.3)] flex items-center justify-center p-1.5 shrink-0 overflow-hidden">
           <img
             key={`img-${idx}`}
@@ -303,8 +306,6 @@ export default function BroadcastLayer() {
             className="w-full h-full object-contain animate-in fade-in duration-500"
           />
         </div>
-
-        {/* Right Side: Text details */}
         <div
           key={`text-${idx}`}
           className="ml-5 flex flex-col justify-center animate-in fade-in slide-in-from-right-4 duration-500 pr-2">
@@ -314,8 +315,6 @@ export default function BroadcastLayer() {
           <span className="text-white font-black text-2xl uppercase tracking-wider drop-shadow-lg truncate max-w-[280px] leading-none">
             {current.name}
           </span>
-
-          {/* 🔥 Phone Number Block */}
           {current.phone && (
             <span className="text-teal-300 font-mono font-bold text-sm tracking-widest drop-shadow-md mt-1">
               📞 {current.phone}
@@ -326,47 +325,6 @@ export default function BroadcastLayer() {
     );
   };
 
-  const SponsorsFullscreen = () => {
-    const sponsors = overlayState.sponsors || [];
-    return (
-      <div className="absolute inset-0 z-[500] bg-[#0B1120] flex flex-col items-center justify-center animate-in fade-in duration-500">
-        <h2 className="text-6xl font-black uppercase text-amber-400 mb-16 italic tracking-widest drop-shadow-[0_0_30px_rgba(251,191,36,0.4)]">
-          Tournament Partners
-        </h2>
-        <div className="flex flex-wrap justify-center gap-10 max-w-[1500px]">
-          {sponsors.length > 0 ? (
-            sponsors.map((s, i) => (
-              <div
-                key={i}
-                className="bg-white p-6 rounded-[2rem] shadow-2xl flex flex-col items-center justify-center w-[350px] h-[260px] border-4 border-white/10 gap-3">
-                <img
-                  src={s.image}
-                  alt={s.name}
-                  className="max-w-full h-28 object-contain drop-shadow-md"
-                />
-                <div className="text-xl font-black uppercase text-slate-800 text-center tracking-widest truncate w-full leading-tight">
-                  {s.name}
-                </div>
-
-                {/* 🔥 Phone Number on Full Screen Grid */}
-                {s.phone && (
-                  <div className="text-sm font-bold text-slate-500 font-mono tracking-widest">
-                    📞 {s.phone}
-                  </div>
-                )}
-              </div>
-            ))
-          ) : (
-            <div className="text-white text-2xl font-black italic opacity-50">
-              No Sponsors Added Yet
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  // 🔥 NEW: Slideshow for Full Screen Uploaded Ad Banners
   const CustomAdBannersFullscreen = () => {
     const banners = overlayState.fullScreenBanners || [];
     const [idx, setIdx] = useState(0);
@@ -375,8 +333,8 @@ export default function BroadcastLayer() {
       if (banners.length <= 1) return;
       const int = setInterval(
         () => setIdx((prev) => (prev + 1) % banners.length),
-        4000,
-      ); // Change banner every 8s
+        8000,
+      );
       return () => clearInterval(int);
     }, [banners.length]);
 
@@ -384,7 +342,6 @@ export default function BroadcastLayer() {
 
     return (
       <div className="absolute inset-0 z-[500] bg-black flex flex-col items-center justify-center animate-in fade-in duration-500">
-        {/* Changed object-cover to object-contain, ensuring full width/height bounds */}
         <img
           key={idx}
           src={banners[idx].image}
@@ -531,86 +488,199 @@ export default function BroadcastLayer() {
       ...(match.teamASquad || []),
       ...(match.teamBSquad || []),
     ];
-    const player = allPlayers.find(
+    const basePlayer = allPlayers.find(
       (p) => p.id === overlayState.spotlightPlayerId,
     );
-    if (!player) return null;
 
-    const batStats = currentInn?.batsmenStats?.[player.name];
-    const bowlStats = currentInn?.bowlerStats?.[player.name];
+    const [careerStats, setCareerStats] = useState(null);
+
+    useEffect(() => {
+      if (!basePlayer?.name) return;
+
+      const fetchPlayerProfile = async () => {
+        try {
+          console.log(
+            `🔍 Searching Global Players for Name: ${basePlayer.name}`,
+          );
+
+          const playersRef = collection(db, "players");
+          const q = query(
+            playersRef,
+            where("name", "==", basePlayer.name.trim()),
+          );
+          const querySnapshot = await getDocs(q);
+
+          if (!querySnapshot.empty) {
+            const globalData = querySnapshot.docs[0].data();
+            setCareerStats(globalData);
+          } else {
+            console.warn(
+              `⚠️ No global player found with the name: ${basePlayer.name}`,
+            );
+          }
+        } catch (e) {
+          console.error("❌ Error fetching player stats:", e);
+        }
+      };
+
+      fetchPlayerProfile();
+    }, [basePlayer?.name]);
+
+    if (!basePlayer) return null;
+
+    // Merge base match data with fetched global career data
+    const pData = { ...basePlayer, ...careerStats };
+
+    const batStats = currentInn?.batsmenStats?.[pData.name];
+    const bowlStats = currentInn?.bowlerStats?.[pData.name];
     const hasLiveStats = batStats || bowlStats;
+
+    const getStat = (keys) => {
+      for (let k of keys) {
+        if (pData[k] !== undefined && pData[k] !== null && pData[k] !== "")
+          return pData[k];
+        if (pData.stats?.[k] !== undefined && pData.stats?.[k] !== null)
+          return pData.stats[k];
+        if (
+          pData.careerStats?.[k] !== undefined &&
+          pData.careerStats?.[k] !== null
+        )
+          return pData.careerStats[k];
+        if (pData.career?.[k] !== undefined && pData.career?.[k] !== null)
+          return pData.career[k];
+      }
+      return "-";
+    };
+
+    const matches = getStat(["matches", "totalMatches", "M"]);
+    const runs = getStat(["runs", "totalRuns", "R"]);
+    const hs = getStat(["highestScore", "hs", "highScore", "HS"]);
+    const avg = getStat(["average", "battingAverage", "avg", "Avg"]);
+    const wickets = getStat(["wickets", "totalWickets", "W", "wkt"]);
+    const eco = getStat(["economy", "eco", "economyRate", "Econ"]);
+
+    const photo =
+      pData.photoURL ||
+      pData.imageUrl ||
+      pData.profilePic ||
+      pData.image ||
+      pData.avatar ||
+      "https://cdn-icons-png.flaticon.com/512/847/847969.png";
 
     return (
       <div
         className={`flex rounded-xl border-l-8 border-teal-400 slide-in-from-left-8 ${TV_CARD_BASE}`}>
+        {/* PHOTO COLUMN */}
         <div className="w-48 bg-gradient-to-b from-slate-800 to-[#0B1120] flex flex-col items-center justify-center relative shadow-inner border-r border-white/10 p-4 pt-6">
           <img
-            src={
-              player.photoURL ||
-              "https://cdn-icons-png.flaticon.com/512/847/847969.png"
-            }
-            alt=""
-            className="w-28 h-28 object-cover rounded-full border-4 border-white/20 shadow-lg mb-4"
+            src={photo}
+            alt={pData.name}
+            className="w-28 h-28 object-cover rounded-full border-4 border-white/20 shadow-lg mb-4 bg-white/5"
           />
           <div className="absolute bottom-0 w-full bg-teal-500 text-black text-center font-black text-[10px] py-1.5 uppercase tracking-widest">
             Player Profile
           </div>
         </div>
-        <div className="p-6 min-w-[350px] flex flex-col justify-center bg-[#0B1120]">
-          <h2 className="text-4xl font-black uppercase italic leading-none mb-1 drop-shadow-lg text-white">
-            {player.name}
+
+        {/* INFO COLUMN */}
+        <div className="p-6 min-w-[380px] flex flex-col justify-center bg-[#0B1120]">
+          <h2 className="text-4xl font-black uppercase italic leading-none mb-1 drop-shadow-lg text-white truncate max-w-[350px]">
+            {pData.name}
           </h2>
           <p className="text-teal-300 font-bold uppercase tracking-[0.2em] text-xs mb-4 drop-shadow-md">
-            {player.role || "Squad Member"}
+            {pData.role || pData.playerRole || "Squad Member"}
           </p>
 
-          <div className="grid grid-cols-2 gap-4">
-            {!hasLiveStats && (
-              <>
-                <div className="bg-white/5 p-3 rounded-lg border border-white/10">
-                  <div className="text-[9px] text-slate-400 uppercase tracking-widest font-bold mb-1">
-                    Batting Style
-                  </div>
-                  <div className="text-sm font-bold text-white">
-                    {player.battingStyle || "N/A"}
-                  </div>
-                </div>
-                <div className="bg-white/5 p-3 rounded-lg border border-white/10">
-                  <div className="text-[9px] text-slate-400 uppercase tracking-widest font-bold mb-1">
-                    Bowling Style
-                  </div>
-                  <div className="text-sm font-bold text-white">
-                    {player.bowlingStyle || "N/A"}
-                  </div>
-                </div>
-              </>
-            )}
-            {batStats && (
-              <div className="bg-teal-500/10 p-3 rounded-lg border border-teal-500/20">
-                <div className="text-[10px] text-teal-300 uppercase tracking-widest font-black mb-1">
-                  Live Batting
-                </div>
-                <div className="text-3xl font-mono font-black text-white drop-shadow-lg">
-                  {batStats.runs}
-                  <span className="text-sm text-slate-300 font-bold ml-1">
-                    ({batStats.balls})
+          {/* LIVE MATCH STATS (If active on field) */}
+          {hasLiveStats && (
+            <div className="flex gap-3 mb-4">
+              {batStats && (
+                <div className="bg-teal-500/20 px-4 py-2 rounded-lg border border-teal-500/30 flex-1 flex justify-between items-center shadow-inner">
+                  <span className="text-[10px] text-teal-300 uppercase tracking-widest font-black">
+                    Live Bat
+                  </span>
+                  <span className="text-2xl font-mono font-black text-white drop-shadow-lg">
+                    {batStats.runs}
+                    <span className="text-sm text-slate-300 font-bold ml-1">
+                      ({batStats.balls})
+                    </span>
                   </span>
                 </div>
-              </div>
-            )}
-            {bowlStats && (
-              <div className="bg-teal-500/10 p-3 rounded-lg border border-teal-500/20">
-                <div className="text-[10px] text-teal-300 uppercase tracking-widest font-black mb-1">
-                  Live Bowling
-                </div>
-                <div className="text-3xl font-mono font-black text-white drop-shadow-lg">
-                  {bowlStats.wickets}
-                  <span className="text-sm text-slate-300 font-bold ml-1">
-                    -{bowlStats.runs}
+              )}
+              {bowlStats && (
+                <div className="bg-teal-500/20 px-4 py-2 rounded-lg border border-teal-500/30 flex-1 flex justify-between items-center shadow-inner">
+                  <span className="text-[10px] text-teal-300 uppercase tracking-widest font-black">
+                    Live Bowl
+                  </span>
+                  <span className="text-2xl font-mono font-black text-white drop-shadow-lg">
+                    {bowlStats.wickets}
+                    <span className="text-sm text-slate-300 font-bold ml-1">
+                      -{bowlStats.runs}
+                    </span>
                   </span>
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* CAREER STATS GRID */}
+          <div className="bg-slate-800/50 rounded-lg border border-white/10 p-4 shadow-inner">
+            <div className="text-[9px] text-slate-400 uppercase tracking-widest font-bold mb-3 border-b border-white/10 pb-1.5 flex justify-between">
+              <span>Career Statistics</span>
+              <span className="text-teal-500/50">Global</span>
+            </div>
+
+            <div className="grid grid-cols-6 gap-x-4 gap-y-3">
+              <div className="flex flex-col col-span-2">
+                <span className="text-[9px] text-slate-500 uppercase font-bold">
+                  Matches
+                </span>
+                <span className="text-xl font-mono font-black text-white">
+                  {matches}
+                </span>
               </div>
-            )}
+              <div className="flex flex-col col-span-2">
+                <span className="text-[9px] text-slate-500 uppercase font-bold">
+                  Runs
+                </span>
+                <span className="text-xl font-mono font-black text-white">
+                  {runs}
+                </span>
+              </div>
+              <div className="flex flex-col col-span-2">
+                <span className="text-[9px] text-slate-500 uppercase font-bold">
+                  Wickets
+                </span>
+                <span className="text-xl font-mono font-black text-white">
+                  {wickets}
+                </span>
+              </div>
+
+              <div className="flex flex-col col-span-2">
+                <span className="text-[9px] text-slate-500 uppercase font-bold">
+                  Bat Avg
+                </span>
+                <span className="text-xl font-mono font-black text-white">
+                  {avg}
+                </span>
+              </div>
+              <div className="flex flex-col col-span-2">
+                <span className="text-[9px] text-slate-500 uppercase font-bold">
+                  High Score
+                </span>
+                <span className="text-xl font-mono font-black text-white">
+                  {hs}
+                </span>
+              </div>
+              <div className="flex flex-col col-span-2">
+                <span className="text-[9px] text-slate-500 uppercase font-bold">
+                  Economy
+                </span>
+                <span className="text-xl font-mono font-black text-white">
+                  {eco}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -659,13 +729,36 @@ export default function BroadcastLayer() {
     );
   };
 
-  // --- RENDER ---
+  // --- RENDER PREPARATION ---
   const containerStyle = {
     width: 1920,
     height: 1080,
     transform: `scale(${scale})`,
     transformOrigin: "center center",
   };
+
+  // 🔥 1. DEFINE MANUAL TOGGLES FIRST
+  const manualCardActive =
+    isActive("SUMMARY_CARD") ||
+    isActive("TOSS_CARD") ||
+    isActive("INNINGS_BREAK_CARD") ||
+    isActive("RESULT_CARD");
+
+  const manualCardType = isActive("TOSS_CARD")
+    ? "TOSS"
+    : isActive("INNINGS_BREAK_CARD")
+      ? "INNINGS_BREAK"
+      : isActive("RESULT_CARD")
+        ? "RESULT"
+        : "SUMMARY";
+
+  const hideTicker =
+    showPopup ||
+    manualCardActive ||
+    overlayState.hideBottomScoreTicker ||
+    isActive("APP_TOURNAMENT_BANNER") ||
+    isActive("CUSTOM_AD_BANNERS") ||
+    ["TOSS", "INNINGS_BREAK", "RESULT"].includes(viewMode);
 
   if (viewMode === "LOADING")
     return <div className="bg-transparent w-screen h-screen"></div>;
@@ -682,114 +775,115 @@ export default function BroadcastLayer() {
       </div>
     );
 
-  if (viewMode === "NOT_FOUND" || viewMode === "WAITING") {
-    return (
-      <div
-        className="flex items-center justify-center overflow-hidden bg-slate-900"
-        style={{ width: 1920, height: 1080 }}>
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 opacity-90"></div>
-        <div
-          style={containerStyle}
-          className="relative z-10 flex flex-col items-center justify-center">
-          <div className="bg-teal-500/10 border border-teal-500/30 px-10 py-3 rounded-full mb-10 backdrop-blur-md">
-            <h2 className="text-teal-400 text-4xl font-black uppercase tracking-[0.4em] drop-shadow-md">
-              {tournamentName}
-            </h2>
-          </div>
-          <h1 className="text-white text-[10rem] font-black uppercase drop-shadow-2xl italic tracking-tighter flex items-center gap-16">
-            <span className="drop-shadow-[0_0_30px_rgba(255,255,255,0.1)] text-slate-100">
-              {match?.meta?.teamA || "Team A"}
-            </span>
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-cyan-400 text-9xl font-serif italic transform -skew-x-12">
-              VS
-            </span>
-            <span className="drop-shadow-[0_0_30px_rgba(255,255,255,0.1)] text-slate-100">
-              {match?.meta?.teamB || "Team B"}
-            </span>
-          </h1>
-          <div className="mt-24 bg-gradient-to-r from-teal-800 to-slate-800 px-16 py-5 rounded-full text-white text-5xl animate-pulse font-black border-4 border-teal-500/50 shadow-[0_0_50px_rgba(20,184,166,0.3)] tracking-widest uppercase">
-            {viewMode === "NOT_FOUND" ? "Standby..." : "Starting Soon..."}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Pre-game / Innings Break / Result Default views (if no manual overrides are active)
-  if (["TOSS", "INNINGS_BREAK", "RESULT"].includes(viewMode)) {
-    return (
-      <div className="w-screen h-screen flex items-center justify-center overflow-hidden bg-transparent">
-        <div
-          style={containerStyle}
-          className="relative bg-transparent font-sans pointer-events-none">
-          <div className="absolute inset-0 flex items-center justify-center z-50">
-            <BroadcastSummaryCard
-              tournamentName={tournamentName}
-              match={match}
-              type={viewMode}
-            />
-          </div>
-          {currentInn && !overlayState.hideBottomScoreTicker && (
-            <div className="absolute bottom-[50px] w-full z-10 flex justify-center">
-              <ScoreTicker match={match} />
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  const isSummaryCardShowing = showPopup || isActive("SUMMARY_CARD");
-  const hideTicker =
-    isSummaryCardShowing ||
-    overlayState.hideBottomScoreTicker ||
-    isActive("APP_TOURNAMENT_BANNER") ||
-    isActive("CUSTOM_AD_BANNERS");
-
+  // 🔥 2. NO MORE EARLY RETURNS FOR "WAITING"!
+  // Everything is rendered absolutely inside the main container now.
   return (
     <div className="w-screen h-screen flex items-center justify-center overflow-hidden bg-transparent pointer-events-none">
       <div
         style={containerStyle}
         className="relative bg-transparent font-sans w-[1920px] h-[1080px]">
-        {/* 🔥 1. YOUR APP'S TOURNAMENT BANNER */}
-        <div
-          className={`absolute inset-0 z-[500] transition-all duration-500 ${isActive("APP_TOURNAMENT_BANNER") ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}>
-          {/* We wrap it in a div that catches pointer events if needed, but usually we just let it render full screen */}
-          <div className="w-full h-full bg-[#0B1120]">
-            {isActive("APP_TOURNAMENT_BANNER") && (
-              <TournamentBanner tournamentId={tournamentId} match={match} />
-            )}
+        {/* CSS KEYFRAMES */}
+        <style>{`
+          .animate-marquee { animation: marquee 20s linear infinite; }
+          @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
+          @keyframes slamAndShake {
+            0% { transform: scale(3); opacity: 0; }
+            30% { transform: scale(0.9); opacity: 1; }
+            40% { transform: scale(1.1) rotate(-3deg); }
+            50% { transform: scale(0.95) rotate(3deg); }
+            60% { transform: scale(1.02) rotate(-1deg); }
+            100% { transform: scale(1) rotate(0deg); opacity: 1; }
+          }
+          @keyframes screenFlash {
+            0% { background: rgba(255,255,255,0); }
+            50% { background: rgba(255,255,255,0.25); }
+            100% { background: rgba(255,255,255,0); }
+          }
+          .animate-slamAndShake { animation: slamAndShake 0.6s cubic-bezier(0.25, 1, 0.5, 1) forwards; }
+          .animate-screenFlash { animation: screenFlash 0.6s ease-in-out; }
+        `}</style>
+
+        {/* --- 1. BACKGROUND STANDBY LAYER (Shown before match starts) --- */}
+        {(viewMode === "NOT_FOUND" || viewMode === "WAITING") && (
+          <div className="absolute inset-0 z-0 flex items-center justify-center bg-slate-900">
+            <div className="absolute inset-0 bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 opacity-90"></div>
+            <div className="relative z-10 flex flex-col items-center justify-center">
+              <div className="bg-teal-500/10 border border-teal-500/30 px-10 py-3 rounded-full mb-10 backdrop-blur-md">
+                <h2 className="text-teal-400 text-4xl font-black uppercase tracking-[0.4em] drop-shadow-md">
+                  {tournamentName}
+                </h2>
+              </div>
+              <h1 className="text-white text-[10rem] font-black uppercase drop-shadow-2xl italic tracking-tighter flex items-center gap-16">
+                <span className="drop-shadow-[0_0_30px_rgba(255,255,255,0.1)] text-slate-100">
+                  {match?.meta?.teamA || "Team A"}
+                </span>
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-cyan-400 text-9xl font-serif italic transform -skew-x-12">
+                  VS
+                </span>
+                <span className="drop-shadow-[0_0_30px_rgba(255,255,255,0.1)] text-slate-100">
+                  {match?.meta?.teamB || "Team B"}
+                </span>
+              </h1>
+              <div className="mt-24 bg-gradient-to-r from-teal-800 to-slate-800 px-16 py-5 rounded-full text-white text-5xl animate-pulse font-black border-4 border-teal-500/50 shadow-[0_0_50px_rgba(20,184,166,0.3)] tracking-widest uppercase">
+                {viewMode === "NOT_FOUND" ? "Standby..." : "Starting Soon..."}
+              </div>
+            </div>
           </div>
+        )}
+
+        {/* --- 2. DEFAULT AUTO SCREENS (Toss, Break, Result) --- */}
+        {["TOSS", "INNINGS_BREAK", "RESULT"].includes(viewMode) &&
+          !manualCardActive && (
+            <div className="absolute inset-0 flex items-center justify-center z-50">
+              <BroadcastSummaryCard
+                tournamentName={tournamentName}
+                match={match}
+                type={viewMode}
+              />
+            </div>
+          )}
+
+        {/* --- 3. TOURNAMENT BANNER (Highest Priority Fullscreen) --- */}
+        <div
+          className={`absolute inset-0 w-[1920px] h-[1080px] overflow-hidden z-[500] transition-all duration-500 ${isActive("APP_TOURNAMENT_BANNER") ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}>
+          {isActive("APP_TOURNAMENT_BANNER") && (
+            <TournamentBanner tournamentId={tournamentId} />
+          )}
         </div>
 
-        {/* 🔥 2. UPLOADED AD BANNERS SLIDESHOW */}
         {isActive("CUSTOM_AD_BANNERS") && <CustomAdBannersFullscreen />}
-
-        {/* OTHER FULL SCREEN ALERTS */}
         {isActive("CUSTOM_MSG") && <CustomAlert />}
 
+        {/* EVENT FLASHES & SHOCKWAVES */}
+        {animationType === "WICKET" && (
+          <div className="absolute inset-0 z-[150] animate-screenFlash pointer-events-none" />
+        )}
         <EventAnimation type={animationType} />
 
+        {/* --- 4. THE AUTOMATIC POPUP (Over summary/Wicket) --- */}
         <div
-          className={`absolute inset-0 z-[60] flex items-center justify-center transition-all duration-500 ${showPopup && !isActive("SUMMARY_CARD") ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}>
+          className={`absolute inset-0 z-[60] flex items-center justify-center transition-all duration-500 ${showPopup && !manualCardActive ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}>
           <BroadcastSummaryCard
             tournamentName={tournamentName}
             match={match}
             type={popupType}
           />
         </div>
+
+        {/* --- 5. THE MANUAL OVERRIDE INFO CARDS --- */}
         <div
-          className={`absolute inset-0 z-[60] flex items-center justify-center transition-all duration-500 ${isActive("SUMMARY_CARD") ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}>
+          className={`absolute inset-0 z-[60] flex items-center justify-center transition-all duration-500 ${manualCardActive ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}>
           <BroadcastSummaryCard
             tournamentName={tournamentName}
             match={match}
-            type="SUMMARY"
+            type={manualCardType}
           />
         </div>
 
+        {/* TICKER */}
         <div
           className={`absolute bottom-[50px] w-full z-10 flex justify-center transition-all duration-500 ${hideTicker ? "translate-y-[200px] opacity-0 pointer-events-none" : "translate-y-0 opacity-100"}`}>
-          <ScoreTicker match={match} />
+          {currentInn && <ScoreTicker match={match} />}
         </div>
 
         {/* TOP LEFT */}
@@ -829,10 +923,6 @@ export default function BroadcastLayer() {
             </div>
           </div>
         )}
-        <style>{`
-          .animate-marquee { animation: marquee 20s linear infinite; }
-          @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
-        `}</style>
       </div>
     </div>
   );

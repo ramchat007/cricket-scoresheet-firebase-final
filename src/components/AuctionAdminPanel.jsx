@@ -236,19 +236,16 @@ const GlobalPlayerPicker = ({
     return matchesSearch && matchesTourney;
   });
 
-  // ✅ NEW: Select All Logic
   const isAllSelected =
     filtered.length > 0 &&
     filtered.every((p) => selected.some((s) => s.id === p.id));
 
   const handleSelectAll = () => {
     if (isAllSelected) {
-      // Deselect all CURRENTLY FILTERED players
       setSelected((prev) =>
         prev.filter((s) => !filtered.some((f) => f.id === s.id)),
       );
     } else {
-      // Select all CURRENTLY FILTERED players (without duplicating)
       setSelected((prev) => {
         const newSelected = [...prev];
         filtered.forEach((f) => {
@@ -309,7 +306,6 @@ const GlobalPlayerPicker = ({
               Filter by Tournament
             </label>
 
-            {/* ✅ NEW: Select All Button */}
             <button
               onClick={handleSelectAll}
               disabled={filtered.length === 0}
@@ -443,7 +439,6 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
 
   const [config, setConfig] = useState(systemDefaults);
 
-  // Helper missing in original code
   const handleCancelEdit = () => {
     setEditingSlotId(null);
     setEditingSlotName("");
@@ -767,6 +762,117 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
     alert("Auction Signal Repaired!");
   };
 
+  // 🔥 NEW: DANGER ZONE HANDLERS
+  const handleSyncBasePrice = async () => {
+    if (
+      !window.confirm(
+        `Update ALL players in the pool to the current Min Base Price (₹${config.minBasePrice})?`,
+      )
+    )
+      return;
+    setIsResetting(true);
+    try {
+      const batch = writeBatch(db);
+      auctionPlayers.forEach((p) => {
+        const pRef = doc(
+          db,
+          "tournaments",
+          tournamentId,
+          "auctionPlayers",
+          p.id,
+        );
+        batch.update(pRef, { basePrice: Number(config.minBasePrice) });
+      });
+      await batch.commit();
+      alert("Base price synced to all players successfully!");
+    } catch (e) {
+      console.error(e);
+      alert("Failed to sync base prices.");
+    }
+    setIsResetting(false);
+  };
+
+  const handleResetAllPlayers = async () => {
+    if (
+      !window.confirm(
+        "⚠️ UNSOLD ALL PLAYERS? This will remove all players from their teams and reset their statuses to PENDING. This cannot be undone!",
+      )
+    )
+      return;
+    setIsResetting(true);
+    try {
+      const batch = writeBatch(db);
+
+      // 1. Reset all teams (Clear roster and spent budgets)
+      teams.forEach((t) => {
+        const tRef = doc(db, "tournaments", tournamentId, "teams", t.id);
+        batch.update(tRef, { spent: 0, roster: [] });
+      });
+
+      // 2. Reset all players to PENDING
+      auctionPlayers.forEach((p) => {
+        const pRef = doc(
+          db,
+          "tournaments",
+          tournamentId,
+          "auctionPlayers",
+          p.id,
+        );
+        batch.update(pRef, {
+          status: "PENDING",
+          soldPrice: 0,
+          teamId: null,
+          bidHistory: [],
+        });
+      });
+
+      await batch.commit();
+      alert("All players successfully reset to PENDING!");
+    } catch (e) {
+      console.error(e);
+      alert("Failed to reset players.");
+    }
+    setIsResetting(false);
+  };
+
+  const handleClearAuctionPool = async () => {
+    if (
+      !window.confirm(
+        "🚨 DELETE ALL PLAYERS from the auction pool? This will wipe every team's roster and completely empty the auction. This cannot be undone!",
+      )
+    )
+      return;
+    setIsResetting(true);
+    try {
+      const batch = writeBatch(db);
+
+      // 1. Reset all teams
+      teams.forEach((t) => {
+        const tRef = doc(db, "tournaments", tournamentId, "teams", t.id);
+        batch.update(tRef, { spent: 0, roster: [] });
+      });
+
+      // 2. Delete all players from the auction subcollection
+      auctionPlayers.forEach((p) => {
+        const pRef = doc(
+          db,
+          "tournaments",
+          tournamentId,
+          "auctionPlayers",
+          p.id,
+        );
+        batch.delete(pRef);
+      });
+
+      await batch.commit();
+      alert("Auction pool completely cleared!");
+    } catch (e) {
+      console.error(e);
+      alert("Failed to clear auction pool.");
+    }
+    setIsResetting(false);
+  };
+
   // --- SLOT HANDLERS ---
   const handleCreateSlot = async () => {
     if (!newSlotName) return;
@@ -947,7 +1053,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8 max-w-7xl mx-auto w-full">
         {tab === "config" && (
-          <div className="space-y-6">
+          <div className="space-y-6 pb-20">
             <div
               className={`border p-6 rounded-2xl flex justify-between items-center ${lightMode ? "bg-teal-50 border-teal-200" : "bg-teal-900/10 border-teal-500/20"}`}>
               <div>
@@ -1175,11 +1281,80 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 </button>
               </div>
             </div>
+
+            {/* 🔥 NEW DANGER ZONE SETTINGS */}
+            <h3
+              className={`${theme.text} font-black uppercase text-xs mt-12 mb-6 border-b ${borderClass} pb-4 text-red-500 flex items-center gap-2`}>
+              <span>⚠️</span> Advanced Settings (Danger Zone)
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Feature 1: Sync Base Prices */}
+              <div
+                className={`${theme.card} p-6 rounded-2xl border ${lightMode ? "border-blue-200 bg-blue-50/50" : "border-blue-500/20 bg-blue-900/10"} shadow-sm flex flex-col`}>
+                <h4
+                  className={`font-black text-xs uppercase ${lightMode ? "text-blue-700" : "text-blue-500"} mb-2`}>
+                  Sync Base Prices
+                </h4>
+                <p
+                  className={`text-[10px] ${theme.sub} mb-6 flex-1 leading-relaxed`}>
+                  Updates every player currently in the auction pool to match
+                  your Min Base Price (₹{config.minBasePrice}). Useful when
+                  setting up.
+                </p>
+                <button
+                  onClick={handleSyncBasePrice}
+                  disabled={isResetting}
+                  className={`w-full px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${lightMode ? "bg-blue-100 text-blue-700 hover:bg-blue-200" : "bg-blue-600/20 text-blue-500 hover:bg-blue-600 hover:text-white"}`}>
+                  {isResetting ? "Processing..." : "Sync Price To All"}
+                </button>
+              </div>
+
+              {/* Feature 2: Reset All Players */}
+              <div
+                className={`${theme.card} p-6 rounded-2xl border ${lightMode ? "border-amber-200 bg-amber-50/50" : "border-amber-500/20 bg-amber-900/10"} shadow-sm flex flex-col`}>
+                <h4
+                  className={`font-black text-xs uppercase ${lightMode ? "text-amber-700" : "text-amber-500"} mb-2`}>
+                  Reset Entire Pool
+                </h4>
+                <p
+                  className={`text-[10px] ${theme.sub} mb-6 flex-1 leading-relaxed`}>
+                  Marks all SOLD and UNSOLD players back to PENDING. Removes
+                  them from their assigned teams and refunds all budgets.
+                </p>
+                <button
+                  onClick={handleResetAllPlayers}
+                  disabled={isResetting}
+                  className={`w-full px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${lightMode ? "bg-amber-100 text-amber-700 hover:bg-amber-200" : "bg-amber-600/20 text-amber-500 hover:bg-amber-600 hover:text-white"}`}>
+                  {isResetting ? "Processing..." : "Reset To Pending"}
+                </button>
+              </div>
+
+              {/* Feature 3: Delete Auction Pool */}
+              <div
+                className={`${theme.card} p-6 rounded-2xl border ${lightMode ? "border-red-200 bg-red-50/50" : "border-red-500/20 bg-red-900/10"} shadow-sm flex flex-col`}>
+                <h4
+                  className={`font-black text-xs uppercase ${lightMode ? "text-red-700" : "text-red-500"} mb-2`}>
+                  Delete All Data
+                </h4>
+                <p
+                  className={`text-[10px] ${theme.sub} mb-6 flex-1 leading-relaxed`}>
+                  Completely wipes the auction pool and removes all players from
+                  team rosters. Use this to start a fresh auction.
+                </p>
+                <button
+                  onClick={handleClearAuctionPool}
+                  disabled={isResetting}
+                  className={`w-full px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${lightMode ? "bg-red-100 text-red-700 hover:bg-red-200" : "bg-red-600/20 text-red-500 hover:bg-red-600 hover:text-white"}`}>
+                  {isResetting ? "Processing..." : "Clear Auction Pool"}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
         {tab === "teams" && (
-          <div className="space-y-6">
+          <div className="space-y-6 pb-20">
             <div className="grid grid-cols-1 gap-6">
               <AuctionOwnersAdmin tournamentId={tournamentId} />
             </div>
@@ -1187,7 +1362,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
         )}
 
         {tab === "pool" && (
-          <div className="space-y-6">
+          <div className="space-y-6 pb-20">
             {/* Stats Overview */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div
@@ -1341,7 +1516,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
         )}
 
         {tab === "slots" && (
-          <div className="space-y-6">
+          <div className="space-y-6 pb-20">
             <div
               className={`${theme.card} border ${borderClass} p-6 rounded-[2rem] shadow-sm`}>
               <div className="flex gap-3">
@@ -1411,7 +1586,9 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
         )}
 
         {tab === "matches" && (
-          <MatchScheduler tournamentId={tournamentId} teams={teams} />
+          <div className="pb-20">
+            <MatchScheduler tournamentId={tournamentId} teams={teams} />
+          </div>
         )}
       </div>
     </div>
