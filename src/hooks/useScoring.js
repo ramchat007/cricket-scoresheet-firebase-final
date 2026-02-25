@@ -228,10 +228,20 @@ function recalculateInningsState(inn) {
 
     // --- 6. STATE RECOVERY ---
     if (index === history.length - 1) {
-      inn.striker = ball.nextStriker || inn.striker;
-      inn.nonStriker = ball.nextNonStriker || inn.nonStriker;
-      inn.currentBowler = ball.nextBowler || inn.currentBowler;
-      inn.awaitingNewBatsman = isWicket && !ball.nextStriker;
+      // 🔥 FIX 1: Strict undefined checks so we don't accidentally override a valid 'null'
+      inn.striker =
+        ball.nextStriker !== undefined ? ball.nextStriker : inn.striker;
+      inn.nonStriker =
+        ball.nextNonStriker !== undefined
+          ? ball.nextNonStriker
+          : inn.nonStriker;
+      inn.currentBowler =
+        ball.nextBowler !== undefined ? ball.nextBowler : inn.currentBowler;
+
+      // 🔥 FIX 2: Awaiting new batsman if EITHER slot is strictly null after a wicket
+      inn.awaitingNewBatsman =
+        isWicket && (inn.striker === null || inn.nonStriker === null);
+
       inn.awaitingNewBowler = isOverComplete;
     }
   });
@@ -328,7 +338,7 @@ function applyBallLogic(s, code, extraData = {}, physicalRuns = 0) {
   const overEnding = inn.overBallCount + (isLegal ? 1 : 0) === 6;
 
   const maxOvers = parseInt(s.meta?.overs || 20);
-  const isInningsFinishedByOvers = overEnding && (inn.over + 1 >= maxOvers);
+  const isInningsFinishedByOvers = overEnding && inn.over + 1 >= maxOvers;
 
   if (overEnding) {
     // End of over: Swap ends.
@@ -338,7 +348,8 @@ function applyBallLogic(s, code, extraData = {}, physicalRuns = 0) {
 
   newBall.nextStriker = nextS;
   newBall.nextNonStriker = nextNS;
-  newBall.nextBowler = (overEnding && !isInningsFinishedByOvers) ? null : inn.currentBowler;
+  newBall.nextBowler =
+    overEnding && !isInningsFinishedByOvers ? null : inn.currentBowler;
 
   inn.timeline = inn.timeline || [];
   inn.timeline.push(newBall);
@@ -385,31 +396,36 @@ function initializeSecondInnings(s) {
   const prev = s.innings[0];
   const nextBat = prev.bowlingTeam;
   const nextBowl = prev.battingTeam;
-  const batSquad = nextBat === s.meta.teamA ? s.teamASquad : s.teamBSquad;
-  const bowlSquad = nextBowl === s.meta.teamA ? s.teamASquad : s.teamBSquad;
+
+  // 🔥 IMPORTANT: Ensure we keep references to the squads
+  const teamASquad = s.teamASquad || [];
+  const teamBSquad = s.teamBSquad || [];
 
   if (!s.innings[1]) {
     s.innings[1] = {
       battingTeam: nextBat,
       bowlingTeam: nextBowl,
-      batsmenList: batSquad || [],
-      bowlersList: bowlSquad || [],
       score: 0,
       wickets: 0,
       over: 0,
       overBallCount: 0,
       extras: { wides: 0, noBalls: 0, byes: 0, legByes: 0 },
-      striker: batSquad?.[0]?.name,
-      nonStriker: batSquad?.[1]?.name,
-      currentBowler: bowlSquad?.[0]?.name,
+      striker: null,
+      nonStriker: null,
+      currentBowler: null,
       batsmenStats: {},
       bowlerStats: {},
       timeline: [],
       fallOfWickets: [],
     };
   }
+
   s.currentInnings = 1;
-  s.innings[1].awaitingNewBowler = true;
+  // 🔥 Force the match to retain the squads during the transition
+  s.teamASquad = teamASquad;
+  s.teamBSquad = teamBSquad;
+
+  s.innings[1].awaitingNewBowler = false;
   return s;
 }
 
@@ -445,7 +461,8 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
   const processQueuedAction = async (action) => {
     if (!action || action.type !== "scoringAction") return;
     if (isActionProcessed(action.actionId)) return;
-    if (action.tournamentId !== tournamentId || action.matchId !== matchId) return;
+    if (action.tournamentId !== tournamentId || action.matchId !== matchId)
+      return;
 
     const { actionType, payload = {} } = action;
 
@@ -469,20 +486,22 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
         ),
       NEW_BATSMAN: (s) => {
         const inn = s.innings[s.currentInnings];
-        inn.striker = payload.player;
+
+        // 🔥 SMART SLOT FILLING
+        if (inn.nonStriker === null) {
+          inn.nonStriker = payload.player;
+        } else {
+          inn.striker = payload.player;
+        }
+
         inn.awaitingNewBatsman = false;
+
         if (inn.timeline && inn.timeline.length > 0) {
           const lastBall = inn.timeline[inn.timeline.length - 1];
-          const isLegal =
-            (!lastBall.isWide && !lastBall.isNoBall) || lastBall.isLegalOverride;
-
-          if (inn.overBallCount === 0 && inn.over > 0 && isLegal) {
-            const currentS = inn.striker;
-            inn.striker = inn.nonStriker;
-            inn.nonStriker = currentS;
-            lastBall.nextStriker = inn.striker;
-            lastBall.nextNonStriker = inn.nonStriker;
-          } else {
+          // Update the exact slot in the timeline
+          if (lastBall.nextNonStriker === null) {
+            lastBall.nextNonStriker = payload.player;
+          } else if (lastBall.nextStriker === null) {
             lastBall.nextStriker = payload.player;
           }
         }
@@ -563,58 +582,68 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
       ),
 
     handleNewBatsman: (p) =>
-      runScoringAction((s) => {
-        const inn = s.innings[s.currentInnings];
-        inn.striker = p;
-        inn.awaitingNewBatsman = false;
-        if (inn.timeline && inn.timeline.length > 0) {
-          const lastBall = inn.timeline[inn.timeline.length - 1];
+      runScoringAction(
+        (s) => {
+          const inn = s.innings[s.currentInnings];
 
-          // Check legal override
-          const isLegal =
-            (!lastBall.isWide && !lastBall.isNoBall) ||
-            lastBall.isLegalOverride;
-
-          if (inn.overBallCount === 0 && inn.over > 0 && isLegal) {
-            const currentS = inn.striker;
-            inn.striker = inn.nonStriker;
-            inn.nonStriker = currentS;
-            lastBall.nextStriker = inn.striker;
-            lastBall.nextNonStriker = inn.nonStriker;
+          // 🔥 SMART SLOT FILLING
+          if (inn.nonStriker === null) {
+            inn.nonStriker = p;
           } else {
-            lastBall.nextStriker = p;
+            inn.striker = p;
           }
-        }
-        return s;
-      }, createQueuePayload("NEW_BATSMAN", { player: p })),
 
+          inn.awaitingNewBatsman = false;
+
+          if (inn.timeline && inn.timeline.length > 0) {
+            const lastBall = inn.timeline[inn.timeline.length - 1];
+            // Update the exact slot in the timeline
+            if (lastBall.nextNonStriker === null) {
+              lastBall.nextNonStriker = p;
+            } else if (lastBall.nextStriker === null) {
+              lastBall.nextStriker = p;
+            }
+          }
+          return s;
+        },
+        createQueuePayload("NEW_BATSMAN", { player: p }),
+      ),
     handleConfirmBowler: (p) =>
-      runScoringAction((s) => {
-        const inn = s.innings[s.currentInnings];
-        inn.currentBowler = p;
-        inn.awaitingNewBowler = false;
-        if (inn.timeline && inn.timeline.length > 0)
-          inn.timeline[inn.timeline.length - 1].nextBowler = p;
-        return s;
-      }, createQueuePayload("CONFIRM_BOWLER", { player: p })),
+      runScoringAction(
+        (s) => {
+          const inn = s.innings[s.currentInnings];
+          inn.currentBowler = p;
+          inn.awaitingNewBowler = false;
+          if (inn.timeline && inn.timeline.length > 0)
+            inn.timeline[inn.timeline.length - 1].nextBowler = p;
+          return s;
+        },
+        createQueuePayload("CONFIRM_BOWLER", { player: p }),
+      ),
 
     handleChangeBowler: (p) =>
-      runScoringAction((s) => {
-        s.innings[s.currentInnings].currentBowler = p;
-        return s;
-      }, createQueuePayload("CHANGE_BOWLER", { player: p })),
+      runScoringAction(
+        (s) => {
+          s.innings[s.currentInnings].currentBowler = p;
+          return s;
+        },
+        createQueuePayload("CHANGE_BOWLER", { player: p }),
+      ),
 
     handleStrikeChange: (s, ns) =>
-      runScoringAction((st) => {
-        const inn = st.innings[st.currentInnings];
-        inn.striker = s;
-        inn.nonStriker = ns;
-        if (inn.timeline && inn.timeline.length > 0) {
-          inn.timeline[inn.timeline.length - 1].nextStriker = s;
-          inn.timeline[inn.timeline.length - 1].nextNonStriker = ns;
-        }
-        return st;
-      }, createQueuePayload("STRIKE_CHANGE", { striker: s, nonStriker: ns })),
+      runScoringAction(
+        (st) => {
+          const inn = st.innings[st.currentInnings];
+          inn.striker = s;
+          inn.nonStriker = ns;
+          if (inn.timeline && inn.timeline.length > 0) {
+            inn.timeline[inn.timeline.length - 1].nextStriker = s;
+            inn.timeline[inn.timeline.length - 1].nextNonStriker = ns;
+          }
+          return st;
+        },
+        createQueuePayload("STRIKE_CHANGE", { striker: s, nonStriker: ns }),
+      ),
 
     handleEndInnings: () =>
       runScoringAction((s) => {

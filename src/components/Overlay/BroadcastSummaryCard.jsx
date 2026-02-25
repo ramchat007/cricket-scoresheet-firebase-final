@@ -159,7 +159,7 @@ export default function BroadcastSummaryCard({ tournamentName, match, type }) {
               <div
                 key={name}
                 className="flex justify-between items-center text-lg">
-                <span className="text-white font-bold uppercase truncate w-32">
+                <span className="text-white font-bold uppercase w-40">
                   {name}
                 </span>
                 <span

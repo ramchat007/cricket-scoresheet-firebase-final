@@ -38,7 +38,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     activeViews: [],
     showTicker: false,
     hideBottomScoreTicker: false,
-    sponsors: [], // Small Logos: { id, name, phone, image }
+    sponsors: [],
     fullScreenBanners: [],
     organizerName: "",
     customMessageTitle: "",
@@ -47,9 +47,11 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     spotlightPlayerId: "",
   });
 
+  const fileInputAppLogoRef = useRef(null);
+
   const [saving, setSaving] = useState(false);
   const [newSponsorName, setNewSponsorName] = useState("");
-  const [newSponsorPhone, setNewSponsorPhone] = useState(""); // 🔥 NEW
+  const [newSponsorPhone, setNewSponsorPhone] = useState("");
   const [processingImage, setProcessingImage] = useState(false);
 
   useEffect(() => {
@@ -62,6 +64,39 @@ export default function OverlayController({ tournamentId, matchId, match }) {
       setConfig((prev) => ({ ...prev, ...data }));
     }
   }, [match?.meta?.overlay]);
+
+  const handleAppLogoUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setProcessingImage(true);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_WIDTH = 400; // High quality for branding
+        const scaleSize = MAX_WIDTH / img.width;
+        canvas.width = MAX_WIDTH;
+        canvas.height = img.height * scaleSize;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        const base64 = canvas.toDataURL("image/webp", 0.9);
+
+        // 🔥 UPDATE: Direct update to appLogo without asking for name
+        updateOverlay({
+          appLogo: base64,
+          showAppLogo: true,
+        });
+
+        e.target.value = null;
+        setProcessingImage(false);
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
 
   const updateOverlay = async (updates) => {
     setSaving(true);
@@ -89,7 +124,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
 
   const isActive = (viewName) => config.activeViews?.includes(viewName);
 
-  // 🔥 RESTORED: Strict Validation for Manual Triggers
   const triggerManualAnimation = (type) => {
     const currentInn = match?.innings?.[match?.currentInnings || 0];
     const timeline = currentInn?.timeline || [];
@@ -109,7 +143,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     });
   };
 
-  // --- UPLOAD: SMALL LOGOS WITH PHONE NUMBER ---
   const handleLogoUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -142,7 +175,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
 
         updateOverlay({ sponsors: [...(config.sponsors || []), newSponsor] });
         setNewSponsorName("");
-        setNewSponsorPhone(""); // Clear phone input
+        setNewSponsorPhone("");
         e.target.value = null;
         setProcessingImage(false);
       };
@@ -297,6 +330,45 @@ export default function OverlayController({ tournamentId, matchId, match }) {
             </h4>
           </div>
           <div className="space-y-3 flex-grow">
+            <div className="mt-4 pt-4 border-t border-white/10">
+              <label className={labelClass}>cricSync Branding</label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => fileInputAppLogoRef.current?.click()} // Dedicated Ref
+                  className={`flex-1 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all border ${lightMode ? "bg-white border-gray-200" : "bg-white/5 border-white/10 hover:bg-white/10"}`}>
+                  {config.appLogo ? "Change Logo" : "Upload Logo"}
+                </button>
+
+                <input
+                  type="file"
+                  accept="image/*"
+                  ref={fileInputAppLogoRef}
+                  className="hidden"
+                  onChange={handleAppLogoUpload} // 🔥 Use the new function here
+                />
+
+                {config.appLogo && (
+                  <button
+                    onClick={() =>
+                      updateOverlay({ appLogo: "", showAppLogo: false })
+                    }
+                    className="px-3 rounded-xl bg-red-500/10 text-red-500 border border-red-500/20">
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
+            </div>
+            <ToggleButton
+              label="Show cricSync Logo"
+              active={config.showAppLogo}
+              onClick={() =>
+                updateOverlay({
+                  showAppLogo: !config.showAppLogo,
+                })
+              }
+              icon={Star}
+              colorClass="bg-gradient-to-r from-indigo-600 to-blue-500"
+            />
             <ToggleButton
               label="Hide Bottom Score Bar"
               active={config.hideBottomScoreTicker}

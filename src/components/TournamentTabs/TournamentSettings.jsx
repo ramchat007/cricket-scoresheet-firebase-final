@@ -206,7 +206,7 @@ export default function TournamentSettings({
               }`}>
               <div
                 className={`flex-1 px-3 text-xs font-mono truncate select-all ${theme.text}`}>
-                {origin}/overlay/{tournamentId}/active?clean=true
+                {origin}/overlay/{tournamentId}/broadcast/active?clean=true
               </div>
               <button
                 onClick={copyOverlayLink}

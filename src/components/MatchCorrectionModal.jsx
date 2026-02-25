@@ -1,5 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { modifyMatchTimeline, updateMatch } from "../utils/matchService";
+import { doc, getDoc, collection, getDocs } from "firebase/firestore";
+import { db } from "../utils/firebase";
 import { useTheme } from "../context/ThemeContext";
 import {
   X,
@@ -13,7 +15,8 @@ import {
   Activity,
   Loader2,
   Undo2,
-  Wrench, // ✅ Added missing import
+  Wrench,
+  RotateCcw, // Added for the reset/delete innings icon
 } from "lucide-react";
 
 const MatchCorrectionModal = ({ match, tournamentId, onClose }) => {
@@ -179,7 +182,6 @@ const MatchCorrectionModal = ({ match, tournamentId, onClose }) => {
     }
   };
 
-  // ✅ ADDED: handleMetaSave Function
   const handleMetaSave = async () => {
     if (!window.confirm("Update match status and winner?")) return;
     setLoading(true);
@@ -197,10 +199,91 @@ const MatchCorrectionModal = ({ match, tournamentId, onClose }) => {
     }
   };
 
-  // Safe Undo: Delete Last Ball
   const handleSafeUndo = () => {
     if (currentTimeline.length === 0) return;
     handleTimelineDelete(currentTimeline.length - 1);
+  };
+
+  const handleSyncSquads = async () => {
+    if (
+      !window.confirm(
+        "This will fetch the latest rosters from the tournament teams and update this match. Continue?",
+      )
+    )
+      return;
+
+    setLoading(true);
+    try {
+      // 1. Fetch all teams in this tournament
+      const teamsRef = collection(db, "tournaments", tournamentId, "teams");
+      const teamsSnap = await getDocs(teamsRef);
+      const allTeams = teamsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      // 2. Find Team A and Team B data
+      const teamAData = allTeams.find((t) => t.name === match.meta.teamA);
+      const teamBData = allTeams.find((t) => t.name === match.meta.teamB);
+
+      if (!teamAData || !teamBData) {
+        throw new Error(
+          "Could not find team definitions in tournament records.",
+        );
+      }
+
+      // 3. Prepare the update
+      await updateMatch(tournamentId, match.id, {
+        teamASquad: teamAData.roster || [],
+        teamBSquad: teamBData.roster || [],
+      });
+
+      alert("✅ Squads synced successfully! Dropdowns should now be full.");
+    } catch (e) {
+      console.error("Sync Error:", e);
+      alert("Sync Failed: " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 🔥 NEW ACTION: Delete an entire innings (for accidental 2nd innings starts)
+  const handleDeleteInnings = async () => {
+    const isSecondInnings = currentInningIndex === 1;
+    const warningMsg = isSecondInnings
+      ? "🚨 DANGER: Are you sure you want to completely DELETE the 2nd Innings? This will revert the match to the 1st Innings so you can make corrections."
+      : "🚨 DANGER: Are you sure you want to completely DELETE this innings?";
+
+    if (!window.confirm(warningMsg)) return;
+    if (
+      !window.confirm(
+        "FINAL WARNING: This cannot be undone. Are you absolutely sure?",
+      )
+    )
+      return;
+
+    setLoading(true);
+    try {
+      if (isSecondInnings) {
+        // 🔥 Deep clone the first innings and strictly force completed to false
+        const firstInningsReverted = { ...match.innings[0], completed: false };
+
+        await updateMatch(tournamentId, match.id, {
+          currentInnings: 0,
+          innings: [firstInningsReverted], // Reset array to just the active 1st innings
+          "meta.matchStatus": "ongoing",
+          "meta.result": null,
+          "meta.target": null, // Remove the target so it doesn't trigger "Run Chase" logic
+        });
+        alert("2nd Innings Deleted. Reverted to 1st Innings.");
+        onClose();
+      } else {
+        alert(
+          "Deleting the 1st innings is not currently supported via this button. Please clear the timeline instead.",
+        );
+      }
+    } catch (e) {
+      alert("Error deleting innings: " + e.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -251,7 +334,7 @@ const MatchCorrectionModal = ({ match, tournamentId, onClose }) => {
 
         {/* INNINGS TABS */}
         {mode !== "meta" && (
-          <div className="flex gap-2 mt-4 px-4 overflow-x-auto no-scrollbar">
+          <div className="flex gap-2 mt-4 px-4 no-scrollbar">
             {safeInnings.map((inn, idx) => (
               <button
                 key={idx}
@@ -526,6 +609,42 @@ const MatchCorrectionModal = ({ match, tournamentId, onClose }) => {
                 </div>
               </div>
 
+              {/* 🔥 NEW FEATURE: Delete Entire 2nd Innings (Rewind) */}
+              {currentInningIndex === 1 && (
+                <div
+                  className={`p-4 rounded-xl border flex flex-col gap-3 ${lightMode ? "bg-red-50 border-red-200" : "bg-red-900/10 border-red-500/20"}`}>
+                  <div className="flex gap-3 items-start">
+                    <RotateCcw
+                      className={`shrink-0 ${lightMode ? "text-red-600" : "text-red-400"}`}
+                      size={20}
+                    />
+                    <div className="text-xs">
+                      <strong
+                        className={lightMode ? "text-red-800" : "text-red-300"}>
+                        Accidental 2nd Innings Start?
+                      </strong>
+                      <p
+                        className={`mt-1 ${lightMode ? "text-red-700" : "text-red-400/80"}`}>
+                        If you accidentally ended the 1st innings and started
+                        the 2nd innings, you can delete this entire 2nd innings
+                        to return to the 1st innings for corrections.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleDeleteInnings}
+                    disabled={loading}
+                    className="w-full mt-2 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-black uppercase text-xs tracking-widest transition-all active:scale-95 shadow-md flex justify-center items-center gap-2">
+                    {loading ? (
+                      <Loader2 className="animate-spin" size={14} />
+                    ) : (
+                      <Trash2 size={14} />
+                    )}
+                    Wipe 2nd Innings & Rewind
+                  </button>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div
                   className={`p-4 rounded-xl border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/5"}`}>
@@ -664,6 +783,27 @@ const MatchCorrectionModal = ({ match, tournamentId, onClose }) => {
 
           {mode === "meta" && (
             <div className="p-4 space-y-6">
+              <div
+                className={`p-4 rounded-xl border ${lightMode ? "bg-purple-50 border-purple-200" : "bg-purple-900/10 border-purple-500/20"}`}>
+                <label
+                  className={`text-[10px] font-black uppercase block mb-3 ${lightMode ? "text-purple-700" : "text-purple-400"}`}>
+                  Data Maintenance
+                </label>
+                <button
+                  onClick={handleSyncSquads}
+                  disabled={loading}
+                  className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-md">
+                  {loading ? (
+                    <Loader2 className="animate-spin" size={14} />
+                  ) : (
+                    <RotateCcw size={14} />
+                  )}
+                  Force Sync Squads from Tournament
+                </button>
+                <p className="text-[9px] mt-2 opacity-60 italic text-center">
+                  Use this if your player dropdowns are empty.
+                </p>
+              </div>
               <div
                 className={`p-4 rounded-xl border ${lightMode ? "bg-blue-50 border-blue-200" : "bg-blue-900/10 border-blue-500/20"}`}>
                 <label

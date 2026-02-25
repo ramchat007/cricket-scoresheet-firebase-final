@@ -302,13 +302,15 @@ export const ballTransaction = async (tournamentId, matchId, updateFn) => {
 
       const currentState = matchDoc.data();
 
+      // 🔥 FIX 1: Capture squads immediately so they can't be lost
+      const squadA = currentState.teamASquad || [];
+      const squadB = currentState.teamBSquad || [];
+
       // 1. Create a "Lite" Snapshot for Undo
       const currentInningsIndex = currentState.currentInnings || 0;
       const currentInningsData =
         currentState.innings?.[currentInningsIndex] || {};
 
-      // 🔥 CRITICAL FIX: JSON.parse(JSON.stringify(...)) creates a DEEP COPY.
-      // This ensures the snapshot is frozen in time and won't include the new ball.
       const liteSnapshot = JSON.parse(
         JSON.stringify({
           score: currentInningsData.score || 0,
@@ -321,19 +323,21 @@ export const ballTransaction = async (tournamentId, matchId, updateFn) => {
           batsmenStats: currentInningsData.batsmenStats || {},
           bowlerStats: currentInningsData.bowlerStats || {},
           extras: currentInningsData.extras || {},
-          ballsLog: currentInningsData.ballsLog || [],
           timeline: currentInningsData.timeline || [],
         }),
       );
 
-      // 2. Run the Scoring Logic (This mutates currentState)
+      // 2. Run the Scoring Logic
       let newState = updateFn(currentState);
+
+      // 🔥 FIX 2: Explicitly re-attach squads to the newState before saving
+      // This prevents any updateFn from accidentally dropping them
+      newState.teamASquad = squadA;
+      newState.teamBSquad = squadB;
 
       // 3. Attach Snapshot to Stack
       let undoStack = newState.undoStack || [];
       undoStack.push(liteSnapshot);
-
-      // Limit stack size
       if (undoStack.length > 6) {
         undoStack = undoStack.slice(undoStack.length - 6);
       }
@@ -917,28 +921,19 @@ export const quickAddPlayer = async (
     const newPlayer = {
       id: newPlayerId,
       name: playerName.trim(),
-      role: "All-Rounder",
+      role: "All-Rounder", // Default role
       isIcon: false,
     };
 
-    // 1. Create Player in Global Directory ("/players")
-    // Using setDoc to ensure it creates the document if it doesn't exist
-    const globalPlayerRef = doc(db, "players", newPlayerId);
-    await setDoc(globalPlayerRef, {
-      ...newPlayer,
-      teams: [teamId], // Track which team they belong to
-      tournamentId: tournamentId,
-      createdAt: new Date().toISOString(),
-    });
-
-    // 2. Update Tournament Team ("/tournaments/{id}/teams/{teamId}")
-    // This fixes the "No document to update" error by targeting the correct path
+    // 1. Update Tournament Team Roster ("/tournaments/{tournamentId}/teams/{teamId}")
+    // 🔥 Fix: Ties player strictly to THIS tournament's team for all future matches
     const tourTeamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
     await updateDoc(tourTeamRef, {
-      roster: arrayUnion(newPlayer), // Add full object
+      roster: arrayUnion(newPlayer),
     });
 
-    // 3. Update Current Match Squad (Instant Availability)
+    // 2. Update Current Match Squad (Instant Availability for 1st & 2nd Innings)
+    // 🔥 Fix: Ensures ScoreInput dropdowns update immediately
     const matchRef = doc(db, "tournaments", tournamentId, "matches", matchId);
     const fieldToUpdate = teamSide === "A" ? "teamASquad" : "teamBSquad";
 

@@ -61,6 +61,8 @@ export default function ScoreInput({
   // Feature #1: Openers State
   const [openerStriker, setOpenerStriker] = useState("");
   const [openerNonStriker, setOpenerNonStriker] = useState("");
+  const [addingOpenerRole, setAddingOpenerRole] = useState(null); // 'striker' or 'nonStriker'
+  const [newOpenerName, setNewOpenerName] = useState("");
 
   const [extraType, setExtraType] = useState(null);
   const [tossWinner, setTossWinner] = useState("");
@@ -80,6 +82,8 @@ export default function ScoreInput({
   const [editStriker, setEditStriker] = useState(false);
   const [editNonStriker, setEditNonStriker] = useState(false);
   const [editBowler, setEditBowler] = useState(false);
+  const [inlineAddingRole, setInlineAddingRole] = useState(null); // 'striker', 'nonStriker', or 'bowler'
+  const [inlineNewName, setInlineNewName] = useState("");
 
   const [localOverlayDismissed, setLocalOverlayDismissed] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -163,12 +167,34 @@ export default function ScoreInput({
   const currentBowlerName = getPlayerName(m.currentBowler);
 
   const { currentBattingSquad, currentBowlingSquad } = useMemo(() => {
-    const isTeamA = m.battingTeam === match?.meta?.teamA;
+    const teamAName = (match?.meta?.teamA || "").trim().toLowerCase();
+    const inn1BattingTeam = (match?.innings?.[0]?.battingTeam || "")
+      .trim()
+      .toLowerCase();
+    const inn1WasTeamA = inn1BattingTeam ? inn1BattingTeam === teamAName : true;
+    const isTeamABattingNow = activeIndex === 0 ? inn1WasTeamA : !inn1WasTeamA;
+
+    // --- RECOVERY LOGIC ---
+    let squadA = match?.teamASquad || match?.meta?.teamASquad || [];
+    let squadB = match?.teamBSquad || match?.meta?.teamBSquad || [];
+
+    // If Squad B is empty, try to reconstruct it from the 1st innings stats
+    if (squadB.length === 0 && match?.innings?.[0]) {
+      console.warn("⚠️ Squad B missing! Attempting reconstruction...");
+      // If Team B bowled in Innings 1, their names are in bowlerStats
+      const inn1 = match.innings[0];
+      const suspectedTeamBPlayers = !inn1WasTeamA
+        ? Object.keys(inn1.batsmenStats || {})
+        : Object.keys(inn1.bowlerStats || {});
+
+      squadB = suspectedTeamBPlayers.map((name) => ({ name }));
+    }
+
     return {
-      currentBattingSquad: isTeamA ? match?.teamASquad : match?.teamBSquad,
-      currentBowlingSquad: isTeamA ? match?.teamBSquad : match?.teamASquad,
+      currentBattingSquad: isTeamABattingNow ? squadA : squadB,
+      currentBowlingSquad: isTeamABattingNow ? squadB : squadA,
     };
-  }, [match, m.battingTeam]);
+  }, [match, activeIndex]);
 
   const battingOptions = useMemo(
     () => (currentBattingSquad || []).map((p) => getPlayerName(p)).sort(),
@@ -403,31 +429,102 @@ export default function ScoreInput({
         <div className="px-4 grid grid-cols-2 md:grid-cols-3 gap-2 mb-2">
           {/* Striker */}
           <div
-            onClick={() =>
-              onStrikeChange && onStrikeChange(nonStrikerName, strikerName)
-            }
+            onClick={(e) => {
+              if (editStriker || inlineAddingRole) return; // Prevent rotation while editing
+              onStrikeChange && onStrikeChange(nonStrikerName, strikerName);
+            }}
             className={`p-3 rounded-xl border-l-4 border-l-green-500 ${theme.card} shadow-sm border ${lightMode ? "border-gray-200" : "border-white/5"} relative`}>
             <div className="flex justify-between mb-1">
               <span className="bg-green-500 text-black text-[9px] font-black px-1.5 py-0.5 rounded">
                 STR
               </span>
               <button
-                onClick={() => setEditStriker(true)}
+                onClick={(e) => {
+                  e.stopPropagation(); // 🔥 Stop Bubble
+                  setEditStriker(true);
+                }}
                 className="opacity-30 p-1">
                 <Menu size={12} />
               </button>
             </div>
-            {!editStriker ? (
+
+            {inlineAddingRole === "striker" ? (
+              // 🔥 INLINE QUICK ADD UI
+              <div onClick={(e) => e.stopPropagation()} className="mt-1">
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="New Striker"
+                  className={`w-full text-xs p-1 rounded mb-1 border ${lightMode ? "bg-white border-gray-300" : "bg-black/40 border-white/20"}`}
+                  value={inlineNewName}
+                  onChange={(e) => setInlineNewName(e.target.value)}
+                />
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => {
+                      setInlineAddingRole(null);
+                      setInlineNewName("");
+                      setEditStriker(false);
+                    }}
+                    className="text-[9px] bg-red-500/20 text-red-500 px-2 py-1 rounded w-full">
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!inlineNewName.trim()) return;
+                      setIsSyncing(true);
+                      try {
+                        let batTeamStr = match.innings[activeIndex].battingTeam;
+                        if (
+                          !batTeamStr &&
+                          activeIndex === 1 &&
+                          match?.innings?.[0]
+                        )
+                          batTeamStr = match.innings[0].bowlingTeam;
+                        const isTeamABatting =
+                          batTeamStr?.trim() === match?.meta?.teamA?.trim();
+                        const teamId = isTeamABatting
+                          ? match.meta.teamAId
+                          : match.meta.teamBId;
+
+                        const newP = await quickAddPlayer(
+                          match.tournamentId || match.meta.tournament,
+                          match.id,
+                          teamId,
+                          isTeamABatting ? "A" : "B",
+                          inlineNewName,
+                        );
+                        onStrikeChange(newP.name, nonStrikerName);
+                        setInlineAddingRole(null);
+                        setInlineNewName("");
+                        setEditStriker(false);
+                      } catch (e) {
+                      } finally {
+                        setIsSyncing(false);
+                      }
+                    }}
+                    className="text-[9px] bg-teal-500 text-white px-2 py-1 rounded w-full font-bold">
+                    Save
+                  </button>
+                </div>
+              </div>
+            ) : !editStriker ? (
               <div className="font-bold truncate text-lg">
                 {strikerName || "Select"}
               </div>
             ) : (
               <select
+                onClick={(e) => e.stopPropagation()} // 🔥 Stop Bubble
                 className={`w-full text-xs p-1 rounded ${lightMode ? "bg-gray-100" : "bg-black/20"}`}
                 value={strikerName}
                 onChange={(e) => {
-                  onStrikeChange(e.target.value, nonStrikerName);
-                  setEditStriker(false);
+                  e.stopPropagation();
+                  if (e.target.value === "ADD_NEW") {
+                    setInlineAddingRole("striker");
+                  } else {
+                    onStrikeChange(e.target.value, nonStrikerName);
+                    setEditStriker(false);
+                  }
                 }}>
                 <option>Select</option>
                 {battingOptions.map((n) => (
@@ -435,13 +532,19 @@ export default function ScoreInput({
                     {n}
                   </option>
                 ))}
+                <option value="ADD_NEW" className="font-bold text-teal-500">
+                  + Add New Player
+                </option>
               </select>
             )}
-            <div className={`text-xs ${theme.sub}`}>
-              {m.batsmenStats?.[strikerName]?.runs || 0} (
-              {m.batsmenStats?.[strikerName]?.balls || 0})
-            </div>
+            {!inlineAddingRole && (
+              <div className={`text-xs ${theme.sub}`}>
+                {m.batsmenStats?.[strikerName]?.runs || 0} (
+                {m.batsmenStats?.[strikerName]?.balls || 0})
+              </div>
+            )}
           </div>
+
           {/* Non Striker */}
           <div
             className={`p-3 rounded-xl border-l-4 border-transparent ${theme.card} shadow-sm border ${lightMode ? "border-gray-200" : "border-white/5"}`}>
@@ -450,22 +553,91 @@ export default function ScoreInput({
                 NON-STR
               </span>
               <button
-                onClick={() => setEditNonStriker(true)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditNonStriker(true);
+                }}
                 className="opacity-30 p-1">
                 <Menu size={12} />
               </button>
             </div>
-            {!editNonStriker ? (
+
+            {inlineAddingRole === "nonStriker" ? (
+              <div onClick={(e) => e.stopPropagation()} className="mt-1">
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="New Non-Striker"
+                  className={`w-full text-xs p-1 rounded mb-1 border ${lightMode ? "bg-white border-gray-300" : "bg-black/40 border-white/20"}`}
+                  value={inlineNewName}
+                  onChange={(e) => setInlineNewName(e.target.value)}
+                />
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => {
+                      setInlineAddingRole(null);
+                      setInlineNewName("");
+                      setEditNonStriker(false);
+                    }}
+                    className="text-[9px] bg-red-500/20 text-red-500 px-2 py-1 rounded w-full">
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!inlineNewName.trim()) return;
+                      setIsSyncing(true);
+                      try {
+                        let batTeamStr = match.innings[activeIndex].battingTeam;
+                        if (
+                          !batTeamStr &&
+                          activeIndex === 1 &&
+                          match?.innings?.[0]
+                        )
+                          batTeamStr = match.innings[0].bowlingTeam;
+                        const isTeamABatting =
+                          batTeamStr?.trim() === match?.meta?.teamA?.trim();
+                        const teamId = isTeamABatting
+                          ? match.meta.teamAId
+                          : match.meta.teamBId;
+
+                        const newP = await quickAddPlayer(
+                          match.tournamentId || match.meta.tournament,
+                          match.id,
+                          teamId,
+                          isTeamABatting ? "A" : "B",
+                          inlineNewName,
+                        );
+                        onStrikeChange(strikerName, newP.name);
+                        setInlineAddingRole(null);
+                        setInlineNewName("");
+                        setEditNonStriker(false);
+                      } catch (e) {
+                      } finally {
+                        setIsSyncing(false);
+                      }
+                    }}
+                    className="text-[9px] bg-teal-500 text-white px-2 py-1 rounded w-full font-bold">
+                    Save
+                  </button>
+                </div>
+              </div>
+            ) : !editNonStriker ? (
               <div className="font-bold truncate text-lg">
                 {nonStrikerName || "Select"}
               </div>
             ) : (
               <select
+                onClick={(e) => e.stopPropagation()}
                 className={`w-full text-xs p-1 rounded ${lightMode ? "bg-gray-100" : "bg-black/20"}`}
                 value={nonStrikerName}
                 onChange={(e) => {
-                  onStrikeChange(strikerName, e.target.value);
-                  setEditNonStriker(false);
+                  e.stopPropagation();
+                  if (e.target.value === "ADD_NEW")
+                    setInlineAddingRole("nonStriker");
+                  else {
+                    onStrikeChange(strikerName, e.target.value);
+                    setEditNonStriker(false);
+                  }
                 }}>
                 <option>Select</option>
                 {battingOptions.map((n) => (
@@ -473,13 +645,19 @@ export default function ScoreInput({
                     {n}
                   </option>
                 ))}
+                <option value="ADD_NEW" className="font-bold text-teal-500">
+                  + Add New Player
+                </option>
               </select>
             )}
-            <div className={`text-xs ${theme.sub}`}>
-              {m.batsmenStats?.[nonStrikerName]?.runs || 0} (
-              {m.batsmenStats?.[nonStrikerName]?.balls || 0})
-            </div>
+            {!inlineAddingRole && (
+              <div className={`text-xs ${theme.sub}`}>
+                {m.batsmenStats?.[nonStrikerName]?.runs || 0} (
+                {m.batsmenStats?.[nonStrikerName]?.balls || 0})
+              </div>
+            )}
           </div>
+
           {/* Bowler */}
           <div
             className={`col-span-2 md:col-span-1 p-3 rounded-xl border-l-4 border-l-blue-500 ${theme.card} shadow-sm border ${lightMode ? "border-gray-200" : "border-white/5"}`}>
@@ -488,22 +666,92 @@ export default function ScoreInput({
                 BOWLER
               </span>
               <button
-                onClick={() => setEditBowler(true)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditBowler(true);
+                }}
                 className="opacity-30 p-1">
                 <Menu size={12} />
               </button>
             </div>
-            {!editBowler ? (
+
+            {inlineAddingRole === "bowler" ? (
+              <div onClick={(e) => e.stopPropagation()} className="mt-1">
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="New Bowler"
+                  className={`w-full text-xs p-1 rounded mb-1 border ${lightMode ? "bg-white border-gray-300" : "bg-black/40 border-white/20"}`}
+                  value={inlineNewName}
+                  onChange={(e) => setInlineNewName(e.target.value)}
+                />
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => {
+                      setInlineAddingRole(null);
+                      setInlineNewName("");
+                      setEditBowler(false);
+                    }}
+                    className="text-[9px] bg-red-500/20 text-red-500 px-2 py-1 rounded w-full">
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!inlineNewName.trim()) return;
+                      setIsSyncing(true);
+                      try {
+                        let batTeamStr = match.innings[activeIndex].battingTeam;
+                        if (
+                          !batTeamStr &&
+                          activeIndex === 1 &&
+                          match?.innings?.[0]
+                        )
+                          batTeamStr = match.innings[0].bowlingTeam;
+                        const isTeamABatting =
+                          batTeamStr?.trim() === match?.meta?.teamA?.trim();
+                        // BOWLER logic is opposite
+                        const teamId = isTeamABatting
+                          ? match.meta.teamBId
+                          : match.meta.teamAId;
+
+                        const newP = await quickAddPlayer(
+                          match.tournamentId || match.meta.tournament,
+                          match.id,
+                          teamId,
+                          isTeamABatting ? "B" : "A",
+                          inlineNewName,
+                        );
+                        onChangeBowler(newP.name);
+                        setInlineAddingRole(null);
+                        setInlineNewName("");
+                        setEditBowler(false);
+                      } catch (e) {
+                      } finally {
+                        setIsSyncing(false);
+                      }
+                    }}
+                    className="text-[9px] bg-teal-500 text-white px-2 py-1 rounded w-full font-bold">
+                    Save
+                  </button>
+                </div>
+              </div>
+            ) : !editBowler ? (
               <div className="font-bold truncate text-lg">
                 {currentBowlerName || "Select"}
               </div>
             ) : (
               <select
+                onClick={(e) => e.stopPropagation()}
                 className={`w-full text-xs p-1 rounded ${lightMode ? "bg-gray-100" : "bg-black/20"}`}
                 value={currentBowlerName}
                 onChange={(e) => {
-                  onChangeBowler(e.target.value);
-                  setEditBowler(false);
+                  e.stopPropagation();
+                  if (e.target.value === "ADD_NEW")
+                    setInlineAddingRole("bowler");
+                  else {
+                    onChangeBowler(e.target.value);
+                    setEditBowler(false);
+                  }
                 }}>
                 <option>Select</option>
                 {fieldingTeamPlayers.map((n) => (
@@ -511,12 +759,17 @@ export default function ScoreInput({
                     {n}
                   </option>
                 ))}
+                <option value="ADD_NEW" className="font-bold text-teal-500">
+                  + Add New Player
+                </option>
               </select>
             )}
-            <div className={`text-xs ${theme.sub}`}>
-              {m.bowlerStats?.[currentBowlerName]?.wickets || 0}-
-              {m.bowlerStats?.[currentBowlerName]?.runs || 0}
-            </div>
+            {!inlineAddingRole && (
+              <div className={`text-xs ${theme.sub}`}>
+                {m.bowlerStats?.[currentBowlerName]?.wickets || 0}-
+                {m.bowlerStats?.[currentBowlerName]?.runs || 0}
+              </div>
+            )}
           </div>
         </div>
 
@@ -656,47 +909,157 @@ export default function ScoreInput({
                 className={`text-lg font-bold mb-4 ${lightMode ? "text-teal-700" : "text-teal-400"}`}>
                 Select Opening Batsmen
               </h3>
-              <p className={`text-xs mb-4 ${theme.sub}`}>
-                Innings Start • {m.battingTeam}
-              </p>
 
-              <label className={modalLabelClass}>Striker</label>
-              <select
-                className={modalInputClass}
-                value={openerStriker}
-                onChange={(e) => setOpenerStriker(e.target.value)}>
-                <option value="">Select Striker</option>
-                {battingOptions.map((n) => (
-                  <option key={n} value={n} disabled={n === openerNonStriker}>
-                    {n}
-                  </option>
-                ))}
-              </select>
+              {!addingOpenerRole ? (
+                <>
+                  <p className={`text-xs mb-4 ${theme.sub}`}>
+                    Innings Start • {m.battingTeam}
+                  </p>
 
-              <label className={modalLabelClass}>Non-Striker</label>
-              <select
-                className={modalInputClass}
-                value={openerNonStriker}
-                onChange={(e) => setOpenerNonStriker(e.target.value)}>
-                <option value="">Select Non-Striker</option>
-                {battingOptions.map((n) => (
-                  <option key={n} value={n} disabled={n === openerStriker}>
-                    {n}
-                  </option>
-                ))}
-              </select>
+                  <label className={modalLabelClass}>Striker</label>
+                  <select
+                    className={modalInputClass}
+                    value={openerStriker}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      if (e.target.value === "ADD_NEW")
+                        setAddingOpenerRole("striker");
+                      else setOpenerStriker(e.target.value);
+                    }}>
+                    <option value="">Select Striker</option>
+                    {battingOptions.map((n) => (
+                      <option
+                        key={n}
+                        value={n}
+                        disabled={n === openerNonStriker}>
+                        {n}
+                      </option>
+                    ))}
+                    <option
+                      value="ADD_NEW"
+                      className={`font-black ${lightMode ? "text-teal-600" : "text-teal-400"}`}>
+                      + Add New Player
+                    </option>
+                  </select>
 
-              <button
-                onClick={() => {
-                  if (onSetOpeners)
-                    onSetOpeners(openerStriker, openerNonStriker);
-                  else if (onStrikeChange)
-                    onStrikeChange(openerStriker, openerNonStriker);
-                }}
-                disabled={!openerStriker || !openerNonStriker}
-                className="w-full py-4 bg-teal-600 text-white font-bold rounded-xl uppercase tracking-widest disabled:opacity-50">
-                Start Innings 🚀
-              </button>
+                  <label className={modalLabelClass}>Non-Striker</label>
+                  <select
+                    className={modalInputClass}
+                    value={openerNonStriker}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      if (e.target.value === "ADD_NEW")
+                        setAddingOpenerRole("nonStriker");
+                      else setOpenerNonStriker(e.target.value);
+                    }}>
+                    <option value="">Select Non-Striker</option>
+                    {battingOptions.map((n) => (
+                      <option key={n} value={n} disabled={n === openerStriker}>
+                        {n}
+                      </option>
+                    ))}
+                    <option
+                      value="ADD_NEW"
+                      className={`font-black ${lightMode ? "text-teal-600" : "text-teal-400"}`}>
+                      + Add New Player
+                    </option>
+                  </select>
+
+                  <button
+                    onClick={() => {
+                      if (onSetOpeners)
+                        onSetOpeners(openerStriker, openerNonStriker);
+                      else if (onStrikeChange)
+                        onStrikeChange(openerStriker, openerNonStriker);
+                    }}
+                    disabled={!openerStriker || !openerNonStriker}
+                    className="w-full py-4 bg-teal-600 text-white font-bold rounded-xl uppercase tracking-widest disabled:opacity-50">
+                    Start Innings 🚀
+                  </button>
+                </>
+              ) : (
+                /* QUICK ADD UI FOR OPENERS */
+                <div className="animate-in fade-in slide-in-from-bottom-2">
+                  <label className={modalLabelClass}>
+                    Enter New{" "}
+                    {addingOpenerRole === "striker" ? "Striker" : "Non-Striker"}{" "}
+                    Name
+                  </label>
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="e.g. Virat Kohli"
+                    className={modalInputClass}
+                    value={newOpenerName}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      setNewOpenerName(e.target.value);
+                    }}
+                  />
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => {
+                        setAddingOpenerRole(null);
+                        setNewOpenerName("");
+                      }}
+                      className={`flex-1 py-4 font-bold rounded-xl ${lightMode ? "bg-gray-200 text-gray-700" : "bg-slate-700 text-slate-300"}`}>
+                      Cancel
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!newOpenerName.trim()) return;
+                        setIsSyncing(true);
+                        try {
+                          // 🔥 SAFE FALLBACK for Batting Team
+                          let batTeamStr =
+                            match.innings[activeIndex].battingTeam;
+                          if (
+                            !batTeamStr &&
+                            activeIndex === 1 &&
+                            match?.innings?.[0]
+                          ) {
+                            batTeamStr = match.innings[0].bowlingTeam;
+                          }
+
+                          const isTeamABatting =
+                            batTeamStr?.trim() === match?.meta?.teamA?.trim();
+
+                          // Since openers are always batters, we strictly use the batting side IDs
+                          const teamId = isTeamABatting
+                            ? match.meta.teamAId
+                            : match.meta.teamBId;
+                          const teamSide = isTeamABatting ? "A" : "B";
+                          const tId =
+                            match.tournamentId || match.meta.tournament;
+
+                          // ✅ Call quickAddPlayer
+                          const newPlayer = await quickAddPlayer(
+                            tId,
+                            match.id,
+                            teamId,
+                            teamSide,
+                            newOpenerName,
+                          );
+
+                          // Assign to the correct dropdown
+                          if (addingOpenerRole === "striker")
+                            setOpenerStriker(newPlayer.name);
+                          else setOpenerNonStriker(newPlayer.name);
+
+                          setAddingOpenerRole(null);
+                          setNewOpenerName("");
+                        } catch (err) {
+                          alert("Failed to add opener.");
+                        } finally {
+                          setIsSyncing(false);
+                        }
+                      }}
+                      className="flex-1 py-4 bg-teal-600 text-white font-bold rounded-xl uppercase">
+                      Add & Select
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -736,6 +1099,21 @@ export default function ScoreInput({
                   Start 2nd Innings 🏏
                 </button>
               )}
+
+              {/* 🔥 ESCAPE HATCH: Added Undo & Settings to the overlay! */}
+              <div className="mt-6 flex justify-between items-center px-2 opacity-60">
+                <button
+                  onClick={() => onUndo()}
+                  className={`text-xs font-bold flex items-center gap-1 hover:opacity-100 transition-opacity ${theme.text}`}>
+                  <RotateCcw size={14} /> UNDO LAST BALL
+                </button>
+                <button
+                  onClick={() => setShowCorrectionModal(true)}
+                  className={`text-xs font-bold flex items-center gap-1 hover:opacity-100 transition-opacity ${theme.text}`}>
+                  <Settings size={14} /> CONSOLE
+                </button>
+              </div>
+              {/* --- END ESCAPE HATCH --- */}
             </div>
           </div>
         )}
@@ -745,7 +1123,9 @@ export default function ScoreInput({
           <div className={modalContainerClass}>
             <div className={modalContentClass}>
               <h3 className={`text-lg font-bold mb-4 ${theme.text}`}>
-                {needBatsman ? "Select New Batsman" : "Select Next Bowler"}
+                {needBatsman
+                  ? `Select New ${!strikerName ? "Striker" : !nonStrikerName ? "Non-Striker" : "Batsman"}`
+                  : "Select Next Bowler"}
               </h3>
               {!isAddingNew ? (
                 <>
@@ -753,6 +1133,7 @@ export default function ScoreInput({
                     className={modalInputClass}
                     value={incoming || newBowler}
                     onChange={(e) => {
+                      e.stopPropagation();
                       if (e.target.value === "ADD_NEW") {
                         setIsAddingNew(true);
                         setIncoming("");
@@ -820,7 +1201,10 @@ export default function ScoreInput({
                     placeholder="e.g. Rohit Sharma"
                     className={modalInputClass}
                     value={newPlayerName}
-                    onChange={(e) => setNewPlayerName(e.target.value)}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      setNewPlayerName(e.target.value);
+                    }}
                   />
                   <div className="flex gap-3">
                     <button
@@ -837,21 +1221,43 @@ export default function ScoreInput({
                         setIsSyncing(true);
                         try {
                           const isBattingSide = needBatsman;
-                          const teamId = isBattingSide
-                            ? match.innings[activeIndex].battingTeam ===
-                              match.meta.teamA
-                              ? match.meta.teamAId
-                              : match.meta.teamBId
-                            : match.innings[activeIndex].bowlingTeam ===
-                                match.meta.teamA
+
+                          // 1. 🔥 SAFE FALLBACK: Determine exactly who is batting
+                          let batTeamStr =
+                            match.innings[activeIndex].battingTeam;
+                          if (
+                            !batTeamStr &&
+                            activeIndex === 1 &&
+                            match?.innings?.[0]
+                          ) {
+                            batTeamStr = match.innings[0].bowlingTeam;
+                          }
+
+                          const isTeamABatting =
+                            batTeamStr?.trim() === match?.meta?.teamA?.trim();
+
+                          // 2. Assign the correct ID and Side
+                          let teamId, teamSide;
+                          if (isBattingSide) {
+                            teamId = isTeamABatting
                               ? match.meta.teamAId
                               : match.meta.teamBId;
-                          const teamSide =
-                            teamId === match.meta.teamAId ? "A" : "B";
+                            teamSide = isTeamABatting ? "A" : "B";
+                          } else {
+                            // Adding a bowler (fielding team)
+                            teamId = isTeamABatting
+                              ? match.meta.teamBId
+                              : match.meta.teamAId;
+                            teamSide = isTeamABatting ? "B" : "A";
+                          }
 
-                          // ✅ Updated Call to fixed function
+                          // 3. Fallback for tournament ID just in case
+                          const tId =
+                            match.tournamentId || match.meta.tournament;
+
+                          // ✅ Call to fixed function
                           const newPlayer = await quickAddPlayer(
-                            match.meta.tournament,
+                            tId,
                             match.id,
                             teamId,
                             teamSide,
@@ -860,6 +1266,7 @@ export default function ScoreInput({
 
                           if (isBattingSide) onNewBatsman(newPlayer.name);
                           else onConfirmBowler(newPlayer.name);
+
                           setIsAddingNew(false);
                           setNewPlayerName("");
                         } catch (err) {
@@ -886,10 +1293,20 @@ export default function ScoreInput({
               <h3 className="text-xl font-bold mb-4 text-red-500">
                 Confirm Wicket
               </h3>
+
               <select
                 className={modalInputClass}
                 value={wicketType}
-                onChange={(e) => setWicketType(e.target.value)}>
+                onChange={(e) => {
+                  e.stopPropagation();
+                  const newType = e.target.value;
+                  setWicketType(newType);
+
+                  // 🔥 If they change away from runout, reset whoOut to striker automatically
+                  if (newType !== "runout") {
+                    setWhoOut("striker");
+                  }
+                }}>
                 {[
                   "bowled",
                   "caught",
@@ -903,49 +1320,183 @@ export default function ScoreInput({
                   </option>
                 ))}
               </select>
-              {["caught", "runout", "stumped"].includes(wicketType) && (
-                <select
-                  className={modalInputClass}
-                  value={fielderName}
-                  onChange={(e) => setFielderName(e.target.value)}>
-                  <option value="">Select Fielder</option>
-                  {fieldingTeamPlayers.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
+
+              {/* 🔥 SHOW "WHO IS OUT" ONLY FOR RUNOUTS */}
+              {wicketType === "runout" && (
+                <div className="flex gap-2 mb-4 animate-in fade-in">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setWhoOut("striker");
+                    }}
+                    className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all border ${
+                      whoOut === "striker"
+                        ? "bg-red-600 text-white border-red-500 shadow-lg"
+                        : lightMode
+                          ? "bg-gray-100 text-gray-500 border-gray-200"
+                          : "bg-white/5 text-slate-400 border-white/10"
+                    }`}>
+                    Striker Out
+                    <span className="block text-[10px] font-normal opacity-80 truncate px-2">
+                      {strikerName}
+                    </span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setWhoOut("nonStriker");
+                    }}
+                    className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all border ${
+                      whoOut === "nonStriker"
+                        ? "bg-red-600 text-white border-red-500 shadow-lg"
+                        : lightMode
+                          ? "bg-gray-100 text-gray-500 border-gray-200"
+                          : "bg-white/5 text-slate-400 border-white/10"
+                    }`}>
+                    Non-Striker Out
+                    <span className="block text-[10px] font-normal opacity-80 truncate px-2">
+                      {nonStrikerName}
+                    </span>
+                  </button>
+                </div>
               )}
-              <button
-                onClick={() => {
-                  onBall(
-                    "W",
-                    {
-                      isWicket: true,
-                      wicketType,
-                      fielderName,
-                      whoOut:
-                        whoOut === "striker" ? strikerName : nonStrikerName,
-                      isWide: extraType === "WD",
-                      isNoBall: extraType === "NB",
-                    },
-                    wicketRuns,
-                  );
-                  setIsWicketMenuOpen(false);
-                  setExtraType(null);
-                }}
-                className="w-full py-4 bg-red-600 text-white font-bold rounded-xl text-lg mb-3">
-                CONFIRM OUT
-              </button>
-              <button
-                onClick={() => setIsWicketMenuOpen(false)}
-                className="w-full py-4 font-bold opacity-50">
-                Cancel
-              </button>
+
+              {/* FIELDER SELECTION WITH QUICK ADD */}
+              {["caught", "runout", "stumped"].includes(wicketType) &&
+                (!isAddingNew ? (
+                  <select
+                    className={modalInputClass}
+                    value={fielderName}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      if (e.target.value === "ADD_NEW") {
+                        setIsAddingNew(true);
+                        setNewPlayerName("");
+                      } else {
+                        setFielderName(e.target.value);
+                      }
+                    }}>
+                    <option value="">Select Fielder (Optional)</option>
+                    {fieldingTeamPlayers.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                    <option
+                      value="ADD_NEW"
+                      className={`font-black ${lightMode ? "text-teal-600" : "text-teal-400"}`}>
+                      + Add New Player
+                    </option>
+                  </select>
+                ) : (
+                  <div className="animate-in fade-in slide-in-from-bottom-2 mb-4">
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder="Enter Fielder Name"
+                      className={modalInputClass}
+                      value={newPlayerName}
+                      onChange={(e) => setNewPlayerName(e.target.value)}
+                    />
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setIsAddingNew(false)}
+                        className={`flex-1 py-3 font-bold rounded-xl ${lightMode ? "bg-gray-200 text-gray-700" : "bg-slate-700 text-slate-300"}`}>
+                        Cancel
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!newPlayerName.trim()) return;
+                          setIsSyncing(true);
+                          try {
+                            let batTeamStr =
+                              match.innings[activeIndex].battingTeam;
+                            if (
+                              !batTeamStr &&
+                              activeIndex === 1 &&
+                              match?.innings?.[0]
+                            ) {
+                              batTeamStr = match.innings[0].bowlingTeam;
+                            }
+
+                            const isTeamABatting =
+                              batTeamStr?.trim() === match?.meta?.teamA?.trim();
+
+                            const teamId = isTeamABatting
+                              ? match.meta.teamBId
+                              : match.meta.teamAId;
+                            const teamSide = isTeamABatting ? "B" : "A";
+                            const tId =
+                              match.tournamentId || match.meta.tournament;
+
+                            const newPlayer = await quickAddPlayer(
+                              tId,
+                              match.id,
+                              teamId,
+                              teamSide,
+                              newPlayerName,
+                            );
+
+                            setFielderName(newPlayer.name);
+                            setIsAddingNew(false);
+                            setNewPlayerName("");
+                          } catch (err) {
+                            alert("Failed to add fielder.");
+                          } finally {
+                            setIsSyncing(false);
+                          }
+                        }}
+                        className="flex-1 py-3 bg-teal-600 text-white font-bold rounded-xl uppercase">
+                        {isSyncing ? "Saving..." : "Save Fielder"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+              {/* HIDE Confirm buttons while typing a new fielder's name to prevent accidental clicks */}
+              {!isAddingNew && (
+                <>
+                  <button
+                    onClick={() => {
+                      onBall(
+                        "W",
+                        {
+                          isWicket: true,
+                          wicketType,
+                          fielderName,
+                          // If it's not a runout, force it to be the striker just to be 100% safe
+                          whoOut:
+                            wicketType === "runout" && whoOut === "nonStriker"
+                              ? nonStrikerName
+                              : strikerName,
+                          isWide: extraType === "WD",
+                          isNoBall: extraType === "NB",
+                        },
+                        wicketRuns,
+                      );
+                      setIsWicketMenuOpen(false);
+                      setExtraType(null);
+                      setFielderName("");
+                      setWhoOut("striker"); // Reset to default
+                    }}
+                    className="w-full py-4 bg-red-600 text-white font-bold rounded-xl text-lg mb-3 shadow-lg active:scale-95 transition-transform">
+                    CONFIRM OUT
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsWicketMenuOpen(false);
+                      setIsAddingNew(false);
+                      setFielderName("");
+                      setWhoOut("striker");
+                    }}
+                    className="w-full py-4 font-bold opacity-50 active:opacity-100 transition-opacity">
+                    Cancel
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}
-
         {showCorrectionModal && (
           <MatchCorrectionModal
             match={match}

@@ -19,6 +19,7 @@ export default function PlayerProfileModal({
   isOpen,
   onClose,
   matches: propMatches,
+  isAuctionEnabled,
 }) {
   const { tournamentId } = useParams();
   const { theme, lightMode } = useTheme();
@@ -145,15 +146,14 @@ export default function PlayerProfileModal({
               ? "bg-gray-50 border-gray-200"
               : "bg-[#161920] border-white/5"
           }`}>
+          {/* PHOTO & NAME */}
           <div className="relative mb-4 group">
             <img
               src={
                 displayData.photoURL ||
                 `https://ui-avatars.com/api/?name=${displayData.name}&background=0F1115&color=fff`
               }
-              className={`relative w-24 h-24 md:w-28 md:h-28 rounded-2xl object-cover border-2 shadow-xl z-10 ${
-                lightMode ? "border-white" : "border-[#2d333b]"
-              }`}
+              className={`relative w-24 h-24 md:w-28 md:h-28 rounded-2xl object-cover border-2 shadow-xl z-10 ${lightMode ? "border-white" : "border-[#2d333b]"}`}
               alt={displayData.name}
             />
             {(displayData.isIcon || displayData.role === "Captain") && (
@@ -168,105 +168,95 @@ export default function PlayerProfileModal({
             {displayData.name}
           </h2>
           <p
-            className={`font-bold uppercase tracking-widest text-[9px] mb-6 ${lightMode ? "text-teal-600" : "text-teal-500"}`}>
+            className={`font-bold uppercase tracking-widest text-[9px] ${isAuctionEnabled ? "mb-6" : "mb-2"} ${lightMode ? "text-teal-600" : "text-teal-500"}`}>
             {displayData.role || "Player"}
           </p>
 
-          <div className="w-full space-y-2 relative z-10 mb-6">
-            <div
-              className={`flex justify-between items-center p-2 rounded-lg border ${
-                lightMode
-                  ? "bg-white border-gray-200"
-                  : "bg-white/5 border-white/5"
-              }`}>
-              <span className={`text-[9px] font-bold uppercase ${theme.sub}`}>
-                Status
-              </span>
-              <span
-                className={`text-xs font-black ${
-                  finalPrice > 0
-                    ? lightMode
-                      ? "text-teal-600"
-                      : "text-teal-400"
-                    : theme.sub
-                }`}>
-                {finalPrice > 0 ? "SOLD" : "UNSOLD"}
-              </span>
-            </div>
-            <div
-              className={`flex justify-between items-center p-2 rounded-lg border ${
-                lightMode
-                  ? "bg-white border-gray-200"
-                  : "bg-white/5 border-white/5"
-              }`}>
-              <span className={`text-[9px] font-bold uppercase ${theme.sub}`}>
-                Price
-              </span>
-              <span className={`text-sm font-mono font-black ${theme.text}`}>
-                ₹{" "}
-                {finalPrice > 0
-                  ? finalPrice.toLocaleString()
-                  : displayData.basePrice?.toLocaleString() || "0"}
-              </span>
-            </div>
-          </div>
-
-          {/* COMPACT AUCTION TIMELINE */}
-          <div
-            className={`w-full border-t pt-4 text-left flex-1 ${lightMode ? "border-gray-200" : "border-white/5"}`}>
-            <h3
-              className={`text-[10px] font-black uppercase tracking-widest mb-3 flex items-center gap-2 ${theme.sub}`}>
-              <Gavel size={12} /> Bid History
-            </h3>
-            <div
-              className={`space-y-4 relative before:absolute before:left-[7px] before:top-1 before:bottom-1 before:w-px ${lightMode ? "before:bg-gray-200" : "before:bg-white/10"}`}>
-              {/* Final */}
-              <div className="relative pl-5">
+          {/* 🔥 AUCTION SECTION: ONLY show if auction is enabled */}
+          {isAuctionEnabled && (
+            <>
+              <div className="w-full space-y-2 relative z-10 mb-6">
                 <div
-                  className={`absolute left-0 top-1 w-4 h-4 rounded-full z-10 flex items-center justify-center border-2 ${
-                    lightMode
-                      ? "bg-teal-500 border-white text-white"
-                      : "bg-teal-600 border-[#161920]"
-                  }`}>
-                  <span className="text-[8px]">✓</span>
+                  className={`flex justify-between items-center p-2 rounded-lg border ${lightMode ? "bg-white border-gray-200" : "bg-white/5 border-white/5"}`}>
+                  <span
+                    className={`text-[9px] font-bold uppercase ${theme.sub}`}>
+                    Status
+                  </span>
+                  <span
+                    className={`text-xs font-black ${finalPrice > 0 ? (lightMode ? "text-teal-600" : "text-teal-400") : theme.sub}`}>
+                    {finalPrice > 0 ? "SOLD" : "UNSOLD"}
+                  </span>
                 </div>
-                <p
-                  className={`text-[9px] font-bold leading-none ${lightMode ? "text-teal-600" : "text-teal-500"}`}>
-                  Sold
-                </p>
-                <p className={`text-[10px] ${theme.sub}`}>
-                  ₹{finalPrice.toLocaleString()}
-                </p>
+                <div
+                  className={`flex justify-between items-center p-2 rounded-lg border ${lightMode ? "bg-white border-gray-200" : "bg-white/5 border-white/5"}`}>
+                  <span
+                    className={`text-[9px] font-bold uppercase ${theme.sub}`}>
+                    Price
+                  </span>
+                  <span
+                    className={`text-sm font-mono font-black ${theme.text}`}>
+                    ₹{" "}
+                    {finalPrice > 0
+                      ? finalPrice.toLocaleString()
+                      : displayData.basePrice?.toLocaleString() || "0"}
+                  </span>
+                </div>
               </div>
 
-              {/* Bids */}
-              <div className="max-h-[100px] overflow-y-auto no-scrollbar space-y-4">
-                {displayData.bidHistory?.length > 0 ? (
-                  [...displayData.bidHistory].reverse().map((entry, idx) => (
-                    <div key={idx} className="relative pl-5">
-                      <div
-                        className={`absolute left-1 top-1.5 w-1.5 h-1.5 rounded-full z-10 ${lightMode ? "bg-gray-300" : "bg-white/20"}`}></div>
-                      <div className="flex justify-between w-full">
-                        <span
-                          className={`text-[9px] font-bold truncate w-20 ${theme.sub}`}>
-                          {entry.bidderName}
-                        </span>
-                        <span className={`text-[9px] font-mono ${theme.text}`}>
-                          ₹{entry.bid?.toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-                  ))
-                ) : (
+              {/* BID HISTORY */}
+              <div
+                className={`w-full border-t pt-4 text-left flex-1 ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+                <h3
+                  className={`text-[10px] font-black uppercase tracking-widest mb-3 flex items-center gap-2 ${theme.sub}`}>
+                  <Gavel size={12} /> Bid History
+                </h3>
+                <div
+                  className={`space-y-4 relative before:absolute before:left-[7px] before:top-1 before:bottom-1 before:w-px ${lightMode ? "before:bg-gray-200" : "before:bg-white/10"}`}>
                   <div className="relative pl-5">
                     <div
-                      className={`absolute left-1 top-1.5 w-1.5 h-1.5 rounded-full z-10 ${lightMode ? "bg-gray-200" : "bg-white/10"}`}></div>
-                    <p className={`text-[9px] italic ${theme.sub}`}>No Bids</p>
+                      className={`absolute left-0 top-1 w-4 h-4 rounded-full z-10 flex items-center justify-center border-2 ${lightMode ? "bg-teal-500 border-white text-white" : "bg-teal-600 border-[#161920]"}`}>
+                      <span className="text-[8px]">✓</span>
+                    </div>
+                    <p
+                      className={`text-[9px] font-bold leading-none ${lightMode ? "text-teal-600" : "text-teal-500"}`}>
+                      Sold
+                    </p>
+                    <p className={`text-[10px] ${theme.sub}`}>
+                      ₹{finalPrice.toLocaleString()}
+                    </p>
                   </div>
-                )}
+                  <div className="max-h-[100px] overflow-y-auto no-scrollbar space-y-4">
+                    {displayData.bidHistory?.length > 0 ? (
+                      [...displayData.bidHistory]
+                        .reverse()
+                        .map((entry, idx) => (
+                          <div key={idx} className="relative pl-5">
+                            <div
+                              className={`absolute left-1 top-1.5 w-1.5 h-1.5 rounded-full z-10 ${lightMode ? "bg-gray-300" : "bg-white/20"}`}></div>
+                            <div className="flex justify-between w-full">
+                              <span
+                                className={`text-[9px] font-bold truncate w-20 ${theme.sub}`}>
+                                {entry.bidderName}
+                              </span>
+                              <span
+                                className={`text-[9px] font-mono ${theme.text}`}>
+                                ₹{entry.bid?.toLocaleString()}
+                              </span>
+                            </div>
+                          </div>
+                        ))
+                    ) : (
+                      <div className="relative pl-5">
+                        <p className={`text-[9px] italic ${theme.sub}`}>
+                          No Bids
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            </>
+          )}
         </div>
 
         {/* --- RIGHT: PURE STATS DASHBOARD --- */}

@@ -101,10 +101,22 @@ export default function ScoreTicker({ match }) {
 
   let resultText = "";
   if (isMatchFinished) {
-    if (match.result) resultText = match.result;
-    else if (hasWon)
-      resultText = `${battingTeam} won by ${10 - wickets} wickets`;
-    else resultText = "MATCH ENDED";
+    if (match.result) {
+      resultText = match.result;
+    } else if (isChasing && score >= target) {
+      // Chasing team won
+      resultText = `${battingTeam} won by ${match.meta?.totalWickets || 10 - wickets} wickets`;
+    } else if (
+      isChasing &&
+      (wickets >= (match.meta?.totalWickets || 10) ||
+        totalBalls >= match.meta?.overs * 6)
+    ) {
+      // Defending team won
+      const runsShort = target - 1 - score;
+      resultText = `${bowlingTeam} won by ${runsShort} runs`;
+    } else {
+      resultText = "MATCH ENDED";
+    }
   }
 
   return (

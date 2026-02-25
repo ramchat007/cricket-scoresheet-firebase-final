@@ -2,7 +2,6 @@ import React, { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { subscribeTournaments } from "../utils/firestore";
-// 1. Theme & Icons
 import { useTheme } from "../context/ThemeContext";
 import {
   Trophy,
@@ -18,15 +17,20 @@ import {
 
 export default function Dashboard() {
   const { user } = useAuth();
-
-  // 2. Consume Theme
   const { theme, lightMode } = useTheme();
 
   const [allTournaments, setAllTournaments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("all"); // 'all' or 'mine'
+  const [activeTab, setActiveTab] = useState("all");
 
-  // 1. Fetch All Tournaments Real-time
+  // Helper to get local YYYY-MM-DD for comparison
+  const localDateString = (d = new Date()) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
   useEffect(() => {
     const unsub = subscribeTournaments((data) => {
       setAllTournaments(data);
@@ -35,7 +39,6 @@ export default function Dashboard() {
     return () => unsub && unsub();
   }, []);
 
-  // 2. Filter "My Tournaments" locally
   const myTournaments = useMemo(() => {
     if (!user) return [];
     return allTournaments.filter(
@@ -44,7 +47,6 @@ export default function Dashboard() {
     );
   }, [allTournaments, user]);
 
-  // 3. Determine which list to show
   const currentList = activeTab === "mine" ? myTournaments : allTournaments;
 
   const formatDate = (dateString) => {
@@ -53,12 +55,31 @@ export default function Dashboard() {
     return new Date(dateString).toLocaleDateString("en-US", options);
   };
 
-  // --- Helper: Status Badge ---
-  const getStatusBadge = (status) => {
-    const s = (status || "").toLowerCase();
+  // --- Helper: Status Badge (Corrected logic) ---
+  const getStatusBadge = (tournament) => {
+    const storedStatus = (tournament.status || "").toLowerCase();
+    const tournamentDate = tournament.date
+      ? tournament.date.slice(0, 10)
+      : null;
+    const today = localDateString();
 
-    // Live
-    if (["ongoing", "active", "live"].includes(s)) {
+    // New Logic: Check if matches are actually finished
+    const allMatchesFinished =
+      tournament.stats?.matchesPlayed >= tournament.stats?.totalMatches;
+
+    let actualStatus = storedStatus;
+
+    if (storedStatus === "upcoming" && tournamentDate) {
+      if (tournamentDate < today) {
+        // If date is passed but matches remain, it's still "Live/Ongoing"
+        actualStatus = allMatchesFinished ? "finished" : "live";
+      } else if (tournamentDate === today) {
+        actualStatus = "live";
+      }
+    }
+
+    // Render Badge UI
+    if (["ongoing", "active", "live", "in-progress"].includes(actualStatus)) {
       return (
         <span
           className={`flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold uppercase rounded-full border ${
@@ -71,8 +92,8 @@ export default function Dashboard() {
         </span>
       );
     }
-    // Upcoming
-    if (s === "upcoming")
+
+    if (actualStatus === "upcoming") {
       return (
         <span
           className={`px-2 py-1 text-[10px] font-bold uppercase rounded-full border ${
@@ -83,8 +104,9 @@ export default function Dashboard() {
           Upcoming
         </span>
       );
-    // Completed
-    if (["completed", "finished"].includes(s))
+    }
+
+    if (["completed", "finished"].includes(actualStatus)) {
       return (
         <span
           className={`px-2 py-1 text-[10px] font-bold uppercase rounded-full border ${
@@ -95,7 +117,8 @@ export default function Dashboard() {
           Completed
         </span>
       );
-    // Draft/Other
+    }
+
     return (
       <span
         className={`px-2 py-1 text-[10px] font-bold uppercase rounded-full border ${
@@ -103,7 +126,7 @@ export default function Dashboard() {
             ? "bg-gray-100 text-gray-500 border-gray-200"
             : "bg-gray-800 text-gray-400 border-gray-700"
         }`}>
-        {status || "Draft"}
+        {actualStatus || "Draft"}
       </span>
     );
   };
@@ -111,13 +134,17 @@ export default function Dashboard() {
   return (
     <div
       className={`w-full max-w-7xl mx-auto p-4 sm:p-6 min-h-screen transition-colors duration-300 ${theme.bg}`}>
-      {/* --- HEADER SECTION --- */}
+      {/* ... Header and Tabs stay the same ... */}
       <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
         <div className="text-center md:text-left">
           <h2
             className={`text-3xl font-black uppercase tracking-tight flex items-center justify-center md:justify-start gap-3 ${theme.text}`}>
             <span
-              className={`p-2 rounded-xl ${lightMode ? "bg-purple-100 text-purple-600" : "bg-purple-500/10 text-purple-400"}`}>
+              className={`p-2 rounded-xl ${
+                lightMode
+                  ? "bg-purple-100 text-purple-600"
+                  : "bg-purple-500/10 text-purple-400"
+              }`}>
               <Trophy size={28} />
             </span>
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-cyan-500">
@@ -130,7 +157,6 @@ export default function Dashboard() {
           </p>
         </div>
 
-        {/* Action Buttons */}
         <div className="flex gap-3">
           {user && (
             <Link
@@ -145,10 +171,11 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* --- TABS --- */}
       {user && (
         <div
-          className={`flex gap-6 mb-8 border-b ${lightMode ? "border-gray-200" : "border-gray-800"}`}>
+          className={`flex gap-6 mb-8 border-b ${
+            lightMode ? "border-gray-200" : "border-gray-800"
+          }`}>
           <button
             onClick={() => setActiveTab("all")}
             className={`pb-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
@@ -178,7 +205,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* --- LOADING --- */}
       {loading && (
         <div className="flex flex-col justify-center items-center h-64 gap-3">
           <Loader2 className="w-8 h-8 text-cyan-500 animate-spin" />
@@ -189,7 +215,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* --- EMPTY STATES --- */}
       {!loading && currentList.length === 0 && (
         <div
           className={`text-center py-20 border border-dashed rounded-3xl ${
@@ -208,17 +233,9 @@ export default function Dashboard() {
               ? "You haven't created any tournaments yet. Click 'Create Tournament' to get started!"
               : "There are no active tournaments in the arena right now."}
           </p>
-          {activeTab === "mine" && (
-            <Link
-              to="/create-tournament"
-              className="mt-6 inline-block text-cyan-500 hover:text-cyan-400 font-bold uppercase text-xs tracking-widest border-b border-cyan-500/30 hover:border-cyan-500 pb-1 transition-all">
-              Start one now →
-            </Link>
-          )}
         </div>
       )}
 
-      {/* --- GRID LIST --- */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {currentList.map((t) => (
           <Link
@@ -229,7 +246,6 @@ export default function Dashboard() {
                 ? "bg-white border-gray-200 hover:border-cyan-300 hover:shadow-cyan-100"
                 : "bg-[#1C2128] border-white/5 hover:border-cyan-500/30 hover:shadow-cyan-900/20"
             }`}>
-            {/* Top Gradient Line */}
             <div
               className={`absolute top-0 left-0 w-full h-1 transition-all duration-300 ${
                 t.ownerId === user?.uid
@@ -238,7 +254,6 @@ export default function Dashboard() {
               }`}></div>
 
             <div className="p-5">
-              {/* Header */}
               <div className="flex justify-between items-start mb-4">
                 <h5
                   className={`text-lg font-bold line-clamp-1 pr-2 transition-colors ${
@@ -248,10 +263,11 @@ export default function Dashboard() {
                   }`}>
                   {t.name}
                 </h5>
-                {getStatusBadge(t.status)}
+                {/* 🔥 Updated Call */}
+                {getStatusBadge(t)}
               </div>
 
-              {/* Role Badge (If Mine) */}
+              {/* ... Rest of card details remain same ... */}
               {user && t.ownerId === user.uid && (
                 <div className="mb-4">
                   <span
@@ -265,9 +281,7 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {/* Details */}
               <div className="space-y-3">
-                {/* Organizer */}
                 <div className="flex items-center gap-3 text-sm">
                   <div
                     className={`w-8 h-8 rounded-lg flex items-center justify-center ${
@@ -288,7 +302,6 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* Location */}
                 <div className="flex items-center gap-3 text-sm">
                   <div
                     className={`w-8 h-8 rounded-lg flex items-center justify-center ${
@@ -309,7 +322,6 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* Date */}
                 <div className="flex items-center gap-3 text-sm">
                   <div
                     className={`w-8 h-8 rounded-lg flex items-center justify-center ${
@@ -331,7 +343,6 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Footer */}
               <div
                 className={`mt-5 pt-4 border-t flex justify-between items-center transition-colors ${
                   lightMode

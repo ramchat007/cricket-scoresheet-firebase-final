@@ -1,30 +1,32 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { addTournament } from "../utils/firestore"; 
+import { addTournament } from "../utils/firestore";
 import { useAuth } from "../hooks/useAuth";
+import { useTheme } from "../context/ThemeContext"; // ✅ Added Theme Hook
+import { Trophy, Plus, Calendar, MapPin, Shield } from "lucide-react"; // ✅ For UI consistency
 
 export default function CreateTournament() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { theme, lightMode } = useTheme(); // ✅ Consume global theme
 
   const [name, setName] = useState("");
   const [organizer, setOrganizer] = useState("");
   const [location, setLocation] = useState("");
-  const [date, setDate] = useState(""); // ✅ Added Date state
+  const [date, setDate] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Auction Constraint States
+  // Auction Constraint States (Removed basePrice and bidIncrement)
   const [minSquadSize, setMinSquadSize] = useState(11);
   const [maxSquadSize, setMaxSquadSize] = useState(15);
-  const [minBasePrice, setMinBasePrice] = useState(100);
-  const [bidIncrement, setBidIncrement] = useState(100);
 
   // Redirect if not logged in
   if (!user) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-center">
+      <div
+        className={`flex flex-col items-center justify-center h-[60vh] text-center ${theme.bg}`}>
         <div className="text-4xl mb-4">🔒</div>
-        <h2 className="text-xl font-bold text-white">Login Required</h2>
+        <h2 className={`text-xl font-bold ${theme.text}`}>Login Required</h2>
         <button
           onClick={() => navigate("/login")}
           className="mt-4 text-cyan-400 underline">
@@ -44,7 +46,7 @@ export default function CreateTournament() {
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/(^-|-$)+/g, "");
-      const newId = `${slug}`; 
+      const newId = `${slug}`;
 
       await addTournament(
         newId,
@@ -52,15 +54,14 @@ export default function CreateTournament() {
           name,
           organizer,
           location,
-          date, // ✅ Save Date to Firestore
+          date,
           status: "upcoming",
           minSquadSize: Number(minSquadSize),
           maxSquadSize: Number(maxSquadSize),
-          minBasePrice: Number(minBasePrice),
-          bidIncrement: Number(bidIncrement),
-          createdAt: Date.now(),
+          // ✅ Values now handled by global defaults or auction-specific settings later
+          createdAt: new Date().toISOString(),
         },
-        user.uid
+        user.uid,
       );
 
       navigate(`/tournaments/${newId}`);
@@ -72,22 +73,42 @@ export default function CreateTournament() {
     }
   };
 
-  const inputClass =
-    "w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-4 py-3 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-colors";
+  // ✅ Themed Dynamic Classes
+  const inputClass = `w-full border rounded-xl px-4 py-3 focus:outline-none transition-all font-bold text-sm ${
+    lightMode
+      ? "bg-white border-gray-200 text-gray-900 focus:border-cyan-500"
+      : "bg-black/20 border-white/10 text-white focus:border-cyan-500"
+  }`;
 
-  const labelClass = "block text-sm font-bold text-gray-500 uppercase mb-2";
+  const labelClass = `block text-[10px] font-black uppercase tracking-[0.2em] mb-2 ${theme.sub}`;
 
   return (
-    <div className="max-w-2xl mx-auto mt-10 mb-20 px-4">
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 shadow-2xl">
-        <h2 className="text-2xl font-black text-white mb-6 uppercase flex items-center gap-2">
-          <span className="text-cyan-500 text-3xl">+</span> Create Tournament
+    <div
+      className={`min-h-screen pt-10 pb-20 px-4 transition-colors duration-300 ${theme.bg}`}>
+      <div
+        className={`max-w-2xl mx-auto ${theme.card} border ${lightMode ? "border-gray-200" : "border-white/5"} rounded-3xl p-8 shadow-2xl relative overflow-hidden`}>
+        {/* Decorative Header Accent */}
+        <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-purple-500 via-cyan-500 to-blue-500"></div>
+
+        <h2
+          className={`text-3xl font-black ${theme.text} mb-8 uppercase italic tracking-tighter flex items-center gap-3`}>
+          <span className="p-2 rounded-xl bg-cyan-500 text-white shadow-lg shadow-cyan-500/20">
+            <Trophy size={24} />
+          </span>
+          Create Tournament
         </h2>
 
-        <form onSubmit={handleCreate} className="space-y-6">
-          {/* TOURNAMENT INFO */}
-          <div className="space-y-4">
-            <h3 className="text-cyan-400 font-black uppercase tracking-widest text-xs border-b border-gray-800 pb-2">Basic Information</h3>
+        <form onSubmit={handleCreate} className="space-y-8">
+          {/* SECTION 1: BASIC INFO */}
+          <div className="space-y-5">
+            <div className="flex items-center gap-2 mb-2">
+              <Plus size={14} className="text-cyan-500" />
+              <h3
+                className={`text-[11px] font-black uppercase tracking-widest ${theme.sub}`}>
+                Basic Information
+              </h3>
+            </div>
+
             <div>
               <label className={labelClass}>Tournament Name</label>
               <input
@@ -109,87 +130,77 @@ export default function CreateTournament() {
                   onChange={(e) => setOrganizer(e.target.value)}
                 />
               </div>
-              {/* ✅ NEW: Tournament Date Field */}
               <div>
                 <label className={labelClass}>Start Date</label>
-                <input
-                  type="date"
-                  className={inputClass}
-                  style={{ colorScheme: 'dark' }}
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  required
-                />
+                <div className="relative">
+                  <input
+                    type="date"
+                    className={inputClass}
+                    style={{ colorScheme: lightMode ? "light" : "dark" }}
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    required
+                  />
+                </div>
               </div>
             </div>
 
             <div>
               <label className={labelClass}>Location / City</label>
-              <input
-                className={inputClass}
-                placeholder="e.g. Dombivali, Mumbai"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                required
-              />
+              <div className="relative">
+                <input
+                  className={inputClass}
+                  placeholder="e.g. Dombivali, Mumbai"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  required
+                />
+              </div>
             </div>
           </div>
 
-          {/* AUCTION CONSTRAINTS SECTION */}
-          <div className="space-y-4 pt-4">
-            <h3 className="text-cyan-400 font-black uppercase tracking-widest text-xs border-b border-gray-800 pb-2">Auction & Squad Rules</h3>
-            
+          {/* SECTION 2: SQUAD RULES */}
+          <div className="space-y-5 pt-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Shield size={14} className="text-cyan-500" />
+              <h3
+                className={`text-[11px] font-black uppercase tracking-widest ${theme.sub}`}>
+                Squad Constraints
+              </h3>
+            </div>
+
             <div className="grid grid-cols-2 gap-6">
               <div>
-                <label className={labelClass}>Min Squad Size</label>
+                <label className={labelClass}>Min Players</label>
                 <input
                   type="number"
                   className={inputClass}
                   value={minSquadSize}
                   onChange={(e) => setMinSquadSize(e.target.value)}
                 />
-                <p className="text-[10px] text-gray-500 mt-1 italic">Teams must buy at least this many.</p>
+                <p className={`text-[9px] mt-2 italic font-bold ${theme.sub}`}>
+                  Required per team.
+                </p>
               </div>
               <div>
-                <label className={labelClass}>Max Squad Size</label>
+                <label className={labelClass}>Max Players</label>
                 <input
                   type="number"
                   className={inputClass}
                   value={maxSquadSize}
                   onChange={(e) => setMaxSquadSize(e.target.value)}
                 />
-                <p className="text-[10px] text-gray-500 mt-1 italic">Hard limit for teams.</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-6">
-              <div>
-                <label className={labelClass}>Base Price Slab (Min)</label>
-                <input
-                  type="number"
-                  className={inputClass}
-                  value={minBasePrice}
-                  onChange={(e) => setMinBasePrice(e.target.value)}
-                />
-                <p className="text-[10px] text-gray-500 mt-1 italic">Used for purse reserve calculation.</p>
-              </div>
-              <div>
-                <label className={labelClass}>Bid Increment</label>
-                <input
-                  type="number"
-                  className={inputClass}
-                  value={bidIncrement}
-                  onChange={(e) => setBidIncrement(e.target.value)}
-                />
-                <p className="text-[10px] text-gray-500 mt-1 italic">Default price jump per bid.</p>
+                <p className={`text-[9px] mt-2 italic font-bold ${theme.sub}`}>
+                  Squad capacity limit.
+                </p>
               </div>
             </div>
           </div>
 
           <button
             disabled={loading}
-            className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-4 rounded-lg shadow-lg shadow-cyan-900/20 transition-all transform active:scale-95 mt-4">
-            {loading ? "Creating..." : "Create Tournament 🚀"}
+            className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-black py-5 rounded-2xl shadow-xl shadow-cyan-900/20 transition-all transform active:scale-[0.98] flex items-center justify-center gap-2 uppercase tracking-widest text-xs">
+            {loading ? "Initializing..." : "Launch Tournament 🚀"}
           </button>
         </form>
       </div>

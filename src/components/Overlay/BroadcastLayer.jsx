@@ -80,6 +80,20 @@ export default function BroadcastLayer() {
   const [showPopup, setShowPopup] = useState(false);
   const [popupType, setPopupType] = useState("SUMMARY");
   const [animationType, setAnimationType] = useState(null);
+  const [overlayConfig, setOverlayConfig] = useState(null);
+
+  useEffect(() => {
+    // Listen for real-time changes to the match meta/overlay
+    const unsub = onSnapshot(
+      doc(db, "tournaments", tournamentId, "matches", matchId),
+      (doc) => {
+        if (doc.exists()) {
+          setOverlayConfig(doc.data()?.meta?.overlay || {});
+        }
+      },
+    );
+    return () => unsub();
+  }, [tournamentId, matchId]);
 
   const [overlayState, setOverlayState] = useState({
     activeViews: [],
@@ -775,8 +789,9 @@ export default function BroadcastLayer() {
       </div>
     );
 
-  // 🔥 2. NO MORE EARLY RETURNS FOR "WAITING"!
-  // Everything is rendered absolutely inside the main container now.
+  if (!overlayConfig) {
+    return <div className="transparent-fallback" />;
+  }
   return (
     <div className="w-screen h-screen flex items-center justify-center overflow-hidden bg-transparent pointer-events-none">
       <div
@@ -880,6 +895,25 @@ export default function BroadcastLayer() {
           />
         </div>
 
+        {overlayConfig.showAppLogo && overlayConfig.appLogo && (
+          <div className="absolute top-8 left-8 animate-slide-in flex items-center justify-center">
+            {/* ✨ THE GLOWING BACKGROUND AURA */}
+            <div
+              className="absolute w-24 h-24 bg-blue-500 rounded-full blur-2xl opacity-60"
+              style={{
+                animation: "pulseGlow 2.5s infinite alternate ease-in-out",
+              }}></div>
+
+            {/* 🔄 THE ROTATING LOGO */}
+            <img
+              src={overlayConfig.appLogo}
+              alt="Broadcast Logo"
+              className="relative h-16 w-auto object-contain drop-shadow-xl"
+              style={{ animation: "spin3D 8s linear infinite" }}
+            />
+          </div>
+        )}
+
         {/* TICKER */}
         <div
           className={`absolute bottom-[50px] w-full z-10 flex justify-center transition-all duration-500 ${hideTicker ? "translate-y-[200px] opacity-0 pointer-events-none" : "translate-y-0 opacity-100"}`}>
@@ -923,6 +957,32 @@ export default function BroadcastLayer() {
             </div>
           </div>
         )}
+
+        <style>
+          {`
+            /* Slide in when first turned on */
+            @keyframes slideIn {
+              from { transform: translateX(150px); opacity: 0; }
+              to { transform: translateX(0); opacity: 1; }
+            }
+            .animate-slide-in {
+              animation: slideIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            }
+
+            /* 1. The Glowing Aura Animation */
+            @keyframes pulseGlow {
+              0% { transform: scale(0.8); opacity: 0.4; background-color: #3b82f6; } /* Blue */
+              100% { transform: scale(1.2); opacity: 0.8; background-color: #8b5cf6; } /* Purple */
+            }
+
+            /* 2. The 3D Coin-Spin Animation */
+            @keyframes spin3D {
+              0% { transform: rotateY(0deg); }
+              10% { transform: rotateY(360deg); } /* Fast spin for 10% of the time */
+              100% { transform: rotateY(360deg); } /* Pause for the rest of the time */
+            }
+          `}
+        </style>
       </div>
     </div>
   );
