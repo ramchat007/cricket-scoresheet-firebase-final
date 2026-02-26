@@ -106,8 +106,8 @@ export default function ScoreInput({
       six: new Audio("/sounds/runs.mp3"), // Synth 2
     };
 
-    sounds.current.click.volume = 0.3;
-    sounds.current.wicket.volume = 1.0;
+    sounds.current.click.volume = 0.4;
+    sounds.current.wicket.volume = 0.4;
     sounds.current.four.volume = 0.4;
     sounds.current.six.volume = 0.4;
 
@@ -1532,30 +1532,44 @@ export default function ScoreInput({
               {!isAddingNew && (
                 <>
                   <button
-                    onClick={() => {
-                      onBall(
-                        "W",
-                        {
-                          isWicket: true,
-                          wicketType,
-                          fielderName,
-                          // If it's not a runout, force it to be the striker just to be 100% safe
-                          whoOut:
-                            wicketType === "runout" && whoOut === "nonStriker"
-                              ? nonStrikerName
-                              : strikerName,
-                          isWide: extraType === "WD",
-                          isNoBall: extraType === "NB",
-                        },
-                        wicketRuns,
-                      );
-                      setIsWicketMenuOpen(false);
-                      setExtraType(null);
-                      setFielderName("");
-                      setWhoOut("striker"); // Reset to default
+                    disabled={isSyncing}
+                    onClick={async () => {
+                      // 1. Fire the sound immediately
+                      triggerFeedback("wicket"); 
+                      
+                      // 2. Lock the UI so the component stays alive while the sound starts
+                      setIsSyncing(true);
+                      
+                      try {
+                        // 3. Process the wicket in the database
+                        await onBall(
+                          "W",
+                          {
+                            isWicket: true,
+                            wicketType,
+                            fielderName,
+                            whoOut:
+                              wicketType === "runout" && whoOut === "nonStriker"
+                                ? nonStrikerName
+                                : strikerName,
+                            isWide: extraType === "WD",
+                            isNoBall: extraType === "NB",
+                          },
+                          wicketRuns,
+                        );
+                      } catch (e) {
+                        console.error("Wicket Sync Error:", e);
+                      } finally {
+                        // 4. Tear down the modal AFTER the database/audio threads have executed
+                        setIsWicketMenuOpen(false);
+                        setExtraType(null);
+                        setFielderName("");
+                        setWhoOut("striker"); // Reset to default
+                        setIsSyncing(false);
+                      }
                     }}
-                    className="w-full py-4 bg-red-600 text-white font-bold rounded-xl text-lg mb-3 shadow-lg active:scale-95 transition-transform">
-                    CONFIRM OUT
+                    className="w-full py-4 bg-red-600 text-white font-bold rounded-xl text-lg mb-3 shadow-lg active:scale-95 transition-transform flex items-center justify-center">
+                    {isSyncing ? "SAVING WICKET..." : "CONFIRM OUT"}
                   </button>
                   <button
                     onClick={() => {
