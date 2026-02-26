@@ -204,6 +204,65 @@ export default function BroadcastLayer() {
     return () => unsubscribe && unsubscribe();
   }, [tournamentId, matchId]);
 
+ // 1. Create a state to hold the audio elements
+  const [sounds, setSounds] = useState(null);
+
+  // 2. Initialize them ONLY ONCE when the component mounts
+  useEffect(() => {
+    // Create the audio instances
+    const wicketAudio = new Audio("/sounds/wicket.mp3");
+    const fourAudio = new Audio("/sounds/runs.mp3");
+    const sixAudio = new Audio("/sounds/runs.mp3");
+
+    // 🔥 REDUCE THE VOLUME HERE (0.0 to 1.0)
+    // 0.3 means 30% volume, which is usually a safe background level
+    wicketAudio.volume = 0.2; 
+    fourAudio.volume = 0.2;   
+    sixAudio.volume = 0.3;    // Maybe make 6 slightly louder than a 4
+
+    // Save them to state so the trigger effect can use them
+    setSounds({
+      wicket: wicketAudio,
+      four: fourAudio,
+      six: sixAudio,
+    });
+  }, []);
+  // 3. Track the last processed ball
+  const lastProcessedBallCount = useRef(null);
+
+  // 4. The Auto-Trigger Hook
+  useEffect(() => {
+    // Make sure sounds are loaded and audio is enabled by the admin
+    if (!sounds || !match?.meta?.overlay?.broadcastAudioEnabled) return;
+
+    const currentInn = match?.innings?.[match.currentInnings || 0];
+    const timeline = currentInn?.timeline || [];
+    
+    if (timeline.length === 0) return;
+
+    const lastBall = timeline[timeline.length - 1];
+    const currentBallId = `${currentInn.over}.${currentInn.overBallCount}`;
+
+    if (lastProcessedBallCount.current !== currentBallId) {
+      lastProcessedBallCount.current = currentBallId;
+
+      try {
+        if (lastBall.isWicket) {
+          sounds.wicket.currentTime = 0;
+          sounds.wicket.play().catch(e => console.log("Overlay Audio Blocked:", e));
+        } else if (lastBall.runs === 6) {
+          sounds.six.currentTime = 0;
+          sounds.six.play().catch(e => console.log("Overlay Audio Blocked:", e));
+        } else if (lastBall.runs === 4) {
+          sounds.four.currentTime = 0;
+          sounds.four.play().catch(e => console.log("Overlay Audio Blocked:", e));
+        }
+      } catch (err) {
+        console.error("Overlay Audio Engine Error:", err);
+      }
+    }
+  }, [match, sounds]); // Dependency array includes 'sounds' now
+
   const isActive = (viewName) => overlayState.activeViews?.includes(viewName);
   const currentInn = match?.innings?.[match?.currentInnings || 0];
 

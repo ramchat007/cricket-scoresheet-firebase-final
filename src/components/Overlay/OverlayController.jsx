@@ -26,6 +26,7 @@ import {
   Image as ImageIcon,
   Monitor,
   Info,
+  Volume2,VolumeX
 } from "lucide-react";
 
 export default function OverlayController({ tournamentId, matchId, match }) {
@@ -48,6 +49,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     spotlightPlayerId: "",
     appLogo: "", 
     showAppLogo: false,
+    broadcastAudioEnabled: true,
   });
 
   // ✅ NEW: Global Logo State
@@ -669,6 +671,21 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                   colorClass="bg-red-600"
                 />
               </div>
+              <div>
+              <p className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${theme.sub}`}>
+                Automated Stream Audio
+              </p>
+              <ToggleButton
+                label="Enable Auto-Sounds for 4s, 6s & Wickets"
+                active={config.broadcastAudioEnabled}
+                onClick={() => updateOverlay({ broadcastAudioEnabled: !config.broadcastAudioEnabled })}
+                icon={config.broadcastAudioEnabled ? Volume2 : VolumeX}
+                colorClass="bg-pink-600"
+              />
+              <p className="text-[9px] mt-2 opacity-60 italic leading-tight">
+                When ON, the OBS Overlay will automatically play crowd/stadium sounds whenever a boundary or wicket is scored on the timeline.
+              </p>
+            </div>
             </div>
 
             <div className="pt-3 border-t border-black/5 dark:border-white/5">

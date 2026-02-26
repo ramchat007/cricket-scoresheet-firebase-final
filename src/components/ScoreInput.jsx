@@ -101,9 +101,9 @@ export default function ScoreInput({
     // Using highly reliable FreeCodeCamp MP3s just to prove the system works
     sounds.current = {
       click: new Audio("/sounds/click.mp3"), // Short tap
-      wicket: new Audio("/sounds/wicket.mp3"), // Thump
-      four: new Audio("/sounds/runs.mp3"), // Synth 1
-      six: new Audio("/sounds/runs.mp3"), // Synth 2
+      wicket: new Audio(""), // Thump
+      four: new Audio(""), // Synth 1
+      six: new Audio(""), // Synth 2
     };
 
     sounds.current.click.volume = 0.4;
