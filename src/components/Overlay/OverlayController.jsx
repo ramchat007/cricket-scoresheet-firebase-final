@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, updateDoc, getDoc, setDoc } from "firebase/firestore"; // ✅ Added getDoc and setDoc
 import { db } from "../../utils/firebase";
 import { useTheme } from "../../context/ThemeContext";
 import {
@@ -33,6 +33,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
 
   const fileInputLogoRef = useRef(null);
   const fileInputBannerRef = useRef(null);
+  const fileInputAppLogoRef = useRef(null);
 
   const [config, setConfig] = useState({
     activeViews: [],
@@ -45,15 +46,34 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     customMessageBody: "",
     tickerText: "",
     spotlightPlayerId: "",
+    appLogo: "", 
+    showAppLogo: false,
   });
 
-  const fileInputAppLogoRef = useRef(null);
+  // ✅ NEW: Global Logo State
+  const [globalLogo, setGlobalLogo] = useState("");
 
   const [saving, setSaving] = useState(false);
   const [newSponsorName, setNewSponsorName] = useState("");
   const [newSponsorPhone, setNewSponsorPhone] = useState("");
   const [processingImage, setProcessingImage] = useState(false);
 
+  // 1. 🔥 FETCH GLOBAL LOGO ON MOUNT
+  useEffect(() => {
+    const fetchGlobalBranding = async () => {
+      try {
+        const snap = await getDoc(doc(db, "settings", "branding"));
+        if (snap.exists() && snap.data().defaultLogo) {
+          setGlobalLogo(snap.data().defaultLogo);
+        }
+      } catch (e) {
+        console.error("Failed to fetch global branding", e);
+      }
+    };
+    fetchGlobalBranding();
+  }, []);
+
+  // 2. SET MATCH OVERLAY DATA
   useEffect(() => {
     if (match?.meta?.overlay) {
       const data = match.meta.overlay;
@@ -65,7 +85,8 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     }
   }, [match?.meta?.overlay]);
 
-  const handleAppLogoUpload = (e) => {
+  // 3. 🔥 UPLOAD AND SAVE GLOBALLY (1 Time Upload)
+  const handleAppLogoUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -73,7 +94,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
-      img.onload = () => {
+      img.onload = async () => {
         const canvas = document.createElement("canvas");
         const MAX_WIDTH = 400; // High quality for branding
         const scaleSize = MAX_WIDTH / img.width;
@@ -84,11 +105,20 @@ export default function OverlayController({ tournamentId, matchId, match }) {
 
         const base64 = canvas.toDataURL("image/webp", 0.9);
 
-        // 🔥 UPDATE: Direct update to appLogo without asking for name
-        updateOverlay({
-          appLogo: base64,
-          showAppLogo: true,
-        });
+        try {
+          // A. Save to Global Settings Collection
+          await setDoc(doc(db, "settings", "branding"), { defaultLogo: base64 }, { merge: true });
+          setGlobalLogo(base64);
+
+          // B. Instantly apply to current Match Overlay
+          updateOverlay({
+            appLogo: base64,
+            showAppLogo: true,
+          });
+        } catch (err) {
+          console.error("Error saving global logo:", err);
+          alert("Failed to save global logo securely.");
+        }
 
         e.target.value = null;
         setProcessingImage(false);
@@ -331,12 +361,20 @@ export default function OverlayController({ tournamentId, matchId, match }) {
           </div>
           <div className="space-y-3 flex-grow">
             <div className="mt-4 pt-4 border-t border-white/10">
-              <label className={labelClass}>cricSync Branding</label>
+              <div className="flex justify-between items-center mb-2">
+                <label className={`${labelClass} mb-0`}>App Branding Logo</label>
+                {/* Visual indicator */}
+                {globalLogo && (
+                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-500`}>
+                    Global Logo Active
+                  </span>
+                )}
+              </div>
               <div className="flex gap-2">
                 <button
-                  onClick={() => fileInputAppLogoRef.current?.click()} // Dedicated Ref
-                  className={`flex-1 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all border ${lightMode ? "bg-white border-gray-200" : "bg-white/5 border-white/10 hover:bg-white/10"}`}>
-                  {config.appLogo ? "Change Logo" : "Upload Logo"}
+                  onClick={() => fileInputAppLogoRef.current?.click()}
+                  className={`flex-1 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all border flex items-center justify-center gap-1 ${lightMode ? "bg-white border-gray-200 hover:bg-gray-50" : "bg-white/5 border-white/10 hover:bg-white/10"}`}>
+                  <Upload size={12} /> {globalLogo ? "Update Global Logo" : "Set Global Logo"}
                 </button>
 
                 <input
@@ -344,31 +382,29 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                   accept="image/*"
                   ref={fileInputAppLogoRef}
                   className="hidden"
-                  onChange={handleAppLogoUpload} // 🔥 Use the new function here
+                  onChange={handleAppLogoUpload}
                 />
-
-                {config.appLogo && (
-                  <button
-                    onClick={() =>
-                      updateOverlay({ appLogo: "", showAppLogo: false })
-                    }
-                    className="px-3 rounded-xl bg-red-500/10 text-red-500 border border-red-500/20">
-                    <X size={16} />
-                  </button>
-                )}
               </div>
             </div>
+            
             <ToggleButton
-              label="Show cricSync Logo"
+              label="Show Brand Logo on Screen"
               active={config.showAppLogo}
-              onClick={() =>
-                updateOverlay({
-                  showAppLogo: !config.showAppLogo,
-                })
-              }
+              onClick={() => {
+                const newStatus = !config.showAppLogo;
+                // If we are turning it on, make sure the overlay object has the global logo data
+                if (newStatus && globalLogo) {
+                   updateOverlay({ showAppLogo: newStatus, appLogo: globalLogo });
+                } else if (newStatus && !globalLogo) {
+                   alert("Please upload a Global Logo first!");
+                } else {
+                   updateOverlay({ showAppLogo: newStatus });
+                }
+              }}
               icon={Star}
               colorClass="bg-gradient-to-r from-indigo-600 to-blue-500"
             />
+
             <ToggleButton
               label="Hide Bottom Score Bar"
               active={config.hideBottomScoreTicker}

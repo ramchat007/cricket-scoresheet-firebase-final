@@ -130,11 +130,11 @@ export default function Navigation() {
             srcSet={`
               ${
                 lightMode
-                  ? "/cricsync-light-logo.jpg"
-                  : "/cricsync-dark-logo.jpg"
+                  ? "/cricsync-light-logo.png"
+                  : "/cricsync-dark-logo.png"
               }`}/>
           <img
-            src="/cricsync-light-logo.jpg"
+            src="/cricsync-light-logo.png"
             alt="CricSync Logo"
             className="w-20 h-auto object-contain"
           />
