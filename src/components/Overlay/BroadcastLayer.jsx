@@ -81,6 +81,7 @@ export default function BroadcastLayer() {
   const [popupType, setPopupType] = useState("SUMMARY");
   const [animationType, setAnimationType] = useState(null);
   const [overlayConfig, setOverlayConfig] = useState(null);
+  const activeViews = overlayConfig.activeViews || [];
 
   useEffect(() => {
     // Listen for real-time changes to the match meta/overlay
@@ -911,6 +912,11 @@ export default function BroadcastLayer() {
               className="relative h-16 w-auto object-contain drop-shadow-xl"
               style={{ animation: "spin3D 8s linear infinite" }}
             />
+          </div>
+        )}
+        {activeViews.includes("WIN_PREDICTOR") && (
+          <div className="absolute bottom-32 left-1/2 -translate-x-1/2 w-[600px] z-40">
+            <WinPredictor match={match} />
           </div>
         )}
 

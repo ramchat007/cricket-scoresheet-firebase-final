@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { doc, updateDoc } from "firebase/firestore";
 import { db } from "../../utils/firebase";
 import { useTheme } from "../../context/ThemeContext";
+import WinPredictor from "./WinPredictor";
 import {
   Tv,
   Users,
@@ -648,6 +649,16 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                   icon={BarChart}
                   colorClass="bg-indigo-600"
                 />
+
+                {/* 🔥 NEW: WIN PREDICTOR TOGGLE */}
+                <ToggleButton
+                  label="Live Win Predictor"
+                  active={isActive("WIN_PREDICTOR")}
+                  onClick={() => toggleView("WIN_PREDICTOR")}
+                  icon={Activity} // You can use Activity or BarChart here
+                  colorClass="bg-red-600" // Red to make it stand out as a dynamic stat
+                />
+
                 <ToggleButton
                   label="Toss Report"
                   active={isActive("TOSS_CARD")}
