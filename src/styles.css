@@ -154,6 +154,10 @@ a,
 .nav-link{color:  var(--accent-light);}
 .navbar-brand{color: var(--accent-light);}
 
+.logowrapper img {
+    width: 193px;
+}
+
 /* span.font-black.text-6xl.tracking-tighter {
     color: #f8f9fa;
 } */

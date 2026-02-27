@@ -112,10 +112,10 @@ export default function Navigation() {
       to="/"
       className="group flex items-center gap-2"
       onClick={() => setIsOpen(false)}>
-      <div className="bg-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.4)] w-8 h-8 rounded-lg flex items-center justify-center group-hover:rotate-12 transition-transform">
+      {/* <div className="bg-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.4)] w-8 h-8 rounded-lg flex items-center justify-center group-hover:rotate-12 transition-transform">
         <span className="text-white text-lg font-bold">⚡</span>
-      </div>
-      <div className="flex flex-col leading-none">
+      </div> */}
+      {/* <div className="flex flex-col leading-none">
         <span
           className={`font-black text-xl tracking-tighter uppercase ${lightMode ? "text-gray-900" : "text-white"}`}>
           CRIC
@@ -123,6 +123,22 @@ export default function Navigation() {
         <span className="text-cyan-500 font-black text-[10px] tracking-[0.3em] uppercase ml-0.5">
           SYNC
         </span>
+      </div> */}
+      <div className="flex flex-col logowrapper">
+        <picture>          
+          <source
+            srcSet={`
+              ${
+                lightMode
+                  ? "/cricsync-light-logo.png"
+                  : "/cricsync-dark-logo.png"
+              }`}/>
+          <img
+            src="/cricsync-light-logo.png"
+            alt="CricSync Logo"
+            className="w-20 h-auto object-contain"
+          />
+        </picture>
       </div>
     </Link>
   );

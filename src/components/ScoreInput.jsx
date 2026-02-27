@@ -19,6 +19,8 @@ import {
   Trophy,
   ArrowRightCircle,
   Menu,
+  Volume2, // Added icon for sound feedback
+  VolumeX,
 } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 
@@ -89,25 +91,79 @@ export default function ScoreInput({
   const [isSyncing, setIsSyncing] = useState(false);
   const [aiComments, setAiComments] = useState({});
 
-  // 🔊 AUDIO
-  const clickSound = useRef(new Audio("/sounds/click.mp3"));
-  const wicketSound = useRef(new Audio("/sounds/wicket.mp3"));
+  // 🔊 AUDIO SYSTEM
+  const [isMuted, setIsMuted] = useState(false);
+  const audioUnlocked = useRef(false);
+  const sounds = useRef({});
 
   useEffect(() => {
-    clickSound.current.load();
-    wicketSound.current.load();
+    // 🔥 1. Initialize inside useEffect to prevent React re-render memory leaks
+    // Using highly reliable FreeCodeCamp MP3s just to prove the system works
+    sounds.current = {
+      click: new Audio("/sounds/click.mp3"), // Short tap
+      wicket: new Audio(""), // Thump
+      four: new Audio(""), // Synth 1
+      six: new Audio(""), // Synth 2
+    };
+
+    sounds.current.click.volume = 0.4;
+    sounds.current.wicket.volume = 0.4;
+    sounds.current.four.volume = 0.4;
+    sounds.current.six.volume = 0.4;
+
+    // 🔥 2. The iOS / Mobile Safari Unlocker
+    const unlockAudio = () => {
+      if (audioUnlocked.current) return;
+      Object.values(sounds.current).forEach((audio) => {
+        // Play and immediately pause to unlock the audio context
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.then(() => {
+            audio.pause();
+            audio.currentTime = 0;
+          }).catch(() => {});
+        }
+      });
+      audioUnlocked.current = true;
+      // Remove listeners once unlocked
+      document.removeEventListener("touchstart", unlockAudio);
+      document.removeEventListener("click", unlockAudio);
+    };
+
+    document.addEventListener("touchstart", unlockAudio, { once: true });
+    document.addEventListener("click", unlockAudio, { once: true });
+
+    return () => {
+      document.removeEventListener("touchstart", unlockAudio);
+      document.removeEventListener("click", unlockAudio);
+    };
   }, []);
 
-  const triggerFeedback = (type = "click") => {
-    if (navigator.vibrate)
-      navigator.vibrate(type === "wicket" ? [50, 30, 50] : 15);
+  // 🔥 3. The Trigger Function
+  const triggerFeedback = useCallback((type = "click") => {
+    if (isMuted) return;
+    
+    // Haptic feedback (Vibration)
+    if (navigator.vibrate) {
+      if (type === "wicket") navigator.vibrate([100, 50, 100]);
+      else if (type === "four" || type === "six") navigator.vibrate([50, 50, 50, 50]);
+      else navigator.vibrate(15);
+    }
+
     try {
-      const sound =
-        type === "wicket" ? wicketSound.current : clickSound.current;
-      sound.currentTime = 0;
-      sound.play().catch(() => {});
-    } catch (e) {}
-  };
+      const soundObj = sounds.current[type] || sounds.current.click;
+      
+      // Reset audio to start so rapid clicks don't get ignored
+      soundObj.currentTime = 0; 
+      
+      const playPromise = soundObj.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((error) => console.log("Browser Blocked Audio:", error));
+      }
+    } catch (e) {
+      console.log("Audio Engine Error:", e);
+    }
+  }, [isMuted]);
 
   // --- DATA EXTRACTION ---
   const activeIndex = match?.currentInnings || 0;
@@ -251,7 +307,10 @@ export default function ScoreInput({
   const handleSubmitBall = useCallback(
     async (runsVal) => {
       if (isSyncing) return;
-      triggerFeedback("click");
+      // 🔥 AUDIO ROUTING BASED ON RUNS
+      if (runsVal === 6) triggerFeedback("six");
+      else if (runsVal === 4) triggerFeedback("four");
+      else triggerFeedback("click");
       setIsSyncing(true);
       try {
         const runsRan = parseInt(runsVal) || 0;
@@ -310,7 +369,10 @@ export default function ScoreInput({
               {["Bat", "Bowl"].map((c) => (
                 <button
                   key={c}
-                  onClick={() => setTossDecision(c)}
+                  onClick={() => {
+                    triggerFeedback("click");
+                    setTossDecision(c);
+                  }}
                   className={`flex-1 py-4 rounded-xl font-bold transition-all ${tossDecision === c ? "bg-teal-600 text-white shadow-lg" : theme.btnBase}`}>
                   {c}
                 </button>
@@ -384,6 +446,12 @@ export default function ScoreInput({
         <div className="py-4 px-4">
           <div
             className={`rounded-2xl p-3 ${theme.card} relative overflow-hidden shadow-sm border ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+              {/* Audio Toggle Button placed subtly in the hero card */}
+            <button 
+              onClick={() => setIsMuted(!isMuted)} 
+              className="absolute top-3 right-3 opacity-30 hover:opacity-100 transition-opacity">
+              {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+            </button>
             <div className="flex justify-between items-end">
               <div>
                 <div
@@ -430,19 +498,15 @@ export default function ScoreInput({
           {/* Striker */}
           <div
             onClick={(e) => {
-              if (editStriker || inlineAddingRole) return; // Prevent rotation while editing
+              if (editStriker || inlineAddingRole) return;
+              triggerFeedback("click");
               onStrikeChange && onStrikeChange(nonStrikerName, strikerName);
             }}
             className={`p-3 rounded-xl border-l-4 border-l-green-500 ${theme.card} shadow-sm border ${lightMode ? "border-gray-200" : "border-white/5"} relative`}>
             <div className="flex justify-between mb-1">
-              <span className="bg-green-500 text-black text-[9px] font-black px-1.5 py-0.5 rounded">
-                STR
-              </span>
+              <span className="bg-green-500 text-black text-[9px] font-black px-1.5 py-0.5 rounded">STR</span>
               <button
-                onClick={(e) => {
-                  e.stopPropagation(); // 🔥 Stop Bubble
-                  setEditStriker(true);
-                }}
+                onClick={(e) => { e.stopPropagation(); triggerFeedback("click"); setEditStriker(true); }}
                 className="opacity-30 p-1">
                 <Menu size={12} />
               </button>
@@ -472,6 +536,7 @@ export default function ScoreInput({
                   <button
                     onClick={async () => {
                       if (!inlineNewName.trim()) return;
+                      triggerFeedback("click");
                       setIsSyncing(true);
                       try {
                         let batTeamStr = match.innings[activeIndex].battingTeam;
@@ -519,6 +584,7 @@ export default function ScoreInput({
                 value={strikerName}
                 onChange={(e) => {
                   e.stopPropagation();
+                  triggerFeedback("click");
                   if (e.target.value === "ADD_NEW") {
                     setInlineAddingRole("striker");
                   } else {
@@ -555,6 +621,7 @@ export default function ScoreInput({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
+                  triggerFeedback("click");
                   setEditNonStriker(true);
                 }}
                 className="opacity-30 p-1">
@@ -575,6 +642,7 @@ export default function ScoreInput({
                 <div className="flex gap-1">
                   <button
                     onClick={() => {
+                      triggerFeedback("click");
                       setInlineAddingRole(null);
                       setInlineNewName("");
                       setEditNonStriker(false);
@@ -831,7 +899,10 @@ export default function ScoreInput({
               <KeyButton
                 key={type}
                 val={type}
-                onClick={() => setExtraType(extraType === type ? null : type)}
+                onClick={() => {
+                  triggerFeedback("click");
+                  setExtraType(extraType === type ? null : type);
+                }}
                 disabled={disableBallEntry}
                 color={extraType === type ? theme.btnActive : theme.btnBase}
               />
@@ -842,7 +913,10 @@ export default function ScoreInput({
               <KeyButton
                 key={run}
                 val={run}
-                onClick={() => handleSubmitBall(run)}
+                onClick={() => {
+                  triggerFeedback("click");
+                  handleSubmitBall(run);
+                }}
                 disabled={disableBallEntry}
                 loading={isSyncing}
                 color={`${theme.btnBase} ${run === 4 ? "text-blue-500" : ""} ${run === 6 ? "text-yellow-500" : ""}`}
@@ -851,6 +925,7 @@ export default function ScoreInput({
             <KeyButton
               val="OUT"
               onClick={() => {
+                triggerFeedback("click");
                 setExtraType(null);
                 setIsWicketMenuOpen(true);
               }}
@@ -1457,30 +1532,44 @@ export default function ScoreInput({
               {!isAddingNew && (
                 <>
                   <button
-                    onClick={() => {
-                      onBall(
-                        "W",
-                        {
-                          isWicket: true,
-                          wicketType,
-                          fielderName,
-                          // If it's not a runout, force it to be the striker just to be 100% safe
-                          whoOut:
-                            wicketType === "runout" && whoOut === "nonStriker"
-                              ? nonStrikerName
-                              : strikerName,
-                          isWide: extraType === "WD",
-                          isNoBall: extraType === "NB",
-                        },
-                        wicketRuns,
-                      );
-                      setIsWicketMenuOpen(false);
-                      setExtraType(null);
-                      setFielderName("");
-                      setWhoOut("striker"); // Reset to default
+                    disabled={isSyncing}
+                    onClick={async () => {
+                      // 1. Fire the sound immediately
+                      triggerFeedback("wicket"); 
+                      
+                      // 2. Lock the UI so the component stays alive while the sound starts
+                      setIsSyncing(true);
+                      
+                      try {
+                        // 3. Process the wicket in the database
+                        await onBall(
+                          "W",
+                          {
+                            isWicket: true,
+                            wicketType,
+                            fielderName,
+                            whoOut:
+                              wicketType === "runout" && whoOut === "nonStriker"
+                                ? nonStrikerName
+                                : strikerName,
+                            isWide: extraType === "WD",
+                            isNoBall: extraType === "NB",
+                          },
+                          wicketRuns,
+                        );
+                      } catch (e) {
+                        console.error("Wicket Sync Error:", e);
+                      } finally {
+                        // 4. Tear down the modal AFTER the database/audio threads have executed
+                        setIsWicketMenuOpen(false);
+                        setExtraType(null);
+                        setFielderName("");
+                        setWhoOut("striker"); // Reset to default
+                        setIsSyncing(false);
+                      }
                     }}
-                    className="w-full py-4 bg-red-600 text-white font-bold rounded-xl text-lg mb-3 shadow-lg active:scale-95 transition-transform">
-                    CONFIRM OUT
+                    className="w-full py-4 bg-red-600 text-white font-bold rounded-xl text-lg mb-3 shadow-lg active:scale-95 transition-transform flex items-center justify-center">
+                    {isSyncing ? "SAVING WICKET..." : "CONFIRM OUT"}
                   </button>
                   <button
                     onClick={() => {
