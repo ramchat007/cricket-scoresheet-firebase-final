@@ -27,23 +27,33 @@ export default function ScoreTicker({ match }) {
 
   const crr = totalBalls > 0 ? ((score / totalBalls) * 6).toFixed(1) : "0.0";
 
-  // Target Logic
+  // Target & Equations Logic
   const isChasing = currentInnIdx === 1;
   const inn1 = match.innings?.[0];
   const target = match.meta?.target || (inn1 ? inn1.score + 1 : null);
 
-  let reqStr = "";
+  const totalMatchOvers = match.meta?.overs || 20;
+  const totalMatchBalls = totalMatchOvers * 6;
+
+  let rrrVal = "";
+  let equationStr = "";
+  let projScoreStr = "";
+
   if (isChasing && target) {
     const runsNeeded = target - score;
-    const totalMatchOvers = match.meta?.overs || 20;
-    const totalMatchBalls = totalMatchOvers * 6;
     const ballsRemaining = totalMatchBalls - totalBalls;
 
-    if (runsNeeded <= 0) reqStr = "Scores Level";
-    else if (ballsRemaining > 0) {
-      const rrr = ((runsNeeded / ballsRemaining) * 6).toFixed(1);
-      reqStr = `Req Rate: ${rrr} (${runsNeeded} off ${ballsRemaining})`;
+    if (runsNeeded <= 0) {
+      equationStr = "SCORES LEVEL";
+    } else if (ballsRemaining > 0) {
+      rrrVal = ((runsNeeded / ballsRemaining) * 6).toFixed(1);
+      // "Runs needed from X balls" formatting for the top center
+      equationStr = `NEED ${runsNeeded} RUNS FROM ${ballsRemaining} BALLS`;
     }
+  } else if (!isChasing && totalBalls > 0) {
+    // Projected Score for 1st Innings
+    const projScore = Math.round((score / totalBalls) * totalMatchBalls);
+    projScoreStr = `PROJ. SCORE: ${projScore}`;
   }
 
   // --- 2. CHECK IF MATCH IS FINISHED ---
@@ -86,7 +96,7 @@ export default function ScoreTicker({ match }) {
   const isLongOver = timeline.length > 6;
   const timelineGap = isLongOver ? "gap-1.5" : "gap-2.5";
 
-  // --- 4. SMART TOSS / TARGET LOGIC ---
+  // --- 4. SMART TOSS LOGIC ---
   const tossWinner = match.toss?.winner || match.meta?.toss?.winner;
   const tossDecision = match.toss?.decision || match.meta?.toss?.decision;
   const showToss = currentInnIdx === 0 && overs < 1 && tossWinner;
@@ -145,7 +155,7 @@ export default function ScoreTicker({ match }) {
 
         {/* --- MAIN TICKER CONTAINER --- */}
         <div className="w-full max-w-[1750px] flex flex-col items-center relative z-20">
-          {/* --- TOP TIER: Match Context Bar (Grid Layout for Perfect Centering) --- */}
+          {/* --- TOP TIER: Match Context Bar --- */}
           <div className="bg-slate-900/95 border border-slate-700/50 border-b-0 rounded-t-xl px-10 py-1.5 grid grid-cols-3 items-center text-slate-300 w-[96%] shadow-lg">
             {/* Left: Match Info */}
             <div className="flex gap-4 items-center justify-start">
@@ -160,21 +170,21 @@ export default function ScoreTicker({ match }) {
               </span>
             </div>
 
-            {/* Center: Current Run Rate */}
-            <div className="flex justify-center items-center gap-2">
-              {totalBalls > 0 && !isMatchFinished && (
-                <>
-                  <span className="text-slate-400 font-black text-[11px] uppercase tracking-widest">
-                    Curr Rate
+            {/* Center: 🏏 Equation / Projected Score 🏏 */}
+            <div className="flex justify-center items-center">
+              {!isMatchFinished &&
+                (isChasing && equationStr ? (
+                  <span className="text-amber-400 font-black text-[13px] uppercase tracking-widest bg-amber-500/10 px-5 py-0.5 rounded border border-amber-500/30 drop-shadow-md">
+                    {equationStr}
                   </span>
-                  <span className="text-white font-mono font-black text-base">
-                    {crr}
+                ) : !isChasing && projScoreStr ? (
+                  <span className="text-cyan-400 font-black text-[13px] uppercase tracking-widest bg-cyan-500/10 px-5 py-0.5 rounded border border-cyan-500/30 drop-shadow-md">
+                    {projScoreStr}
                   </span>
-                </>
-              )}
+                ) : null)}
             </div>
 
-            {/* Right: Toss OR Target + Req Rate */}
+            {/* Right: Toss OR Target */}
             <div className="flex justify-end items-center">
               {showToss && (
                 <span className="text-amber-400/90 italic text-sm font-bold tracking-wide">
@@ -182,20 +192,13 @@ export default function ScoreTicker({ match }) {
                 </span>
               )}
 
+              {/* 🔥 Target restored to the right side! */}
               {isChasing && target && (
-                <div className="flex items-center gap-3 text-amber-400 bg-amber-500/10 px-4 py-0.5 rounded-md border border-amber-500/20">
+                <div className="flex items-center text-amber-400 bg-amber-500/10 px-4 py-0.5 rounded-md border border-amber-500/20">
                   <span className="font-black tracking-widest uppercase text-xs">
                     Target:{" "}
                     <span className="text-white text-base ml-1">{target}</span>
                   </span>
-                  {reqStr && (
-                    <>
-                      <span className="w-px h-4 bg-amber-500/30"></span>
-                      <span className="font-bold text-xs tracking-wide text-amber-300">
-                        {reqStr}
-                      </span>
-                    </>
-                  )}
                 </div>
               )}
             </div>
@@ -257,9 +260,36 @@ export default function ScoreTicker({ match }) {
                   </div>
                 </div>
 
-                {/* 3. FUTURE EXPANSION ZONE (Blank Middle) */}
-                <div className="flex-1 bg-slate-900/40 relative flex items-center justify-center overflow-hidden">
-                  {/* Ready for future components, e.g., Projected Score, Flashing alerts, etc. */}
+                {/* 3. 📈 RUN RATES ZONE (Center Expansion Zone) 📈 */}
+                <div className="flex-1 bg-slate-900/40 relative flex items-center justify-center gap-8 overflow-hidden border-r border-slate-700/50">
+                  {/* CRR Block */}
+                  {totalBalls > 0 && (
+                    <div className="flex flex-col items-center justify-center">
+                      <span className="text-slate-400 font-black text-[10px] uppercase tracking-widest mb-0.5">
+                        CRR
+                      </span>
+                      <span className="text-white font-mono font-black text-[1.6rem] leading-none">
+                        {crr}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Vertical Divider */}
+                  {isChasing && rrrVal && totalBalls > 0 && (
+                    <div className="w-px h-10 bg-slate-700"></div>
+                  )}
+
+                  {/* REQ Rate Block */}
+                  {isChasing && rrrVal && (
+                    <div className="flex flex-col items-center justify-center">
+                      <span className="text-amber-400 font-black text-[10px] uppercase tracking-widest mb-0.5">
+                        REQ
+                      </span>
+                      <span className="text-amber-400 font-mono font-black text-[1.6rem] leading-none">
+                        {rrrVal}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* 4. Bowler */}
@@ -282,7 +312,7 @@ export default function ScoreTicker({ match }) {
 
                 {/* 5. Timeline (Ball by Ball with Dynamic Sizing) */}
                 <div
-                  className={`flex items-center px-6 border-l border-slate-700 bg-slate-900 justify-end ${timelineGap} min-w-[250px] max-w-[320px] overflow-hidden`}>
+                  className={`flex items-center px-6 border-l border-slate-700 bg-slate-900 justify-start ${timelineGap} min-w-[250px] max-w-[320px] overflow-hidden`}>
                   {timeline.map((b, i) => {
                     let text = b.runs === 0 ? "•" : b.runs;
                     let bubbleClass =

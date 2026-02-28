@@ -15,6 +15,7 @@ import { Users, Zap, Activity, AlertTriangle } from "lucide-react";
 import ScoreTicker from "./ScoreTicker";
 import BroadcastSummaryCard from "./BroadcastSummaryCard";
 import TournamentBanner from "./TournamentBanner";
+import WinPredictor from "./WinPredictor";
 
 // 🔥 EVENT ANIMATION COMPONENT WITH SLAM & SHAKE
 const EventAnimation = ({ type }) => {
@@ -81,7 +82,6 @@ export default function BroadcastLayer() {
   const [popupType, setPopupType] = useState("SUMMARY");
   const [animationType, setAnimationType] = useState(null);
   const [overlayConfig, setOverlayConfig] = useState(null);
-  const activeViews = overlayConfig.activeViews || [];
 
   useEffect(() => {
     // Listen for real-time changes to the match meta/overlay
@@ -95,6 +95,8 @@ export default function BroadcastLayer() {
     );
     return () => unsub();
   }, [tournamentId, matchId]);
+
+  const activeViews = overlayConfig?.activeViews || [];
 
   const [overlayState, setOverlayState] = useState({
     activeViews: [],
@@ -205,66 +207,94 @@ export default function BroadcastLayer() {
     return () => unsubscribe && unsubscribe();
   }, [tournamentId, matchId]);
 
- // 1. Create a state to hold the audio elements
+  // --- 🔥 BULLETPROOF AUDIO SYSTEM ---
   const [sounds, setSounds] = useState(null);
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
 
-  // 2. Initialize them ONLY ONCE when the component mounts
   useEffect(() => {
-    // Create the audio instances
-    const wicketAudio = new Audio("/sounds/wicket.mp3");
-    const fourAudio = new Audio("/sounds/runs.mp3");
-    const sixAudio = new Audio("/sounds/runs.mp3");
+    const wAudio = new Audio("/sounds/wicket.mp3");
+    const fAudio = new Audio("/sounds/runs.mp3");
+    const sAudio = new Audio("/sounds/runs.mp3");
 
-    // 🔥 REDUCE THE VOLUME HERE (0.0 to 1.0)
-    // 0.3 means 30% volume, which is usually a safe background level
-    wicketAudio.volume = 0.2; 
-    fourAudio.volume = 0.2;   
-    sixAudio.volume = 0.3;    // Maybe make 6 slightly louder than a 4
+    wAudio.volume = 0.4;
+    fAudio.volume = 0.3;
+    sAudio.volume = 0.4;
 
-    // Save them to state so the trigger effect can use them
+    wAudio.load();
+    fAudio.load();
+    sAudio.load();
+
     setSounds({
-      wicket: wicketAudio,
-      four: fourAudio,
-      six: sixAudio,
+      wicket: wAudio,
+      four: fAudio,
+      six: sAudio,
     });
   }, []);
-  // 3. Track the last processed ball
-  const lastProcessedBallCount = useRef(null);
 
-  // 4. The Auto-Trigger Hook
-  useEffect(() => {
-    // Make sure sounds are loaded and audio is enabled by the admin
-    if (!sounds || !match?.meta?.overlay?.broadcastAudioEnabled) return;
+  const handleUnlockAudio = async () => {
+    if (!sounds) return;
+    try {
+      sounds.wicket.muted = true;
+      sounds.four.muted = true;
+      sounds.six.muted = true;
 
-    const currentInn = match?.innings?.[match.currentInnings || 0];
-    const timeline = currentInn?.timeline || [];
-    
-    if (timeline.length === 0) return;
+      await Promise.all([
+        sounds.wicket.play(),
+        sounds.four.play(),
+        sounds.six.play(),
+      ]);
 
-    const lastBall = timeline[timeline.length - 1];
-    const currentBallId = `${currentInn.over}.${currentInn.overBallCount}`;
+      sounds.wicket.pause();
+      sounds.four.pause();
+      sounds.six.pause();
 
-    if (lastProcessedBallCount.current !== currentBallId) {
-      lastProcessedBallCount.current = currentBallId;
+      sounds.wicket.currentTime = 0;
+      sounds.four.currentTime = 0;
+      sounds.six.currentTime = 0;
 
-      try {
-        if (lastBall.isWicket) {
-          sounds.wicket.currentTime = 0;
-          sounds.wicket.play().catch(e => console.log("Overlay Audio Blocked:", e));
-        } else if (lastBall.runs === 6) {
-          sounds.six.currentTime = 0;
-          sounds.six.play().catch(e => console.log("Overlay Audio Blocked:", e));
-        } else if (lastBall.runs === 4) {
-          sounds.four.currentTime = 0;
-          sounds.four.play().catch(e => console.log("Overlay Audio Blocked:", e));
-        }
-      } catch (err) {
-        console.error("Overlay Audio Engine Error:", err);
-      }
+      sounds.wicket.muted = false;
+      sounds.four.muted = false;
+      sounds.six.muted = false;
+
+      setAudioUnlocked(true);
+      console.log("✅ Audio successfully unlocked!");
+    } catch (e) {
+      console.error("Audio unlock failed:", e);
     }
-  }, [match, sounds]); // Dependency array includes 'sounds' now
+  };
 
+  const playOverlaySound = (type) => {
+    console.log("🔊 ATTEMPTING TO PLAY:", type); // Add this line!
+
+    if (overlayConfig?.broadcastAudioEnabled === false) {
+      console.log("❌ Blocked: Admin toggled Audio OFF in Controller");
+      return;
+    }
+    if (!sounds || !sounds[type]) {
+      console.log("❌ Blocked: Sound files not loaded yet");
+      return;
+    }
+    if (!audioUnlocked) {
+      console.log("❌ Blocked: Audio not unlocked by user click yet");
+      return;
+    }
+
+    try {
+      sounds[type].currentTime = 0;
+      const playPromise = sounds[type].play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          console.warn(`Audio blocked (${type}).`, err);
+        });
+      }
+    } catch (err) {
+      console.error("Audio trigger failed:", err);
+    }
+  };
+
+  // 🔥 DEFINING IS_ACTIVE HELPER
   const isActive = (viewName) => overlayState.activeViews?.includes(viewName);
+
   const currentInn = match?.innings?.[match?.currentInnings || 0];
 
   const isChasing = match?.currentInnings === 1;
@@ -298,20 +328,33 @@ export default function BroadcastLayer() {
   useEffect(() => {
     if (overlayState.manualAnimation && overlayState.manualAnimationTrigger) {
       if (Date.now() - overlayState.manualAnimationTrigger < 5000) {
-        setAnimationType(overlayState.manualAnimation);
+        const type = overlayState.manualAnimation;
+        setAnimationType(type);
+
+        if (type === "WICKET") playOverlaySound("wicket");
+        else if (type === "FOUR") playOverlaySound("four");
+        else if (type === "SIX") playOverlaySound("six");
+
         let delay = 3500;
-        if (overlayState.manualAnimation === "SIX") delay = 4000;
-        if (overlayState.manualAnimation === "WICKET") delay = 4500;
+        if (type === "SIX") delay = 4000;
+        if (type === "WICKET") delay = 4500;
         const timer = setTimeout(() => setAnimationType(null), delay);
         return () => clearTimeout(timer);
       }
     }
-  }, [overlayState.manualAnimationTrigger, overlayState.manualAnimation]);
+  }, [
+    overlayState.manualAnimationTrigger,
+    overlayState.manualAnimation,
+    sounds,
+    overlayConfig,
+    audioUnlocked,
+  ]);
 
   // --- AUTOMATED EVENTS TRIGGER ---
   useEffect(() => {
     if (viewMode !== "LIVE" || !currentInn) return;
     const timeline = currentInn.timeline || [];
+
     if (timeline.length > prevTimelineLength.current) {
       const lastBall = timeline[timeline.length - 1];
       let eventHandled = false;
@@ -319,6 +362,8 @@ export default function BroadcastLayer() {
       if (lastBall && lastBall.isWicket) {
         eventHandled = true;
         setAnimationType("WICKET");
+        playOverlaySound("wicket");
+
         setShowPopup(false);
         if (timerRef.current) clearTimeout(timerRef.current);
         timerRef.current = setTimeout(() => {
@@ -329,9 +374,11 @@ export default function BroadcastLayer() {
         }, 4500);
       } else if (lastBall && lastBall.runs === 4 && !lastBall.isWide) {
         setAnimationType("FOUR");
+        playOverlaySound("four");
         setTimeout(() => setAnimationType(null), 3500);
       } else if (lastBall && lastBall.runs === 6 && !lastBall.isWide) {
         setAnimationType("SIX");
+        playOverlaySound("six");
         setTimeout(() => setAnimationType(null), 4000);
       }
 
@@ -348,9 +395,10 @@ export default function BroadcastLayer() {
         }, 1000);
         prevOver.current = currentInn.over;
       }
-      prevTimelineLength.current = timeline.length;
     }
-  }, [currentInn, viewMode]);
+
+    prevTimelineLength.current = timeline.length;
+  }, [currentInn, viewMode, sounds, overlayConfig, audioUnlocked]);
 
   // --- COMPONENTS ---
 
@@ -878,6 +926,20 @@ export default function BroadcastLayer() {
           .animate-screenFlash { animation: screenFlash 0.6s ease-in-out; }
         `}</style>
 
+        {/* 🔥 AUDIO UNLOCKER SCREEN */}
+        {!audioUnlocked && (
+          <div
+            onClick={handleUnlockAudio}
+            className="absolute inset-0 z-[9999] bg-black/90 flex flex-col items-center justify-center cursor-pointer pointer-events-auto backdrop-blur-sm">
+            <div className="bg-blue-600 hover:bg-blue-500 text-white font-black text-4xl px-12 py-6 rounded-full shadow-[0_0_50px_rgba(37,99,235,0.5)] transition-all transform hover:scale-105 flex items-center gap-4">
+              <span>🔊</span> CLICK TO ENABLE STREAM AUDIO
+            </div>
+            <p className="text-blue-300 font-bold uppercase tracking-widest mt-6 text-xl">
+              Required by browser to allow auto-playing sounds
+            </p>
+          </div>
+        )}
+
         {/* --- 1. BACKGROUND STANDBY LAYER (Shown before match starts) --- */}
         {(viewMode === "NOT_FOUND" || viewMode === "WAITING") && (
           <div className="absolute inset-0 z-0 flex items-center justify-center bg-slate-900">
@@ -956,7 +1018,7 @@ export default function BroadcastLayer() {
         </div>
 
         {overlayConfig.showAppLogo && overlayConfig.appLogo && (
-          <div className="absolute top-8 left-8 animate-slide-in flex items-center justify-center">
+          <div className="absolute top-8 right-0 animate-slide-in flex items-center justify-center">
             {/* ✨ THE GLOWING BACKGROUND AURA */}
             <div
               className="absolute w-24 h-24 bg-blue-500 rounded-full blur-2xl opacity-60"
@@ -974,7 +1036,7 @@ export default function BroadcastLayer() {
           </div>
         )}
         {activeViews.includes("WIN_PREDICTOR") && (
-          <div className="absolute bottom-32 left-1/2 -translate-x-1/2 w-[600px] z-40">
+          <div className="absolute bottom-[180px] left-1/2 -translate-x-1/2 w-[600px] z-40">
             <WinPredictor match={match} />
           </div>
         )}
@@ -991,7 +1053,7 @@ export default function BroadcastLayer() {
         </div>
 
         {/* TOP RIGHT */}
-        <div className="absolute top-[30px] right-[50px] flex flex-col gap-6 items-end z-40">
+        <div className="absolute top-[30px] left-[50px] flex flex-col gap-6 items-end z-40">
           {isActive("SPONSOR_BUG") && <SponsorBug />}
           {isActive("SQUAD_A") && <SquadCard teamSide="A" />}
           {isActive("SQUAD_B") && <SquadCard teamSide="B" />}
@@ -1023,6 +1085,7 @@ export default function BroadcastLayer() {
           </div>
         )}
 
+        {/* 🔥 APP LOGO ANIMATION STYLES RESTORED HERE */}
         <style>
           {`
             /* Slide in when first turned on */

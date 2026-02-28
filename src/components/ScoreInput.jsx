@@ -90,6 +90,7 @@ export default function ScoreInput({
   const [localOverlayDismissed, setLocalOverlayDismissed] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [aiComments, setAiComments] = useState({});
+  const [forceInningsComplete, setForceInningsComplete] = useState(false);
 
   // 🔊 AUDIO SYSTEM
   const [isMuted, setIsMuted] = useState(false);
@@ -118,10 +119,12 @@ export default function ScoreInput({
         // Play and immediately pause to unlock the audio context
         const playPromise = audio.play();
         if (playPromise !== undefined) {
-          playPromise.then(() => {
-            audio.pause();
-            audio.currentTime = 0;
-          }).catch(() => {});
+          playPromise
+            .then(() => {
+              audio.pause();
+              audio.currentTime = 0;
+            })
+            .catch(() => {});
         }
       });
       audioUnlocked.current = true;
@@ -140,30 +143,36 @@ export default function ScoreInput({
   }, []);
 
   // 🔥 3. The Trigger Function
-  const triggerFeedback = useCallback((type = "click") => {
-    if (isMuted) return;
-    
-    // Haptic feedback (Vibration)
-    if (navigator.vibrate) {
-      if (type === "wicket") navigator.vibrate([100, 50, 100]);
-      else if (type === "four" || type === "six") navigator.vibrate([50, 50, 50, 50]);
-      else navigator.vibrate(15);
-    }
+  const triggerFeedback = useCallback(
+    (type = "click") => {
+      if (isMuted) return;
 
-    try {
-      const soundObj = sounds.current[type] || sounds.current.click;
-      
-      // Reset audio to start so rapid clicks don't get ignored
-      soundObj.currentTime = 0; 
-      
-      const playPromise = soundObj.play();
-      if (playPromise !== undefined) {
-        playPromise.catch((error) => console.log("Browser Blocked Audio:", error));
+      // Haptic feedback (Vibration)
+      if (navigator.vibrate) {
+        if (type === "wicket") navigator.vibrate([100, 50, 100]);
+        else if (type === "four" || type === "six")
+          navigator.vibrate([50, 50, 50, 50]);
+        else navigator.vibrate(15);
       }
-    } catch (e) {
-      console.log("Audio Engine Error:", e);
-    }
-  }, [isMuted]);
+
+      try {
+        const soundObj = sounds.current[type] || sounds.current.click;
+
+        // Reset audio to start so rapid clicks don't get ignored
+        soundObj.currentTime = 0;
+
+        const playPromise = soundObj.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((error) =>
+            console.log("Browser Blocked Audio:", error),
+          );
+        }
+      } catch (e) {
+        console.log("Audio Engine Error:", e);
+      }
+    },
+    [isMuted],
+  );
 
   // --- DATA EXTRACTION ---
   const activeIndex = match?.currentInnings || 0;
@@ -174,6 +183,7 @@ export default function ScoreInput({
     setOpenerStriker("");
     setOpenerNonStriker("");
     setLocalOverlayDismissed(false);
+    setForceInningsComplete(false);
   }, [activeIndex]);
 
   const m = useMemo(() => {
@@ -270,7 +280,8 @@ export default function ScoreInput({
   const isTargetChased =
     isInning2 && matchContext.target && m.score >= matchContext.target;
 
-  const isInningsComplete = isAllOut || isOversDone || isTargetChased;
+  const isInningsComplete =
+    forceInningsComplete || isAllOut || isOversDone || isTargetChased;
   const isMatchOver = isInningsComplete && isInning2;
 
   // ✅ Feature 1 Fix: Explicitly check for "Start of Innings" to ask for Openers
@@ -446,9 +457,9 @@ export default function ScoreInput({
         <div className="py-4 px-4">
           <div
             className={`rounded-2xl p-3 ${theme.card} relative overflow-hidden shadow-sm border ${lightMode ? "border-gray-200" : "border-white/5"}`}>
-              {/* Audio Toggle Button placed subtly in the hero card */}
-            <button 
-              onClick={() => setIsMuted(!isMuted)} 
+            {/* Audio Toggle Button placed subtly in the hero card */}
+            <button
+              onClick={() => setIsMuted(!isMuted)}
               className="absolute top-3 right-3 opacity-30 hover:opacity-100 transition-opacity">
               {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
             </button>
@@ -504,9 +515,15 @@ export default function ScoreInput({
             }}
             className={`p-3 rounded-xl border-l-4 border-l-green-500 ${theme.card} shadow-sm border ${lightMode ? "border-gray-200" : "border-white/5"} relative`}>
             <div className="flex justify-between mb-1">
-              <span className="bg-green-500 text-black text-[9px] font-black px-1.5 py-0.5 rounded">STR</span>
+              <span className="bg-green-500 text-black text-[9px] font-black px-1.5 py-0.5 rounded">
+                STR
+              </span>
               <button
-                onClick={(e) => { e.stopPropagation(); triggerFeedback("click"); setEditStriker(true); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  triggerFeedback("click");
+                  setEditStriker(true);
+                }}
                 className="opacity-30 p-1">
                 <Menu size={12} />
               </button>
@@ -1260,9 +1277,22 @@ export default function ScoreInput({
                         setNewBowler("");
                       }
                     }}
-                    className="w-full py-4 bg-teal-600 text-white font-bold rounded-xl uppercase tracking-widest">
-                    Confirm
+                    className="w-full py-4 bg-teal-600 text-white font-bold rounded-xl uppercase tracking-widest active:scale-95 transition-transform">
+                    Confirm {needBatsman ? "Batsman" : "Bowler"}
                   </button>
+
+                  {/* 🔥 NEW: END INNINGS ESCAPE HATCH (Only show if we need a batsman) */}
+                  {needBatsman && (
+                    <button
+                      onClick={() => {
+                        // This forces isInningsComplete to become true immediately,
+                        // which automatically closes the player selector and opens the End Innings modal!
+                        setForceInningsComplete(true);
+                      }}
+                      className={`w-full py-3.5 border-2 border-red-500 text-red-500 font-bold rounded-xl uppercase tracking-widest active:scale-95 transition-all ${lightMode ? "bg-red-50 hover:bg-red-100" : "bg-red-500/10 hover:bg-red-500/20"}`}>
+                      All Out (End Innings)
+                    </button>
+                  )}
                 </>
               ) : (
                 /* QUICK ADD */
@@ -1535,11 +1565,11 @@ export default function ScoreInput({
                     disabled={isSyncing}
                     onClick={async () => {
                       // 1. Fire the sound immediately
-                      triggerFeedback("wicket"); 
-                      
+                      triggerFeedback("wicket");
+
                       // 2. Lock the UI so the component stays alive while the sound starts
                       setIsSyncing(true);
-                      
+
                       try {
                         // 3. Process the wicket in the database
                         await onBall(

@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from "react";
 import { doc, updateDoc, getDoc, setDoc } from "firebase/firestore"; // ✅ Added getDoc and setDoc
 import { db } from "../../utils/firebase";
 import { useTheme } from "../../context/ThemeContext";
-import WinPredictor from "./WinPredictor";
 import {
   Tv,
   Users,
