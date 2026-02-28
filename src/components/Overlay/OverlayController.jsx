@@ -327,7 +327,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               OBS Overlay Manager
             </p>
             <a
-              href={`/overlay/${tournamentId}/broadcast/${matchId}`}
+              href={`/overlay/${tournamentId}/broadcast/active?clean=true`}
               target="_blank"
               rel="noreferrer"
               className={`mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${lightMode ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200" : "bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30"}`}>
@@ -365,26 +365,69 @@ export default function OverlayController({ tournamentId, matchId, match }) {
             <div className="mt-4 pt-4 border-t border-white/10">
               <div className="flex justify-between items-center mb-2">
                 <label className={`${labelClass} mb-0`}>App Branding Logo</label>
-                {/* Visual indicator */}
-                {globalLogo && (
-                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-500`}>
-                    Global Logo Active
+                
+                {/* 🟢 Visual indicator of Hierarchy */}
+                {match?.meta?.overlay?.appLogo ? (
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-500">
+                    Custom Match Logo Active
                   </span>
-                )}
+                ) : globalLogo ? (
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-500">
+                    Global Default Active
+                  </span>
+                ) : null}
               </div>
+
+              {/* 🖼️ PREVIEW ACTIVE LOGO */}
+              {(match?.meta?.overlay?.appLogo || globalLogo) && (
+                <div className={`mb-3 p-4 rounded-xl border flex flex-col items-center justify-center ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/10"}`}>
+                  <img
+                    src={match?.meta?.overlay?.appLogo || globalLogo}
+                    alt="Broadcast Logo"
+                    className="max-h-16 w-auto object-contain drop-shadow-md mb-2"
+                  />
+                  <span className="text-[10px] uppercase tracking-widest opacity-50 font-bold">
+                    {match?.meta?.overlay?.appLogo ? "Overriding with Custom Logo" : "Using Global Default"}
+                  </span>
+                </div>
+              )}
+
               <div className="flex gap-2">
+                {/* UPLOAD BUTTON */}
                 <button
                   onClick={() => fileInputAppLogoRef.current?.click()}
                   className={`flex-1 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all border flex items-center justify-center gap-1 ${lightMode ? "bg-white border-gray-200 hover:bg-gray-50" : "bg-white/5 border-white/10 hover:bg-white/10"}`}>
-                  <Upload size={12} /> {globalLogo ? "Update Global Logo" : "Set Global Logo"}
+                  <Upload size={12} /> {match?.meta?.overlay?.appLogo ? "Change Custom Logo" : "Upload Custom Logo"}
                 </button>
+
+                {/* ❌ REMOVE OVERRIDE BUTTON (Only shows if custom logo is set) */}
+                {match?.meta?.overlay?.appLogo && (
+                  <button
+                    onClick={async () => {
+                      if (window.confirm("Remove custom logo and revert to Global Default?")) {
+                        try {
+                          // 🔥 FIX: Use match.id instead of matchId, and use your existing updateDoc import!
+                          await updateDoc(doc(db, "tournaments", tournamentId, "matches", match.id), {
+                            "meta.overlay.appLogo": "" 
+                          });
+                        } catch (err) {
+                          console.error("Error removing logo:", err);
+                        }
+                      }
+                    }}
+                    className={`px-4 py-2.5 rounded-xl font-black transition-all border flex items-center justify-center text-red-500 ${lightMode ? "bg-red-50 border-red-200 hover:bg-red-100" : "bg-red-500/10 border-red-500/20 hover:bg-red-500/30"}`}
+                    title="Revert to Global Logo"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                  </button>
+                )}
 
                 <input
                   type="file"
                   accept="image/*"
                   ref={fileInputAppLogoRef}
                   className="hidden"
-                  onChange={handleAppLogoUpload}
+                  onChange={handleAppLogoUpload} 
                 />
               </div>
             </div>

@@ -196,7 +196,7 @@ export default function LiveScoring() {
   // This URL automatically points to whichever match is currently "Live" in this tournament.
   const obsUrl =
     typeof window !== "undefined"
-      ? `${window.location.origin}/overlay/${tournamentId}/broadcast/${matchId}`
+      ? `${window.location.origin}/overlay/${tournamentId}/broadcast/active?clean=true`
       : "";
 
   const copyObsLink = () => {
@@ -476,7 +476,7 @@ export default function LiveScoring() {
             <div className="mt-3">
               <a
                 // IMPORTANT: Adjust this href to match whatever route you set up in App.js for the controller
-                href={`/broadcast-control/${tournamentId}/${match.id}`}
+                href={`/broadcast-control/${tournamentId}/active`}
                 target="_blank"
                 rel="noreferrer"
                 className={`w-full flex items-center justify-center gap-2 p-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${

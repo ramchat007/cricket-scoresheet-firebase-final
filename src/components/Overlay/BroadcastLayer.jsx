@@ -81,9 +81,23 @@ export default function BroadcastLayer() {
   const [showPopup, setShowPopup] = useState(false);
   const [popupType, setPopupType] = useState("SUMMARY");
   const [animationType, setAnimationType] = useState(null);
-  const [overlayConfig, setOverlayConfig] = useState(null);
+  const [overlayConfig, setOverlayConfig] = useState({});
+  
+  const [globalBranding, setGlobalBranding] = useState(null);
+
+  // Fetch global branding once when the overlay loads
+  useEffect(() => {
+    getDoc(doc(db, "settings", "branding")).then((docSnap) => {
+      if (docSnap.exists()) {
+        setGlobalBranding(docSnap.data());
+      }
+    });
+  }, []);
 
   useEffect(() => {
+    // 🔥 SAFEGUARD: Do not query Firebase with 'active' or missing IDs
+    if (!tournamentId || !matchId || matchId === "active") return;
+
     // Listen for real-time changes to the match meta/overlay
     const unsub = onSnapshot(
       doc(db, "tournaments", tournamentId, "matches", matchId),
@@ -207,9 +221,8 @@ export default function BroadcastLayer() {
     return () => unsubscribe && unsubscribe();
   }, [tournamentId, matchId]);
 
-  // --- 🔥 BULLETPROOF AUDIO SYSTEM ---
+  // --- 🔥 BULLETPROOF AUDIO SYSTEM (INVISIBLE PRIME) ---
   const [sounds, setSounds] = useState(null);
-  const [audioUnlocked, setAudioUnlocked] = useState(false);
 
   useEffect(() => {
     const wAudio = new Audio("/sounds/wicket.mp3");
@@ -229,62 +242,38 @@ export default function BroadcastLayer() {
       four: fAudio,
       six: sAudio,
     });
+
+    const primeAudioEngine = async () => {
+      try {
+        const dummyAudio = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA");
+        dummyAudio.volume = 0;
+        await dummyAudio.play();
+        console.log("✅ Audio successfully unlocked in background!");
+      } catch (e) {
+        // Silently catch error if browser strictly blocks auto-play
+      }
+    };
+
+    primeAudioEngine();
+
+    // Secondary listener: clicking ANYWHERE on the screen (or OBS Interact) unlocks it
+    const handleInteraction = () => {
+      primeAudioEngine();
+      document.removeEventListener('click', handleInteraction);
+    };
+    document.addEventListener('click', handleInteraction);
+    return () => document.removeEventListener('click', handleInteraction);
   }, []);
 
-  const handleUnlockAudio = async () => {
-    if (!sounds) return;
-    try {
-      sounds.wicket.muted = true;
-      sounds.four.muted = true;
-      sounds.six.muted = true;
-
-      await Promise.all([
-        sounds.wicket.play(),
-        sounds.four.play(),
-        sounds.six.play(),
-      ]);
-
-      sounds.wicket.pause();
-      sounds.four.pause();
-      sounds.six.pause();
-
-      sounds.wicket.currentTime = 0;
-      sounds.four.currentTime = 0;
-      sounds.six.currentTime = 0;
-
-      sounds.wicket.muted = false;
-      sounds.four.muted = false;
-      sounds.six.muted = false;
-
-      setAudioUnlocked(true);
-      console.log("✅ Audio successfully unlocked!");
-    } catch (e) {
-      console.error("Audio unlock failed:", e);
-    }
-  };
-
-  const playOverlaySound = (type) => {
-    console.log("🔊 ATTEMPTING TO PLAY:", type); // Add this line!
-
-    if (overlayConfig?.broadcastAudioEnabled === false) {
-      console.log("❌ Blocked: Admin toggled Audio OFF in Controller");
-      return;
-    }
-    if (!sounds || !sounds[type]) {
-      console.log("❌ Blocked: Sound files not loaded yet");
-      return;
-    }
-    if (!audioUnlocked) {
-      console.log("❌ Blocked: Audio not unlocked by user click yet");
-      return;
-    }
-
+const playOverlaySound = (type) => {
+    if (overlayState?.broadcastAudioEnabled === false || !sounds || !sounds[type]) return;
+        
     try {
       sounds[type].currentTime = 0;
       const playPromise = sounds[type].play();
       if (playPromise !== undefined) {
-        playPromise.catch((err) => {
-          console.warn(`Audio blocked (${type}).`, err);
+        playPromise.catch(err => {
+          console.warn(`Audio blocked (${type}). OBS Users: Add '--autoplay-policy=no-user-gesture-required' to OBS shortcut.`);
         });
       }
     } catch (err) {
@@ -292,8 +281,7 @@ export default function BroadcastLayer() {
     }
   };
 
-  // 🔥 DEFINING IS_ACTIVE HELPER
-  const isActive = (viewName) => overlayState.activeViews?.includes(viewName);
+  const isActiveView = (viewName) => overlayState.activeViews?.includes(viewName);
 
   const currentInn = match?.innings?.[match?.currentInnings || 0];
 
@@ -342,19 +330,13 @@ export default function BroadcastLayer() {
         return () => clearTimeout(timer);
       }
     }
-  }, [
-    overlayState.manualAnimationTrigger,
-    overlayState.manualAnimation,
-    sounds,
-    overlayConfig,
-    audioUnlocked,
-  ]);
+  }, [overlayState.manualAnimationTrigger, overlayState.manualAnimation, sounds, overlayConfig]);
 
   // --- AUTOMATED EVENTS TRIGGER ---
   useEffect(() => {
     if (viewMode !== "LIVE" || !currentInn) return;
     const timeline = currentInn.timeline || [];
-
+    
     if (timeline.length > prevTimelineLength.current) {
       const lastBall = timeline[timeline.length - 1];
       let eventHandled = false;
@@ -363,7 +345,7 @@ export default function BroadcastLayer() {
         eventHandled = true;
         setAnimationType("WICKET");
         playOverlaySound("wicket");
-
+        
         setShowPopup(false);
         if (timerRef.current) clearTimeout(timerRef.current);
         timerRef.current = setTimeout(() => {
@@ -396,9 +378,10 @@ export default function BroadcastLayer() {
         prevOver.current = currentInn.over;
       }
     }
-
+    
     prevTimelineLength.current = timeline.length;
-  }, [currentInn, viewMode, sounds, overlayConfig, audioUnlocked]);
+    
+  }, [currentInn, viewMode, sounds, overlayConfig]);
 
   // --- COMPONENTS ---
 
@@ -621,10 +604,6 @@ export default function BroadcastLayer() {
 
       const fetchPlayerProfile = async () => {
         try {
-          console.log(
-            `🔍 Searching Global Players for Name: ${basePlayer.name}`,
-          );
-
           const playersRef = collection(db, "players");
           const q = query(
             playersRef,
@@ -635,10 +614,6 @@ export default function BroadcastLayer() {
           if (!querySnapshot.empty) {
             const globalData = querySnapshot.docs[0].data();
             setCareerStats(globalData);
-          } else {
-            console.warn(
-              `⚠️ No global player found with the name: ${basePlayer.name}`,
-            );
           }
         } catch (e) {
           console.error("❌ Error fetching player stats:", e);
@@ -861,16 +836,16 @@ export default function BroadcastLayer() {
 
   // 🔥 1. DEFINE MANUAL TOGGLES FIRST
   const manualCardActive =
-    isActive("SUMMARY_CARD") ||
-    isActive("TOSS_CARD") ||
-    isActive("INNINGS_BREAK_CARD") ||
-    isActive("RESULT_CARD");
+    isActiveView("SUMMARY_CARD") ||
+    isActiveView("TOSS_CARD") ||
+    isActiveView("INNINGS_BREAK_CARD") ||
+    isActiveView("RESULT_CARD");
 
-  const manualCardType = isActive("TOSS_CARD")
+  const manualCardType = isActiveView("TOSS_CARD")
     ? "TOSS"
-    : isActive("INNINGS_BREAK_CARD")
+    : isActiveView("INNINGS_BREAK_CARD")
       ? "INNINGS_BREAK"
-      : isActive("RESULT_CARD")
+      : isActiveView("RESULT_CARD")
         ? "RESULT"
         : "SUMMARY";
 
@@ -878,8 +853,8 @@ export default function BroadcastLayer() {
     showPopup ||
     manualCardActive ||
     overlayState.hideBottomScoreTicker ||
-    isActive("APP_TOURNAMENT_BANNER") ||
-    isActive("CUSTOM_AD_BANNERS") ||
+    isActiveView("APP_TOURNAMENT_BANNER") ||
+    isActiveView("CUSTOM_AD_BANNERS") ||
     ["TOSS", "INNINGS_BREAK", "RESULT"].includes(viewMode);
 
   if (viewMode === "LOADING")
@@ -905,41 +880,7 @@ export default function BroadcastLayer() {
       <div
         style={containerStyle}
         className="relative bg-transparent font-sans w-[1920px] h-[1080px]">
-        {/* CSS KEYFRAMES */}
-        <style>{`
-          .animate-marquee { animation: marquee 20s linear infinite; }
-          @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
-          @keyframes slamAndShake {
-            0% { transform: scale(3); opacity: 0; }
-            30% { transform: scale(0.9); opacity: 1; }
-            40% { transform: scale(1.1) rotate(-3deg); }
-            50% { transform: scale(0.95) rotate(3deg); }
-            60% { transform: scale(1.02) rotate(-1deg); }
-            100% { transform: scale(1) rotate(0deg); opacity: 1; }
-          }
-          @keyframes screenFlash {
-            0% { background: rgba(255,255,255,0); }
-            50% { background: rgba(255,255,255,0.25); }
-            100% { background: rgba(255,255,255,0); }
-          }
-          .animate-slamAndShake { animation: slamAndShake 0.6s cubic-bezier(0.25, 1, 0.5, 1) forwards; }
-          .animate-screenFlash { animation: screenFlash 0.6s ease-in-out; }
-        `}</style>
-
-        {/* 🔥 AUDIO UNLOCKER SCREEN */}
-        {!audioUnlocked && (
-          <div
-            onClick={handleUnlockAudio}
-            className="absolute inset-0 z-[9999] bg-black/90 flex flex-col items-center justify-center cursor-pointer pointer-events-auto backdrop-blur-sm">
-            <div className="bg-blue-600 hover:bg-blue-500 text-white font-black text-4xl px-12 py-6 rounded-full shadow-[0_0_50px_rgba(37,99,235,0.5)] transition-all transform hover:scale-105 flex items-center gap-4">
-              <span>🔊</span> CLICK TO ENABLE STREAM AUDIO
-            </div>
-            <p className="text-blue-300 font-bold uppercase tracking-widest mt-6 text-xl">
-              Required by browser to allow auto-playing sounds
-            </p>
-          </div>
-        )}
-
+        
         {/* --- 1. BACKGROUND STANDBY LAYER (Shown before match starts) --- */}
         {(viewMode === "NOT_FOUND" || viewMode === "WAITING") && (
           <div className="absolute inset-0 z-0 flex items-center justify-center bg-slate-900">
@@ -982,14 +923,14 @@ export default function BroadcastLayer() {
 
         {/* --- 3. TOURNAMENT BANNER (Highest Priority Fullscreen) --- */}
         <div
-          className={`absolute inset-0 w-[1920px] h-[1080px] overflow-hidden z-[500] transition-all duration-500 ${isActive("APP_TOURNAMENT_BANNER") ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}>
-          {isActive("APP_TOURNAMENT_BANNER") && (
+          className={`absolute inset-0 w-[1920px] h-[1080px] overflow-hidden z-[500] transition-all duration-500 ${isActiveView("APP_TOURNAMENT_BANNER") ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}>
+          {isActiveView("APP_TOURNAMENT_BANNER") && (
             <TournamentBanner tournamentId={tournamentId} />
           )}
         </div>
 
-        {isActive("CUSTOM_AD_BANNERS") && <CustomAdBannersFullscreen />}
-        {isActive("CUSTOM_MSG") && <CustomAlert />}
+        {isActiveView("CUSTOM_AD_BANNERS") && <CustomAdBannersFullscreen />}
+        {isActiveView("CUSTOM_MSG") && <CustomAlert />}
 
         {/* EVENT FLASHES & SHOCKWAVES */}
         {animationType === "WICKET" && (
@@ -1017,8 +958,8 @@ export default function BroadcastLayer() {
           />
         </div>
 
-        {overlayConfig.showAppLogo && overlayConfig.appLogo && (
-          <div className="absolute top-8 right-0 animate-slide-in flex items-center justify-center">
+        {overlayState.showAppLogo && (overlayState.appLogo || globalBranding?.appLogo) && (
+          <div className="absolute top-8 left-8 animate-slide-in flex items-center justify-center">
             {/* ✨ THE GLOWING BACKGROUND AURA */}
             <div
               className="absolute w-24 h-24 bg-blue-500 rounded-full blur-2xl opacity-60"
@@ -1026,16 +967,16 @@ export default function BroadcastLayer() {
                 animation: "pulseGlow 2.5s infinite alternate ease-in-out",
               }}></div>
 
-            {/* 🔄 THE ROTATING LOGO */}
+            {/* 🔄 THE ROTATING LOGO: Prioritize Custom Match Logo, fallback to Global Logo */}
             <img
-              src={overlayConfig.appLogo}
+              src={overlayState.appLogo || globalBranding?.appLogo}
               alt="Broadcast Logo"
               className="relative h-16 w-auto object-contain drop-shadow-xl"
               style={{ animation: "spin3D 8s linear infinite" }}
             />
           </div>
         )}
-        {activeViews.includes("WIN_PREDICTOR") && (
+        {isActiveView("WIN_PREDICTOR") && (
           <div className="absolute bottom-[180px] left-1/2 -translate-x-1/2 w-[600px] z-40">
             <WinPredictor match={match} />
           </div>
@@ -1048,22 +989,22 @@ export default function BroadcastLayer() {
         </div>
 
         {/* TOP LEFT */}
-        <div className="absolute top-[30px] left-[50px] flex flex-col gap-6 items-start z-40">
-          {isActive("MINI_SCORE") && <MiniScorebug />}
+        <div className="absolute top-[150px] left-[50px] flex flex-col gap-6 items-start z-40">
+          {isActiveView("MINI_SCORE") && <MiniScorebug />}
         </div>
 
         {/* TOP RIGHT */}
-        <div className="absolute top-[30px] left-[50px] flex flex-col gap-6 items-end z-40">
-          {isActive("SPONSOR_BUG") && <SponsorBug />}
-          {isActive("SQUAD_A") && <SquadCard teamSide="A" />}
-          {isActive("SQUAD_B") && <SquadCard teamSide="B" />}
+        <div className="absolute top-[30px] right-[50px] flex flex-col gap-6 items-end z-40">
+          {isActiveView("SPONSOR_BUG") && <SponsorBug />}
+          {isActiveView("SQUAD_A") && <SquadCard teamSide="A" />}
+          {isActiveView("SQUAD_B") && <SquadCard teamSide="B" />}
         </div>
 
         {/* BOTTOM LEFT */}
         <div className="absolute bottom-[250px] left-[50px] flex flex-col justify-end gap-6 items-start z-40">
-          {isActive("ORGANIZER") && <OrganizerCard />}
-          {isActive("PARTNERSHIP") && <PartnershipCard />}
-          {isActive("SPOTLIGHT") && <PlayerSpotlight />}
+          {isActiveView("ORGANIZER") && <OrganizerCard />}
+          {isActiveView("PARTNERSHIP") && <PartnershipCard />}
+          {isActiveView("SPOTLIGHT") && <PlayerSpotlight />}
         </div>
 
         {/* BOTTOM TICKER */}
@@ -1085,32 +1026,48 @@ export default function BroadcastLayer() {
           </div>
         )}
 
-        {/* 🔥 APP LOGO ANIMATION STYLES RESTORED HERE */}
-        <style>
-          {`
-            /* Slide in when first turned on */
-            @keyframes slideIn {
-              from { transform: translateX(150px); opacity: 0; }
-              to { transform: translateX(0); opacity: 1; }
-            }
-            .animate-slide-in {
-              animation: slideIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-            }
+        {/* CSS KEYFRAMES */}
+        <style>{`
+          .animate-marquee { animation: marquee 20s linear infinite; }
+          @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
+          @keyframes slamAndShake {
+            0% { transform: scale(3); opacity: 0; }
+            30% { transform: scale(0.9); opacity: 1; }
+            40% { transform: scale(1.1) rotate(-3deg); }
+            50% { transform: scale(0.95) rotate(3deg); }
+            60% { transform: scale(1.02) rotate(-1deg); }
+            100% { transform: scale(1) rotate(0deg); opacity: 1; }
+          }
+          @keyframes screenFlash {
+            0% { background: rgba(255,255,255,0); }
+            50% { background: rgba(255,255,255,0.25); }
+            100% { background: rgba(255,255,255,0); }
+          }
+          .animate-slamAndShake { animation: slamAndShake 0.6s cubic-bezier(0.25, 1, 0.5, 1) forwards; }
+          .animate-screenFlash { animation: screenFlash 0.6s ease-in-out; }
+          
+          /* Slide in when first turned on */
+          @keyframes slideIn {
+            from { transform: translateX(150px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+          }
+          .animate-slide-in {
+            animation: slideIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+          }
 
-            /* 1. The Glowing Aura Animation */
-            @keyframes pulseGlow {
-              0% { transform: scale(0.8); opacity: 0.4; background-color: #3b82f6; } /* Blue */
-              100% { transform: scale(1.2); opacity: 0.8; background-color: #8b5cf6; } /* Purple */
-            }
+          /* 1. The Glowing Aura Animation */
+          @keyframes pulseGlow {
+            0% { transform: scale(0.8); opacity: 0.4; background-color: #3b82f6; } /* Blue */
+            100% { transform: scale(1.2); opacity: 0.8; background-color: #8b5cf6; } /* Purple */
+          }
 
-            /* 2. The 3D Coin-Spin Animation */
-            @keyframes spin3D {
-              0% { transform: rotateY(0deg); }
-              10% { transform: rotateY(360deg); } /* Fast spin for 10% of the time */
-              100% { transform: rotateY(360deg); } /* Pause for the rest of the time */
-            }
-          `}
-        </style>
+          /* 2. The 3D Coin-Spin Animation */
+          @keyframes spin3D {
+            0% { transform: rotateY(0deg); }
+            10% { transform: rotateY(360deg); } /* Fast spin for 10% of the time */
+            100% { transform: rotateY(360deg); } /* Pause for the rest of the time */
+          }
+        `}</style>
       </div>
     </div>
   );

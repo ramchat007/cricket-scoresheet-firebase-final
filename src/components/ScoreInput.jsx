@@ -3,12 +3,10 @@ import React, {
   useState,
   useCallback,
   useEffect,
-  useRef,
 } from "react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { doc, updateDoc, arrayUnion } from "firebase/firestore";
 import { db } from "../utils/firebase";
-// ✅ IMPORT THE FIXED FUNCTION
 import { quickAddPlayer } from "../utils/firestore";
 import MatchCorrectionModal from "./MatchCorrectionModal.jsx";
 import { getDeterministicCommentary } from "../utils/commentaryHelper";
@@ -19,8 +17,6 @@ import {
   Trophy,
   ArrowRightCircle,
   Menu,
-  Volume2, // Added icon for sound feedback
-  VolumeX,
 } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 
@@ -52,7 +48,7 @@ export default function ScoreInput({
   onStrikeChange,
   onConfirmBowler,
   onFinishMatch,
-  onSetOpeners, // ✅ Ensure this prop is passed from LiveScoring
+  onSetOpeners, 
 }) {
   const { theme, lightMode } = useTheme();
 
@@ -60,10 +56,9 @@ export default function ScoreInput({
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [newPlayerName, setNewPlayerName] = useState("");
 
-  // Feature #1: Openers State
   const [openerStriker, setOpenerStriker] = useState("");
   const [openerNonStriker, setOpenerNonStriker] = useState("");
-  const [addingOpenerRole, setAddingOpenerRole] = useState(null); // 'striker' or 'nonStriker'
+  const [addingOpenerRole, setAddingOpenerRole] = useState(null); 
   const [newOpenerName, setNewOpenerName] = useState("");
 
   const [extraType, setExtraType] = useState(null);
@@ -84,95 +79,23 @@ export default function ScoreInput({
   const [editStriker, setEditStriker] = useState(false);
   const [editNonStriker, setEditNonStriker] = useState(false);
   const [editBowler, setEditBowler] = useState(false);
-  const [inlineAddingRole, setInlineAddingRole] = useState(null); // 'striker', 'nonStriker', or 'bowler'
+  const [inlineAddingRole, setInlineAddingRole] = useState(null); 
   const [inlineNewName, setInlineNewName] = useState("");
 
   const [localOverlayDismissed, setLocalOverlayDismissed] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [aiComments, setAiComments] = useState({});
+  
+  // 🔥 ESCAPE HATCH STATE
   const [forceInningsComplete, setForceInningsComplete] = useState(false);
 
-  // 🔊 AUDIO SYSTEM
-  const [isMuted, setIsMuted] = useState(false);
-  const audioUnlocked = useRef(false);
-  const sounds = useRef({});
-
-  useEffect(() => {
-    // 🔥 1. Initialize inside useEffect to prevent React re-render memory leaks
-    // Using highly reliable FreeCodeCamp MP3s just to prove the system works
-    sounds.current = {
-      click: new Audio("/sounds/click.mp3"), // Short tap
-      wicket: new Audio(""), // Thump
-      four: new Audio(""), // Synth 1
-      six: new Audio(""), // Synth 2
-    };
-
-    sounds.current.click.volume = 0.4;
-    sounds.current.wicket.volume = 0.4;
-    sounds.current.four.volume = 0.4;
-    sounds.current.six.volume = 0.4;
-
-    // 🔥 2. The iOS / Mobile Safari Unlocker
-    const unlockAudio = () => {
-      if (audioUnlocked.current) return;
-      Object.values(sounds.current).forEach((audio) => {
-        // Play and immediately pause to unlock the audio context
-        const playPromise = audio.play();
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => {
-              audio.pause();
-              audio.currentTime = 0;
-            })
-            .catch(() => {});
-        }
-      });
-      audioUnlocked.current = true;
-      // Remove listeners once unlocked
-      document.removeEventListener("touchstart", unlockAudio);
-      document.removeEventListener("click", unlockAudio);
-    };
-
-    document.addEventListener("touchstart", unlockAudio, { once: true });
-    document.addEventListener("click", unlockAudio, { once: true });
-
-    return () => {
-      document.removeEventListener("touchstart", unlockAudio);
-      document.removeEventListener("click", unlockAudio);
-    };
+  // 🔥 HAPTIC FEEDBACK ONLY (Audio Removed)
+  const triggerFeedback = useCallback((type = "click") => {
+    if (navigator.vibrate) {
+      if (type === "wicket") navigator.vibrate([100, 50, 100]); // 3 pulses for Wicket
+      else if (type === "four" || type === "six") navigator.vibrate([50, 50, 50, 50]); // 4 pulses for Boundary
+      else navigator.vibrate(15); // Light tap for normal buttons
+    }
   }, []);
-
-  // 🔥 3. The Trigger Function
-  const triggerFeedback = useCallback(
-    (type = "click") => {
-      if (isMuted) return;
-
-      // Haptic feedback (Vibration)
-      if (navigator.vibrate) {
-        if (type === "wicket") navigator.vibrate([100, 50, 100]);
-        else if (type === "four" || type === "six")
-          navigator.vibrate([50, 50, 50, 50]);
-        else navigator.vibrate(15);
-      }
-
-      try {
-        const soundObj = sounds.current[type] || sounds.current.click;
-
-        // Reset audio to start so rapid clicks don't get ignored
-        soundObj.currentTime = 0;
-
-        const playPromise = soundObj.play();
-        if (playPromise !== undefined) {
-          playPromise.catch((error) =>
-            console.log("Browser Blocked Audio:", error),
-          );
-        }
-      } catch (e) {
-        console.log("Audio Engine Error:", e);
-      }
-    },
-    [isMuted],
-  );
 
   // --- DATA EXTRACTION ---
   const activeIndex = match?.currentInnings || 0;
@@ -183,7 +106,7 @@ export default function ScoreInput({
     setOpenerStriker("");
     setOpenerNonStriker("");
     setLocalOverlayDismissed(false);
-    setForceInningsComplete(false);
+    setForceInningsComplete(false); // Reset the escape hatch for the next innings
   }, [activeIndex]);
 
   const m = useMemo(() => {
@@ -244,10 +167,7 @@ export default function ScoreInput({
     let squadA = match?.teamASquad || match?.meta?.teamASquad || [];
     let squadB = match?.teamBSquad || match?.meta?.teamBSquad || [];
 
-    // If Squad B is empty, try to reconstruct it from the 1st innings stats
     if (squadB.length === 0 && match?.innings?.[0]) {
-      console.warn("⚠️ Squad B missing! Attempting reconstruction...");
-      // If Team B bowled in Innings 1, their names are in bowlerStats
       const inn1 = match.innings[0];
       const suspectedTeamBPlayers = !inn1WasTeamA
         ? Object.keys(inn1.batsmenStats || {})
@@ -280,13 +200,11 @@ export default function ScoreInput({
   const isTargetChased =
     isInning2 && matchContext.target && m.score >= matchContext.target;
 
-  const isInningsComplete =
-    forceInningsComplete || isAllOut || isOversDone || isTargetChased;
+  // Include the manual force override
+  const isInningsComplete = forceInningsComplete || isAllOut || isOversDone || isTargetChased;
   const isMatchOver = isInningsComplete && isInning2;
 
-  // ✅ Feature 1 Fix: Explicitly check for "Start of Innings" to ask for Openers
   const isStartOfInnings = m.over === 0 && m.overBallCount === 0;
-  // If we are at 0.0 overs, and NO batsmen are set, we need openers.
   const needOpeners =
     isStartOfInnings && (!strikerName || !nonStrikerName) && !isInningsComplete;
 
@@ -318,10 +236,10 @@ export default function ScoreInput({
   const handleSubmitBall = useCallback(
     async (runsVal) => {
       if (isSyncing) return;
-      // 🔥 AUDIO ROUTING BASED ON RUNS
       if (runsVal === 6) triggerFeedback("six");
       else if (runsVal === 4) triggerFeedback("four");
       else triggerFeedback("click");
+      
       setIsSyncing(true);
       try {
         const runsRan = parseInt(runsVal) || 0;
@@ -353,11 +271,10 @@ export default function ScoreInput({
         setIsSyncing(false);
       }
     },
-    [extraType, onBall, isSyncing],
+    [extraType, onBall, isSyncing, triggerFeedback],
   );
 
   // --- 🔴 TOSS SCREEN FIX ---
-  // If match exists but no toss winner is set, show Toss Modal
   if (match && !match.meta?.toss?.winner) {
     return (
       <div
@@ -397,7 +314,6 @@ export default function ScoreInput({
                   (tossWinner === match.meta.teamA && tossDecision === "Bat") ||
                   (tossWinner === match.meta.teamB && tossDecision === "Bowl");
 
-                // Initialize Innings Array
                 await updateDoc(
                   doc(
                     db,
@@ -457,12 +373,6 @@ export default function ScoreInput({
         <div className="py-4 px-4">
           <div
             className={`rounded-2xl p-3 ${theme.card} relative overflow-hidden shadow-sm border ${lightMode ? "border-gray-200" : "border-white/5"}`}>
-            {/* Audio Toggle Button placed subtly in the hero card */}
-            <button
-              onClick={() => setIsMuted(!isMuted)}
-              className="absolute top-3 right-3 opacity-30 hover:opacity-100 transition-opacity">
-              {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-            </button>
             <div className="flex justify-between items-end">
               <div>
                 <div
@@ -596,7 +506,7 @@ export default function ScoreInput({
               </div>
             ) : (
               <select
-                onClick={(e) => e.stopPropagation()} // 🔥 Stop Bubble
+                onClick={(e) => e.stopPropagation()} 
                 className={`w-full text-xs p-1 rounded ${lightMode ? "bg-gray-100" : "bg-black/20"}`}
                 value={strikerName}
                 onChange={(e) => {
@@ -1102,7 +1012,6 @@ export default function ScoreInput({
                         if (!newOpenerName.trim()) return;
                         setIsSyncing(true);
                         try {
-                          // 🔥 SAFE FALLBACK for Batting Team
                           let batTeamStr =
                             match.innings[activeIndex].battingTeam;
                           if (
@@ -1116,7 +1025,6 @@ export default function ScoreInput({
                           const isTeamABatting =
                             batTeamStr?.trim() === match?.meta?.teamA?.trim();
 
-                          // Since openers are always batters, we strictly use the batting side IDs
                           const teamId = isTeamABatting
                             ? match.meta.teamAId
                             : match.meta.teamBId;
@@ -1124,7 +1032,6 @@ export default function ScoreInput({
                           const tId =
                             match.tournamentId || match.meta.tournament;
 
-                          // ✅ Call quickAddPlayer
                           const newPlayer = await quickAddPlayer(
                             tId,
                             match.id,
@@ -1133,7 +1040,6 @@ export default function ScoreInput({
                             newOpenerName,
                           );
 
-                          // Assign to the correct dropdown
                           if (addingOpenerRole === "striker")
                             setOpenerStriker(newPlayer.name);
                           else setOpenerNonStriker(newPlayer.name);
@@ -1205,7 +1111,6 @@ export default function ScoreInput({
                   <Settings size={14} /> CONSOLE
                 </button>
               </div>
-              {/* --- END ESCAPE HATCH --- */}
             </div>
           </div>
         )}
@@ -1267,32 +1172,32 @@ export default function ScoreInput({
                       + Add New Player
                     </option>
                   </select>
-                  <button
-                    onClick={() => {
-                      if (needBatsman && incoming) {
-                        onNewBatsman(incoming);
-                        setIncoming("");
-                      } else if (needBowler && newBowler) {
-                        onConfirmBowler(newBowler);
-                        setNewBowler("");
-                      }
-                    }}
-                    className="w-full py-4 bg-teal-600 text-white font-bold rounded-xl uppercase tracking-widest active:scale-95 transition-transform">
-                    Confirm {needBatsman ? "Batsman" : "Bowler"}
-                  </button>
 
-                  {/* 🔥 NEW: END INNINGS ESCAPE HATCH (Only show if we need a batsman) */}
-                  {needBatsman && (
+                  {/* Buttons Container */}
+                  <div className="flex flex-col gap-3">
                     <button
                       onClick={() => {
-                        // This forces isInningsComplete to become true immediately,
-                        // which automatically closes the player selector and opens the End Innings modal!
-                        setForceInningsComplete(true);
+                        if (needBatsman && incoming) {
+                          onNewBatsman(incoming);
+                          setIncoming("");
+                        } else if (needBowler && newBowler) {
+                          onConfirmBowler(newBowler);
+                          setNewBowler("");
+                        }
                       }}
-                      className={`w-full py-3.5 border-2 border-red-500 text-red-500 font-bold rounded-xl uppercase tracking-widest active:scale-95 transition-all ${lightMode ? "bg-red-50 hover:bg-red-100" : "bg-red-500/10 hover:bg-red-500/20"}`}>
-                      All Out (End Innings)
+                      className="w-full py-4 bg-teal-600 text-white font-bold rounded-xl uppercase tracking-widest active:scale-95 transition-transform">
+                      Confirm {needBatsman ? "Batsman" : "Bowler"}
                     </button>
-                  )}
+
+                    {/* 🔥 END INNINGS ESCAPE HATCH (Only show if we need a batsman) */}
+                    {needBatsman && (
+                      <button
+                        onClick={() => setForceInningsComplete(true)}
+                        className={`w-full py-3.5 border-2 border-red-500 text-red-500 font-bold rounded-xl uppercase tracking-widest active:scale-95 transition-all ${lightMode ? "bg-red-50 hover:bg-red-100" : "bg-red-500/10 hover:bg-red-500/20"}`}>
+                        All Out (End Innings)
+                      </button>
+                    )}
+                  </div>
                 </>
               ) : (
                 /* QUICK ADD */
@@ -1327,7 +1232,6 @@ export default function ScoreInput({
                         try {
                           const isBattingSide = needBatsman;
 
-                          // 1. 🔥 SAFE FALLBACK: Determine exactly who is batting
                           let batTeamStr =
                             match.innings[activeIndex].battingTeam;
                           if (
@@ -1341,7 +1245,6 @@ export default function ScoreInput({
                           const isTeamABatting =
                             batTeamStr?.trim() === match?.meta?.teamA?.trim();
 
-                          // 2. Assign the correct ID and Side
                           let teamId, teamSide;
                           if (isBattingSide) {
                             teamId = isTeamABatting
@@ -1349,18 +1252,15 @@ export default function ScoreInput({
                               : match.meta.teamBId;
                             teamSide = isTeamABatting ? "A" : "B";
                           } else {
-                            // Adding a bowler (fielding team)
                             teamId = isTeamABatting
                               ? match.meta.teamBId
                               : match.meta.teamAId;
                             teamSide = isTeamABatting ? "B" : "A";
                           }
 
-                          // 3. Fallback for tournament ID just in case
                           const tId =
                             match.tournamentId || match.meta.tournament;
 
-                          // ✅ Call to fixed function
                           const newPlayer = await quickAddPlayer(
                             tId,
                             match.id,
@@ -1407,7 +1307,6 @@ export default function ScoreInput({
                   const newType = e.target.value;
                   setWicketType(newType);
 
-                  // 🔥 If they change away from runout, reset whoOut to striker automatically
                   if (newType !== "runout") {
                     setWhoOut("striker");
                   }
@@ -1564,14 +1463,10 @@ export default function ScoreInput({
                   <button
                     disabled={isSyncing}
                     onClick={async () => {
-                      // 1. Fire the sound immediately
                       triggerFeedback("wicket");
-
-                      // 2. Lock the UI so the component stays alive while the sound starts
                       setIsSyncing(true);
 
                       try {
-                        // 3. Process the wicket in the database
                         await onBall(
                           "W",
                           {
@@ -1590,11 +1485,10 @@ export default function ScoreInput({
                       } catch (e) {
                         console.error("Wicket Sync Error:", e);
                       } finally {
-                        // 4. Tear down the modal AFTER the database/audio threads have executed
                         setIsWicketMenuOpen(false);
                         setExtraType(null);
                         setFielderName("");
-                        setWhoOut("striker"); // Reset to default
+                        setWhoOut("striker"); 
                         setIsSyncing(false);
                       }
                     }}
