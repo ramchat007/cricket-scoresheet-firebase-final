@@ -438,13 +438,13 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
     }
   };
 
-  const runScoringAction = async (actionFn, queuePayload = null) => {
+  const runScoringAction = (actionFn, queuePayload = null) => {
     performOptimisticUpdate((s) => {
       return actionFn(s);
     });
 
     try {
-      await ballTransaction(tournamentId, matchId, actionFn);
+      ballTransaction(tournamentId, matchId, actionFn);
 
       if (queuePayload?.actionId) {
         markActionProcessed(queuePayload.actionId);

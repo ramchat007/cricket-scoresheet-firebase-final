@@ -381,6 +381,8 @@ export default function TournamentSettings({
           </button>
         </div>
       </form>
+
+      
     </div>
   );
 }

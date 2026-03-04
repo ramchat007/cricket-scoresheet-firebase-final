@@ -46,6 +46,8 @@ import {
   LayoutGrid,
   List,
 } from "lucide-react";
+import * as XLSX from "xlsx";
+import { Download } from "lucide-react";
 
 // 2. Cropper Import
 import Cropper from "react-easy-crop";
@@ -192,6 +194,61 @@ export default function TournamentPlayersView() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleExportToExcel = () => {
+    if (processedPlayers.length === 0) {
+      showToast("No players available to export!", "error");
+      return;
+    }
+
+    // Map through the accurately calculated processedPlayers
+    const formattedData = processedPlayers.map((player, index) => {
+      const stats = player.calculatedStats || {};
+      const tData = player.tournamentData?.[tournamentId] || {};
+
+      // Calculate advanced metrics
+      const strikeRate =
+        stats.ballsFaced > 0
+          ? ((stats.runs / stats.ballsFaced) * 100).toFixed(2)
+          : "0.00";
+      const oversBowled = stats.ballsBowled / 6;
+      const economy =
+        oversBowled > 0
+          ? (stats.runsConceded / oversBowled).toFixed(2)
+          : "0.00";
+
+      return {
+        "Sr No.": index + 1,
+        "Player Name": player.name || "N/A",
+        Role: player.activeRole || "N/A",
+        "Batting Style": tData.battingStyle || player.battingStyle || "N/A",
+        "Bowling Style": tData.bowlingStyle || player.bowlingStyle || "N/A",
+        Mobile: player.mobile || "N/A"
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(formattedData);
+    const workbook = XLSX.utils.book_new();
+
+    // Auto-size columns for better readability in Excel
+    const colWidths = [
+      { wch: 8 }, // Sr No
+      { wch: 25 }, // Name
+      { wch: 15 }, // Role
+      { wch: 18 }, // Batting
+      { wch: 18 }, // Bowling
+      { wch: 15 }, // Mobile
+    ];
+    worksheet["!cols"] = colWidths;
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Tournament Stats");
+
+    // Dynamic filename based on the current tournament URL
+    const cleanTournamentName = tournamentId
+      ? tournamentId.replace(/-/g, "_")
+      : "Tournament";
+    XLSX.writeFile(workbook, `${cleanTournamentName}_Players_Stats.xlsx`);
   };
 
   useEffect(() => {
@@ -963,11 +1020,23 @@ export default function TournamentPlayersView() {
             )}
 
             {user && (
-              <button
-                onClick={openAddModal}
-                className="bg-gradient-to-r from-teal-600 to-indigo-600 hover:from-teal-500 hover:to-indigo-500 text-white p-3.5 px-6 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
-                <Plus size={16} /> Add Player
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleExportToExcel}
+                  className={`p-3.5 px-5 rounded-xl font-black text-sm uppercase tracking-widest shadow-sm active:scale-95 transition-all flex items-center justify-center gap-2 border ${
+                    lightMode
+                      ? "bg-white text-green-600 border-green-200 hover:bg-green-50"
+                      : "bg-green-900/20 text-green-400 border-green-500/30 hover:bg-green-900/40"
+                  }`}>
+                  <Download size={16} /> Export
+                </button>
+
+                <button
+                  onClick={openAddModal}
+                  className="bg-gradient-to-r from-teal-600 to-indigo-600 hover:from-teal-500 hover:to-indigo-500 text-white p-3.5 px-6 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
+                  <Plus size={16} /> Add Player
+                </button>
+              </div>
             )}
           </div>
         </div>

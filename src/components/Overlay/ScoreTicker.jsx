@@ -312,7 +312,7 @@ export default function ScoreTicker({ match }) {
 
                 {/* 5. Timeline (Ball by Ball with Dynamic Sizing) */}
                 <div
-                  className={`flex items-center px-6 border-l border-slate-700 bg-slate-900 justify-start ${timelineGap} min-w-[250px] max-w-[320px] overflow-hidden`}>
+                  className={`flex items-center px-6 border-l border-slate-700 bg-slate-900 justify-start ${timelineGap} min-w-[250px] max-w-[320px] mr-5 overflow-hidden`}>
                   {timeline.map((b, i) => {
                     let text = b.runs === 0 ? "•" : b.runs;
                     let bubbleClass =

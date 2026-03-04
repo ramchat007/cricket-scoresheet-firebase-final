@@ -234,13 +234,13 @@ export default function ScoreInput({
 
   // --- SUBMIT HANDLER ---
   const handleSubmitBall = useCallback(
-    async (runsVal) => {
+    (runsVal) => {
       if (isSyncing) return;
       if (runsVal === 6) triggerFeedback("six");
       else if (runsVal === 4) triggerFeedback("four");
       else triggerFeedback("click");
       
-      setIsSyncing(true);
+      //setIsSyncing(true);
       try {
         const runsRan = parseInt(runsVal) || 0;
         const isWide = extraType === "WD";
@@ -261,7 +261,7 @@ export default function ScoreInput({
           isLegBye,
           isWicket: false,
         };
-        await onBall(code, extraData, runsRan);
+        onBall(code, extraData, runsRan);
         setExtraType(null);
         setLocalOverlayDismissed(false);
       } catch (e) {
