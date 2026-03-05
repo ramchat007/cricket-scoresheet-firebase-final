@@ -84,6 +84,7 @@ export default function TournamentSettings({
       liveStreamUrl: tournament.liveStreamUrl || "",
       startDate: tournament.startDate || "",
       endDate: tournament.endDate || "",
+      maxPlayers: tournament.maxPlayers || "",
     });
 
     const isOwner = tournament.ownerId === user.uid;
@@ -110,6 +111,7 @@ export default function TournamentSettings({
         liveStreamUrl: formData.liveStreamUrl,
         startDate: formData.startDate,
         endDate: formData.endDate,
+        maxPlayers: formData.maxPlayers ? Number(formData.maxPlayers) : null,
         lastUpdated: new Date().toISOString(),
       });
       alert("✅ Tournament Settings Updated!");
@@ -316,6 +318,25 @@ export default function TournamentSettings({
             />
           </div>
         </div>
+        <div>
+          <label
+            className={`block text-[10px] font-bold uppercase mb-1 text-teal-500`}>
+            Max Registrations (Limit)
+          </label>
+          <input
+            type="number"
+            placeholder="e.g. 80 (Leave blank for unlimited)"
+            value={formData.maxPlayers}
+            onChange={(e) =>
+              setFormData({ ...formData, maxPlayers: e.target.value })
+            }
+            className={`w-full text-sm p-3 rounded-xl outline-none transition-colors border focus:border-teal-500 ${
+              lightMode
+                ? "bg-gray-50 border-gray-200 text-gray-900 focus:bg-white"
+                : "bg-black/40 border-white/10 text-white"
+            }`}
+          />
+        </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label
@@ -381,8 +402,6 @@ export default function TournamentSettings({
           </button>
         </div>
       </form>
-
-      
     </div>
   );
 }

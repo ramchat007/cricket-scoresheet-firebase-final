@@ -19,6 +19,7 @@ export default function CreateTournament() {
   // Auction Constraint States (Removed basePrice and bidIncrement)
   const [minSquadSize, setMinSquadSize] = useState(11);
   const [maxSquadSize, setMaxSquadSize] = useState(15);
+  const [maxPlayers, setMaxPlayers] = useState("");
 
   // Redirect if not logged in
   if (!user) {
@@ -59,6 +60,7 @@ export default function CreateTournament() {
           minSquadSize: Number(minSquadSize),
           maxSquadSize: Number(maxSquadSize),
           // ✅ Values now handled by global defaults or auction-specific settings later
+          maxPlayers: maxPlayers ? Number(maxPlayers) : null,
           createdAt: new Date().toISOString(),
         },
         user.uid,
@@ -154,6 +156,18 @@ export default function CreateTournament() {
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
                   required
+                />
+              </div>
+            </div>
+            <div>
+              <label className={labelClass}>Max Registrations (Limit)</label>
+              <div className="relative">
+                <input
+                  type="number"
+                  className={inputClass}
+                  placeholder="e.g. 80 (Leave blank for unlimited)"
+                  value={maxPlayers}
+                  onChange={(e) => setMaxPlayers(e.target.value)}
                 />
               </div>
             </div>

@@ -130,7 +130,12 @@ export default function GlobalPlayerRegistration() {
     role: "All-Rounder",
     battingStyle: "Right Hand Bat",
     bowlingStyle: "Right Arm Medium",
+    tshirtSize: "M",
   });
+
+  const [isRegistrationClosed, setIsRegistrationClosed] = useState(false);
+  const [currentRegCount, setCurrentRegCount] = useState(0);
+  const [maxPlayersLimit, setMaxPlayersLimit] = useState(null);
 
   const [photoBase64, setPhotoBase64] = useState("");
   const [paymentBase64, setPaymentBase64] = useState("");
@@ -148,6 +153,62 @@ export default function GlobalPlayerRegistration() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("idle");
   const [notification, setNotification] = useState(null);
+
+  useEffect(() => {
+    const fetchTournamentDetails = async () => {
+      if (!tournamentId) return;
+
+      try {
+        const tDocRef = doc(db, "tournaments", tournamentId);
+        const tDocSnap = await getDoc(tDocRef);
+
+        if (tDocSnap.exists()) {
+          const data = tDocSnap.data();
+          setTournamentName(data.name);
+
+          // 🟢 NEW: Read the max limit from the database (if it exists)
+          if (data.maxPlayers) {
+            setMaxPlayersLimit(Number(data.maxPlayers));
+          }
+        } else {
+          setTournamentName(tournamentId.replace(/-/g, " "));
+        }
+      } catch (error) {
+        console.error("Failed to fetch tournament name:", error);
+      }
+    };
+
+    fetchTournamentDetails();
+  }, [tournamentId]);
+
+  // 🟢 SMART LIMIT CHECKER
+  useEffect(() => {
+    const checkRegistrationLimit = async () => {
+      // Only run the count if this specific tournament actually has a limit set in the DB
+      if (!tournamentId || !maxPlayersLimit) return;
+
+      try {
+        const playersRef = collection(db, "players");
+        const q = query(
+          playersRef,
+          where("registeredTournaments", "array-contains", tournamentId),
+        );
+        const snapshot = await getDocs(q);
+        const count = snapshot.size;
+
+        setCurrentRegCount(count);
+
+        // Dynamically check against the database limit
+        if (count >= maxPlayersLimit) {
+          setIsRegistrationClosed(true);
+        }
+      } catch (error) {
+        console.error("Error checking player count:", error);
+      }
+    };
+
+    checkRegistrationLimit();
+  }, [tournamentId, maxPlayersLimit]); // 🟢 Re-runs if the limit is loaded
 
   const showToast = (message, type = "success") => {
     setNotification({ message, type });
@@ -226,6 +287,7 @@ export default function GlobalPlayerRegistration() {
       role: playerData.role,
       battingStyle: playerData.battingStyle || "Right Hand Bat",
       bowlingStyle: playerData.bowlingStyle || "Right Arm Medium",
+      tshirtSize: playerData.tshirtSize || "M", // 🟢 NEW FIELD
     });
     setPhotoBase64(playerData.photoURL || "");
     setPaymentBase64(playerData.paymentScreenshotURL || "");
@@ -273,6 +335,7 @@ export default function GlobalPlayerRegistration() {
             role: formData.role || "All-Rounder",
             battingStyle: formData.battingStyle || "Right Hand Bat",
             bowlingStyle: formData.bowlingStyle || "Right Arm Medium",
+            tshirtSize: formData.tshirtSize,
             photoURL: photoBase64,
             paymentScreenshotURL: paymentBase64,
             updatedAt: isoDate,
@@ -312,6 +375,7 @@ export default function GlobalPlayerRegistration() {
                   role: formData.role || "All-Rounder",
                   battingStyle: formData.battingStyle || "Right Hand Bat",
                   bowlingStyle: formData.bowlingStyle || "Right Arm Medium",
+                  tshirtSize: formData.tshirtSize,
                   photoURL: photoBase64 || "",
                   paymentScreenshotURL: paymentBase64 || "",
                   registeredAt: isoDate,
@@ -345,6 +409,7 @@ export default function GlobalPlayerRegistration() {
               role: formData.role || "All-Rounder",
               battingStyle: formData.battingStyle || "Right Hand Bat",
               bowlingStyle: formData.bowlingStyle || "Right Arm Medium",
+              tshirtSize: formData.tshirtSize,
               photoURL: photoBase64 || "",
               paymentScreenshotURL: paymentBase64 || "",
               registeredAt: isoDate,
@@ -466,6 +531,40 @@ export default function GlobalPlayerRegistration() {
           <Link
             to="/"
             className={`block text-xs font-bold uppercase tracking-widest transition-colors ${theme.sub} hover:text-teal-500`}>
+            Back to Home
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // 🟢 NEW: REGISTRATION CLOSED VIEW
+  if (isRegistrationClosed && !isEditing) {
+    return (
+      <div
+        className={`min-h-screen flex items-center justify-center p-4 font-sans ${theme.bg}`}>
+        <div
+          className={`border p-8 rounded-3xl max-w-md w-full text-center shadow-2xl animate-in zoom-in-95 ${theme.card}`}>
+          <div className="w-20 h-20 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6 border border-red-500/20">
+            <X size={40} strokeWidth={3} />
+          </div>
+          <h2
+            className={`text-2xl font-black mb-2 uppercase tracking-tight italic ${theme.text}`}>
+            Registration Closed
+          </h2>
+          <p className={`mb-6 text-sm font-medium ${theme.sub}`}>
+            We have reached our maximum capacity of {maxPlayersLimit} players
+            for this tournament.
+          </p>
+          <div
+            className={`p-4 rounded-xl mb-8 border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
+            <p className="text-xs font-bold uppercase tracking-widest text-teal-500">
+              Thank you for the overwhelming response!
+            </p>
+          </div>
+          <Link
+            to="/"
+            className={`block w-full font-bold py-4 rounded-xl transition-all mb-4 text-xs uppercase tracking-widest ${theme.btnBase}`}>
             Back to Home
           </Link>
         </div>
@@ -699,6 +798,27 @@ export default function GlobalPlayerRegistration() {
                   <option>Left Arm Fast</option>
                   <option>Left Arm Spin</option>
                   <option>None</option>
+                </select>
+              </div>
+
+              {/* 🟢 NEW: T-SHIRT SIZE FIELD */}
+              <div className="relative mt-4">
+                <span
+                  className={`absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase tracking-widest ${theme.sub}`}>
+                  Jersey Size
+                </span>
+                <select
+                  className={`${inputClass} text-xs pl-28`}
+                  value={formData.tshirtSize}
+                  onChange={(e) =>
+                    setFormData({ ...formData, tshirtSize: e.target.value })
+                  }>
+                  <option value="S">S (36)</option>
+                  <option value="M">M (38)</option>
+                  <option value="L">L (40)</option>
+                  <option value="XL">XL (42)</option>
+                  <option value="XXL">XXL (44)</option>
+                  <option value="3XL">3XL (46)</option>
                 </select>
               </div>
             </div>

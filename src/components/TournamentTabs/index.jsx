@@ -426,7 +426,7 @@ export default function TournamentTabs({
                   tournamentId={tournamentId}
                 />
               )}
-              {canEdit && (
+              {isOwner && (
                 <TournamentAccessManager
                   tournamentData={tournamentData}
                   tournamentId={tournamentId}

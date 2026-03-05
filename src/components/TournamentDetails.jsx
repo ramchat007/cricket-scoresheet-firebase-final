@@ -10,6 +10,8 @@ import {
   onSnapshot,
   query,
   orderBy,
+  where,
+  getCountFromServer,
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { useAuth } from "../hooks/useAuth";
@@ -97,6 +99,7 @@ export default function TournamentDetails() {
   const [tournamentTeams, setTournamentTeams] = useState([]);
   const [tournamentName, setTournamentName] = useState("");
   const [matches, setMatches] = useState([]);
+  const [playerCount, setPlayerCount] = useState(0);
 
   // Added separate state for stream URL to ensure it updates
   const [streamUrl, setStreamUrl] = useState("");
@@ -106,6 +109,29 @@ export default function TournamentDetails() {
 
   // Toggle for showing the scheduler
   const [showScheduler, setShowScheduler] = useState(false);
+
+  /* --------------------------------------------
+     Load Registered Player Count (Real-time check)
+     --------------------------------------------- */
+  useEffect(() => {
+    if (!id) return;
+
+    const fetchPlayerCount = async () => {
+      try {
+        const playersRef = collection(db, "players");
+        const q = query(
+          playersRef,
+          where("registeredTournaments", "array-contains", id),
+        );
+        const snapshot = await getCountFromServer(q);
+        setPlayerCount(snapshot.data().count);
+      } catch (error) {
+        console.error("Error loading player count:", error);
+      }
+    };
+
+    fetchPlayerCount();
+  }, [id]);
 
   /* --------------------------------------------
      Load tournament + permissions
@@ -321,15 +347,31 @@ export default function TournamentDetails() {
               {tournamentData?.name}
             </h1>
             <div
-              className={`text-sm font-bold mt-3 flex items-center gap-3 uppercase tracking-wide ${theme.sub}`}>
+              className={`text-sm font-bold mt-3 flex flex-wrap items-center gap-3 uppercase tracking-wide ${theme.sub}`}>
               <span className="flex items-center gap-1">
-                <Users size={16} /> {tournamentTeams.length} Teams
+                <Shield size={16} /> {tournamentTeams.length} Teams
               </span>
               <span
-                className={`w-1.5 h-1.5 rounded-full ${lightMode ? "bg-gray-300" : "bg-slate-700"}`}></span>
+                className={`hidden sm:block w-1.5 h-1.5 rounded-full ${lightMode ? "bg-gray-300" : "bg-slate-700"}`}></span>
               <span className="flex items-center gap-1">
                 <Trophy size={16} /> {matches.length} Matches
               </span>
+              <span
+                className={`hidden sm:block w-1.5 h-1.5 rounded-full ${lightMode ? "bg-gray-300" : "bg-slate-700"}`}></span>
+
+              {/* 🟢 NEW: Player Count Link */}
+              <button
+                onClick={() => navigate(`/view-players/${id}`)}
+                className={`flex items-center gap-1 hover:text-teal-500 transition-colors cursor-pointer ${
+                  canEdit || isOwner ? "" : "pointer-events-none" // Only clickable if admin
+                }`}
+                title={
+                  canEdit || isOwner
+                    ? "View Registered Players"
+                    : "Total Players"
+                }>
+                <Users size={16} /> {playerCount} Players
+              </button>
             </div>
           </div>
 
