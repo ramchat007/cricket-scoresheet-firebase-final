@@ -8,10 +8,13 @@ import {
   where,
   runTransaction,
   arrayUnion,
+  deleteDoc, // 🟢 NEW
+  writeBatch, // 🟢 NEW
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { listGlobalPlayers } from "../utils/firestore";
 import { useTheme } from "../context/ThemeContext";
+import { Trash2 } from "lucide-react"; // 🟢 NEW
 
 // --- UTILITY: COMPRESS IMAGE TO BASE64 ---
 const compressImage = (file, maxWidth = 400) => {
@@ -44,6 +47,7 @@ const OwnerAssignmentForm = ({
   tournamentId,
   onSave,
   onCancel,
+  onDelete, // 🟢 NEW PROP
 }) => {
   const { theme, lightMode } = useTheme();
   const [mode, setMode] = useState("existing");
@@ -64,7 +68,7 @@ const OwnerAssignmentForm = ({
   const [isPlayer, setIsPlayer] = useState(team?.isOwnerPlaying || false);
   const [playerRole, setPlayerRole] = useState("All-Rounder");
 
-  // ✅ NEW: Toggle to filter owners by this tournament
+  // Toggle to filter owners by this tournament
   const [tournamentOnly, setTournamentOnly] = useState(false);
 
   // --- HANDLER: Compress & Set State ---
@@ -103,7 +107,7 @@ const OwnerAssignmentForm = ({
     });
   };
 
-  // ✅ FILTER GLOBAL PLAYERS
+  // FILTER GLOBAL PLAYERS
   const filteredOwners = useMemo(() => {
     return globalPlayers.filter((p) => {
       let matchesTourney = true;
@@ -243,7 +247,7 @@ const OwnerAssignmentForm = ({
               ))}
             </select>
 
-            {/* ✅ NEW: Checkbox to filter the dropdown list */}
+            {/* Checkbox to filter the dropdown list */}
             <label
               className={`flex items-center gap-2 cursor-pointer text-[10px] font-bold ${theme.sub}`}>
               <input
@@ -305,15 +309,33 @@ const OwnerAssignmentForm = ({
           </div>
         </div>
       </div>
+      
+      {/* 🟢 MODIFIED FOOTER ACTIONS (Added Delete) */}
       <div
-        className={`flex gap-3 pt-4 border-t ${lightMode ? "border-gray-200" : "border-gray-800"}`}>
+        className={`flex gap-2 pt-4 border-t ${lightMode ? "border-gray-200" : "border-gray-800"}`}>
+        
+        {team?.id && (
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm("⚠️ Delete this team and release its players back into the auction pool?")) {
+                onDelete(team.id);
+              }
+            }}
+            className={`flex items-center justify-center p-3 rounded-lg transition-colors border ${lightMode ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100" : "bg-red-900/20 text-red-500 border-red-900/50 hover:bg-red-900/40"}`}
+            title="Delete Team"
+          >
+            <Trash2 size={18} />
+          </button>
+        )}
+
         <button
           type="button"
           onClick={onCancel}
-          className={`flex-1 font-bold rounded-lg transition-colors ${
+          className={`flex-1 font-bold rounded-lg transition-colors border ${
             lightMode
-              ? "text-gray-500 hover:bg-gray-100"
-              : "text-gray-400 hover:bg-gray-800"
+              ? "text-gray-600 bg-gray-100 border-gray-200 hover:bg-gray-200"
+              : "text-gray-300 bg-gray-800 border-gray-700 hover:bg-gray-700"
           }`}>
           Cancel
         </button>
@@ -529,6 +551,80 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
     }
   };
 
+  // 🟢 NEW: HANDLE INDIVIDUAL TEAM DELETE
+  const handleDeleteTeam = async (teamId) => {
+    setProcessing(true);
+    try {
+      // 1. Delete Team Doc
+      await deleteDoc(doc(db, `tournaments/${tournamentId}/teams`, teamId));
+
+      // 2. Release associated players via batch
+      const apRef = collection(db, `tournaments/${tournamentId}/auctionPlayers`);
+      const q = query(apRef, where("teamId", "==", teamId));
+      const snap = await getDocs(q);
+
+      const batch = writeBatch(db);
+      snap.forEach((d) => {
+        const pData = d.data();
+        if (pData.isOwner) {
+          // Dynamically created owner-players should be removed entirely
+          batch.delete(d.ref);
+        } else {
+          // Regular players go back to the unsold/pending pool
+          batch.update(d.ref, {
+            status: "PENDING",
+            teamId: null,
+            soldPrice: 0,
+          });
+        }
+      });
+      await batch.commit();
+
+      setEditingTeam(null);
+      await fetchData();
+    } catch (error) {
+      alert("Failed to delete team: " + error.message);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // 🟢 NEW: HANDLE MASTER RESET (Delete All Teams & Release All Players)
+  const handleResetAllTeams = async () => {
+    if (!window.confirm("🚨 DANGER ZONE: This will delete ALL teams and reset ALL players back to the auction pool. This action CANNOT BE UNDONE. Are you absolutely sure?")) return;
+    
+    setLoading(true);
+    try {
+      const batch = writeBatch(db);
+
+      // 1. Delete all teams
+      teams.forEach((t) => {
+        batch.delete(doc(db, `tournaments/${tournamentId}/teams`, t.id));
+      });
+
+      // 2. Release all auction players
+      auctionPlayers.forEach((p) => {
+        const pRef = doc(db, `tournaments/${tournamentId}/auctionPlayers`, p.id);
+        if (p.isOwner) {
+          batch.delete(pRef); // Remove owners that were added as players
+        } else {
+          batch.update(pRef, {
+            status: "PENDING",
+            teamId: null,
+            soldPrice: 0,
+          });
+        }
+      });
+
+      await batch.commit();
+      await fetchData(); // Refresh entirely
+    } catch (error) {
+      alert("Failed to reset teams: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const borderClass = lightMode ? "border-gray-200" : "border-white/5";
 
   return (
@@ -541,7 +637,7 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
             Teams & Purse Management
           </h2>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-2 md:gap-3 flex-wrap">
           <button
             onClick={() => window.location.reload()}
             className={`px-4 py-2 text-[10px] font-bold border rounded-xl transition-colors ${
@@ -551,6 +647,21 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
             }`}>
             Refresh
           </button>
+
+          {/* 🟢 NEW: Reset All Button */}
+          {teams.length > 0 && (
+            <button
+              onClick={handleResetAllTeams}
+              className={`px-4 py-2 text-[10px] font-bold border rounded-xl transition-colors ${
+                lightMode
+                  ? "text-red-600 border-red-200 hover:bg-red-50"
+                  : "text-red-500 border-red-500/30 hover:bg-red-500/10"
+              }`}
+            >
+              Reset Teams Data
+            </button>
+          )}
+
           <button
             onClick={() => setEditingTeam({ id: null, purse: 10000 })}
             className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black uppercase rounded-xl shadow-lg transition-all active:scale-95">
@@ -691,15 +802,16 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
             className={`${theme.card} border ${borderClass} w-full max-w-md rounded-2xl shadow-2xl overflow-hidden`}>
             {processing ? (
               <div className="p-12 text-center text-teal-500 animate-pulse font-black uppercase text-xs tracking-widest">
-                Saving Changes...
+                Processing Action...
               </div>
             ) : (
               <OwnerAssignmentForm
                 team={editingTeam}
                 globalPlayers={globalPlayers}
-                tournamentId={tournamentId} // ✅ Passed down correctly
+                tournamentId={tournamentId}
                 onSave={handleSave}
                 onCancel={() => setEditingTeam(null)}
+                onDelete={handleDeleteTeam} // 🟢 Passed down correctly
               />
             )}
           </div>

@@ -40,6 +40,7 @@ import RequireTournamentAccess from "./components/guards/RequireTournamentAccess
 
 import { useAuth } from "./hooks/useAuth.jsx";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
+import PublicAuctionViewer from "./components/PublicAuctionViewer.jsx";
 
 // ----------------------------------------------------------------------
 // 1. APP CONTENT (Inner Component)
@@ -121,6 +122,7 @@ function AppContent() {
             <Route path="/overlay/:tournamentId/active" element={<MatchOverlay />} />
             <Route path="/overlay/tournament-banner/:tournamentId" element={<TournamentBanner />} />
             <Route path="/overlay/:tournamentId/broadcast/active" element={<BroadcastLayer />} />
+            {/* <Route path="/overlay/:tournamentId/auction/live" element={<PublicAuctionViewer />} /> */}
           </Routes>
         </Suspense>
       </div>
@@ -337,13 +339,14 @@ function AppContent() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/create-tournament" element={<RequireAuth><CreateTournament /></RequireAuth>} />
             <Route path="/tournaments/:id/auction" element={<RequireTournamentAccess requireEdit><AuctionDashboard /></RequireTournamentAccess>} />
+            <Route path="/tournaments/:id/auction/live" element={<PublicAuctionViewer />} />
             <Route path="/matches" element={<MatchesPage availableTournaments={availableTournaments} onSelect={handleMatchesPageSelect} readOnly={!user} />} />
             <Route path="/players" element={<GlobalPlayersView />} />
             <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/migrate" element={<RequireAuth><MigrationTool /></RequireAuth>} />
-            <Route path="/tournaments/:id" element={<RequireTournamentAccess><TournamentDetails /></RequireTournamentAccess>} />
+            <Route path="/tournaments/:id" element={<TournamentDetails />} />
             <Route path="/tournaments/:tournamentId/scorecard/:matchId" element={<RequireTournamentAccess><MatchScorecard /></RequireTournamentAccess>} />
             <Route path="/teams" element={<RequireAuth><TeamsManager /></RequireAuth>} />
             <Route path="/past-leagues" element={<RequireAuth><PastLeague /></RequireAuth>} />

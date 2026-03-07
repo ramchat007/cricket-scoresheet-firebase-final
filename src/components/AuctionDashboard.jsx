@@ -22,6 +22,7 @@ import {
   directBuyPlayer,
 } from "../utils/auction";
 import AuctionAdminPanel from "./AuctionAdminPanel";
+import PlayerAvatar from "./PlayerAvatar";
 
 export default function AuctionDashboard() {
   const { id: tournamentId } = useParams();
@@ -180,9 +181,12 @@ export default function AuctionDashboard() {
 
   const isLive = auctionState?.status === "LIVE";
   const isPaused = auctionState?.status === "PAUSED";
-  const currentPlayer = auctionState?.currentPlayer;
-  const nextBidAmount =
-    isLive || isPaused ? calculateNextBid(auctionState.currentBid) : 0;
+  
+  // 🟢 SECURE LOOKUP: Safely extract the ID and find the rich player object from the queue's list!
+  const activePlayerId = auctionState?.currentPlayer?.id || auctionState?.currentPlayerId;
+  const currentPlayer = allPlayers.find((p) => p.id === activePlayerId) || auctionState?.currentPlayer;
+  
+  const nextBidAmount = isLive || isPaused ? calculateNextBid(auctionState.currentBid) : 0;
 
   // --- STYLES HELPER ---
   const borderColor = lightMode ? "border-gray-200" : "border-white/5";
@@ -279,15 +283,11 @@ export default function AuctionDashboard() {
               : "bg-gradient-to-r from-teal-500 to-indigo-500 animate-pulse"
           }`}></div>
         <div className="relative z-10 flex flex-col md:flex-row items-center justify-center gap-10">
-          <img
-            src={
-              currentPlayer.photoURL ||
-              "https://cdn-icons-png.flaticon.com/512/847/847969.png"
-            }
-            alt={currentPlayer.name}
-            className={`w-48 h-48 md:w-64 md:h-64 rounded-full object-cover border-4 ${lightMode ? "border-white" : "border-[#0F1115]"} shadow-xl relative z-10 bg-black ${
-              isPaused ? "grayscale" : ""
-            }`}
+          <PlayerAvatar 
+            player={currentPlayer} 
+            playerId={auctionState?.currentPlayerId} /* 🟢 ADD THIS LINE */
+            tournamentId={tournamentId} 
+            className="w-48 h-48 rounded-3xl object-cover shadow-2xl border-4 border-white/10 shrink-0" 
           />
           <div className="flex-1 text-left md:text-center">
             <div className="flex justify-center items-center gap-3 mb-3">
@@ -424,13 +424,10 @@ export default function AuctionDashboard() {
               <div className="flex items-center gap-3">
                 <div
                   className={`w-10 h-10 rounded-lg overflow-hidden border ${lightMode ? "bg-gray-100 border-gray-200" : "bg-[#161920] border-white/5"}`}>
-                  <img
-                    src={
-                      player.photoURL ||
-                      "https://cdn-icons-png.flaticon.com/512/847/847969.png"
-                    }
-                    alt=""
-                    className="object-cover w-full h-full"
+                  <PlayerAvatar 
+                    player={player} 
+                    tournamentId={tournamentId} 
+                    className="object-cover w-full h-full" 
                   />
                 </div>
                 <div>

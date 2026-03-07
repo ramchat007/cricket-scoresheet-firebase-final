@@ -1292,16 +1292,21 @@ export default function TournamentPlayersView() {
           <div
             className="fixed inset-0 z-[600] bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
             onClick={() => setPreviewImage(null)}>
-            <div className="relative max-w-5xl max-h-[90vh]">
+            
+            {/* 🟢 1. Set a forced container width (max-w-xl is 576px) */}
+            <div className="relative w-full max-w-xl flex justify-center">
+              
               <img
                 src={previewImage}
                 alt="Preview"
-                className="rounded-xl shadow-2xl border border-white/10"
-                style={{ maxWidth: "80vw", maxHeight: "80vh" }}
+                // 🟢 2. Added 'w-full' and 'h-auto' to FORCE the image to stretch and fill the 576px container
+                className="rounded-xl shadow-2xl border border-white/10 w-full h-auto object-contain"
+                style={{ maxHeight: "90vh" }}
                 onClick={(e) => e.stopPropagation()}
               />
+              
               <button
-                className="absolute -top-12 right-0 text-white hover:text-red-400 font-bold text-sm uppercase tracking-widest transition-colors flex items-center gap-2"
+                className="absolute -top-10 right-0 text-white hover:text-red-400 font-bold text-sm uppercase tracking-widest transition-colors flex items-center gap-2"
                 onClick={() => setPreviewImage(null)}>
                 Close <X size={20} />
               </button>
