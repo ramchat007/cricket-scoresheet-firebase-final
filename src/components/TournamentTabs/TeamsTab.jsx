@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { formatCurrency } from "../../utils/helpers";
 import PlayerProfileModal from "./PlayerProfileModal";
 import TeamPosterModal from "./TeamPosterModal";
+import PlayerAvatar from "../PlayerAvatar"; // 🟢 IMPORTED SMART AVATAR
 import { useTheme } from "../../context/ThemeContext";
 import {
   Shield,
@@ -30,10 +31,12 @@ const getTeamMatchList = (teamName, allMatches = []) => {
   if (!teamName || !allMatches.length) return [];
 
   const rawMatches = allMatches.filter((m) => {
-    // Check meta names first (most reliable)
-    if (isSameTeam(m.meta?.teamA, teamName) || isSameTeam(m.meta?.teamB, teamName)) return true;
-    
-    // Fallback to innings data if meta is missing
+    if (
+      isSameTeam(m.meta?.teamA, teamName) ||
+      isSameTeam(m.meta?.teamB, teamName)
+    )
+      return true;
+
     const inn1Team = m.innings?.[0]?.battingTeam;
     const inn2Team = m.innings?.[1]?.battingTeam;
     return isSameTeam(inn1Team, teamName) || isSameTeam(inn2Team, teamName);
@@ -76,27 +79,28 @@ const getTeamMatchList = (teamName, allMatches = []) => {
         formattedDateTime = timePart ? `${datePart}, ${timePart}` : datePart;
       }
 
-      // Determine Opponent
       let opponentName = "Opponent";
       if (isSameTeam(meta.teamA, teamName)) opponentName = meta.teamB;
       else if (isSameTeam(meta.teamB, teamName)) opponentName = meta.teamA;
-      else if (isSameTeam(inn1?.battingTeam, teamName)) opponentName = inn2?.battingTeam;
-      else if (isSameTeam(inn2?.battingTeam, teamName)) opponentName = inn1?.battingTeam;
+      else if (isSameTeam(inn1?.battingTeam, teamName))
+        opponentName = inn2?.battingTeam;
+      else if (isSameTeam(inn2?.battingTeam, teamName))
+        opponentName = inn1?.battingTeam;
 
       let resultStatus = "PENDING";
-      let resultDescription = meta.result || (isFinished ? "Match Ended" : "Scheduled");
+      let resultDescription =
+        meta.result || (isFinished ? "Match Ended" : "Scheduled");
 
       if (inn1 && inn2 && isFinished) {
         const s1 = Number(inn1.score || 0);
         const s2 = Number(inn2.score || 0);
-        
+
         let winningTeam = "";
         if (s1 > s2) winningTeam = inn1.battingTeam;
         else if (s2 > s1) winningTeam = inn2.battingTeam;
         else {
-           // Check if there's a manual winner override in DB for ties
-           const dbWinner = (m.winner || meta.result?.winner || "").trim();
-           winningTeam = dbWinner || "Tie";
+          const dbWinner = (m.winner || meta.result?.winner || "").trim();
+          winningTeam = dbWinner || "Tie";
         }
 
         if (s1 > s2) {
@@ -125,10 +129,9 @@ const getTeamMatchList = (teamName, allMatches = []) => {
       };
     })
     .sort((a, b) => {
-       // Sort by date, newest first
-       const dateA = new Date(a.meta?.startAt || a.meta?.date || 0);
-       const dateB = new Date(b.meta?.startAt || b.meta?.date || 0);
-       return dateB - dateA;
+      const dateA = new Date(a.meta?.startAt || a.meta?.date || 0);
+      const dateB = new Date(b.meta?.startAt || b.meta?.date || 0);
+      return dateB - dateA;
     });
 };
 
@@ -139,25 +142,24 @@ const TeamStatsModal = ({
   allTeams = [],
   isOpen,
   onClose,
-  isAuctionEnabled, // 🔥 This flag now controls the internal UI
+  isAuctionEnabled,
 }) => {
   const { theme, lightMode } = useTheme();
-
   const navigate = useNavigate();
 
-  if (!isOpen || !team) return null;
-
+  // 🟢 ALL HOOKS MUST BE DECLARED BEFORE ANY 'RETURN' STATEMENT
   const [activeTab, setActiveTab] = useState("squad");
 
-  const dbStats = team.stats || { played: 0, won: 0, lost: 0 };
+  const dbStats = team?.stats || { played: 0, won: 0, lost: 0 };
+
   const history = useMemo(
-    () => getTeamMatchList(team.name, matches),
-    [team.name, matches],
+    () => getTeamMatchList(team?.name, matches),
+    [team?.name, matches],
   );
 
-  const roster = team.roster || [];
-  const purse = Number(team.purse) || 0;
-  const spent = Number(team.spent) || 0;
+  const roster = team?.roster || [];
+  const purse = Number(team?.purse) || 0;
+  const spent = Number(team?.spent) || 0;
   const remaining = purse - spent;
 
   const roleCounts = roster.reduce((acc, p) => {
@@ -166,12 +168,11 @@ const TeamStatsModal = ({
     return acc;
   }, {});
 
-  const currentTournamentId = matches[0]?.tournamentId || matches[0]?.meta?.tournament || "unknown";
+  const currentTournamentId =
+    matches[0]?.tournamentId || matches[0]?.meta?.tournament || "unknown";
 
-  const getOpponentLogo = (name) => {
-    const opTeam = allTeams.find((t) => isSameTeam(t.name, name));
-    return opTeam?.logoUrl;
-  };
+  // 🟢 NOW WE CAN SAFELY RETURN NULL IF IT'S CLOSED
+  if (!isOpen || !team) return null;
 
   return (
     <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
@@ -231,7 +232,6 @@ const TeamStatsModal = ({
         <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
           {activeTab === "squad" && (
             <div className="animate-in slide-in-from-right-4 duration-300 space-y-8">
-              {/* 🔥 1. PURSE STATS: ONLY show if auction is valid */}
               {isAuctionEnabled && (
                 <div className="grid grid-cols-3 gap-2 md:gap-4">
                   <StatCard
@@ -289,7 +289,6 @@ const TeamStatsModal = ({
                     <tr>
                       <th className="p-4">Player</th>
                       <th className="p-4 hidden sm:table-cell">Role</th>
-                      {/* 🔥 2. TABLE HEADER: Hide if no auction */}
                       {isAuctionEnabled && (
                         <th className="p-4 text-right">Sold Price</th>
                       )}
@@ -299,20 +298,18 @@ const TeamStatsModal = ({
                     {roster.map((p, i) => (
                       <tr key={i} className="hover:bg-white/5">
                         <td className="p-3 md:p-4 flex items-center gap-3">
-                          <img
-                            src={
-                              p.photoURL ||
-                              `https://ui-avatars.com/api/?name=${p.name}`
-                            }
+                          {/* 🟢 SMART AVATAR HERE */}
+                          <PlayerAvatar
+                            player={p}
+                            playerId={p.originalId || p.id}
+                            tournamentId={currentTournamentId}
                             className="w-8 h-8 rounded-lg object-cover"
-                            alt=""
                           />
                           <span className="font-bold text-sm">{p.name}</span>
                         </td>
                         <td className="p-4 text-xs font-bold uppercase hidden sm:table-cell opacity-60">
                           {p.role}
                         </td>
-                        {/* 🔥 3. TABLE DATA: Hide if no auction */}
                         {isAuctionEnabled && (
                           <td className="p-4 text-right font-mono font-bold text-teal-500">
                             {formatCurrency(p.soldPrice || p.price || 0)}
@@ -325,7 +322,7 @@ const TeamStatsModal = ({
               </div>
             </div>
           )}
-          {/* 🔥 NEW: MATCH HISTORY TAB */}
+          {/* MATCH HISTORY TAB */}
           {activeTab === "matches" && (
             <div className="animate-in slide-in-from-left-4 duration-300 space-y-4">
               {history.length === 0 ? (
@@ -337,36 +334,42 @@ const TeamStatsModal = ({
                 history.map((match, idx) => (
                   <div
                     key={match.id || idx}
-                    onClick={() => navigate(`/tournaments/${currentTournamentId}/scorecard/${match.id}`)} // 🟢 NEW: Navigation added
+                    onClick={() =>
+                      navigate(
+                        `/tournaments/${currentTournamentId}/scorecard/${match.id}`,
+                      )
+                    }
                     className={`p-4 md:p-5 rounded-2xl border flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all hover:scale-[1.01] shadow-sm cursor-pointer ${
-                      lightMode ? "bg-white border-gray-200 hover:border-teal-400" : "bg-[#161920] border-white/5 hover:border-teal-500/50"
-                    }`}
-                  >
+                      lightMode
+                        ? "bg-white border-gray-200 hover:border-teal-400"
+                        : "bg-[#161920] border-white/5 hover:border-teal-500/50"
+                    }`}>
                     <div className="flex items-center gap-4">
-                      {/* Result Badge */}
                       <div
                         className={`w-12 h-12 shrink-0 rounded-full flex items-center justify-center text-sm font-black shadow-lg ${
                           match.computedResult === "WON"
                             ? "bg-teal-500 text-black shadow-teal-500/30"
                             : match.computedResult === "LOST"
-                            ? "bg-red-500 text-white shadow-red-500/30"
-                            : match.computedResult === "TIE"
-                            ? "bg-amber-500 text-black shadow-amber-500/30"
-                            : "bg-slate-700 text-white shadow-slate-900/50"
-                        }`}
-                      >
-                        {match.computedResult === "PENDING" ? "TBD" : match.computedResult}
+                              ? "bg-red-500 text-white shadow-red-500/30"
+                              : match.computedResult === "TIE"
+                                ? "bg-amber-500 text-black shadow-amber-500/30"
+                                : "bg-slate-700 text-white shadow-slate-900/50"
+                        }`}>
+                        {match.computedResult === "PENDING"
+                          ? "TBD"
+                          : match.computedResult}
                       </div>
-
-                      {/* Match Details */}
                       <div>
-                        <div className={`text-[10px] font-black uppercase tracking-widest mb-1 ${theme.sub}`}>
+                        <div
+                          className={`text-[10px] font-black uppercase tracking-widest mb-1 ${theme.sub}`}>
                           vs {match.computedOpponent}
                         </div>
-                        <div className={`text-sm md:text-base font-bold leading-tight ${theme.text}`}>
+                        <div
+                          className={`text-sm md:text-base font-bold leading-tight ${theme.text}`}>
                           {match.computedResultText}
                         </div>
-                        <div className={`text-xs mt-1 flex items-center gap-3 font-medium ${theme.sub}`}>
+                        <div
+                          className={`text-xs mt-1 flex items-center gap-3 font-medium ${theme.sub}`}>
                           <span className="flex items-center gap-1">
                             <Calendar size={12} /> {match.displayDateTime}
                           </span>
@@ -418,6 +421,7 @@ export default function TeamsTab({
   tournamentName,
   isAuctionEnabled,
   matches = [],
+  tournamentId, // 🟢 ADDED TOURNAMENT ID
 }) {
   const { theme, lightMode } = useTheme();
   const [selectedPlayer, setSelectedPlayer] = useState(null);
@@ -425,6 +429,13 @@ export default function TeamsTab({
   const [posterTeam, setPosterTeam] = useState(null);
 
   const displayName = tournamentName || "OFFICIAL SQUAD";
+
+  // Fallback ID if not passed down directly
+  const safeTournamentId =
+    tournamentId ||
+    matches[0]?.tournamentId ||
+    matches[0]?.meta?.tournament ||
+    "unknown";
 
   if (!tournamentTeams.length)
     return (
@@ -513,7 +524,6 @@ export default function TeamsTab({
               </div>
             </div>
 
-            {/* 🔥 ALREADY PRESENT: Auction Progress Bar Conditional Logic */}
             {isAuctionEnabled && (
               <div className="px-6 py-2">
                 <div className="flex justify-between text-[10px] font-black uppercase mb-1 tracking-widest">
@@ -542,13 +552,12 @@ export default function TeamsTab({
                     key={i}
                     className="relative cursor-pointer hover:scale-110 transition-transform group/player shadow-lg"
                     onClick={() => setSelectedPlayer(player)}>
-                    <img
-                      src={
-                        player.photoURL ||
-                        `https://ui-avatars.com/api/?name=${player.name}`
-                      }
+                    {/* 🟢 SMART AVATAR HERE */}
+                    <PlayerAvatar
+                      player={player}
+                      playerId={player.id || player.originalId}
+                      tournamentId={safeTournamentId}
                       className={`w-10 h-10 rounded-xl object-cover border grayscale group-hover/player:grayscale-0 transition-all duration-300 ${lightMode ? "bg-white border-gray-200" : "bg-black border-white/10"}`}
-                      alt=""
                     />
                     <div className="absolute -top-1.5 -right-1.5 flex gap-0.5">
                       {player.isIcon && (
@@ -589,11 +598,13 @@ export default function TeamsTab({
         );
       })}
 
+      {/* MODALS */}
       <PlayerProfileModal
         player={selectedPlayer}
         isOpen={!!selectedPlayer}
         matches={matches}
         onClose={() => setSelectedPlayer(null)}
+        tournamentId={safeTournamentId} // 🟢 Pass down tournamentId so the modal can use the avatar component
       />
       <TeamStatsModal
         team={viewingTeamStats}
@@ -601,7 +612,7 @@ export default function TeamsTab({
         allTeams={tournamentTeams}
         isOpen={!!viewingTeamStats}
         onClose={() => setViewingTeamStats(null)}
-        isAuctionEnabled={isAuctionEnabled} // 🔥 Pass prop down to Modal
+        isAuctionEnabled={isAuctionEnabled}
       />
       <TeamPosterModal
         team={posterTeam}
@@ -609,6 +620,7 @@ export default function TeamsTab({
         onClose={() => setPosterTeam(null)}
         tournamentName={displayName}
         isAuctionEnabled={isAuctionEnabled}
+        tournamentId={safeTournamentId}
       />
     </div>
   );

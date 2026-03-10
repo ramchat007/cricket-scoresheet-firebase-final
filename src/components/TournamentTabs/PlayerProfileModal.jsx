@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { doc, collection, onSnapshot, getDocs } from "firebase/firestore";
 import { db } from "../../utils/firebase";
 import { useTheme } from "../../context/ThemeContext";
+import PlayerAvatar from "../PlayerAvatar";
 import {
   X,
   Crown,
@@ -148,13 +149,11 @@ export default function PlayerProfileModal({
           }`}>
           {/* PHOTO & NAME */}
           <div className="relative mb-4 group">
-            <img
-              src={
-                displayData.photoURL ||
-                `https://ui-avatars.com/api/?name=${displayData.name}&background=0F1115&color=fff`
-              }
-              className={`relative w-24 h-24 md:w-28 md:h-28 rounded-2xl object-cover border-2 shadow-xl z-10 ${lightMode ? "border-white" : "border-[#2d333b]"}`}
-              alt={displayData.name}
+            <PlayerAvatar
+              player={player}
+              playerId={player.id || player.originalId}
+              tournamentId={tournamentId}
+              className="w-24 h-24 md:w-32 md:h-32 rounded-full object-cover border-4 border-white/10 shadow-2xl z-10"
             />
             {(displayData.isIcon || displayData.role === "Captain") && (
               <div className="absolute -top-2 -right-2 z-20 bg-amber-500 text-black text-[9px] font-black px-2 py-0.5 rounded-full shadow-md rotate-12 border border-white/20 flex items-center gap-1">

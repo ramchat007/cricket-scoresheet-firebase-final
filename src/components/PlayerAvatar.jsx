@@ -2,7 +2,24 @@ import React, { useState, useEffect } from "react";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../utils/firebase";
 
-export default function PlayerAvatar({ player, playerId, tournamentId, className }) {
+// 🟢 NEW: Generates a local Base64 SVG avatar. 100% immune to CORS issues!
+const generateFallbackAvatar = (name) => {
+  const initial = name ? name.trim().charAt(0).toUpperCase() : "P";
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
+    <rect width="200" height="200" fill="#1C2128"/>
+    <text x="100" y="115" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="90" font-weight="bold">${initial}</text>
+  </svg>`;
+  // Convert the SVG to a base64 Data URI
+  return `data:image/svg+xml;base64,${btoa(svg)}`;
+};
+
+export default function PlayerAvatar({
+  player,
+  playerId,
+  tournamentId,
+  className,
+  forPoster = false,
+}) {
   const [imgSrc, setImgSrc] = useState(null);
 
   useEffect(() => {
@@ -24,9 +41,9 @@ export default function PlayerAvatar({ player, playerId, tournamentId, className
         return;
       }
 
-      // 2. Global Check - NOW USING THE RELIABLE EXPLICIT playerId 🟢
+      // 2. Global Check
       const globalId = player.originalPlayerId || player.id || playerId;
-      
+
       if (globalId) {
         try {
           const globalRef = doc(db, "players", globalId);
@@ -51,13 +68,9 @@ export default function PlayerAvatar({ player, playerId, tournamentId, className
         }
       }
 
-      // 3. Fallback
+      // 3. Set to Local Fallback if no photo exists
       if (isMounted) {
-        setImgSrc(
-          `https://ui-avatars.com/api/?name=${encodeURIComponent(
-            player.name || "Player"
-          )}&background=0F1115&color=fff`
-        );
+        setImgSrc(generateFallbackAvatar(player.name));
       }
     };
 
@@ -68,19 +81,19 @@ export default function PlayerAvatar({ player, playerId, tournamentId, className
     };
   }, [player, playerId, tournamentId]);
 
+  // Pre-calculate fallback in case the main imgSrc errors out after loading
+  const fallback = generateFallbackAvatar(player?.name);
+
   return (
     <img
-      src={
-        imgSrc ||
-        `https://ui-avatars.com/api/?name=${encodeURIComponent(
-          player?.name || "Player"
-        )}&background=0F1115&color=fff`
-      }
+      src={imgSrc || fallback}
       onError={(e) => {
-        e.target.src = "https://cdn-icons-png.flaticon.com/512/847/847969.png";
+        // If an image link is broken, instantly swap to the local generated avatar
+        e.target.src = fallback;
       }}
       alt={player?.name || "Player"}
       className={className}
+      {...(forPoster ? { crossOrigin: "anonymous" } : {})}
     />
   );
 }
