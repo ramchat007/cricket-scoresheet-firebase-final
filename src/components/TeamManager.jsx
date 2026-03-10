@@ -274,6 +274,7 @@ export default function TeamManager({ tournamentId }) {
   // Form State
   const [teamId, setTeamId] = useState("");
   const [teamName, setTeamName] = useState("");
+  const [teamGroup, setTeamGroup] = useState("");
   const [ownerName, setOwnerName] = useState("");
   const [squad, setSquad] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
@@ -326,6 +327,7 @@ export default function TeamManager({ tournamentId }) {
     if (team) {
       setTeamId(team.id);
       setTeamName(team.name || team.id);
+      setTeamGroup(team.group || "");
       setOwnerName(team.ownerName || "");
 
       if (team.roster && Array.isArray(team.roster) && team.roster.length > 0) {
@@ -347,6 +349,7 @@ export default function TeamManager({ tournamentId }) {
   const resetForm = () => {
     setTeamId("");
     setTeamName("");
+    setTeamGroup("");
     setOwnerName("");
     setSquad([]);
     setGuestName("");
@@ -359,6 +362,7 @@ export default function TeamManager({ tournamentId }) {
     // Pre-fill form but keep ID empty so it creates NEW team
     setTeamId("");
     setTeamName(importedTeam.name + " (Copy)");
+    setTeamGroup(importedTeam.group || "");
     setOwnerName(importedTeam.ownerName || "");
     if (importedTeam.roster) {
       setSquad(importedTeam.roster.map((p) => ({ ...p }))); // Deep copy players
@@ -505,6 +509,7 @@ export default function TeamManager({ tournamentId }) {
       let savedTeamId = teamId;
       const teamPayload = {
         name: teamName,
+        group: teamGroup.trim().toUpperCase(),
         ownerName: isAuctionMode ? ownerName : "", // Clear owner if no auction
         roster: rosterArray,
       };
@@ -629,9 +634,9 @@ export default function TeamManager({ tournamentId }) {
           </div>
         </div>
 
-        {/* TEAM NAME & OWNER NAME */}
+        {/* TEAM NAME, GROUP, & OWNER NAME */}
         <div
-          className={`grid grid-cols-1 ${isAuctionMode ? "md:grid-cols-2" : "md:grid-cols-1"} gap-6`}>
+          className={`grid grid-cols-1 md:grid-cols-2 ${isAuctionMode ? "lg:grid-cols-3" : ""} gap-6`}>
           <div>
             <label className={labelClass}>Team Name</label>
             <input
@@ -642,7 +647,20 @@ export default function TeamManager({ tournamentId }) {
               placeholder="e.g. Royal Challengers"
             />
           </div>
-          {/* 1. CONDITIONAL OWNER FIELD */}
+          
+          {/* 🟢 NEW: GROUP FIELD */}
+          <div>
+            <label className={labelClass}>Group (Optional)</label>
+            <input
+              type="text"
+              className={inputClass}
+              value={teamGroup}
+              onChange={(e) => setTeamGroup(e.target.value)}
+              placeholder="e.g. A, B, North..."
+            />
+          </div>
+
+          {/* CONDITIONAL OWNER FIELD */}
           {isAuctionMode && (
             <div>
               <label className={labelClass}>Owner Name</label>

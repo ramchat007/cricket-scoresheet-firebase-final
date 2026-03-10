@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { formatCurrency } from "../../utils/helpers";
 import PlayerProfileModal from "./PlayerProfileModal";
 import TeamPosterModal from "./TeamPosterModal";
@@ -29,13 +30,13 @@ const getTeamMatchList = (teamName, allMatches = []) => {
   if (!teamName || !allMatches.length) return [];
 
   const rawMatches = allMatches.filter((m) => {
-    const names = [
-      m.meta?.teamA,
-      m.meta?.teamB,
-      m.innings?.[0]?.battingTeam,
-      m.innings?.[1]?.battingTeam,
-    ];
-    return names.some((n) => isSameTeam(n, teamName));
+    // Check meta names first (most reliable)
+    if (isSameTeam(m.meta?.teamA, teamName) || isSameTeam(m.meta?.teamB, teamName)) return true;
+    
+    // Fallback to innings data if meta is missing
+    const inn1Team = m.innings?.[0]?.battingTeam;
+    const inn2Team = m.innings?.[1]?.battingTeam;
+    return isSameTeam(inn1Team, teamName) || isSameTeam(inn2Team, teamName);
   });
 
   return rawMatches
@@ -62,8 +63,7 @@ const getTeamMatchList = (teamName, allMatches = []) => {
           try {
             const [hours, minutes] = rawTime.split(":");
             const timeObj = new Date();
-            timeObj.setHours(hours);
-            timeObj.setMinutes(minutes);
+            timeObj.setHours(hours, minutes);
             timePart = timeObj.toLocaleTimeString("en-US", {
               hour: "numeric",
               minute: "2-digit",
@@ -76,27 +76,28 @@ const getTeamMatchList = (teamName, allMatches = []) => {
         formattedDateTime = timePart ? `${datePart}, ${timePart}` : datePart;
       }
 
-      const possibleOpponents = [
-        meta.teamA,
-        meta.teamB,
-        inn1?.battingTeam,
-        inn2?.battingTeam,
-      ];
-      const opponentName =
-        possibleOpponents.find((n) => n && !isSameTeam(n, teamName)) ||
-        "Opponent";
+      // Determine Opponent
+      let opponentName = "Opponent";
+      if (isSameTeam(meta.teamA, teamName)) opponentName = meta.teamB;
+      else if (isSameTeam(meta.teamB, teamName)) opponentName = meta.teamA;
+      else if (isSameTeam(inn1?.battingTeam, teamName)) opponentName = inn2?.battingTeam;
+      else if (isSameTeam(inn2?.battingTeam, teamName)) opponentName = inn1?.battingTeam;
 
       let resultStatus = "PENDING";
-      let resultDescription =
-        meta.result || (isFinished ? "Match Ended" : "Scheduled");
+      let resultDescription = meta.result || (isFinished ? "Match Ended" : "Scheduled");
 
       if (inn1 && inn2 && isFinished) {
         const s1 = Number(inn1.score || 0);
         const s2 = Number(inn2.score || 0);
+        
         let winningTeam = "";
         if (s1 > s2) winningTeam = inn1.battingTeam;
         else if (s2 > s1) winningTeam = inn2.battingTeam;
-        else winningTeam = "Tie";
+        else {
+           // Check if there's a manual winner override in DB for ties
+           const dbWinner = (m.winner || meta.result?.winner || "").trim();
+           winningTeam = dbWinner || "Tie";
+        }
 
         if (s1 > s2) {
           const diff = s1 - s2;
@@ -123,7 +124,12 @@ const getTeamMatchList = (teamName, allMatches = []) => {
         displayVenue: venue,
       };
     })
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
+    .sort((a, b) => {
+       // Sort by date, newest first
+       const dateA = new Date(a.meta?.startAt || a.meta?.date || 0);
+       const dateB = new Date(b.meta?.startAt || b.meta?.date || 0);
+       return dateB - dateA;
+    });
 };
 
 // --- 🗂️ TEAM STATS MODAL ---
@@ -136,6 +142,8 @@ const TeamStatsModal = ({
   isAuctionEnabled, // 🔥 This flag now controls the internal UI
 }) => {
   const { theme, lightMode } = useTheme();
+
+  const navigate = useNavigate();
 
   if (!isOpen || !team) return null;
 
@@ -157,6 +165,8 @@ const TeamStatsModal = ({
     acc[role] = (acc[role] || 0) + 1;
     return acc;
   }, {});
+
+  const currentTournamentId = matches[0]?.tournamentId || matches[0]?.meta?.tournament || "unknown";
 
   const getOpponentLogo = (name) => {
     const opTeam = allTeams.find((t) => isSameTeam(t.name, name));
@@ -315,7 +325,59 @@ const TeamStatsModal = ({
               </div>
             </div>
           )}
-          {/* ... Match History View remains same ... */}
+          {/* 🔥 NEW: MATCH HISTORY TAB */}
+          {activeTab === "matches" && (
+            <div className="animate-in slide-in-from-left-4 duration-300 space-y-4">
+              {history.length === 0 ? (
+                <div className={`text-center py-16 italic ${theme.sub}`}>
+                  <Calendar size={32} className="mx-auto mb-3 opacity-20" />
+                  No matches found for {team.name}.
+                </div>
+              ) : (
+                history.map((match, idx) => (
+                  <div
+                    key={match.id || idx}
+                    onClick={() => navigate(`/tournaments/${currentTournamentId}/scorecard/${match.id}`)} // 🟢 NEW: Navigation added
+                    className={`p-4 md:p-5 rounded-2xl border flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all hover:scale-[1.01] shadow-sm cursor-pointer ${
+                      lightMode ? "bg-white border-gray-200 hover:border-teal-400" : "bg-[#161920] border-white/5 hover:border-teal-500/50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-4">
+                      {/* Result Badge */}
+                      <div
+                        className={`w-12 h-12 shrink-0 rounded-full flex items-center justify-center text-sm font-black shadow-lg ${
+                          match.computedResult === "WON"
+                            ? "bg-teal-500 text-black shadow-teal-500/30"
+                            : match.computedResult === "LOST"
+                            ? "bg-red-500 text-white shadow-red-500/30"
+                            : match.computedResult === "TIE"
+                            ? "bg-amber-500 text-black shadow-amber-500/30"
+                            : "bg-slate-700 text-white shadow-slate-900/50"
+                        }`}
+                      >
+                        {match.computedResult === "PENDING" ? "TBD" : match.computedResult}
+                      </div>
+
+                      {/* Match Details */}
+                      <div>
+                        <div className={`text-[10px] font-black uppercase tracking-widest mb-1 ${theme.sub}`}>
+                          vs {match.computedOpponent}
+                        </div>
+                        <div className={`text-sm md:text-base font-bold leading-tight ${theme.text}`}>
+                          {match.computedResultText}
+                        </div>
+                        <div className={`text-xs mt-1 flex items-center gap-3 font-medium ${theme.sub}`}>
+                          <span className="flex items-center gap-1">
+                            <Calendar size={12} /> {match.displayDateTime}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

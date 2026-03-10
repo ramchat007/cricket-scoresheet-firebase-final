@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { recalculateTournamentStats } from "../../utils/matchService";
 import { useTheme } from "../../context/ThemeContext";
-import { RefreshCw, TrendingUp, History, AlertCircle } from "lucide-react";
+import { RefreshCw, History, Trophy } from "lucide-react"; // 🟢 Added Trophy
 
 // --- NRR Helper ---
 const calculateNRR = (runsScored, oversFaced, runsConceded, oversBowled) => {
@@ -21,10 +21,11 @@ const processStandings = (teams, matches) => {
       id: t.id,
       name,
       logo: t.logoUrl,
+      group: t.group || null, // 🟢 Capture Group from DB if it exists
       played: 0,
       won: 0,
       lost: 0,
-      tied: 0, // Track ties specifically if needed
+      tied: 0,
       points: 0,
       nrr: "0.000",
       history: [],
@@ -36,17 +37,15 @@ const processStandings = (teams, matches) => {
   });
 
   matches.forEach((m) => {
-    // Only process finished matches
     if (m.status !== "finished" && m.meta?.matchStatus !== "finished") return;
 
     const inn1 = m.innings?.[0];
     const inn2 = m.innings?.[1];
     if (!inn1 || !inn2) return;
 
-    const t1 = inn1.battingTeam.trim(); // Defending Team
-    const t2 = inn2.battingTeam.trim(); // Chasing Team
+    const t1 = inn1.battingTeam.trim();
+    const t2 = inn2.battingTeam.trim();
 
-    // Safety check
     if (!standings[t1])
       standings[t1] = { name: t1, played: 0, points: 0, history: [] };
     if (!standings[t2])
@@ -57,26 +56,15 @@ const processStandings = (teams, matches) => {
     s1.played++;
     s2.played++;
 
-    // --- 🏆 WINNER LOGIC (With Compulsory Chase Rule) ---
     let winner = null;
-
-    // 1. Check Runs
     if (inn1.score > inn2.score) {
       winner = t1;
     } else if (inn2.score > inn1.score) {
       winner = t2;
     } else {
-      // 2. Scores Level (TIE)
       const dbWinner = (m.winner || m.meta?.result?.winner || "").trim();
-
-      if (dbWinner) {
-        // Respect manual overwrite from DB
-        winner = dbWinner;
-      } else {
-        // ⚡ COMPULSORY CHASE RULE:
-        // If scores are tied, Defending Team (t1) wins.
-        winner = t1;
-      }
+      if (dbWinner) winner = dbWinner;
+      else winner = t1;
     }
 
     const tId = m.tournamentId;
@@ -105,7 +93,6 @@ const processStandings = (teams, matches) => {
       s1.lost++;
       pushHist(s1, "L", t2);
     } else {
-      // Use this ONLY if you explicitly want a Draw (1pt each)
       s1.points++;
       s2.points++;
       s1.tied = (s1.tied || 0) + 1;
@@ -126,31 +113,15 @@ const processStandings = (teams, matches) => {
     s1.oversBowled += getOvers(inn2.over, inn2.overBallCount);
   });
 
-  return Object.values(standings)
-    .map((t) => ({
-      ...t,
-      nrr: calculateNRR(
-        t.runsScored,
-        t.oversFaced,
-        t.runsConceded,
-        t.oversBowled,
-      ),
-    }))
-    .sort((a, b) => {
-      // 1. Points (Higher is better)
-      if (b.points !== a.points) return b.points - a.points;
-
-      // 2. Wins (Higher is better)
-      if (b.won !== a.won) return b.won - a.won;
-
-      // 3. NRR (Higher is better)
-      const nrrA = parseFloat(a.nrr);
-      const nrrB = parseFloat(b.nrr);
-      if (nrrB !== nrrA) return nrrB - nrrA;
-
-      // 4. Matches Played (Lower is better for 0-point ties)
-      return a.played - b.played;
-    });
+  return Object.values(standings).map((t) => ({
+    ...t,
+    nrr: calculateNRR(
+      t.runsScored,
+      t.oversFaced,
+      t.runsConceded,
+      t.oversBowled,
+    ),
+  }));
 };
 
 export default function PointsTab({
@@ -165,30 +136,53 @@ export default function PointsTab({
   const [isSyncing, setIsSyncing] = useState(false);
   const [expandedTeamId, setExpandedTeamId] = useState(null);
 
-  const tableData = useMemo(() => {
-    // ⚠️ NOTE: If 'pointsTable' from DB has data, it might override this calculation.
-    // Fallback Calculation (Client Side) - This now contains the fix
+  // 🟢 1. GET RAW DATA
+  const rawTableData = useMemo(() => {
     if (matches && matches.length > 0) return processStandings(teams, matches);
-
-    // Default to DB data if matches not loaded yet
     if (
       pointsTable &&
       pointsTable.length > 0 &&
       pointsTable.some((t) => t.played > 0)
-    ) {
+    )
       return pointsTable;
-    }
     return [];
   }, [pointsTable, matches, teams]);
 
+  // 🟢 2. GROUP THE DATA (Cricbuzz Style)
+  const groupedTables = useMemo(() => {
+    const groups = {};
+
+    rawTableData.forEach((team) => {
+      // If the team has a 'group' field, use it. Otherwise, use "Overall Standings".
+      // E.g. team.group = "A" -> "Group A"
+      const groupName = team.group
+        ? `Group ${team.group.replace("Group", "").trim()}`
+        : "Overall Standings";
+
+      if (!groups[groupName]) groups[groupName] = [];
+      groups[groupName].push(team);
+    });
+
+    // Sort each group internally by Points -> Wins -> NRR
+    Object.keys(groups).forEach((key) => {
+      groups[key].sort((a, b) => {
+        if (b.points !== a.points) return b.points - a.points;
+        if (b.won !== a.won) return b.won - a.won;
+        return parseFloat(b.nrr || 0) - parseFloat(a.nrr || 0);
+      });
+    });
+
+    return groups;
+  }, [rawTableData]);
+
   const handleSync = async () => {
     if (!tournamentId) return alert("Missing Tournament ID");
-    if (!window.confirm("Recalculate Table using latest rules?")) return;
+    // if (!window.confirm("Recalculate Table using latest rules?")) return;
     setIsSyncing(true);
     try {
       await recalculateTournamentStats(tournamentId);
-      alert("✅ Sync Complete. Page will reload.");
-      window.location.reload();
+      // alert("✅ Sync Complete. Page will reload.");
+      // window.location.reload();
     } catch (e) {
       alert("Error: " + e.message);
     } finally {
@@ -200,10 +194,14 @@ export default function PointsTab({
     setExpandedTeamId((prev) => (prev === id ? null : id));
   };
 
+  // Themed class for table headers
+  const thClass = `px-3 py-4 text-center font-black uppercase tracking-widest text-[10px]`;
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {/* Sync Button */}
       {canEdit && (
-        <div className="flex justify-end px-1">
+        <div className="flex justify-end px-1 mb-2">
           <button
             onClick={handleSync}
             disabled={isSyncing}
@@ -218,241 +216,263 @@ export default function PointsTab({
         </div>
       )}
 
-      <div
-        className={`border rounded-2xl overflow-hidden shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500 ${
-          lightMode ? "bg-white border-gray-200" : "bg-[#1C2128] border-white/5"
-        }`}>
-        <div className="overflow-x-auto no-scrollbar pb-2">
-          <table className="w-full text-sm text-left border-collapse whitespace-nowrap">
-            <thead
-              className={`text-[10px] uppercase font-black tracking-[0.2em] border-b ${
-                lightMode
-                  ? "bg-gray-50 text-gray-500 border-gray-200"
-                  : "bg-[#0F1115] text-slate-500 border-white/5"
-              }`}>
-              <tr>
-                <th className="px-4 py-4 text-center w-10">#</th>
-                <th
-                  className={`px-4 py-4 sticky left-0 z-10 shadow-[4px_0_10px_rgba(0,0,0,0.1)] ${
-                    lightMode ? "bg-gray-50" : "bg-[#0F1115]"
-                  }`}>
-                  Team
-                </th>
-                <th className="px-3 text-center">P</th>
-                <th className="px-3 text-center text-teal-500">W</th>
-                <th className="px-3 text-center text-red-500">L</th>
-                <th className={`px-4 text-center ${theme.text}`}>Pts</th>
-                <th className="px-6 text-right text-indigo-400">NRR</th>
-              </tr>
-            </thead>
-            <tbody
-              className={`divide-y ${lightMode ? "divide-gray-100" : "divide-white/5"}`}>
-              {tableData.length > 0 ? (
-                tableData.map((t, i) => {
-                  const isQualifier = i < 4;
-                  const isExpanded = expandedTeamId === t.id;
+      {/* 🟢 3. RENDER EACH GROUP AS A SEPARATE CARD */}
+      {Object.entries(groupedTables).map(([groupName, teamsInGroup]) => (
+        <div
+          key={groupName}
+          className={`border rounded-2xl overflow-hidden shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500 ${
+            lightMode
+              ? "bg-white border-gray-200"
+              : "bg-[#1C2128] border-white/5"
+          }`}>
+          {/* Group Header */}
+          <div
+            className={`px-6 py-4 border-b flex items-center gap-3 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/5"}`}>
+            <Trophy size={18} className="text-teal-500" />
+            <h3
+              className={`font-black uppercase tracking-widest text-sm ${theme.text}`}>
+              {groupName}
+            </h3>
+          </div>
 
-                  return (
-                    <React.Fragment key={t.id || i}>
-                      <tr
-                        onClick={() => toggleRow(t.id)}
-                        className={`cursor-pointer transition-colors group border-l-2 ${
-                          isExpanded
-                            ? lightMode
-                              ? "bg-gray-50"
-                              : "bg-white/[0.03]"
-                            : lightMode
-                              ? "hover:bg-gray-50"
-                              : "hover:bg-white/5"
-                        } ${isQualifier ? "border-teal-500" : "border-transparent"}`}>
-                        <td
-                          className={`px-4 py-3 font-mono text-center text-xs ${theme.sub}`}>
-                          {i + 1}
-                        </td>
-                        <td
-                          className={`px-4 py-3 sticky left-0 z-10 shadow-[4px_0_10px_rgba(0,0,0,0.1)] transition-colors ${
+          {/* Table Container */}
+          <div className="overflow-x-auto no-scrollbar pb-2">
+            <table className="w-full text-sm text-left border-collapse whitespace-nowrap min-w-[600px]">
+              <thead
+                className={`border-b ${
+                  lightMode
+                    ? "bg-gray-50 text-gray-500 border-gray-200"
+                    : "bg-[#0F1115] text-slate-500 border-white/5"
+                }`}>
+                <tr>
+                  <th className={`${thClass} w-10`}>#</th>
+                  <th
+                    className={`${thClass} text-left sticky left-0 z-10 shadow-[4px_0_10px_rgba(0,0,0,0.1)] ${
+                      lightMode ? "bg-gray-50" : "bg-[#0F1115]"
+                    }`}>
+                    Team
+                  </th>
+                  <th className={thClass}>P</th>
+                  <th className={`${thClass} text-teal-500`}>W</th>
+                  <th className={`${thClass} text-red-500`}>L</th>
+                  <th className={`${thClass} ${theme.text}`}>Pts</th>
+                  <th className={`${thClass} text-right pr-6 text-indigo-400`}>
+                    NRR
+                  </th>
+                </tr>
+              </thead>
+              <tbody
+                className={`divide-y ${lightMode ? "divide-gray-100" : "divide-white/5"}`}>
+                {teamsInGroup.length > 0 ? (
+                  teamsInGroup.map((t, i) => {
+                    const isQualifier = i < 4; // Top 4 in group highlight
+                    const isExpanded = expandedTeamId === t.id;
+
+                    return (
+                      <React.Fragment key={t.id || i}>
+                        <tr
+                          onClick={() => toggleRow(t.id)}
+                          className={`cursor-pointer transition-colors group border-l-2 ${
                             isExpanded
                               ? lightMode
                                 ? "bg-gray-50"
-                                : "bg-[#252b33]"
+                                : "bg-white/[0.03]"
                               : lightMode
-                                ? "bg-white group-hover:bg-gray-50"
-                                : "bg-[#1C2128] group-hover:bg-[#252b33]"
-                          }`}>
-                          <div className="flex items-center gap-2">
-                            <div
-                              className={`w-6 h-6 rounded flex-none flex items-center justify-center text-[10px] shadow-inner ${
-                                isQualifier
-                                  ? lightMode
-                                    ? "bg-teal-100 text-teal-700"
-                                    : "bg-teal-900/20 text-teal-400"
-                                  : lightMode
-                                    ? "bg-gray-100 text-gray-500"
-                                    : "bg-slate-800 text-slate-500"
-                              }`}>
-                              {t.logo ? (
-                                <img
-                                  src={t.logo}
-                                  alt={t.name}
-                                  className="w-full h-full object-contain p-0.5"
-                                />
-                              ) : (
-                                t.name?.charAt(0)
-                              )}
-                            </div>
-                            <span
-                              className={`text-xs font-bold truncate max-w-[120px] ${
-                                isQualifier
-                                  ? lightMode
-                                    ? "text-teal-900"
-                                    : "text-slate-100"
-                                  : lightMode
-                                    ? "text-gray-600"
-                                    : "text-slate-400"
-                              }`}>
-                              {t.name}
-                            </span>
-                          </div>
-                        </td>
-                        <td
-                          className={`px-3 text-center font-medium ${theme.sub}`}>
-                          {t.played}
-                        </td>
-                        <td className="px-3 text-center font-bold text-teal-500">
-                          {t.won}
-                        </td>
-                        <td className="px-3 text-center text-red-500 font-medium">
-                          {t.lost}
-                        </td>
-                        <td className="px-4 text-center">
-                          <span
-                            className={`inline-block font-black px-2 py-1 rounded border min-w-[28px] text-xs ${
-                              lightMode
-                                ? "bg-gray-800 text-white border-gray-600"
-                                : "bg-black/40 text-white border-white/10"
-                            }`}>
-                            {t.points}
-                          </span>
-                        </td>
-                        <td className="px-6 text-right font-mono font-medium text-xs">
-                          <span
-                            className={`${parseFloat(t.nrr) >= 0 ? "text-indigo-400" : "text-red-400"}`}>
-                            {parseFloat(t.nrr) > 0 ? "+" : ""}
-                            {t.nrr}
-                          </span>
-                        </td>
-                      </tr>
-
-                      {isExpanded && (
-                        <tr>
+                                ? "hover:bg-gray-50"
+                                : "hover:bg-white/5"
+                          } ${isQualifier ? "border-teal-500" : "border-transparent"}`}>
                           <td
-                            colSpan={7}
-                            className={`p-0 border-b ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115]/50 border-white/5"}`}>
-                            <div className="p-4 animate-in slide-in-from-top-2 duration-300">
-                              <h4
-                                className={`text-[10px] font-bold uppercase tracking-widest mb-3 pl-1 flex items-center gap-2 ${theme.sub}`}>
-                                <History size={12} /> Recent Match History
-                              </h4>
-                              <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar snap-x">
-                                {(t.history || []).length > 0 ? (
-                                  [...(t.history || [])]
-                                    .reverse()
-                                    .map((match, idx) => {
-                                      const result =
-                                        typeof match === "object"
-                                          ? match.result
-                                          : match;
-                                      const oppName =
-                                        typeof match === "object"
-                                          ? match.opponent
-                                          : "Unknown";
-                                      const mId =
-                                        typeof match === "object"
-                                          ? match.matchId
-                                          : null;
-                                      const dateStr =
-                                        typeof match === "object"
-                                          ? match.date
-                                          : null;
-                                      const tId = tournamentId;
-
-                                      return (
-                                        <div
-                                          key={idx}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (mId)
-                                              navigate(
-                                                `/tournaments/${tId}/scorecard/${mId}`,
-                                              );
-                                          }}
-                                          className={`snap-start flex-shrink-0 w-32 border rounded-xl p-3 flex flex-col items-center gap-2 cursor-pointer transition-all group ${
-                                            lightMode
-                                              ? "bg-white border-gray-200 hover:border-teal-300 hover:shadow-md"
-                                              : "bg-[#1C2128] border-white/10 hover:border-teal-500/50 hover:bg-[#252b33]"
-                                          }`}>
-                                          <div
-                                            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shadow-lg ${
-                                              result === "W"
-                                                ? "bg-teal-500 text-black shadow-teal-500/20"
-                                                : result === "L"
-                                                  ? "bg-red-500 text-white shadow-red-500/20"
-                                                  : "bg-slate-600 text-white"
-                                            }`}>
-                                            {result}
-                                          </div>
-                                          <div className="text-center">
-                                            <div
-                                              className={`text-[9px] uppercase font-bold tracking-tight ${theme.sub}`}>
-                                              vs
-                                            </div>
-                                            <div
-                                              className={`text-[10px] font-bold truncate max-w-[100px] ${theme.text}`}
-                                              title={oppName}>
-                                              {oppName || "Opponent"}
-                                            </div>
-                                          </div>
-                                          {dateStr && (
-                                            <div
-                                              className={`text-[9px] font-mono mt-1 ${theme.sub}`}>
-                                              {new Date(
-                                                dateStr,
-                                              ).toLocaleDateString(undefined, {
-                                                month: "short",
-                                                day: "numeric",
-                                              })}
-                                            </div>
-                                          )}
-                                        </div>
-                                      );
-                                    })
+                            className={`px-4 py-3 font-mono text-center text-xs ${theme.sub}`}>
+                            {i + 1}
+                          </td>
+                          <td
+                            className={`px-4 py-3 sticky left-0 z-10 shadow-[4px_0_10px_rgba(0,0,0,0.1)] transition-colors ${
+                              isExpanded
+                                ? lightMode
+                                  ? "bg-gray-50"
+                                  : "bg-[#252b33]"
+                                : lightMode
+                                  ? "bg-white group-hover:bg-gray-50"
+                                  : "bg-[#1C2128] group-hover:bg-[#252b33]"
+                            }`}>
+                            <div className="flex items-center gap-2">
+                              <div
+                                className={`w-6 h-6 rounded flex-none flex items-center justify-center text-[10px] shadow-inner ${
+                                  isQualifier
+                                    ? lightMode
+                                      ? "bg-teal-100 text-teal-700"
+                                      : "bg-teal-900/20 text-teal-400"
+                                    : lightMode
+                                      ? "bg-gray-100 text-gray-500"
+                                      : "bg-slate-800 text-slate-500"
+                                }`}>
+                                {t.logo ? (
+                                  <img
+                                    src={t.logo}
+                                    alt={t.name}
+                                    className="w-full h-full object-contain p-0.5"
+                                  />
                                 ) : (
-                                  <div
-                                    className={`text-xs italic px-2 ${theme.sub}`}>
-                                    No matches played yet.
-                                  </div>
+                                  t.name?.charAt(0)
                                 )}
                               </div>
+                              <span
+                                className={`text-xs font-bold truncate max-w-[120px] ${
+                                  isQualifier
+                                    ? lightMode
+                                      ? "text-teal-900"
+                                      : "text-slate-100"
+                                    : lightMode
+                                      ? "text-gray-600"
+                                      : "text-slate-400"
+                                }`}>
+                                {t.name}
+                              </span>
                             </div>
                           </td>
+                          <td
+                            className={`px-3 text-center font-medium ${theme.sub}`}>
+                            {t.played}
+                          </td>
+                          <td className="px-3 text-center font-bold text-teal-500">
+                            {t.won}
+                          </td>
+                          <td className="px-3 text-center text-red-500 font-medium">
+                            {t.lost}
+                          </td>
+                          <td className="px-4 text-center">
+                            <span
+                              className={`inline-block font-black px-2 py-1 rounded border min-w-[28px] text-xs ${
+                                lightMode
+                                  ? "bg-gray-800 text-white border-gray-600"
+                                  : "bg-black/40 text-white border-white/10"
+                              }`}>
+                              {t.points}
+                            </span>
+                          </td>
+                          <td className="px-6 text-right font-mono font-medium text-xs">
+                            <span
+                              className={`${parseFloat(t.nrr) >= 0 ? "text-indigo-400" : "text-red-400"}`}>
+                              {parseFloat(t.nrr) > 0 ? "+" : ""}
+                              {t.nrr}
+                            </span>
+                          </td>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className={`px-6 py-12 text-center italic text-xs ${theme.sub}`}>
-                    No standings available.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+
+                        {/* Expandable History Row */}
+                        {isExpanded && (
+                          <tr>
+                            <td
+                              colSpan={7}
+                              className={`p-0 border-b ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115]/50 border-white/5"}`}>
+                              <div className="p-4 animate-in slide-in-from-top-2 duration-300">
+                                <h4
+                                  className={`text-[10px] font-bold uppercase tracking-widest mb-3 pl-1 flex items-center gap-2 ${theme.sub}`}>
+                                  <History size={12} /> Recent Match History
+                                </h4>
+                                <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar snap-x">
+                                  {(t.history || []).length > 0 ? (
+                                    [...(t.history || [])]
+                                      .reverse()
+                                      .map((match, idx) => {
+                                        const result =
+                                          typeof match === "object"
+                                            ? match.result
+                                            : match;
+                                        const oppName =
+                                          typeof match === "object"
+                                            ? match.opponent
+                                            : "Unknown";
+                                        const mId =
+                                          typeof match === "object"
+                                            ? match.matchId
+                                            : null;
+                                        const dateStr =
+                                          typeof match === "object"
+                                            ? match.date
+                                            : null;
+
+                                        return (
+                                          <div
+                                            key={idx}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              if (mId)
+                                                navigate(
+                                                  `/tournaments/${tournamentId}/scorecard/${mId}`,
+                                                );
+                                            }}
+                                            className={`snap-start flex-shrink-0 w-32 border rounded-xl p-3 flex flex-col items-center gap-2 cursor-pointer transition-all group ${
+                                              lightMode
+                                                ? "bg-white border-gray-200 hover:border-teal-300 hover:shadow-md"
+                                                : "bg-[#1C2128] border-white/10 hover:border-teal-500/50 hover:bg-[#252b33]"
+                                            }`}>
+                                            <div
+                                              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shadow-lg ${
+                                                result === "W"
+                                                  ? "bg-teal-500 text-black shadow-teal-500/20"
+                                                  : result === "L"
+                                                    ? "bg-red-500 text-white shadow-red-500/20"
+                                                    : "bg-slate-600 text-white"
+                                              }`}>
+                                              {result}
+                                            </div>
+                                            <div className="text-center">
+                                              <div
+                                                className={`text-[9px] uppercase font-bold tracking-tight ${theme.sub}`}>
+                                                vs
+                                              </div>
+                                              <div
+                                                className={`text-[10px] font-bold truncate max-w-[100px] ${theme.text}`}
+                                                title={oppName}>
+                                                {oppName || "Opponent"}
+                                              </div>
+                                            </div>
+                                            {dateStr && (
+                                              <div
+                                                className={`text-[9px] font-mono mt-1 ${theme.sub}`}>
+                                                {new Date(
+                                                  dateStr,
+                                                ).toLocaleDateString(
+                                                  undefined,
+                                                  {
+                                                    month: "short",
+                                                    day: "numeric",
+                                                  },
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })
+                                  ) : (
+                                    <div
+                                      className={`text-xs italic px-2 ${theme.sub}`}>
+                                      No matches played yet.
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className={`px-6 py-12 text-center italic text-xs ${theme.sub}`}>
+                      No standings available in this group.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      ))}
     </div>
   );
 }

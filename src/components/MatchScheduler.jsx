@@ -48,6 +48,7 @@ export default function MatchScheduler({
   const [matchesPerDay, setMatchesPerDay] = useState(25);
   const [autoOvers, setAutoOvers] = useState(5);
   const [leagueStageName, setLeagueStageName] = useState("League Match");
+  const [selectedTeamIds, setSelectedTeamIds] = useState([]);
 
   // --- 1. SMART TEAM LOADING ---
   // If props are empty, fetch from the specific tournament sub-collection
@@ -77,6 +78,20 @@ export default function MatchScheduler({
 
   // ✅ Determine which list to use
   const activeTeams = propTeams.length > 0 ? propTeams : fetchedTeams;
+
+  useEffect(() => {
+    if (activeTeams.length > 0 && selectedTeamIds.length === 0) {
+      setSelectedTeamIds(activeTeams.map((t) => t.id));
+    }
+  }, [activeTeams]);
+
+  const toggleTeamSelection = (teamId) => {
+    setSelectedTeamIds((prev) =>
+      prev.includes(teamId)
+        ? prev.filter((id) => id !== teamId)
+        : [...prev, teamId],
+    );
+  };
 
   // ✅ HELPER: Sanitize Squad
   const sanitizeSquad = (roster) => {
@@ -174,13 +189,22 @@ export default function MatchScheduler({
 
   // --- 4. AUTO SCHEDULE ---
   const handleAutoSchedule = async () => {
-    if (activeTeams.length < 2) return alert("Need at least 2 teams.");
-    if (!window.confirm(`Generate schedule for ${activeTeams.length} teams?`))
+    const teamsToSchedule = activeTeams.filter((t) =>
+      selectedTeamIds.includes(t.id),
+    );
+
+    if (teamsToSchedule.length < 2)
+      return alert("Need at least 2 teams selected to generate a schedule.");
+    if (
+      !window.confirm(
+        `Generate schedule for ${teamsToSchedule.length} selected teams?`,
+      )
+    )
       return;
 
     setCreating(true);
     try {
-      let pool = [...activeTeams];
+      let pool = [...teamsToSchedule];
       if (pool.length % 2 !== 0) pool.push({ id: "BYE" });
 
       const numTeams = pool.length;
@@ -441,6 +465,66 @@ export default function MatchScheduler({
               Generates a <strong>Round Robin</strong> schedule for{" "}
               {activeTeams.length} teams.
             </p>
+          </div>
+          {/* 🟢 NEW: TEAM SELECTION UI */}
+          <div
+            className={`p-4 rounded-xl border ${lightMode ? "bg-white border-gray-200" : "bg-black/20 border-white/5"}`}>
+            <div className="flex justify-between items-center mb-3">
+              <label className={labelClass}>
+                Select Teams for this Group/Stage
+              </label>
+              <button
+                onClick={() =>
+                  setSelectedTeamIds(
+                    selectedTeamIds.length === activeTeams.length
+                      ? []
+                      : activeTeams.map((t) => t.id),
+                  )
+                }
+                className={`text-[10px] font-bold uppercase hover:underline ${theme.sub}`}>
+                {selectedTeamIds.length === activeTeams.length
+                  ? "Deselect All"
+                  : "Select All"}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-48 overflow-y-auto custom-scrollbar pr-2">
+              {activeTeams.map((team) => {
+                const isSelected = selectedTeamIds.includes(team.id);
+                return (
+                  <button
+                    key={team.id}
+                    onClick={() => toggleTeamSelection(team.id)}
+                    className={`p-2 rounded-lg border text-xs font-bold truncate transition-all text-left flex items-center gap-2 ${
+                      isSelected
+                        ? "bg-teal-500/10 border-teal-500 text-teal-600 dark:text-teal-400 shadow-sm"
+                        : lightMode
+                          ? "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100"
+                          : "bg-white/5 border-white/5 text-slate-500 hover:bg-white/10"
+                    }`}>
+                    <div
+                      className={`w-3 h-3 rounded-sm border flex items-center justify-center shrink-0 ${isSelected ? "border-teal-500 bg-teal-500" : "border-gray-400"}`}>
+                      {isSelected && (
+                        <span className="text-white text-[8px]">✓</span>
+                      )}
+                    </div>
+                    <span className="truncate">{team.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Stage Name (e.g., "Group A") */}
+            <div className="mt-4 pt-4 border-t border-dashed border-gray-500/30">
+              <label className={labelClass}>Stage / Group Name</label>
+              <input
+                type="text"
+                className={inputClass}
+                placeholder="e.g. Group A / Semi Finals"
+                value={leagueStageName}
+                onChange={(e) => setLeagueStageName(e.target.value)}
+              />
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
