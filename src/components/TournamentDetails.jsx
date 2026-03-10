@@ -42,46 +42,44 @@ const LiveActionButton = ({
   navigate,
   tournamentId,
 }) => {
-  // ✅ CHECK 1: If YouTube URL exists -> Show "YouTube Live"
-  if (broadcastUrl) {
-    const currentMatch = liveMatches.find(
-      (m) =>
-        (m.status || "").toLowerCase() === "in-progress" ||
-        (m.status || "").toLowerCase() === "live",
-    );
+  const currentMatch = liveMatches.find(
+    (m) =>
+      (m.status || "").toLowerCase() === "in-progress" ||
+      (m.status || "").toLowerCase() === "live",
+  );
 
-    return (
-      <a
-        href={broadcastUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex items-center gap-3 bg-[#FF0000] hover:bg-red-700 text-white pl-4 pr-6 py-3 rounded-xl font-bold text-xs md:text-sm animate-pulse transition-all shadow-[0_0_15px_rgba(220,38,38,0.5)] border border-red-500/50 uppercase tracking-widest group">
-        <Tv size={20} className="group-hover:scale-110 transition-transform" />
-        <div className="flex flex-col leading-none text-left">
-          <span>YouTube Live</span>
-          {currentMatch && (
-            <span className="text-[9px] opacity-80 normal-case tracking-normal font-medium">
-              {currentMatch.teamA} vs {currentMatch.teamB}
-            </span>
-          )}
-        </div>
-      </a>
-    );
-  }
+  return (
+    <>
+      {/* ✅ CHECK 1: If YouTube URL exists -> Show "YouTube Live" */}
+      {broadcastUrl && (
+        <a
+          href={broadcastUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-3 bg-[#FF0000] hover:bg-red-700 text-white pl-4 pr-6 py-3 rounded-xl font-bold text-xs md:text-sm animate-pulse transition-all shadow-[0_0_15px_rgba(220,38,38,0.5)] border border-red-500/50 uppercase tracking-widest group">
+          <Tv size={20} className="group-hover:scale-110 transition-transform" />
+          <div className="flex flex-col leading-none text-left">
+            <span>YouTube Live</span>
+            {currentMatch && (
+              <span className="text-[9px] opacity-80 normal-case tracking-normal font-medium">
+                {currentMatch.teamA} vs {currentMatch.teamB}
+              </span>
+            )}
+          </div>
+        </a>
+      )}
 
-  // ✅ CHECK 2: If Auction is ACTIVE -> Show "Auction Live"
-  if (isAuctionLive) {
-    return (
-      <button
-        onClick={() => navigate(`/tournaments/${tournamentId}/auction`)}
-        className="flex items-center gap-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white px-5 py-3 rounded-xl font-bold text-xs md:text-sm shadow-lg shadow-orange-900/40 border-b-4 border-orange-800 active:border-b-0 active:translate-y-1 uppercase tracking-widest transition-all">
-        <Gavel size={18} />
-        <span>Auction Live</span>
-      </button>
-    );
-  }
-
-  return null;
+      {/* ✅ CHECK 2: If Auction is Initialized -> Show "Auction Live" */}
+      {isAuctionLive && (
+        <button
+          onClick={() => navigate(`/tournaments/${tournamentId}/auction/live`)}
+          className="flex items-center gap-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white px-5 py-3 rounded-xl font-bold text-xs md:text-sm shadow-lg shadow-orange-900/40 border-b-4 border-orange-800 active:border-b-0 active:translate-y-1 uppercase tracking-widest transition-all">
+          <Gavel size={18} />
+          <span>Auction Live</span>
+        </button>
+      )}
+    </>
+  );
 };
 
 export default function TournamentDetails() {
@@ -383,7 +381,7 @@ export default function TournamentDetails() {
               <LiveActionButton
                 liveMatches={matches}
                 broadcastUrl={streamUrl} // Using state variable
-                isAuctionLive={tournamentData?.auctionState === "ACTIVE"}
+isAuctionLive={isAuctionEnabled && auctionInitialized}
                 navigate={navigate}
                 tournamentId={id}
               />
