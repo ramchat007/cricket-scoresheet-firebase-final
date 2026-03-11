@@ -380,18 +380,20 @@ export default function TournamentDetails() {
                     navigate(`/view-players/${id}`);
                   } else {
                     // Post-Auction: Teams exist -> Go to the stats tab
-                    setActiveTab("stats"); 
-                    window.scrollTo({ top: 500, behavior: 'smooth' });
+                    setActiveTab("players");
+                    window.scrollTo({ top: 500, behavior: "smooth" });
                   }
                 }}
                 className={`flex items-center gap-1 transition-colors cursor-pointer ${
-                  uniqueTeamPlayersCount === 0 && !(canEdit || isOwner) 
+                  uniqueTeamPlayersCount === 0 && !(canEdit || isOwner)
                     ? "pointer-events-none opacity-80" // Lock registration list for public
-                    : "hover:text-teal-500"            // Unlock stats for everyone
+                    : "hover:text-teal-500" // Unlock stats for everyone
                 }`}
                 title={
-                  uniqueTeamPlayersCount === 0 
-                    ? (canEdit || isOwner ? "Manage Registered Players" : "Players Registered")
+                  uniqueTeamPlayersCount === 0
+                    ? canEdit || isOwner
+                      ? "Manage Registered Players"
+                      : "Players Registered"
                     : "View Player Stats"
                 }>
                 <Users size={16} /> {displayPlayerCount} Players
