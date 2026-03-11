@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   doc,
@@ -57,7 +57,10 @@ const LiveActionButton = ({
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-3 bg-[#FF0000] hover:bg-red-700 text-white pl-4 pr-6 py-3 rounded-xl font-bold text-xs md:text-sm animate-pulse transition-all shadow-[0_0_15px_rgba(220,38,38,0.5)] border border-red-500/50 uppercase tracking-widest group">
-          <Tv size={20} className="group-hover:scale-110 transition-transform" />
+          <Tv
+            size={20}
+            className="group-hover:scale-110 transition-transform"
+          />
           <div className="flex flex-col leading-none text-left">
             <span>YouTube Live</span>
             {currentMatch && (
@@ -99,17 +102,14 @@ export default function TournamentDetails() {
   const [matches, setMatches] = useState([]);
   const [playerCount, setPlayerCount] = useState(0);
 
-  // Added separate state for stream URL to ensure it updates
   const [streamUrl, setStreamUrl] = useState("");
 
   const [canEdit, setCanEdit] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
-
-  // Toggle for showing the scheduler
   const [showScheduler, setShowScheduler] = useState(false);
 
   /* --------------------------------------------
-     Load Registered Player Count (Real-time check)
+     Load Registered Player Count (Global Registrations)
      --------------------------------------------- */
   useEffect(() => {
     if (!id) return;
@@ -139,7 +139,6 @@ export default function TournamentDetails() {
       try {
         setLoading(true);
 
-        // 1. Load Tournament Data
         const ref = doc(db, "tournaments", id);
         const snap = await getDoc(ref);
 
@@ -151,9 +150,8 @@ export default function TournamentDetails() {
         const data = snap.data();
         setTournamentData(data);
         setTournamentName(data.name);
-        setStreamUrl(data.liveStreamUrl); // Set the URL from DB
+        setStreamUrl(data.liveStreamUrl);
 
-        // 2. Check Permissions
         if (user) {
           let isGlobalAdmin = false;
           try {
@@ -233,7 +231,6 @@ export default function TournamentDetails() {
      Toggle Auction Mode
      --------------------------------------------- */
   const isAuctionEnabled = !!tournamentData?.isAuction;
-
   const auctionInitialized =
     tournamentData?.auctionState === "READY" ||
     tournamentData?.auctionState === "ACTIVE";
@@ -298,6 +295,24 @@ export default function TournamentDetails() {
     }
   };
 
+  // 🟢 NEW: Calculate Total Unique Players across all teams
+  const uniqueTeamPlayersCount = useMemo(() => {
+    const playersSet = new Set();
+    tournamentTeams.forEach((team) => {
+      if (team.roster && Array.isArray(team.roster)) {
+        team.roster.forEach((p) =>
+          playersSet.add(p.originalId || p.id || p.name),
+        );
+      } else if (team.players && Array.isArray(team.players)) {
+        team.players.forEach((name) => playersSet.add(name));
+      }
+    });
+    return playersSet.size;
+  }, [tournamentTeams]);
+
+  // 🟢 SMART COUNT: Use the highest value between Global Registrations and Local Team Rosters
+  const displayPlayerCount = Math.max(playerCount, uniqueTeamPlayersCount);
+
   if (loading) {
     return (
       <div
@@ -357,36 +372,45 @@ export default function TournamentDetails() {
               <span
                 className={`hidden sm:block w-1.5 h-1.5 rounded-full ${lightMode ? "bg-gray-300" : "bg-slate-700"}`}></span>
 
-              {/* 🟢 NEW: Player Count Link */}
+              {/* 🟢 DYNAMIC PLAYER BUTTON: Registration List (Pre-Auction) vs Stats (Post-Auction) */}
               <button
-                onClick={() => navigate(`/view-players/${id}`)}
-                className={`flex items-center gap-1 hover:text-teal-500 transition-colors cursor-pointer ${
-                  canEdit || isOwner ? "" : "pointer-events-none" // Only clickable if admin
+                onClick={() => {
+                  if (uniqueTeamPlayersCount === 0) {
+                    // Pre-Auction: No teams formed yet -> Go to registration list
+                    navigate(`/view-players/${id}`);
+                  } else {
+                    // Post-Auction: Teams exist -> Go to the stats tab
+                    setActiveTab("stats"); 
+                    window.scrollTo({ top: 500, behavior: 'smooth' });
+                  }
+                }}
+                className={`flex items-center gap-1 transition-colors cursor-pointer ${
+                  uniqueTeamPlayersCount === 0 && !(canEdit || isOwner) 
+                    ? "pointer-events-none opacity-80" // Lock registration list for public
+                    : "hover:text-teal-500"            // Unlock stats for everyone
                 }`}
                 title={
-                  canEdit || isOwner
-                    ? "View Registered Players"
-                    : "Total Players"
+                  uniqueTeamPlayersCount === 0 
+                    ? (canEdit || isOwner ? "Manage Registered Players" : "Players Registered")
+                    : "View Player Stats"
                 }>
-                <Users size={16} /> {playerCount} Players
+                <Users size={16} /> {displayPlayerCount} Players
               </button>
             </div>
           </div>
 
-          {/* ACTIONS AREA - RESTRUCTURED FOR UX */}
+          {/* ACTIONS AREA */}
           <div className="flex flex-col items-end gap-3 w-full md:w-auto">
-            {/* ROW 1: PRIMARY ACTION BUTTONS (Public & Admin) */}
+            {/* ROW 1: PRIMARY ACTION BUTTONS */}
             <div className="flex flex-wrap gap-3 justify-end w-full">
-              {/* 1. Public Live Button */}
               <LiveActionButton
                 liveMatches={matches}
-                broadcastUrl={streamUrl} // Using state variable
-isAuctionLive={isAuctionEnabled && auctionInitialized}
+                broadcastUrl={streamUrl}
+                isAuctionLive={isAuctionEnabled && auctionInitialized}
                 navigate={navigate}
                 tournamentId={id}
               />
 
-              {/* 2. Admin 'Enter Console' Button (Only if authorized) */}
               {canEdit && isAuctionEnabled && auctionInitialized && (
                 <button
                   onClick={() => navigate(`/tournaments/${id}/auction`)}
@@ -397,7 +421,7 @@ isAuctionLive={isAuctionEnabled && auctionInitialized}
               )}
             </div>
 
-            {/* ROW 2: ADMIN MANAGEMENT TOOLS (Grouped visually) */}
+            {/* ROW 2: ADMIN MANAGEMENT TOOLS */}
             {canEdit && (
               <div
                 className={`flex flex-wrap gap-2 justify-end p-2 rounded-xl border backdrop-blur-sm ${

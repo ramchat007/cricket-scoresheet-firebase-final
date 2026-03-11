@@ -187,7 +187,6 @@ export default function MatchScheduler({
     }
   };
 
-  // --- 4. AUTO SCHEDULE ---
   const handleAutoSchedule = async () => {
     const teamsToSchedule = activeTeams.filter((t) =>
       selectedTeamIds.includes(t.id),
@@ -195,33 +194,65 @@ export default function MatchScheduler({
 
     if (teamsToSchedule.length < 2)
       return alert("Need at least 2 teams selected to generate a schedule.");
+
     if (
       !window.confirm(
-        `Generate schedule for ${teamsToSchedule.length} selected teams?`,
+        `Generate Group-Stage schedule for ${teamsToSchedule.length} selected teams? Matches will only be scheduled within assigned groups.`,
       )
     )
       return;
 
     setCreating(true);
     try {
-      let pool = [...teamsToSchedule];
-      if (pool.length % 2 !== 0) pool.push({ id: "BYE" });
+      // 🟢 1. SEPARATE TEAMS INTO GROUPS
+      const groupedTeams = {};
+      teamsToSchedule.forEach((t) => {
+        const groupName = t.group ? `Group ${t.group}` : "Unassigned League";
+        if (!groupedTeams[groupName]) groupedTeams[groupName] = [];
+        groupedTeams[groupName].push(t);
+      });
 
-      const numTeams = pool.length;
-      const matchesPerRound = numTeams / 2;
       let generatedMatches = [];
 
-      for (let round = 0; round < numTeams - 1; round++) {
-        for (let match = 0; match < matchesPerRound; match++) {
-          const team1 = pool[match];
-          const team2 = pool[numTeams - 1 - match];
-          if (team1.id !== "BYE" && team2.id !== "BYE") {
-            generatedMatches.push({ teamA: team1, teamB: team2 });
+      // 🟢 2. RUN ROUND-ROBIN FOR EACH GROUP INDIVIDUALLY
+      Object.entries(groupedTeams).forEach(([groupName, groupRoster]) => {
+        let pool = [...groupRoster];
+
+        // Skip if a group only has 1 team
+        if (pool.length < 2) return;
+
+        if (pool.length % 2 !== 0) pool.push({ id: "BYE" });
+
+        const numTeams = pool.length;
+        const matchesPerRound = numTeams / 2;
+
+        for (let round = 0; round < numTeams - 1; round++) {
+          for (let match = 0; match < matchesPerRound; match++) {
+            const team1 = pool[match];
+            const team2 = pool[numTeams - 1 - match];
+            if (team1.id !== "BYE" && team2.id !== "BYE") {
+              generatedMatches.push({
+                teamA: team1,
+                teamB: team2,
+                stageName: groupName, // Tag it with "Group A", etc.
+                roundIndex: round, // Save round number for sorting
+              });
+            }
           }
+          pool.splice(1, 0, pool.pop()); // Rotate
         }
-        pool.splice(1, 0, pool.pop()); // Rotate
+      });
+
+      if (generatedMatches.length === 0) {
+        throw new Error(
+          "Could not generate matches. Make sure groups have at least 2 teams.",
+        );
       }
 
+      // 🟢 3. INTERLEAVE MATCHES (Round 1 Grp A, Round 1 Grp B, Round 2 Grp A...)
+      generatedMatches.sort((a, b) => a.roundIndex - b.roundIndex);
+
+      // --- EXISTING TIME & DATE LOGIC ---
       let matchCount = 0;
       let currentDateTime = new Date(`${startDate}T${startTime}`);
       let matchesToday = 0;
@@ -229,7 +260,7 @@ export default function MatchScheduler({
       const batch = writeBatch(db);
       const matchesCol = collection(db, "tournaments", tournamentId, "matches");
 
-      generatedMatches.forEach(({ teamA, teamB }) => {
+      generatedMatches.forEach(({ teamA, teamB, stageName }) => {
         if (matchesToday >= matchesPerDay) {
           currentDateTime.setDate(currentDateTime.getDate() + 1);
           const [h, m] = startTime.split(":");
@@ -242,6 +273,11 @@ export default function MatchScheduler({
         endDateTime.setMinutes(
           endDateTime.getMinutes() + Number(matchDuration),
         );
+
+        // Append the Group Name to the user's custom Stage Name if it exists
+        const displayStage = leagueStageName
+          ? `${stageName} - ${leagueStageName}`
+          : stageName;
 
         const matchData = {
           meta: {
@@ -260,8 +296,8 @@ export default function MatchScheduler({
             endAt: endDateTime.toISOString(),
             status: "upcoming",
             createdAt: new Date().toISOString(),
-            format: "League",
-            matchTitle: `Match ${matchCount}${leagueStageName ? ` - ${leagueStageName}` : ""}`,
+            format: stageName, // 🟢 Saves "Group A" to the format
+            matchTitle: `Match ${matchCount} | ${displayStage}`, // 🟢 Ex: "Match 1 | Group A"
           },
           teamASquad: sanitizeSquad(teamA.roster),
           teamBSquad: sanitizeSquad(teamB.roster),
@@ -281,12 +317,175 @@ export default function MatchScheduler({
       });
 
       await batch.commit();
-      alert(`Generated ${matchCount} matches!`);
+      alert(`Successfully generated ${matchCount} Group Stage matches!`);
       setMode("single");
     } catch (e) {
       alert(e.message);
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleAutoScheduleGroups = async () => {
+    // 🟢 SAFEGUARD: Ensure 'teams' actually exists and is an array before continuing
+    const teamList = propTeams || [];
+
+    if (teamList.length < 2) {
+      return alert(
+        "Not enough teams to schedule matches. Please add teams first.",
+      );
+    }
+
+    if (
+      !window.confirm(
+        "Auto-generate Group Stage matches? This will schedule Round-Robin matches strictly within each assigned group.",
+      )
+    ) {
+      return;
+    }
+
+    // 1. Separate teams into their respective groups
+    const groupedTeams = {};
+    let hasGroups = false;
+
+    // 🟢 USE the safe 'teamList' variable here
+    teamList.forEach((team) => {
+      const groupName = team.group
+        ? `Group ${team.group}`
+        : "Unassigned League";
+      if (team.group) hasGroups = true;
+
+      if (!groupedTeams[groupName]) {
+        groupedTeams[groupName] = [];
+      }
+      groupedTeams[groupName].push(team);
+    });
+
+    if (!hasGroups) {
+      alert(
+        "No groups found! Please assign groups (A, B, C) to your teams in the Team Manager first.",
+      );
+      return;
+    }
+
+    // 2. Generate Matches per group
+    const generatedMatches = [];
+    let matchCounter = 1; // You can adjust this to find the highest existing matchNo if appending
+
+    // Loop through each group (Group A, Group B, etc.)
+    Object.entries(groupedTeams).forEach(([groupName, groupRoster]) => {
+      // Only schedule if the group has at least 2 teams
+      if (groupRoster.length >= 2) {
+        // Standard Round-Robin formula for this specific group
+        for (let i = 0; i < groupRoster.length; i++) {
+          for (let j = i + 1; j < groupRoster.length; j++) {
+            generatedMatches.push({
+              matchNo: matchCounter++,
+              stage: groupName, // e.g., "Group A"
+              teamA: groupRoster[i].name,
+              teamAId: groupRoster[i].id,
+              teamB: groupRoster[j].name,
+              teamBId: groupRoster[j].id,
+              status: "PENDING",
+              date: "",
+              time: "",
+              venue: "TBD",
+            });
+          }
+        }
+      }
+    });
+
+    if (generatedMatches.length === 0) {
+      return alert(
+        "Could not generate matches. Make sure each group has at least 2 teams.",
+      );
+    }
+
+    // 3. Save to Firestore (Assuming you are using a batch write or similar)
+    try {
+      const batch = writeBatch(db);
+      generatedMatches.forEach((match) => {
+        const matchRef = doc(
+          collection(db, `tournaments/${tournamentId}/matches`),
+        );
+        batch.set(matchRef, match);
+      });
+      await batch.commit();
+      alert(
+        `Successfully generated ${generatedMatches.length} Group Stage matches!`,
+      );
+    } catch (error) {
+      console.error("Error saving matches:", error);
+      alert("Failed to save matches.");
+    }
+  };
+
+  const handleGenerateKnockouts = async () => {
+    if (
+      !window.confirm("Generate Knockout placeholders (Semi-Finals & Final)?")
+    )
+      return;
+
+    // Ask user for starting match number so it continues after group stages
+    const startNo =
+      parseInt(
+        window.prompt("Enter starting Match Number for Knockouts:", "13"),
+      ) || 99;
+
+    const knockoutMatches = [
+      {
+        matchNo: startNo,
+        stage: "Semi-Final 1",
+        teamA: "Winner Group A", // Placeholder
+        teamAId: "TBD",
+        teamB: "Runner-Up Group B", // Placeholder
+        teamBId: "TBD",
+        status: "PENDING",
+        date: "",
+        time: "",
+        venue: "TBD",
+      },
+      {
+        matchNo: startNo + 1,
+        stage: "Semi-Final 2",
+        teamA: "Winner Group B",
+        teamAId: "TBD",
+        teamB: "Runner-Up Group A",
+        teamBId: "TBD",
+        status: "PENDING",
+        date: "",
+        time: "",
+        venue: "TBD",
+      },
+      {
+        matchNo: startNo + 2,
+        stage: "FINAL",
+        teamA: "Winner SF 1",
+        teamAId: "TBD",
+        teamB: "Winner SF 2",
+        teamBId: "TBD",
+        status: "PENDING",
+        date: "",
+        time: "",
+        venue: "TBD",
+      },
+    ];
+
+    try {
+      const batch = writeBatch(db);
+      knockoutMatches.forEach((match) => {
+        const matchRef = doc(
+          collection(db, `tournaments/${tournamentId}/matches`),
+        );
+        batch.set(matchRef, match);
+      });
+      await batch.commit();
+      alert(
+        "Knockout placeholders generated! You can edit them later once teams qualify.",
+      );
+    } catch (error) {
+      console.error(error);
     }
   };
 
@@ -320,6 +519,20 @@ export default function MatchScheduler({
               {tab.label}
             </button>
           ))}
+        </div>
+
+        <div className="flex gap-3 mb-6">
+          <button
+            onClick={handleAutoScheduleGroups}
+            className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest shadow-md">
+            Auto-Schedule Groups
+          </button>
+
+          <button
+            onClick={handleGenerateKnockouts}
+            className="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest shadow-md">
+            Add Knockout Stages
+          </button>
         </div>
 
         <div className="flex gap-3">
