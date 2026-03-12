@@ -111,25 +111,50 @@ export default function MatchScheduler({
   // --- 2. RESET SCHEDULE ---
   const handleResetSchedule = async () => {
     if (
-      !window.confirm("⚠️ Are you sure? This will delete all UPCOMING matches.")
+      !window.confirm(
+        "⚠️ Are you sure? This will delete all UNPLAYED/UPCOMING matches.",
+      )
     )
       return;
+
     setResetting(true);
+
     try {
       const matchesCol = collection(db, "tournaments", tournamentId, "matches");
-      const q = query(matchesCol, where("status", "==", "upcoming"));
-      const snapshot = await getDocs(q);
+      // 🟢 Fetch ALL matches to safely catch case differences and 'pending' vs 'upcoming'
+      const snapshot = await getDocs(matchesCol);
 
-      if (snapshot.empty) {
-        alert("No 'upcoming' matches found.");
+      const batch = writeBatch(db);
+      let deleteCount = 0;
+
+      snapshot.docs.forEach((doc) => {
+        const data = doc.data();
+
+        // Safely grab the status and force it to lowercase for easy checking
+        const rootStatus = String(data.status || "").toLowerCase();
+        const metaStatus = String(data.meta?.status || "").toLowerCase();
+
+        // 🟢 Check if it matches ANY common "unplayed" status word
+        const unplayedStatuses = ["upcoming", "pending", "scheduled", ""];
+
+        const isUnplayed =
+          unplayedStatuses.includes(rootStatus) ||
+          unplayedStatuses.includes(metaStatus);
+
+        if (isUnplayed) {
+          batch.delete(doc.ref);
+          deleteCount++;
+        }
+      });
+
+      if (deleteCount === 0) {
+        alert("No upcoming or pending matches found to delete.");
         setResetting(false);
         return;
       }
 
-      const batch = writeBatch(db);
-      snapshot.docs.forEach((doc) => batch.delete(doc.ref));
       await batch.commit();
-      alert(`Deleted ${snapshot.size} matches.`);
+      alert(`Successfully deleted ${deleteCount} matches.`);
     } catch (e) {
       console.error(e);
       alert("Error: " + e.message);

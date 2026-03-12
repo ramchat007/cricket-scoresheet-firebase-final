@@ -89,7 +89,7 @@ export default function TeamPosterModal({
               </div>
 
               <div className="flex justify-center mb-4 relative">
-                {teamLogo ? (
+                {/* {teamLogo ? (
                   <img
                     src={teamLogo}
                     alt="Logo"
@@ -104,7 +104,7 @@ export default function TeamPosterModal({
                       className={lightMode ? "text-gray-300" : "text-gray-600"}
                     />
                   </div>
-                )}
+                )} */}
                 {/* Glow behind logo */}
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 bg-teal-500/30 blur-[40px] rounded-full pointer-events-none"></div>
               </div>
