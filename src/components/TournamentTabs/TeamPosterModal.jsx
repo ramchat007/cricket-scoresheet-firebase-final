@@ -181,11 +181,11 @@ export default function TeamPosterModal({
                     </div>
 
                     {/* Player Info (Bottom) */}
-                    <div className="relative z-10 p-2 md:p-3 w-full text-center">
-                      <p className="text-[10px] md:text-xs font-black text-white uppercase leading-tight truncate drop-shadow-md">
+                    <div className="relative z-10 px-1 py-2 md:px-2 md:py-3 w-full text-center">
+                      <p className="text-[9px] md:text-[11px] font-black text-white uppercase leading-none break-words line-clamp-3 drop-shadow-md">
                         {player.name}
                       </p>
-                      <p className="text-[7px] md:text-[8px] font-bold text-teal-400 uppercase tracking-widest mt-0.5 truncate drop-shadow-md">
+                      <p className="text-[7px] md:text-[8px] font-bold text-teal-400 uppercase tracking-widest mt-1 break-words drop-shadow-md">
                         {player.role}
                       </p>
                     </div>
