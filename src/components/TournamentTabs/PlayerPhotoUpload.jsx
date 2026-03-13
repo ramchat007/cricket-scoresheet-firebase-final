@@ -18,7 +18,7 @@ import {
   Edit3,
 } from "lucide-react";
 
-// 🟢 NEW: CROPPER IMPORT
+// 🟢 CROPPER IMPORT
 import Cropper from "react-easy-crop";
 
 // --- CROP UTILITY FUNCTIONS ---
@@ -27,6 +27,8 @@ const createImage = (url) =>
     const image = new Image();
     image.addEventListener("load", () => resolve(image));
     image.addEventListener("error", (error) => reject(error));
+    // 🟢 CRITICAL: Allows existing Firebase images to be loaded into the canvas without CORS errors
+    image.setAttribute("crossOrigin", "anonymous");
     image.src = url;
   });
 
@@ -37,12 +39,10 @@ async function getCroppedImg(imageSrc, pixelCrop) {
 
   if (!ctx) return null;
 
-  // Set the canvas size to match the cropped area exactly (400px for high quality avatars)
   const TARGET_SIZE = 400;
   canvas.width = TARGET_SIZE;
   canvas.height = TARGET_SIZE;
 
-  // Draw the cropped image onto the canvas, scaling it down perfectly
   ctx.drawImage(
     image,
     pixelCrop.x,
@@ -55,7 +55,6 @@ async function getCroppedImg(imageSrc, pixelCrop) {
     TARGET_SIZE,
   );
 
-  // Compress to JPEG with 0.8 quality
   return canvas.toDataURL("image/jpeg", 0.8);
 }
 
@@ -67,7 +66,6 @@ export default function PlayerPhotoUpload() {
   const [search, setSearch] = useState("");
   const [selectedPlayer, setSelectedPlayer] = useState(null);
 
-  // 🟢 NEW: Replaced 'imageFile' with cropped Base64 state
   const [finalPhotoBase64, setFinalPhotoBase64] = useState(null);
   const [preview, setPreview] = useState(null);
 
@@ -82,7 +80,7 @@ export default function PlayerPhotoUpload() {
   const [uploading, setUploading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // 1. FETCH PLAYERS FROM THE TEAMS COLLECTION
+  // 1. FETCH PLAYERS
   useEffect(() => {
     const fetchPlayers = async () => {
       try {
@@ -91,7 +89,6 @@ export default function PlayerPhotoUpload() {
         );
 
         let pList = [];
-
         teamsSnap.docs.forEach((teamDoc) => {
           const teamData = teamDoc.data();
           if (teamData.roster && Array.isArray(teamData.roster)) {
@@ -123,18 +120,16 @@ export default function PlayerPhotoUpload() {
     fetchPlayers();
   }, [tournamentId]);
 
-  // 2. HANDLE PLAYER SELECTION & FETCH EXISTING PHOTO
+  // 2. HANDLE PLAYER SELECTION
   const handleSelectPlayer = async (player) => {
     setSelectedPlayer(player);
-    setFinalPhotoBase64(null); // Reset new file selection
+    setFinalPhotoBase64(null);
     setSuccess(false);
 
-    // Check if team roster already has a photo
     let existingPhoto =
       player.photoURL || player.photoUrl || player.image || null;
     setPreview(existingPhoto);
 
-    // Failsafe: Check global database
     const globalId =
       player.originalPlayerId ||
       player.originalId ||
@@ -146,13 +141,11 @@ export default function PlayerPhotoUpload() {
         if (globalSnap.exists() && globalSnap.data().photoURL) {
           setPreview(globalSnap.data().photoURL);
         }
-      } catch (e) {
-        // Ignore silent fetch errors
-      }
+      } catch (e) {}
     }
   };
 
-  // 🟢 3. HANDLE IMAGE SELECTION (Opens Cropper)
+  // 3A. HANDLE NEW IMAGE SELECTION
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -165,10 +158,19 @@ export default function PlayerPhotoUpload() {
         setCropModalOpen(true);
       };
     }
-    // Reset input so same file can be selected again
     e.target.value = null;
   };
 
+  // 3B. 🟢 HANDLE EDIT EXISTING IMAGE (Safely inside the component now!)
+  const handleEditExistingPhoto = () => {
+    if (!preview) return;
+    setImageToCrop(preview);
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+    setCropModalOpen(true);
+  };
+
+  // 3C. CROP HANDLERS
   const onCropComplete = useCallback((croppedArea, croppedAreaPixels) => {
     setCroppedAreaPixels(croppedAreaPixels);
   }, []);
@@ -177,13 +179,15 @@ export default function PlayerPhotoUpload() {
     try {
       const croppedImage = await getCroppedImg(imageToCrop, croppedAreaPixels);
       setFinalPhotoBase64(croppedImage);
-      setPreview(croppedImage); // Update UI preview
+      setPreview(croppedImage);
       setCropModalOpen(false);
       setImageToCrop(null);
       setSuccess(false);
     } catch (e) {
       console.error(e);
-      alert("Failed to crop image");
+      alert(
+        "Failed to crop image. It might be blocked by browser security. Please upload a new photo from your gallery.",
+      );
     }
   };
 
@@ -192,7 +196,7 @@ export default function PlayerPhotoUpload() {
     setImageToCrop(null);
   };
 
-  // 4. PROCESS AND UPLOAD TO TEAMS AND GLOBAL DATABASE
+  // 4. UPLOAD LOGIC
   const handleUpload = async () => {
     if (!selectedPlayer || !finalPhotoBase64)
       return alert("Please select your name and a photo.");
@@ -239,7 +243,7 @@ export default function PlayerPhotoUpload() {
       }
 
       setSuccess(true);
-      setFinalPhotoBase64(null); // Reset after upload
+      setFinalPhotoBase64(null);
     } catch (error) {
       console.error("Upload failed:", error);
       alert("Failed to upload photo. Please try again.");
@@ -252,7 +256,7 @@ export default function PlayerPhotoUpload() {
     p.name.toLowerCase().includes(search.toLowerCase()),
   );
 
-  // --- CROP MODAL RENDER ---
+  // --- CROP MODAL UI ---
   const renderCropModal = () => {
     if (!cropModalOpen || !imageToCrop) return null;
 
@@ -313,8 +317,7 @@ export default function PlayerPhotoUpload() {
 
   return (
     <div
-      className={` md:p-8 flex justify-center items-center font-sans ${theme.bg} ${theme.text}`}>
-      {/* 🟢 Inject Crop Modal */}
+      className={`min-h-screen p-4 md:p-8 flex justify-center items-center font-sans ${theme.bg} ${theme.text}`}>
       {renderCropModal()}
 
       <div
@@ -424,53 +427,73 @@ export default function PlayerPhotoUpload() {
               )}
             </div>
 
-            {/* STEP 2: UPLOAD PHOTO */}
+            {/* STEP 2: UPLOAD & EDIT PHOTO */}
             <div
               className={`transition-all duration-500 ${selectedPlayer ? "opacity-100" : "opacity-30 pointer-events-none"}`}>
               <label
                 className={`block text-[10px] font-black uppercase tracking-widest mb-2 ${theme.sub}`}>
-                2. Select & Crop Photo
+                2. Edit or Change Photo
               </label>
 
               <div className="flex flex-col items-center">
-                <label
-                  className={`w-32 h-32 rounded-full border-4 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all relative overflow-hidden mb-2 ${lightMode ? "border-gray-300 hover:border-teal-500 bg-gray-50" : "border-white/20 hover:border-teal-500 bg-[#0F1115]"}`}>
-                  {preview ? (
-                    <>
+                {preview ? (
+                  <>
+                    <div
+                      onClick={handleEditExistingPhoto}
+                      className={`w-32 h-32 rounded-full border-4 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all relative overflow-hidden mb-2 ${lightMode ? "border-gray-300 hover:border-teal-500 bg-gray-50" : "border-white/20 hover:border-teal-500 bg-[#0F1115]"}`}>
                       <img
                         src={preview}
                         alt="Preview"
                         className="w-full h-full object-cover"
+                        crossOrigin="anonymous"
                       />
                       <div className="absolute bottom-2 right-2 bg-teal-500 p-1.5 rounded-full text-white shadow-lg border-2 border-white dark:border-[#0F1115]">
                         <Edit3 size={14} />
                       </div>
-                    </>
-                  ) : (
-                    <>
-                      <Camera size={24} className={theme.sub} />
-                    </>
-                  )}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageChange}
-                    className="hidden"
-                  />
-                </label>
+                    </div>
 
-                <span
-                  className={`text-[10px] font-bold uppercase tracking-widest mb-6 ${theme.sub}`}>
-                  {finalPhotoBase64
-                    ? "New Photo Ready"
-                    : preview
-                      ? "Current Photo - Tap to Change"
-                      : "Tap to Select Photo"}
-                </span>
+                    <label
+                      htmlFor="new-image-upload"
+                      className="text-teal-500 text-xs font-bold underline cursor-pointer mb-6 hover:text-teal-400">
+                      Or upload a different photo
+                    </label>
+                    <input
+                      type="file"
+                      id="new-image-upload"
+                      accept="image/*"
+                      onChange={handleImageChange}
+                      className="hidden"
+                    />
+                  </>
+                ) : (
+                  <>
+                    <label
+                      htmlFor="new-image-upload"
+                      className={`w-32 h-32 rounded-full border-4 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all relative overflow-hidden mb-2 ${lightMode ? "border-gray-300 hover:border-teal-500 bg-gray-50" : "border-white/20 hover:border-teal-500 bg-[#0F1115]"}`}>
+                      <Camera size={24} className={theme.sub} />
+                      <span
+                        className={`text-[10px] font-bold uppercase mt-2 ${theme.sub}`}>
+                        Tap to Select
+                      </span>
+                    </label>
+                    <input
+                      type="file"
+                      id="new-image-upload"
+                      accept="image/*"
+                      onChange={handleImageChange}
+                      className="hidden"
+                    />
+
+                    <span
+                      className={`text-[10px] font-bold uppercase tracking-widest mb-6 ${theme.sub}`}>
+                      Tap to Select Photo
+                    </span>
+                  </>
+                )}
 
                 <button
                   onClick={handleUpload}
-                  disabled={uploading || !finalPhotoBase64} // 🟢 Must successfully crop a NEW photo to save
+                  disabled={uploading || !finalPhotoBase64}
                   className="w-full bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-black py-4 rounded-xl shadow-lg uppercase tracking-widest text-sm disabled:opacity-50 transition-all flex justify-center items-center gap-2 active:scale-95">
                   {uploading ? (
                     <>
@@ -478,7 +501,7 @@ export default function PlayerPhotoUpload() {
                       Uploading...
                     </>
                   ) : (
-                    "Save New Photo"
+                    "Save Photo"
                   )}
                 </button>
               </div>
