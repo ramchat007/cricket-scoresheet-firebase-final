@@ -41,6 +41,7 @@ import RequireTournamentAccess from "./components/guards/RequireTournamentAccess
 import { useAuth } from "./hooks/useAuth.jsx";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import PublicAuctionViewer from "./components/PublicAuctionViewer.jsx";
+import PlayerPhotoUpload from "./components/TournamentTabs/PlayerPhotoUpload.jsx";
 
 // ----------------------------------------------------------------------
 // 1. APP CONTENT (Inner Component)
@@ -340,6 +341,7 @@ function AppContent() {
             <Route path="/create-tournament" element={<RequireAuth><CreateTournament /></RequireAuth>} />
             <Route path="/tournaments/:id/auction" element={<RequireTournamentAccess requireEdit><AuctionDashboard /></RequireTournamentAccess>} />
             <Route path="/tournaments/:id/auction/live" element={<PublicAuctionViewer />} />
+            <Route path="/tournaments/:id/upload-photo" element={<PlayerPhotoUpload />} />
             <Route path="/matches" element={<MatchesPage availableTournaments={availableTournaments} onSelect={handleMatchesPageSelect} readOnly={!user} />} />
             <Route path="/players" element={<GlobalPlayersView />} />
             <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
