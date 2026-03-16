@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Camera, Play, Square, Copy, AlertCircle, Check, User, Image as ImageIcon, Mic, MicOff, RefreshCw, Settings2, SwitchCamera } from "lucide-react";
+import { Camera, Play, Square, Copy, AlertCircle, Check, User, Image as ImageIcon, Mic, MicOff, RefreshCw, Settings2, SwitchCamera, Maximize, Minimize } from "lucide-react";
 import { rtcConfig, createStreamOffer, stopStream, clearStreamDatabase } from "../../utils/webrtc";
 
 export default function Broadcaster() {
   const videoRef = useRef(null);
   const peerConnectionRef = useRef(null);
+  
+  // 🟢 NEW: Hardware lock reference to survive React hot-reloads
+  const activeStreamRef = useRef(null);
 
   const [streamId, setStreamId] = useState("");
   const [localStream, setLocalStream] = useState(null);
@@ -12,6 +15,7 @@ export default function Broadcaster() {
   
   const [facingMode, setFacingMode] = useState("environment");
   const [isMuted, setIsMuted] = useState(false); 
+  const [isFullscreen, setIsFullscreen] = useState(false);
   
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
@@ -25,8 +29,18 @@ export default function Broadcaster() {
     }
     setStreamId(savedId);
 
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+
     return () => {
-      if (localStream) localStream.getTracks().forEach(t => t.stop());
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      
+      // 🟢 BUG FIX: Always use the Ref to cleanly kill the hardware on unmount!
+      if (activeStreamRef.current) {
+        activeStreamRef.current.getTracks().forEach(t => t.stop());
+      }
       handleStopStream(savedId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -58,27 +72,51 @@ export default function Broadcaster() {
     }
   };
 
-  // 🟢 SAFELY TURN ON HARDWARE
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        if (document.documentElement.requestFullscreen) {
+          await document.documentElement.requestFullscreen();
+        } else if (document.documentElement.webkitRequestFullscreen) {
+          await document.documentElement.webkitRequestFullscreen();
+        }
+        setIsFullscreen(true);
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+          await document.webkitExitFullscreen();
+        }
+        setIsFullscreen(false);
+      }
+    } catch (err) {
+      console.warn("Fullscreen API failed, using CSS fallback", err);
+      setIsFullscreen(!isFullscreen);
+    }
+  };
+
   const handleStartStream = async () => {
     try {
       setError("");
       
-      // 1. Ensure any stuck tracks are killed and wait 100ms for hardware to unlock
-      if (localStream) {
-        localStream.getTracks().forEach(t => t.stop());
+      if (activeStreamRef.current) {
+        activeStreamRef.current.getTracks().forEach(t => t.stop());
         await new Promise(resolve => setTimeout(resolve, 100));
       }
 
       await clearStreamDatabase(streamId);
 
-      // 2. Request camera safely (using 'ideal' prevents crashes on laptops with only 1 camera)
+      // 🟢 Reverted exactly to the strict hardware request that worked for you
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: { facingMode: facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: true, 
       });
 
       stream.getAudioTracks().forEach(track => { track.enabled = !isMuted; });
+      
+      // Update both state and the safety Ref
       setLocalStream(stream);
+      activeStreamRef.current = stream;
 
       const peerConnection = new RTCPeerConnection(rtcConfig);
       peerConnectionRef.current = peerConnection;
@@ -92,32 +130,35 @@ export default function Broadcaster() {
 
     } catch (err) {
       console.error(err);
-      setError(`Hardware locked or denied: ${err.message}. Close other tabs using the camera.`);
-      if (localStream) localStream.getTracks().forEach(t => t.stop());
+      if (err.name === "NotAllowedError") {
+        setError("Permission Denied: Camera is locked by another app/tab, or browser blocked it.");
+      } else {
+        setError(`Camera failed: ${err.message}`);
+      }
+      
+      if (activeStreamRef.current) {
+        activeStreamRef.current.getTracks().forEach(t => t.stop());
+      }
     }
   };
 
-  // 🟢 SAFELY FLIP CAMERA WHILE LIVE
   const toggleCameraLive = async () => {
     if (!isStreaming || !peerConnectionRef.current) return;
     const newMode = facingMode === "environment" ? "user" : "environment";
     
     try {
-      // 1. We MUST kill the current camera first. Phones cannot run both at once.
-      if (localStream) {
-        localStream.getTracks().forEach(t => t.stop());
-        await new Promise(resolve => setTimeout(resolve, 150)); // Give hardware time to release
+      if (activeStreamRef.current) {
+        activeStreamRef.current.getTracks().forEach(t => t.stop());
+        await new Promise(resolve => setTimeout(resolve, 150)); 
       }
 
-      // 2. Start the new camera
       const newStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: newMode }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: { facingMode: newMode, width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: true 
       });
 
       newStream.getAudioTracks().forEach(track => { track.enabled = !isMuted; });
 
-      // 3. Swap the tracks in the WebRTC pipeline
       const senders = peerConnectionRef.current.getSenders();
       const videoSender = senders.find(s => s.track && s.track.kind === 'video');
       const audioSender = senders.find(s => s.track && s.track.kind === 'audio');
@@ -125,8 +166,8 @@ export default function Broadcaster() {
       if (videoSender) await videoSender.replaceTrack(newStream.getVideoTracks()[0]);
       if (audioSender) await audioSender.replaceTrack(newStream.getAudioTracks()[0]);
 
-      // 4. Update UI
       setLocalStream(newStream);
+      activeStreamRef.current = newStream;
       setFacingMode(newMode);
       
     } catch (err) {
@@ -138,13 +179,20 @@ export default function Broadcaster() {
   const handleStopStream = async (idToStop = streamId) => {
     setIsStreaming(false); 
 
+    if (document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
+    setIsFullscreen(false);
+
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
     }
     
-    if (localStream) {
-      localStream.getTracks().forEach(t => t.stop());
+    // 🟢 Clean kill
+    if (activeStreamRef.current) {
+      activeStreamRef.current.getTracks().forEach(t => t.stop());
+      activeStreamRef.current = null;
       setLocalStream(null);
     }
     
@@ -161,21 +209,23 @@ export default function Broadcaster() {
   return (
     <div className="h-[100dvh] flex flex-col font-sans overflow-hidden bg-gray-50 text-gray-900">
       
-      <div className="px-4 py-3 border-b flex justify-between items-center shrink-0 z-20 bg-white border-gray-200">
-        <div className="flex items-center gap-2">
-          <Camera className="text-teal-500" size={20} />
-          <h1 className="font-black uppercase tracking-widest text-sm md:text-lg italic">
-            Broadcaster
-          </h1>
-        </div>
-        
-        {isStreaming && (
-          <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/50 text-red-500 px-3 py-1 rounded-full animate-pulse">
-            <div className="w-2 h-2 rounded-full bg-red-500"></div>
-            <span className="text-[10px] font-black uppercase tracking-widest">Live</span>
+      {!isFullscreen && (
+        <div className="px-4 py-3 border-b flex justify-between items-center shrink-0 z-20 bg-white border-gray-200">
+          <div className="flex items-center gap-2">
+            <Camera className="text-teal-500" size={20} />
+            <h1 className="font-black uppercase tracking-widest text-sm md:text-lg italic">
+              Broadcaster
+            </h1>
           </div>
-        )}
-      </div>
+          
+          {isStreaming && (
+            <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/50 text-red-500 px-3 py-1 rounded-full animate-pulse">
+              <div className="w-2 h-2 rounded-full bg-red-500"></div>
+              <span className="text-[10px] font-black uppercase tracking-widest">Live</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-500 text-white text-xs font-bold p-3 text-center shrink-0 flex items-center justify-center gap-2 z-20 shadow-md">
@@ -245,17 +295,22 @@ export default function Broadcaster() {
             className={`absolute inset-0 w-full h-full object-cover ${facingMode === "user" ? "scale-x-[-1]" : ""}`}
           />
           
-          <div className="relative z-10 w-full p-6 pb-10 bg-gradient-to-t from-black/80 to-transparent flex justify-center items-center gap-3 md:gap-4">
-            <button onClick={toggleCameraLive} className="w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95 border border-white/20 bg-black/50 text-white backdrop-blur-md hover:bg-black/70">
-              <SwitchCamera size={20} />
+          <div className="relative z-10 w-full p-4 md:p-6 pb-8 bg-gradient-to-t from-black/80 to-transparent flex justify-center items-center gap-2 sm:gap-4">
+            
+            <button onClick={toggleFullscreen} className="w-10 h-10 md:w-14 md:h-14 rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95 border border-white/20 bg-black/50 text-white backdrop-blur-md hover:bg-black/70">
+              {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
             </button>
 
-            <button onClick={toggleMute} className={`w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95 border border-white/20 ${isMuted ? "bg-red-500 text-white" : "bg-black/50 text-white backdrop-blur-md hover:bg-black/70"}`}>
-              {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
+            <button onClick={toggleCameraLive} className="w-10 h-10 md:w-14 md:h-14 rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95 border border-white/20 bg-black/50 text-white backdrop-blur-md hover:bg-black/70">
+              <SwitchCamera size={18} />
             </button>
 
-            <button onClick={() => handleStopStream(streamId)} className="w-[160px] md:w-[200px] h-12 md:h-14 rounded-full bg-red-600 hover:bg-red-500 text-white font-black uppercase tracking-widest shadow-[0_0_20px_rgba(220,38,38,0.4)] flex items-center justify-center gap-2 active:scale-95 transition-all text-xs md:text-sm">
-              <Square size={16} fill="currentColor" /> Stop Live
+            <button onClick={toggleMute} className={`w-10 h-10 md:w-14 md:h-14 rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95 border border-white/20 ${isMuted ? "bg-red-500 text-white" : "bg-black/50 text-white backdrop-blur-md hover:bg-black/70"}`}>
+              {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
+            </button>
+
+            <button onClick={() => handleStopStream(streamId)} className="w-[130px] md:w-[200px] h-10 md:h-14 rounded-full bg-red-600 hover:bg-red-500 text-white font-black uppercase tracking-widest shadow-[0_0_20px_rgba(220,38,38,0.4)] flex items-center justify-center gap-2 active:scale-95 transition-all text-[10px] md:text-sm">
+              <Square size={14} fill="currentColor" /> Stop
             </button>
           </div>
         </div>
