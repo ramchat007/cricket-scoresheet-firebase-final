@@ -891,7 +891,7 @@ const playOverlaySound = (type) => {
                   {tournamentName}
                 </h2>
               </div>
-              <h1 className="text-white text-[10rem] font-black uppercase drop-shadow-2xl italic tracking-tighter flex items-center gap-16">
+              <h1 className="text-white text-[6rem] font-black uppercase drop-shadow-2xl italic tracking-tighter flex items-center gap-16">
                 <span className="drop-shadow-[0_0_30px_rgba(255,255,255,0.1)] text-slate-100">
                   {match?.meta?.teamA || "Team A"}
                 </span>

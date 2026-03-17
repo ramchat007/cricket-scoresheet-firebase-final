@@ -6,9 +6,8 @@ import {
   addDoc,
   getDocs,
   query,
-  where,
-  onSnapshot, // ✅ Added for real-time listener
   orderBy,
+  onSnapshot,
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { useTheme } from "../context/ThemeContext";
@@ -25,7 +24,7 @@ export default function MatchScheduler({
   const [creating, setCreating] = useState(false);
   const [resetting, setResetting] = useState(false);
 
-  // ✅ Local Teams State (Fallback if prop is empty)
+  // Local Teams State
   const [fetchedTeams, setFetchedTeams] = useState([]);
 
   // Match Form State
@@ -51,12 +50,10 @@ export default function MatchScheduler({
   const [selectedTeamIds, setSelectedTeamIds] = useState([]);
 
   // --- 1. SMART TEAM LOADING ---
-  // If props are empty, fetch from the specific tournament sub-collection
   useEffect(() => {
-    if (propTeams.length > 0) return; // Use props if available
+    if (propTeams.length > 0) return;
     if (!tournamentId) return;
 
-    // Fetch from: tournaments/{id}/teams
     const q = query(
       collection(db, "tournaments", tournamentId, "teams"),
       orderBy("name", "asc"),
@@ -68,15 +65,11 @@ export default function MatchScheduler({
         ...doc.data(),
       }));
       setFetchedTeams(data);
-      console.log(
-        `[Scheduler] Loaded ${data.length} teams for Tournament ${tournamentId}`,
-      );
     });
 
     return () => unsubscribe();
   }, [tournamentId, propTeams]);
 
-  // ✅ Determine which list to use
   const activeTeams = propTeams.length > 0 ? propTeams : fetchedTeams;
 
   useEffect(() => {
@@ -93,7 +86,6 @@ export default function MatchScheduler({
     );
   };
 
-  // ✅ HELPER: Sanitize Squad
   const sanitizeSquad = (roster) => {
     if (!roster) return [];
     return roster.map((player) => ({
@@ -118,30 +110,22 @@ export default function MatchScheduler({
       return;
 
     setResetting(true);
-
     try {
       const matchesCol = collection(db, "tournaments", tournamentId, "matches");
-      // 🟢 Fetch ALL matches to safely catch case differences and 'pending' vs 'upcoming'
       const snapshot = await getDocs(matchesCol);
-
       const batch = writeBatch(db);
       let deleteCount = 0;
 
       snapshot.docs.forEach((doc) => {
         const data = doc.data();
-
-        // Safely grab the status and force it to lowercase for easy checking
         const rootStatus = String(data.status || "").toLowerCase();
         const metaStatus = String(data.meta?.status || "").toLowerCase();
-
-        // 🟢 Check if it matches ANY common "unplayed" status word
         const unplayedStatuses = ["upcoming", "pending", "scheduled", ""];
 
-        const isUnplayed =
+        if (
           unplayedStatuses.includes(rootStatus) ||
-          unplayedStatuses.includes(metaStatus);
-
-        if (isUnplayed) {
+          unplayedStatuses.includes(metaStatus)
+        ) {
           batch.delete(doc.ref);
           deleteCount++;
         }
@@ -163,7 +147,7 @@ export default function MatchScheduler({
     }
   };
 
-  // --- 3. CREATE MATCH ---
+  // --- 3. CREATE SINGLE MATCH ---
   const handleCreateMatch = async () => {
     if (!teamAId || !teamBId) return alert("Select both teams");
     if (teamAId === teamBId) return alert("Cannot play against same team");
@@ -212,42 +196,98 @@ export default function MatchScheduler({
     }
   };
 
+  // --- 4. AUTO SCHEDULE (Unified Pool for Selected Teams) ---
   const handleAutoSchedule = async () => {
     const teamsToSchedule = activeTeams.filter((t) =>
       selectedTeamIds.includes(t.id),
     );
 
     if (teamsToSchedule.length < 2)
-      return alert("Need at least 2 teams selected to generate a schedule.");
-
+      return alert("Need at least 2 teams selected.");
     if (
       !window.confirm(
-        `Generate Group-Stage schedule for ${teamsToSchedule.length} selected teams? Matches will only be scheduled within assigned groups.`,
+        `Generate Round-Robin schedule for the ${teamsToSchedule.length} selected teams?`,
       )
     )
       return;
 
     setCreating(true);
     try {
-      // 🟢 1. SEPARATE TEAMS INTO GROUPS
+      let generatedMatches = [];
+      let pool = [...teamsToSchedule];
+
+      // 🟢 FIX: unified round-robin pool prevents 3-team bug
+      if (pool.length % 2 !== 0) pool.push({ id: "BYE", name: "BYE" });
+
+      const numTeams = pool.length;
+      const matchesPerRound = numTeams / 2;
+
+      for (let round = 0; round < numTeams - 1; round++) {
+        for (let match = 0; match < matchesPerRound; match++) {
+          const team1 = pool[match];
+          const team2 = pool[numTeams - 1 - match];
+          if (team1.id !== "BYE" && team2.id !== "BYE") {
+            generatedMatches.push({
+              teamA: team1,
+              teamB: team2,
+              stageName: leagueStageName || "League Match",
+            });
+          }
+        }
+        pool.splice(1, 0, pool.pop()); // Rotate array
+      }
+
+      await writeScheduledMatchesToFirestore(generatedMatches);
+      setMode("single");
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // --- 5. AUTO SCHEDULE GROUPS (Strictly respects DB Groups) ---
+  const handleAutoScheduleGroups = async () => {
+    // 🟢 FIX: Uses activeTeams instead of propTeams
+    const teamList = activeTeams || [];
+
+    if (teamList.length < 2)
+      return alert("Not enough teams to schedule matches.");
+    if (
+      !window.confirm(
+        "Auto-generate Group Stage matches? This strictly schedules matches within assigned groups.",
+      )
+    )
+      return;
+
+    setCreating(true);
+    try {
       const groupedTeams = {};
-      teamsToSchedule.forEach((t) => {
-        const groupName = t.group ? `Group ${t.group}` : "Unassigned League";
+      let hasGroups = false;
+
+      teamList.forEach((team) => {
+        const groupName = team.group
+          ? `Group ${team.group}`
+          : "Unassigned League";
+        if (team.group) hasGroups = true;
         if (!groupedTeams[groupName]) groupedTeams[groupName] = [];
-        groupedTeams[groupName].push(t);
+        groupedTeams[groupName].push(team);
       });
+
+      if (!hasGroups) {
+        setCreating(false);
+        return alert(
+          "No groups found! Please assign groups (A, B, C) to your teams in the Team Manager first.",
+        );
+      }
 
       let generatedMatches = [];
 
-      // 🟢 2. RUN ROUND-ROBIN FOR EACH GROUP INDIVIDUALLY
       Object.entries(groupedTeams).forEach(([groupName, groupRoster]) => {
         let pool = [...groupRoster];
-
-        // Skip if a group only has 1 team
         if (pool.length < 2) return;
 
-        if (pool.length % 2 !== 0) pool.push({ id: "BYE" });
-
+        if (pool.length % 2 !== 0) pool.push({ id: "BYE", name: "BYE" });
         const numTeams = pool.length;
         const matchesPerRound = numTeams / 2;
 
@@ -259,200 +299,100 @@ export default function MatchScheduler({
               generatedMatches.push({
                 teamA: team1,
                 teamB: team2,
-                stageName: groupName, // Tag it with "Group A", etc.
-                roundIndex: round, // Save round number for sorting
+                stageName: groupName,
+                roundIndex: round,
               });
             }
           }
-          pool.splice(1, 0, pool.pop()); // Rotate
+          pool.splice(1, 0, pool.pop());
         }
       });
 
-      if (generatedMatches.length === 0) {
-        throw new Error(
-          "Could not generate matches. Make sure groups have at least 2 teams.",
-        );
-      }
-
-      // 🟢 3. INTERLEAVE MATCHES (Round 1 Grp A, Round 1 Grp B, Round 2 Grp A...)
+      // Interleave group matches (Match 1 Grp A, Match 1 Grp B, etc.)
       generatedMatches.sort((a, b) => a.roundIndex - b.roundIndex);
 
-      // --- EXISTING TIME & DATE LOGIC ---
-      let matchCount = 0;
-      let currentDateTime = new Date(`${startDate}T${startTime}`);
-      let matchesToday = 0;
-
-      const batch = writeBatch(db);
-      const matchesCol = collection(db, "tournaments", tournamentId, "matches");
-
-      generatedMatches.forEach(({ teamA, teamB, stageName }) => {
-        if (matchesToday >= matchesPerDay) {
-          currentDateTime.setDate(currentDateTime.getDate() + 1);
-          const [h, m] = startTime.split(":");
-          currentDateTime.setHours(h, m, 0, 0);
-          matchesToday = 0;
-        }
-
-        matchCount++;
-        const endDateTime = new Date(currentDateTime);
-        endDateTime.setMinutes(
-          endDateTime.getMinutes() + Number(matchDuration),
-        );
-
-        // Append the Group Name to the user's custom Stage Name if it exists
-        const displayStage = leagueStageName
-          ? `${stageName} - ${leagueStageName}`
-          : stageName;
-
-        const matchData = {
-          meta: {
-            tournament: tournamentId,
-            teamA: teamA.name,
-            teamB: teamB.name,
-            teamAId: teamA.id,
-            teamBId: teamB.id,
-            teamALogo: teamA.logoUrl || teamA.logo || "",
-            teamBLogo: teamB.logoUrl || teamB.logo || "",
-            overs: Number(autoOvers),
-            date: currentDateTime.toISOString().slice(0, 10),
-            time: currentDateTime.toTimeString().slice(0, 5),
-            venue: defaultVenue || "TBA",
-            startAt: currentDateTime.toISOString(),
-            endAt: endDateTime.toISOString(),
-            status: "upcoming",
-            createdAt: new Date().toISOString(),
-            format: stageName, // 🟢 Saves "Group A" to the format
-            matchTitle: `Match ${matchCount} | ${displayStage}`, // 🟢 Ex: "Match 1 | Group A"
-          },
-          teamASquad: sanitizeSquad(teamA.roster),
-          teamBSquad: sanitizeSquad(teamB.roster),
-          innings: [],
-          status: "upcoming",
-          matchNo: matchCount,
-        };
-
-        batch.set(doc(matchesCol), matchData);
-
-        matchesToday++;
-        currentDateTime.setMinutes(
-          currentDateTime.getMinutes() +
-            Number(matchDuration) +
-            Number(matchGap),
-        );
-      });
-
-      await batch.commit();
-      alert(`Successfully generated ${matchCount} Group Stage matches!`);
-      setMode("single");
-    } catch (e) {
-      alert(e.message);
+      await writeScheduledMatchesToFirestore(generatedMatches);
+    } catch (error) {
+      console.error(error);
+      alert("Failed to generate group matches.");
     } finally {
       setCreating(false);
     }
   };
 
-  const handleAutoScheduleGroups = async () => {
-    // 🟢 SAFEGUARD: Ensure 'teams' actually exists and is an array before continuing
-    const teamList = propTeams || [];
-
-    if (teamList.length < 2) {
-      return alert(
-        "Not enough teams to schedule matches. Please add teams first.",
+  // --- HELPER: WRITES BATCH MATCHES WITH TIME LOGIC AND PROPER SCHEMA ---
+  const writeScheduledMatchesToFirestore = async (generatedMatches) => {
+    if (generatedMatches.length === 0)
+      throw new Error(
+        "Could not generate matches. Make sure pools have at least 2 teams.",
       );
-    }
 
-    if (
-      !window.confirm(
-        "Auto-generate Group Stage matches? This will schedule Round-Robin matches strictly within each assigned group.",
-      )
-    ) {
-      return;
-    }
+    let matchCount = 0;
+    let currentDateTime = new Date(`${startDate}T${startTime}`);
+    let matchesToday = 0;
 
-    // 1. Separate teams into their respective groups
-    const groupedTeams = {};
-    let hasGroups = false;
+    const batch = writeBatch(db);
+    const matchesCol = collection(db, "tournaments", tournamentId, "matches");
 
-    // 🟢 USE the safe 'teamList' variable here
-    teamList.forEach((team) => {
-      const groupName = team.group
-        ? `Group ${team.group}`
-        : "Unassigned League";
-      if (team.group) hasGroups = true;
-
-      if (!groupedTeams[groupName]) {
-        groupedTeams[groupName] = [];
+    generatedMatches.forEach(({ teamA, teamB, stageName }) => {
+      if (matchesToday >= matchesPerDay) {
+        currentDateTime.setDate(currentDateTime.getDate() + 1);
+        const [h, m] = startTime.split(":");
+        currentDateTime.setHours(h, m, 0, 0);
+        matchesToday = 0;
       }
-      groupedTeams[groupName].push(team);
+
+      matchCount++;
+      const endDateTime = new Date(currentDateTime);
+      endDateTime.setMinutes(endDateTime.getMinutes() + Number(matchDuration));
+
+      // 🟢 FIX: Proper 'meta' nesting for names to show correctly
+      const matchData = {
+        meta: {
+          tournament: tournamentId,
+          teamA: teamA.name,
+          teamB: teamB.name,
+          teamAId: teamA.id,
+          teamBId: teamB.id,
+          teamALogo: teamA.logoUrl || teamA.logo || "",
+          teamBLogo: teamB.logoUrl || teamB.logo || "",
+          overs: Number(autoOvers),
+          date: currentDateTime.toISOString().slice(0, 10),
+          time: currentDateTime.toTimeString().slice(0, 5),
+          venue: defaultVenue || "TBA",
+          startAt: currentDateTime.toISOString(),
+          endAt: endDateTime.toISOString(),
+          status: "upcoming",
+          createdAt: new Date().toISOString(),
+          format: stageName,
+          matchTitle: `Match ${matchCount} | ${stageName}`,
+        },
+        teamASquad: sanitizeSquad(teamA.roster),
+        teamBSquad: sanitizeSquad(teamB.roster),
+        innings: [],
+        status: "upcoming",
+        matchNo: matchCount,
+      };
+
+      batch.set(doc(matchesCol), matchData);
+
+      matchesToday++;
+      currentDateTime.setMinutes(
+        currentDateTime.getMinutes() + Number(matchDuration) + Number(matchGap),
+      );
     });
 
-    if (!hasGroups) {
-      alert(
-        "No groups found! Please assign groups (A, B, C) to your teams in the Team Manager first.",
-      );
-      return;
-    }
-
-    // 2. Generate Matches per group
-    const generatedMatches = [];
-    let matchCounter = 1; // You can adjust this to find the highest existing matchNo if appending
-
-    // Loop through each group (Group A, Group B, etc.)
-    Object.entries(groupedTeams).forEach(([groupName, groupRoster]) => {
-      // Only schedule if the group has at least 2 teams
-      if (groupRoster.length >= 2) {
-        // Standard Round-Robin formula for this specific group
-        for (let i = 0; i < groupRoster.length; i++) {
-          for (let j = i + 1; j < groupRoster.length; j++) {
-            generatedMatches.push({
-              matchNo: matchCounter++,
-              stage: groupName, // e.g., "Group A"
-              teamA: groupRoster[i].name,
-              teamAId: groupRoster[i].id,
-              teamB: groupRoster[j].name,
-              teamBId: groupRoster[j].id,
-              status: "PENDING",
-              date: "",
-              time: "",
-              venue: "TBD",
-            });
-          }
-        }
-      }
-    });
-
-    if (generatedMatches.length === 0) {
-      return alert(
-        "Could not generate matches. Make sure each group has at least 2 teams.",
-      );
-    }
-
-    // 3. Save to Firestore (Assuming you are using a batch write or similar)
-    try {
-      const batch = writeBatch(db);
-      generatedMatches.forEach((match) => {
-        const matchRef = doc(
-          collection(db, `tournaments/${tournamentId}/matches`),
-        );
-        batch.set(matchRef, match);
-      });
-      await batch.commit();
-      alert(
-        `Successfully generated ${generatedMatches.length} Group Stage matches!`,
-      );
-    } catch (error) {
-      console.error("Error saving matches:", error);
-      alert("Failed to save matches.");
-    }
+    await batch.commit();
+    alert(`Successfully generated ${matchCount} matches!`);
   };
 
+  // --- 6. GENERATE KNOCKOUTS ---
   const handleGenerateKnockouts = async () => {
     if (
       !window.confirm("Generate Knockout placeholders (Semi-Finals & Final)?")
     )
       return;
 
-    // Ask user for starting match number so it continues after group stages
     const startNo =
       parseInt(
         window.prompt("Enter starting Match Number for Knockouts:", "13"),
@@ -460,40 +400,71 @@ export default function MatchScheduler({
 
     const knockoutMatches = [
       {
+        // 🟢 FIX: Moved data inside the 'meta' object so names display properly
+        meta: {
+          tournament: tournamentId,
+          teamA: "Winner Group A",
+          teamB: "Runner-Up Group B",
+          teamAId: "TBD",
+          teamBId: "TBD",
+          teamALogo: "",
+          teamBLogo: "",
+          date: "",
+          time: "",
+          venue: "TBD",
+          status: "upcoming",
+          format: "Knockout",
+          matchTitle: "Semi-Final 1",
+        },
+        status: "upcoming",
         matchNo: startNo,
-        stage: "Semi-Final 1",
-        teamA: "Winner Group A", // Placeholder
-        teamAId: "TBD",
-        teamB: "Runner-Up Group B", // Placeholder
-        teamBId: "TBD",
-        status: "PENDING",
-        date: "",
-        time: "",
-        venue: "TBD",
+        teamASquad: [],
+        teamBSquad: [],
+        innings: [],
       },
       {
+        meta: {
+          tournament: tournamentId,
+          teamA: "Winner Group B",
+          teamB: "Runner-Up Group A",
+          teamAId: "TBD",
+          teamBId: "TBD",
+          teamALogo: "",
+          teamBLogo: "",
+          date: "",
+          time: "",
+          venue: "TBD",
+          status: "upcoming",
+          format: "Knockout",
+          matchTitle: "Semi-Final 2",
+        },
+        status: "upcoming",
         matchNo: startNo + 1,
-        stage: "Semi-Final 2",
-        teamA: "Winner Group B",
-        teamAId: "TBD",
-        teamB: "Runner-Up Group A",
-        teamBId: "TBD",
-        status: "PENDING",
-        date: "",
-        time: "",
-        venue: "TBD",
+        teamASquad: [],
+        teamBSquad: [],
+        innings: [],
       },
       {
+        meta: {
+          tournament: tournamentId,
+          teamA: "Winner SF 1",
+          teamB: "Winner SF 2",
+          teamAId: "TBD",
+          teamBId: "TBD",
+          teamALogo: "",
+          teamBLogo: "",
+          date: "",
+          time: "",
+          venue: "TBD",
+          status: "upcoming",
+          format: "Knockout",
+          matchTitle: "FINAL",
+        },
+        status: "upcoming",
         matchNo: startNo + 2,
-        stage: "FINAL",
-        teamA: "Winner SF 1",
-        teamAId: "TBD",
-        teamB: "Winner SF 2",
-        teamBId: "TBD",
-        status: "PENDING",
-        date: "",
-        time: "",
-        venue: "TBD",
+        teamASquad: [],
+        teamBSquad: [],
+        innings: [],
       },
     ];
 
@@ -520,11 +491,13 @@ export default function MatchScheduler({
 
   return (
     <div
-      className={`border rounded-[2rem] p-6 shadow-2xl relative animate-in slide-in-from-top-5 mt-6 mb-8 backdrop-blur-md ${theme.card} ${lightMode ? "border-purple-100 shadow-purple-500/5" : "border-white/5"}`}>
+      className={`border rounded-[2rem] p-6 shadow-2xl relative animate-in slide-in-from-top-5 mt-6 mb-8 backdrop-blur-md ${theme.card} ${lightMode ? "border-purple-100 shadow-purple-500/5" : "border-white/5"}`}
+    >
       {/* --- MODE TABS --- */}
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-8">
         <div
-          className={`flex rounded-xl p-1.5 shadow-inner border ${lightMode ? "bg-gray-100 border-gray-200" : "bg-[#161920] border-white/5"}`}>
+          className={`flex rounded-xl p-1.5 shadow-inner border ${lightMode ? "bg-gray-100 border-gray-200" : "bg-[#161920] border-white/5"}`}
+        >
           {[
             { id: "single", label: "Single Match" },
             { id: "auto", label: "⚡ Auto Scheduler" },
@@ -540,7 +513,8 @@ export default function MatchScheduler({
                   : lightMode
                     ? "text-gray-500 hover:text-gray-700"
                     : "text-slate-500 hover:text-slate-300"
-              }`}>
+              }`}
+            >
               {tab.label}
             </button>
           ))}
@@ -549,13 +523,14 @@ export default function MatchScheduler({
         <div className="flex gap-3 mb-6">
           <button
             onClick={handleAutoScheduleGroups}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest shadow-md">
+            className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest shadow-md"
+          >
             Auto-Schedule Groups
           </button>
-
           <button
             onClick={handleGenerateKnockouts}
-            className="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest shadow-md">
+            className="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest shadow-md"
+          >
             Add Knockout Stages
           </button>
         </div>
@@ -564,13 +539,15 @@ export default function MatchScheduler({
           <button
             onClick={handleResetSchedule}
             disabled={resetting}
-            className={`text-xs font-black uppercase tracking-wider px-4 py-2 border rounded-lg ${lightMode ? "text-red-600 bg-red-50 border-red-200" : "text-red-500 bg-red-900/10 border-red-500/20"}`}>
+            className={`text-xs font-black uppercase tracking-wider px-4 py-2 border rounded-lg ${lightMode ? "text-red-600 bg-red-50 border-red-200" : "text-red-500 bg-red-900/10 border-red-500/20"}`}
+          >
             {resetting ? "Deleting..." : "🗑 Reset Upcoming"}
           </button>
           {onCancel && (
             <button
               onClick={onCancel}
-              className={`text-xs font-bold uppercase tracking-wider px-4 py-2 border border-transparent rounded-lg ${lightMode ? "text-gray-500 hover:bg-gray-100" : "text-slate-500 hover:text-white hover:border-white/10"}`}>
+              className={`text-xs font-bold uppercase tracking-wider px-4 py-2 border border-transparent rounded-lg ${lightMode ? "text-gray-500 hover:bg-gray-100" : "text-slate-500 hover:text-white hover:border-white/10"}`}
+            >
               Cancel
             </button>
           )}
@@ -581,7 +558,6 @@ export default function MatchScheduler({
       {mode === "single" ? (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* HOME TEAM DROPDOWN */}
             <div>
               <label className={`${labelClass} text-teal-500`}>
                 Home Team ({activeTeams.length})
@@ -591,7 +567,8 @@ export default function MatchScheduler({
                   className={`${inputClass} appearance-none cursor-pointer`}
                   value={teamAId}
                   onChange={(e) => setTeamAId(e.target.value)}
-                  disabled={activeTeams.length === 0}>
+                  disabled={activeTeams.length === 0}
+                >
                   <option value="">
                     {activeTeams.length === 0
                       ? "⚠️ No Teams Found"
@@ -604,13 +581,13 @@ export default function MatchScheduler({
                   ))}
                 </select>
                 <div
-                  className={`absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none ${lightMode ? "text-gray-400" : "text-slate-500"}`}>
+                  className={`absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none ${lightMode ? "text-gray-400" : "text-slate-500"}`}
+                >
                   ▼
                 </div>
               </div>
             </div>
 
-            {/* AWAY TEAM DROPDOWN */}
             <div>
               <label className={`${labelClass} text-indigo-400`}>
                 Away Team
@@ -620,7 +597,8 @@ export default function MatchScheduler({
                   className={`${inputClass} appearance-none cursor-pointer`}
                   value={teamBId}
                   onChange={(e) => setTeamBId(e.target.value)}
-                  disabled={activeTeams.length === 0}>
+                  disabled={activeTeams.length === 0}
+                >
                   <option value="">-- Select Team B --</option>
                   {activeTeams.map((t) => (
                     <option key={t.id} value={t.id}>
@@ -629,7 +607,8 @@ export default function MatchScheduler({
                   ))}
                 </select>
                 <div
-                  className={`absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none ${lightMode ? "text-gray-400" : "text-slate-500"}`}>
+                  className={`absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none ${lightMode ? "text-gray-400" : "text-slate-500"}`}
+                >
                   ▼
                 </div>
               </div>
@@ -688,7 +667,8 @@ export default function MatchScheduler({
           <button
             onClick={handleCreateMatch}
             disabled={creating || !teamAId || !teamBId}
-            className="w-full bg-gradient-to-r from-teal-600 to-teal-800 text-white font-black text-sm uppercase tracking-[0.15em] py-4 rounded-xl shadow-xl hover:shadow-teal-900/30 transition-all disabled:opacity-50 active:scale-[0.98]">
+            className="w-full bg-gradient-to-r from-teal-600 to-teal-800 text-white font-black text-sm uppercase tracking-[0.15em] py-4 rounded-xl shadow-xl hover:shadow-teal-900/30 transition-all disabled:opacity-50 active:scale-[0.98]"
+          >
             {creating ? "Scheduling..." : "Create Match"}
           </button>
         </div>
@@ -696,17 +676,20 @@ export default function MatchScheduler({
         /* --- AUTO SCHEDULE FORM --- */
         <div className="space-y-6">
           <div
-            className={`flex items-center gap-3 p-4 rounded-xl border ${lightMode ? "bg-indigo-50 border-indigo-100" : "bg-indigo-900/20 border-indigo-500/20"}`}>
+            className={`flex items-center gap-3 p-4 rounded-xl border ${lightMode ? "bg-indigo-50 border-indigo-100" : "bg-indigo-900/20 border-indigo-500/20"}`}
+          >
             <span className="text-xl">🤖</span>
             <p
-              className={`text-xs font-medium ${lightMode ? "text-indigo-700" : "text-slate-300"}`}>
+              className={`text-xs font-medium ${lightMode ? "text-indigo-700" : "text-slate-300"}`}
+            >
               Generates a <strong>Round Robin</strong> schedule for{" "}
-              {activeTeams.length} teams.
+              {selectedTeamIds.length} selected teams.
             </p>
           </div>
-          {/* 🟢 NEW: TEAM SELECTION UI */}
+
           <div
-            className={`p-4 rounded-xl border ${lightMode ? "bg-white border-gray-200" : "bg-black/20 border-white/5"}`}>
+            className={`p-4 rounded-xl border ${lightMode ? "bg-white border-gray-200" : "bg-black/20 border-white/5"}`}
+          >
             <div className="flex justify-between items-center mb-3">
               <label className={labelClass}>
                 Select Teams for this Group/Stage
@@ -719,7 +702,8 @@ export default function MatchScheduler({
                       : activeTeams.map((t) => t.id),
                   )
                 }
-                className={`text-[10px] font-bold uppercase hover:underline ${theme.sub}`}>
+                className={`text-[10px] font-bold uppercase hover:underline ${theme.sub}`}
+              >
                 {selectedTeamIds.length === activeTeams.length
                   ? "Deselect All"
                   : "Select All"}
@@ -733,15 +717,11 @@ export default function MatchScheduler({
                   <button
                     key={team.id}
                     onClick={() => toggleTeamSelection(team.id)}
-                    className={`p-2 rounded-lg border text-xs font-bold truncate transition-all text-left flex items-center gap-2 ${
-                      isSelected
-                        ? "bg-teal-500/10 border-teal-500 text-teal-600 dark:text-teal-400 shadow-sm"
-                        : lightMode
-                          ? "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100"
-                          : "bg-white/5 border-white/5 text-slate-500 hover:bg-white/10"
-                    }`}>
+                    className={`p-2 rounded-lg border text-xs font-bold truncate transition-all text-left flex items-center gap-2 ${isSelected ? "bg-teal-500/10 border-teal-500 text-teal-600 dark:text-teal-400 shadow-sm" : lightMode ? "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100" : "bg-white/5 border-white/5 text-slate-500 hover:bg-white/10"}`}
+                  >
                     <div
-                      className={`w-3 h-3 rounded-sm border flex items-center justify-center shrink-0 ${isSelected ? "border-teal-500 bg-teal-500" : "border-gray-400"}`}>
+                      className={`w-3 h-3 rounded-sm border flex items-center justify-center shrink-0 ${isSelected ? "border-teal-500 bg-teal-500" : "border-gray-400"}`}
+                    >
                       {isSelected && (
                         <span className="text-white text-[8px]">✓</span>
                       )}
@@ -752,7 +732,6 @@ export default function MatchScheduler({
               })}
             </div>
 
-            {/* Stage Name (e.g., "Group A") */}
             <div className="mt-4 pt-4 border-t border-dashed border-gray-500/30">
               <label className={labelClass}>Stage / Group Name</label>
               <input
@@ -829,13 +808,15 @@ export default function MatchScheduler({
               />
             </div>
           </div>
+
           <button
             onClick={handleAutoSchedule}
-            disabled={creating || activeTeams.length < 2}
-            className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-black text-sm uppercase tracking-[0.15em] py-4 rounded-xl shadow-xl hover:shadow-indigo-900/30 transition-all disabled:opacity-50 active:scale-[0.98]">
+            disabled={creating || selectedTeamIds.length < 2}
+            className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-black text-sm uppercase tracking-[0.15em] py-4 rounded-xl shadow-xl hover:shadow-indigo-900/30 transition-all disabled:opacity-50 active:scale-[0.98]"
+          >
             {creating
               ? "Generating..."
-              : `Generate Schedule (${activeTeams.length} Teams)`}
+              : `Generate Schedule (${selectedTeamIds.length} Teams)`}
           </button>
         </div>
       )}
