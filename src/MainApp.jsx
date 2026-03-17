@@ -125,7 +125,7 @@ function AppContent() {
           <Routes>
             <Route path="/overlay/:tournamentId/:matchId" element={<MatchOverlay />} />
             <Route path="/overlay/tournament-banner/:tournamentId" element={<TournamentBanner />} />
-            {/* <Route path="/overlay/:tournamentId/broadcast/active" element={<BroadcastLayer />} /> */}
+            <Route path="/overlay/:tournamentId/broadcast/active" element={<BroadcastLayer />} />
             {/* <Route path="/overlay/:tournamentId/auction/live" element={<PublicAuctionViewer />} /> */}
           </Routes>
         </Suspense>
