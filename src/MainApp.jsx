@@ -64,7 +64,7 @@ function AppContent() {
 
   // Route Helpers
   const isOverlay = location.pathname.startsWith("/overlay");
-  const obsCast = location.pathname === "/broadcast" || location.pathname.startsWith("/obs");  
+  const obsCast = location.pathname === "/broadcast" || location.pathname.startsWith("/obs");
   const isRegistration =
     location.pathname.startsWith("/register-player") ||
     location.pathname.startsWith("/view-players");

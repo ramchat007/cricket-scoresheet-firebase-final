@@ -1,134 +1,94 @@
 import { db } from "./firebase";
 import { 
-  collection, 
-  doc, 
-  setDoc, 
-  addDoc, 
-  onSnapshot, 
-  getDoc, 
-  updateDoc, 
-  deleteDoc,
-  getDocs
+  collection, doc, setDoc, addDoc, onSnapshot, 
+  updateDoc, deleteDoc, getDocs 
 } from "firebase/firestore";
-// 🌐 1. STUN SERVERS
+
 export const rtcConfig = {
   iceServers: [
-    {
-      urls: [
-        "stun:stun1.l.google.com:19302",
-        "stun:stun2.l.google.com:19302",
-      ],
-    },
+    { urls: ["stun:stun1.l.google.com:19302", "stun:stun2.l.google.com:19302"] },
   ],
   iceCandidatePoolSize: 10,
 };
 
-// 📱 2. CREATE STREAM (Broadcaster)
+// 📱 BROADCASTER LOGIC
 export const createStreamOffer = async (streamId, peerConnection) => {
   const streamDocRef = doc(db, "streams", streamId);
   const callerCandidatesCollection = collection(streamDocRef, "callerCandidates");
+  const calleeCandidatesCollection = collection(streamDocRef, "calleeCandidates");
 
-  peerConnection.addEventListener("icecandidate", (event) => {
-    if (event.candidate && peerConnection.signalingState !== "closed") {
-      addDoc(callerCandidatesCollection, event.candidate.toJSON()).catch(e => console.warn(e));
+  // 1. Push local ICE candidates to Firestore
+  peerConnection.onicecandidate = (event) => {
+    if (event.candidate) {
+      addDoc(callerCandidatesCollection, event.candidate.toJSON());
     }
-  });
+  };
 
+  // 2. Create and set Offer
   const offer = await peerConnection.createOffer();
-  
-  if (peerConnection.signalingState === "closed") return;
   await peerConnection.setLocalDescription(offer);
 
-  const roomWithOffer = {
-    offer: {
-      type: offer.type,
-      sdp: offer.sdp,
-    },
+  await setDoc(streamDocRef, {
+    offer: { type: offer.type, sdp: offer.sdp },
     createdAt: new Date().toISOString(),
-  };
-  
-  await setDoc(streamDocRef, roomWithOffer);
+  });
 
-  // Listen for OBS Answer
+  // 3. Listen for OBS Answer
   onSnapshot(streamDocRef, (snapshot) => {
-    if (peerConnection.signalingState === "closed") return;
-    
     const data = snapshot.data();
-    if (!peerConnection.currentRemoteDescription && data && data.answer) {
+    if (!peerConnection.currentRemoteDescription && data?.answer) {
       const rtcSessionDescription = new RTCSessionDescription(data.answer);
-      peerConnection.setRemoteDescription(rtcSessionDescription).catch(e => console.warn(e));
+      peerConnection.setRemoteDescription(rtcSessionDescription);
     }
   });
 
-  // Listen for OBS ICE candidates
-  const calleeCandidatesCollection = collection(streamDocRef, "calleeCandidates");
+  // 4. Listen for OBS ICE candidates
   onSnapshot(calleeCandidatesCollection, (snapshot) => {
-    if (peerConnection.signalingState === "closed") return;
-    
     snapshot.docChanges().forEach((change) => {
       if (change.type === "added") {
-        if (peerConnection.signalingState === "closed") return; // 🟢 Triple check!
-        let data = change.doc.data();
-        peerConnection.addIceCandidate(new RTCIceCandidate(data)).catch(e => console.warn(e));
+        const data = change.doc.data();
+        peerConnection.addIceCandidate(new RTCIceCandidate(data)).catch(e => {});
       }
     });
   });
-
-  return streamDocRef;
 };
 
-// 💻 3. JOIN STREAM (OBS Receiver)
+// 💻 OBS RECEIVER LOGIC
 export const joinStreamAnswer = async (streamId, peerConnection) => {
   const streamDocRef = doc(db, "streams", streamId);
-  const streamSnapshot = await getDoc(streamDocRef);
-
-  if (peerConnection.signalingState === "closed") return;
-
-  if (!streamSnapshot.exists() || !streamSnapshot.data().offer) {
-    throw new Error("Stream offer not found.");
-  }
-
-  const calleeCandidatesCollection = collection(streamDocRef, "calleeCandidates");
-  const callerCandidatesCollection = collection(streamDocRef, "callerCandidates");
-
-  // Save OBS ICE candidates to Firebase
-  peerConnection.addEventListener("icecandidate", (event) => {
-    if (event.candidate && peerConnection.signalingState !== "closed") {
-      addDoc(calleeCandidatesCollection, event.candidate.toJSON()).catch(e => console.warn(e));
+  
+  // 1. Get the Offer from Broadcaster
+  const streamSnapshot = await doc(db, "streams", streamId);
+  
+  onSnapshot(streamDocRef, async (snapshot) => {
+    const data = snapshot.data();
+    if (data?.offer && !peerConnection.currentRemoteDescription) {
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+      
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      
+      await updateDoc(streamDocRef, {
+        answer: { type: answer.type, sdp: answer.sdp }
+      });
     }
   });
 
-  const offer = streamSnapshot.data().offer;
-  
-  if (peerConnection.signalingState === "closed") return;
-  await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+  // 2. Handle ICE Candidates
+  const calleeCandidatesCollection = collection(streamDocRef, "calleeCandidates");
+  const callerCandidatesCollection = collection(streamDocRef, "callerCandidates");
 
-  if (peerConnection.signalingState === "closed") return;
-  const answer = await peerConnection.createAnswer();
-  
-  if (peerConnection.signalingState === "closed") return;
-  await peerConnection.setLocalDescription(answer);
-
-  const roomWithAnswer = {
-    answer: {
-      type: answer.type,
-      sdp: answer.sdp,
-    },
+  peerConnection.onicecandidate = (event) => {
+    if (event.candidate) {
+      addDoc(calleeCandidatesCollection, event.candidate.toJSON());
+    }
   };
-  await updateDoc(streamDocRef, roomWithAnswer);
 
-  // 🟢 SAFETY FIX: Listen for Broadcaster ICE Candidates
   onSnapshot(callerCandidatesCollection, (snapshot) => {
-    // If the connection was closed while we were waiting for the snapshot, abort immediately!
-    if (peerConnection.signalingState === "closed") return;
-    
     snapshot.docChanges().forEach((change) => {
       if (change.type === "added") {
-        // Double check state inside the loop
-        if (peerConnection.signalingState === "closed") return; 
-        
-        let data = change.doc.data();
-        peerConnection.addIceCandidate(new RTCIceCandidate(data)).catch(e => console.warn("Ignored stale ICE candidate:", e));
+        const data = change.doc.data();
+        peerConnection.addIceCandidate(new RTCIceCandidate(data)).catch(e => {});
       }
     });
   });
