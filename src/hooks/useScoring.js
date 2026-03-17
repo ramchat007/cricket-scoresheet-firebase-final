@@ -130,7 +130,16 @@ function recalculateInningsState(inn) {
       inn.extras.wides += runVal;
     } else if (isNoBall) {
       inn.extras.noBalls += 1;
-      const physicalRuns = Math.max(0, runVal - 1);
+      
+      // 🟢 NEW LOGIC: Handle custom Runs Completed on a Wicket
+      let physicalRuns = 0;
+      if (isWicket && ball.wicketType === "runout" && ball.physicalRuns > 0) {
+        physicalRuns = ball.physicalRuns; 
+        inn.score += physicalRuns; // Add these completed runs to the team total!
+      } else {
+        physicalRuns = Math.max(0, runVal - 1);
+      }
+
       if (isBye) inn.extras.byes += physicalRuns;
       else if (isLegBye) inn.extras.legByes += physicalRuns;
       else {
@@ -178,7 +187,7 @@ function recalculateInningsState(inn) {
     }
 
     // --- 4. OVER COUNT ---
-    const countBall = (!isWide && !isNoBall) || isLegalOverride;
+    const countBall = (!isWide && !isNoBall) || isLegalOverride || ball.isValidBall;
     let isOverComplete = false;
 
     if (countBall) {

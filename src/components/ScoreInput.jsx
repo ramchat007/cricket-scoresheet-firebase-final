@@ -12,6 +12,7 @@ import {
   Trophy,
   ArrowRightCircle,
   Menu,
+  Check
 } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 
@@ -67,6 +68,7 @@ export default function ScoreInput({
   const [fielderName, setFielderName] = useState("");
   const [whoOut, setWhoOut] = useState("striker");
   const [wicketRuns, setWicketRuns] = useState(0);
+  const [countAsValidBall, setCountAsValidBall] = useState(false);
 
   const [incoming, setIncoming] = useState("");
   const [newBowler, setNewBowler] = useState("");
@@ -903,7 +905,7 @@ export default function ScoreInput({
               val="OUT"
               onClick={() => {
                 triggerFeedback("click");
-                setExtraType(null);
+                // setExtraType(null);
                 setIsWicketMenuOpen(true);
               }}
               disabled={disableBallEntry}
@@ -1406,43 +1408,67 @@ export default function ScoreInput({
 
               {/* 🔥 SHOW "WHO IS OUT" ONLY FOR RUNOUTS */}
               {wicketType === "runout" && (
-                <div className="flex gap-2 mb-4 animate-in fade-in">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setWhoOut("striker");
-                    }}
-                    className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all border ${
-                      whoOut === "striker"
-                        ? "bg-red-600 text-white border-red-500 shadow-lg"
-                        : lightMode
-                          ? "bg-gray-100 text-gray-500 border-gray-200"
-                          : "bg-white/5 text-slate-400 border-white/10"
-                    }`}
-                  >
-                    Striker Out
-                    <span className="block text-[10px] font-normal opacity-80 truncate px-2">
-                      {strikerName}
-                    </span>
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setWhoOut("nonStriker");
-                    }}
-                    className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all border ${
-                      whoOut === "nonStriker"
-                        ? "bg-red-600 text-white border-red-500 shadow-lg"
-                        : lightMode
-                          ? "bg-gray-100 text-gray-500 border-gray-200"
-                          : "bg-white/5 text-slate-400 border-white/10"
-                    }`}
-                  >
-                    Non-Striker Out
-                    <span className="block text-[10px] font-normal opacity-80 truncate px-2">
-                      {nonStrikerName}
-                    </span>
-                  </button>
+                <div className="animate-in fade-in space-y-4 mb-4">
+                  {/* 1. Runs Completed Row */}
+                  <div>
+                    <label className={modalLabelClass}>Runs Completed Before Run Out?</label>
+                    <div className="flex gap-2">
+                      {[0, 1, 2, 3].map((r) => (
+                        <button
+                          key={r}
+                          onClick={(e) => { e.stopPropagation(); setWicketRuns(r); }}
+                          className={`flex-1 py-2 rounded-xl font-bold transition-all border ${
+                            wicketRuns === r
+                              ? "bg-teal-600 text-white border-teal-500 shadow-md"
+                              : lightMode ? "bg-white text-teal-700 border-gray-200" : "bg-black/20 text-teal-400 border-white/10"
+                          }`}
+                        >
+                          {r}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 2. Who is Out? */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setWhoOut("striker"); }}
+                      className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all border ${
+                        whoOut === "striker"
+                          ? "bg-red-600 text-white border-red-500 shadow-lg"
+                          : lightMode ? "bg-gray-100 text-gray-500 border-gray-200" : "bg-white/5 text-slate-400 border-white/10"
+                      }`}
+                    >
+                      Striker Out
+                      <span className="block text-[10px] font-normal opacity-80 truncate px-2">{strikerName}</span>
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setWhoOut("nonStriker"); }}
+                      className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all border ${
+                        whoOut === "nonStriker"
+                          ? "bg-red-600 text-white border-red-500 shadow-lg"
+                          : lightMode ? "bg-gray-100 text-gray-500 border-gray-200" : "bg-white/5 text-slate-400 border-white/10"
+                      }`}
+                    >
+                      Non-Striker Out
+                      <span className="block text-[10px] font-normal opacity-80 truncate px-2">{nonStrikerName}</span>
+                    </button>
+                  </div>
+
+                  {/* 3. NB LOCAL RULE TOGGLE (Only shows if extraType is NB) */}
+                  {extraType === "NB" && (
+                    <div className={`p-3 rounded-xl border flex items-center gap-3 ${lightMode ? "bg-amber-50 border-amber-200" : "bg-amber-900/10 border-amber-500/20"}`}>
+                      <div className="relative flex items-center shrink-0">
+                        <input type="checkbox" id="validBallCheck" checked={countAsValidBall} onChange={(e) => setCountAsValidBall(e.target.checked)} className="peer h-6 w-6 cursor-pointer appearance-none rounded-lg border-2 border-amber-400 bg-white checked:bg-amber-500 checked:border-amber-500 transition-all"/>
+                        <Check size={14} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white opacity-0 peer-checked:opacity-100 pointer-events-none"/>
+                      </div>
+                      <div>
+                        <label htmlFor="validBallCheck" className="text-xs font-black text-amber-700 cursor-pointer uppercase tracking-widest">
+                          Count as Valid Ball?
+                        </label>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1564,6 +1590,8 @@ export default function ScoreInput({
                                 : strikerName,
                             isWide: extraType === "WD",
                             isNoBall: extraType === "NB",
+                            // 🟢 ADD THIS LINE:
+                            isValidBall: countAsValidBall, 
                           },
                           wicketRuns,
                         );
@@ -1574,6 +1602,8 @@ export default function ScoreInput({
                         setExtraType(null);
                         setFielderName("");
                         setWhoOut("striker");
+                        setWicketRuns(0); // 🟢 Add this
+                        setCountAsValidBall(false); // 🟢 Add this
                         setIsSyncing(false);
                       }
                     }}
@@ -1587,6 +1617,8 @@ export default function ScoreInput({
                       setIsAddingNew(false);
                       setFielderName("");
                       setWhoOut("striker");
+                      setWicketRuns(0); // 🟢 Add this
+                      setCountAsValidBall(false); // 🟢 Add this
                     }}
                     className="w-full py-4 font-bold opacity-50 active:opacity-100 transition-opacity"
                   >
