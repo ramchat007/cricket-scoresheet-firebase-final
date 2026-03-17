@@ -64,7 +64,7 @@ function AppContent() {
 
   // Route Helpers
   const isOverlay = location.pathname.startsWith("/overlay");
-  const obsCast = location.pathname.startsWith("/broadcast") || location.pathname.startsWith("/obs");
+  const obsCast = location.pathname === "/broadcast" || location.pathname.startsWith("/obs");  
   const isRegistration =
     location.pathname.startsWith("/register-player") ||
     location.pathname.startsWith("/view-players");
@@ -123,9 +123,9 @@ function AppContent() {
             </div>
           }>
           <Routes>
-            <Route path="/overlay/:tournamentId/active" element={<MatchOverlay />} />
+            <Route path="/overlay/:tournamentId/:matchId" element={<MatchOverlay />} />
             <Route path="/overlay/tournament-banner/:tournamentId" element={<TournamentBanner />} />
-            <Route path="/overlay/:tournamentId/broadcast/active" element={<BroadcastLayer />} />
+            {/* <Route path="/overlay/:tournamentId/broadcast/active" element={<BroadcastLayer />} /> */}
             {/* <Route path="/overlay/:tournamentId/auction/live" element={<PublicAuctionViewer />} /> */}
           </Routes>
         </Suspense>
@@ -356,7 +356,7 @@ function AppContent() {
 
             {/* Sub-Pages */}
             <Route path="/live/:tournamentId/:matchId" element={<RequireTournamentAccess><LiveScoring /></RequireTournamentAccess>} />
-            <Route path="/broadcast-control/:tournamentId/:matchId" element={<OverlayControllerWrapper />} />
+            <Route path="/broadcast-control/:tournamentId/:matchId" element={<OverlayControllerWrapper />} />            
             <Route path="/scoreboard" element={<Scoreboard />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/create-tournament" element={<RequireAuth><CreateTournament /></RequireAuth>} />

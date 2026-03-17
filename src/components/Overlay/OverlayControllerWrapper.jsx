@@ -7,7 +7,7 @@ import { ArrowLeft, Loader2, Radio } from "lucide-react";
 import { useTheme } from "../../context/ThemeContext";
 
 export default function OverlayControllerWrapper() {
-  const { tournamentId, matchId } = useParams();
+  const { tournamentId, matchId = "active" } = useParams();
   const navigate = useNavigate();
   const { theme, lightMode } = useTheme();
   
@@ -28,26 +28,34 @@ export default function OverlayControllerWrapper() {
 
         const getStatus = (m) => (m.status || m.meta?.status || "").toLowerCase().trim();
         
-        // 1. Look for an ongoing match
-        let activeMatch = matches.find((m) =>
-          ["live", "ongoing", "in-progress", "started", "playing"].includes(getStatus(m))
-        );
+        // 1. Bulletproof Active Match Check
+        let activeMatch = matches.find((m) => {
+          const status = getStatus(m);
+          
+          // Condition A: Matches specific keywords
+          if (["live", "ongoing", "in-progress", "started", "playing", "running"].includes(status)) return true;
+          
+          // Condition B: Toss has happened, but the match isn't finished yet
+          if (m.toss && !["completed", "finished", "abandoned", "result"].includes(status)) return true;
+          
+          return false;
+        });
 
         // 2. If no ongoing match, look for the next scheduled/upcoming match
         if (!activeMatch) {
           activeMatch = matches
-            .filter((m) => ["upcoming", "scheduled", "pending", "not started", ""].includes(getStatus(m)))
+            .filter((m) => !m.toss && !["completed", "finished"].includes(getStatus(m)))
             .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0))[0];
         }
 
         if (activeMatch) {
           setMatchData(activeMatch);
         } else {
-          setMatchData(null); // Explicitly null if nothing is active/upcoming
+          setMatchData(null); 
         }
         setLoading(false);
       });
-    } 
+    }
     // 🔥 MANUAL OVERRIDE MODE (Specific Match ID in URL)
     else {
       const matchRef = doc(db, "tournaments", tournamentId, "matches", matchId);
