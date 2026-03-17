@@ -828,28 +828,43 @@ export default function ScoreInput({
             .slice(-12)
             .reverse()
             .map((b, i) => {
+              // 🟢 NEW SMART LABEL LOGIC
               let label = b.runs;
               let bubble = lightMode
                 ? "bg-white border-gray-300 text-black"
                 : "bg-slate-700 text-white border-slate-600";
+
               if (b.isWicket) {
-                label = "W";
+                // If it's a wicket, check if it also has extras
+                if (b.isNoBall) {
+                  label = `W+${b.runs}NB`; // Displays W+1NB, W+2NB, etc.
+                } else if (b.isWide) {
+                  label = `W+${b.runs}WD`;
+                } else {
+                  // Standard wicket
+                  label = b.physicalRuns > 0 ? `W+${b.physicalRuns}` : "W";
+                }
                 bubble = "bg-red-500 text-white border-red-600";
-              } else if (b.isWide) {
+              } 
+              else if (b.isWide) {
                 label = b.runs - 1 + "+WD";
                 bubble = "bg-orange-500 text-white border-orange-600";
-              } else if (b.isNoBall) {
+              } 
+              else if (b.isNoBall) {
                 label = b.runs - 1 + "+NB";
                 bubble = "bg-orange-500 text-white border-orange-600";
-              } else if (b.runs === 4) {
+              } 
+              else if (b.runs === 4) {
                 bubble = "bg-blue-500 text-white border-blue-600";
-              } else if (b.runs === 6) {
+              } 
+              else if (b.runs === 6) {
                 bubble = "bg-yellow-500 text-black border-yellow-600";
               }
+
               return (
                 <div
                   key={i}
-                  className={`w-9 h-9 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${bubble} shadow-sm border`}
+                  className={`w-12 h-9 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${bubble} shadow-sm border px-1`}
                 >
                   {label}
                 </div>
@@ -1604,7 +1619,8 @@ export default function ScoreInput({
                         setWhoOut("striker");
                         setWicketRuns(0); // 🟢 Add this
                         setCountAsValidBall(false); // 🟢 Add this
-                        setIsSyncing(false);
+                        setIsSyncing(false);setEditStriker(false);
+                        setEditNonStriker(false);
                       }
                     }}
                     className="w-full py-4 bg-red-600 text-white font-bold rounded-xl text-lg mb-3 shadow-lg active:scale-95 transition-transform flex items-center justify-center"
