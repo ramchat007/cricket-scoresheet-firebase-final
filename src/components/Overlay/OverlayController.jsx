@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { doc, updateDoc, getDoc, setDoc } from "firebase/firestore"; // ✅ Added getDoc and setDoc
+import { doc, updateDoc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
 import { db } from "../../utils/firebase";
 import { useTheme } from "../../context/ThemeContext";
 import {
@@ -26,7 +26,8 @@ import {
   Image as ImageIcon,
   Monitor,
   Info,
-  Volume2,VolumeX
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 
 export default function OverlayController({ tournamentId, matchId, match }) {
@@ -47,7 +48,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     customMessageBody: "",
     tickerText: "",
     spotlightPlayerId: "",
-    appLogo: "", 
+    appLogo: "",
     showAppLogo: false,
     broadcastAudioEnabled: true,
   });
@@ -59,6 +60,29 @@ export default function OverlayController({ tournamentId, matchId, match }) {
   const [newSponsorName, setNewSponsorName] = useState("");
   const [newSponsorPhone, setNewSponsorPhone] = useState("");
   const [processingImage, setProcessingImage] = useState(false);
+
+  // 2. 🟢 FETCH AND LISTEN TO OVERLAY DATA DIRECTLY
+  useEffect(() => {
+    if (!tournamentId || !matchId) return;
+
+    const overlayRef = doc(db, "tournaments", tournamentId, "matches", matchId);
+    const unsubscribe = onSnapshot(overlayRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data()?.meta?.overlay;
+        if (data) {
+          // Normalize the data so nothing crashes
+          if (data.activeView && !data.activeViews)
+            data.activeViews = [data.activeView];
+          if (!data.sponsors) data.sponsors = [];
+          if (!data.fullScreenBanners) data.fullScreenBanners = [];
+
+          setConfig((prev) => ({ ...prev, ...data }));
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [tournamentId, matchId]);
 
   // 1. 🔥 FETCH GLOBAL LOGO ON MOUNT
   useEffect(() => {
@@ -109,7 +133,11 @@ export default function OverlayController({ tournamentId, matchId, match }) {
 
         try {
           // A. Save to Global Settings Collection
-          await setDoc(doc(db, "settings", "branding"), { defaultLogo: base64 }, { merge: true });
+          await setDoc(
+            doc(db, "settings", "branding"),
+            { defaultLogo: base64 },
+            { merge: true },
+          );
           setGlobalLogo(base64);
 
           // B. Instantly apply to current Match Overlay
@@ -133,14 +161,18 @@ export default function OverlayController({ tournamentId, matchId, match }) {
   const updateOverlay = async (updates) => {
     setSaving(true);
     const newConfig = { ...config, ...updates };
-    setConfig(newConfig);
+    setConfig(newConfig); // Optimistic UI update
+
     try {
-      await updateDoc(
+      // 🟢 Use setDoc with merge: true so it auto-creates the "global" doc if it's missing!
+      await setDoc(
         doc(db, "tournaments", tournamentId, "matches", matchId),
-        { "meta.overlay": newConfig },
+        { meta: { overlay: newConfig } },
+        { merge: true },
       );
     } catch (e) {
       console.error("Overlay update failed", e);
+      alert("Failed to save setting to the cloud.");
     } finally {
       setSaving(false);
     }
@@ -364,8 +396,10 @@ export default function OverlayController({ tournamentId, matchId, match }) {
           <div className="space-y-3 flex-grow">
             <div className="mt-4 pt-4 border-t border-white/10">
               <div className="flex justify-between items-center mb-2">
-                <label className={`${labelClass} mb-0`}>App Branding Logo</label>
-                
+                <label className={`${labelClass} mb-0`}>
+                  App Branding Logo
+                </label>
+
                 {/* 🟢 Visual indicator of Hierarchy */}
                 {match?.meta?.overlay?.appLogo ? (
                   <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-500">
@@ -380,14 +414,17 @@ export default function OverlayController({ tournamentId, matchId, match }) {
 
               {/* 🖼️ PREVIEW ACTIVE LOGO */}
               {(match?.meta?.overlay?.appLogo || globalLogo) && (
-                <div className={`mb-3 p-4 rounded-xl border flex flex-col items-center justify-center ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/10"}`}>
+                <div
+                  className={`mb-3 p-4 rounded-xl border flex flex-col items-center justify-center ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/10"}`}>
                   <img
                     src={match?.meta?.overlay?.appLogo || globalLogo}
                     alt="Broadcast Logo"
                     className="max-h-16 w-auto object-contain drop-shadow-md mb-2"
                   />
                   <span className="text-[10px] uppercase tracking-widest opacity-50 font-bold">
-                    {match?.meta?.overlay?.appLogo ? "Overriding with Custom Logo" : "Using Global Default"}
+                    {match?.meta?.overlay?.appLogo
+                      ? "Overriding with Custom Logo"
+                      : "Using Global Default"}
                   </span>
                 </div>
               )}
@@ -397,28 +434,55 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                 <button
                   onClick={() => fileInputAppLogoRef.current?.click()}
                   className={`flex-1 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all border flex items-center justify-center gap-1 ${lightMode ? "bg-white border-gray-200 hover:bg-gray-50" : "bg-white/5 border-white/10 hover:bg-white/10"}`}>
-                  <Upload size={12} /> {match?.meta?.overlay?.appLogo ? "Change Custom Logo" : "Upload Custom Logo"}
+                  <Upload size={12} />{" "}
+                  {match?.meta?.overlay?.appLogo
+                    ? "Change Custom Logo"
+                    : "Upload Custom Logo"}
                 </button>
 
                 {/* ❌ REMOVE OVERRIDE BUTTON (Only shows if custom logo is set) */}
                 {match?.meta?.overlay?.appLogo && (
                   <button
                     onClick={async () => {
-                      if (window.confirm("Remove custom logo and revert to Global Default?")) {
+                      if (
+                        window.confirm(
+                          "Remove custom logo and revert to Global Default?",
+                        )
+                      ) {
                         try {
                           // 🔥 FIX: Use match.id instead of matchId, and use your existing updateDoc import!
-                          await updateDoc(doc(db, "tournaments", tournamentId, "matches", match.id), {
-                            "meta.overlay.appLogo": "" 
-                          });
+                          await updateDoc(
+                            doc(
+                              db,
+                              "tournaments",
+                              tournamentId,
+                              "matches",
+                              match.id,
+                            ),
+                            {
+                              "meta.overlay.appLogo": "",
+                            },
+                          );
                         } catch (err) {
                           console.error("Error removing logo:", err);
                         }
                       }
                     }}
                     className={`px-4 py-2.5 rounded-xl font-black transition-all border flex items-center justify-center text-red-500 ${lightMode ? "bg-red-50 border-red-200 hover:bg-red-100" : "bg-red-500/10 border-red-500/20 hover:bg-red-500/30"}`}
-                    title="Revert to Global Logo"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    title="Revert to Global Logo">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18"></line>
+                      <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
                   </button>
                 )}
 
@@ -427,11 +491,11 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                   accept="image/*"
                   ref={fileInputAppLogoRef}
                   className="hidden"
-                  onChange={handleAppLogoUpload} 
+                  onChange={handleAppLogoUpload}
                 />
               </div>
             </div>
-            
+
             <ToggleButton
               label="Show Brand Logo on Screen"
               active={config.showAppLogo}
@@ -439,11 +503,14 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                 const newStatus = !config.showAppLogo;
                 // If we are turning it on, make sure the overlay object has the global logo data
                 if (newStatus && globalLogo) {
-                   updateOverlay({ showAppLogo: newStatus, appLogo: globalLogo });
+                  updateOverlay({
+                    showAppLogo: newStatus,
+                    appLogo: globalLogo,
+                  });
                 } else if (newStatus && !globalLogo) {
-                   alert("Please upload a Global Logo first!");
+                  alert("Please upload a Global Logo first!");
                 } else {
-                   updateOverlay({ showAppLogo: newStatus });
+                  updateOverlay({ showAppLogo: newStatus });
                 }
               }}
               icon={Star}
@@ -715,20 +782,27 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                 />
               </div>
               <div>
-              <p className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${theme.sub}`}>
-                Automated Stream Audio
-              </p>
-              <ToggleButton
-                label="Enable Auto-Sounds for 4s, 6s & Wickets"
-                active={config.broadcastAudioEnabled}
-                onClick={() => updateOverlay({ broadcastAudioEnabled: !config.broadcastAudioEnabled })}
-                icon={config.broadcastAudioEnabled ? Volume2 : VolumeX}
-                colorClass="bg-pink-600"
-              />
-              <p className="text-[9px] mt-2 opacity-60 italic leading-tight">
-                When ON, the OBS Overlay will automatically play crowd/stadium sounds whenever a boundary or wicket is scored on the timeline.
-              </p>
-            </div>
+                <p
+                  className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${theme.sub}`}>
+                  Automated Stream Audio
+                </p>
+                <ToggleButton
+                  label="Enable Auto-Sounds for 4s, 6s & Wickets"
+                  active={config.broadcastAudioEnabled}
+                  onClick={() =>
+                    updateOverlay({
+                      broadcastAudioEnabled: !config.broadcastAudioEnabled,
+                    })
+                  }
+                  icon={config.broadcastAudioEnabled ? Volume2 : VolumeX}
+                  colorClass="bg-pink-600"
+                />
+                <p className="text-[9px] mt-2 opacity-60 italic leading-tight">
+                  When ON, the OBS Overlay will automatically play crowd/stadium
+                  sounds whenever a boundary or wicket is scored on the
+                  timeline.
+                </p>
+              </div>
             </div>
 
             <div className="pt-3 border-t border-black/5 dark:border-white/5">
