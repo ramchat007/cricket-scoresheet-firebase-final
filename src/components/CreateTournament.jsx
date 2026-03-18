@@ -15,6 +15,7 @@ export default function CreateTournament() {
   const [location, setLocation] = useState("");
   const [date, setDate] = useState("");
   const [loading, setLoading] = useState(false);
+  const [format, setFormat] = useState("league");
 
   // Auction Constraint States (Removed basePrice and bidIncrement)
   const [minSquadSize, setMinSquadSize] = useState(11);
@@ -56,6 +57,7 @@ export default function CreateTournament() {
           organizer,
           location,
           date,
+          format,
           status: "upcoming",
           minSquadSize: Number(minSquadSize),
           maxSquadSize: Number(maxSquadSize),
@@ -171,6 +173,41 @@ export default function CreateTournament() {
                 />
               </div>
             </div>
+          </div>
+
+          {/* 🟢 NEW SECTION: TOURNAMENT FORMAT */}
+          <div className="space-y-5 pt-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Trophy size={14} className="text-cyan-500" />
+              <h3
+                className={`text-[11px] font-black uppercase tracking-widest ${theme.sub}`}>
+                Tournament Format
+              </h3>
+            </div>
+
+            <div className="flex gap-4">
+              {["league", "knockout"].map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setFormat(f)}
+                  className={`flex-1 py-4 rounded-xl font-black uppercase text-[10px] tracking-widest border transition-all ${
+                    format === f
+                      ? "bg-cyan-600 border-cyan-500 text-white shadow-lg"
+                      : lightMode
+                        ? "bg-white border-gray-200 text-gray-400"
+                        : "bg-white/5 border-white/10 text-slate-500"
+                  }`}>
+                  {f === "league" ? "Round Robin / League" : "Knockout Series"}
+                </button>
+              ))}
+            </div>
+            <p className={`text-[9px] italic font-bold ${theme.sub}`}>
+              *{" "}
+              {format === "league"
+                ? "Points Table will be used. Abandoned matches share 1 point each."
+                : "Winner advances to next round. Abandoned matches require a manual walkover."}
+            </p>
           </div>
 
           {/* SECTION 2: SQUAD RULES */}

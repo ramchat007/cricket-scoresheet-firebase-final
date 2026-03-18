@@ -10,9 +10,10 @@ import {
   Swords,
   Clock,
   MapPin,
+  Settings,
 } from "lucide-react";
 
-export default function MatchCard({ match, teams, tournamentId, canEdit }) {
+export default function MatchCard({ match, teams, tournamentId, canEdit, onOpenCorrection }) {
   const navigate = useNavigate();
   const { theme, lightMode } = useTheme();
 
@@ -187,6 +188,22 @@ export default function MatchCard({ match, teams, tournamentId, canEdit }) {
             }`}>
             {statusText}
           </span>
+
+          {canEdit && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation(); // 🟢 Prevent navigating to scorecard
+                onOpenCorrection(match); // 🟢 Open the Emergency Console
+              }}
+              className={`p-2 rounded-lg transition-all ${
+                lightMode
+                  ? "hover:bg-gray-200 text-gray-600"
+                  : "hover:bg-white/10 text-slate-400"
+              }`}
+              title="Match Settings & Resolution">
+              <Settings size={16} />
+            </button>
+          )}
         </div>
       </div>
 

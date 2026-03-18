@@ -1,11 +1,6 @@
-import React, {
-  useMemo,
-  useState,
-  useCallback,
-  useEffect,
-} from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth.jsx";
-import { doc, updateDoc, arrayUnion } from "firebase/firestore";
+import { doc, updateDoc, arrayUnion, getDoc } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { quickAddPlayer } from "../utils/firestore";
 import MatchCorrectionModal from "./MatchCorrectionModal.jsx";
@@ -48,7 +43,7 @@ export default function ScoreInput({
   onStrikeChange,
   onConfirmBowler,
   onFinishMatch,
-  onSetOpeners, 
+  onSetOpeners,
 }) {
   const { theme, lightMode } = useTheme();
 
@@ -58,7 +53,7 @@ export default function ScoreInput({
 
   const [openerStriker, setOpenerStriker] = useState("");
   const [openerNonStriker, setOpenerNonStriker] = useState("");
-  const [addingOpenerRole, setAddingOpenerRole] = useState(null); 
+  const [addingOpenerRole, setAddingOpenerRole] = useState(null);
   const [newOpenerName, setNewOpenerName] = useState("");
 
   const [extraType, setExtraType] = useState(null);
@@ -79,20 +74,22 @@ export default function ScoreInput({
   const [editStriker, setEditStriker] = useState(false);
   const [editNonStriker, setEditNonStriker] = useState(false);
   const [editBowler, setEditBowler] = useState(false);
-  const [inlineAddingRole, setInlineAddingRole] = useState(null); 
+  const [inlineAddingRole, setInlineAddingRole] = useState(null);
   const [inlineNewName, setInlineNewName] = useState("");
 
   const [localOverlayDismissed, setLocalOverlayDismissed] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  
+
   // 🔥 ESCAPE HATCH STATE
   const [forceInningsComplete, setForceInningsComplete] = useState(false);
 
   // 🔥 HAPTIC FEEDBACK ONLY (Audio Removed)
   const triggerFeedback = useCallback((type = "click") => {
     if (navigator.vibrate) {
-      if (type === "wicket") navigator.vibrate([100, 50, 100]); // 3 pulses for Wicket
-      else if (type === "four" || type === "six") navigator.vibrate([50, 50, 50, 50]); // 4 pulses for Boundary
+      if (type === "wicket")
+        navigator.vibrate([100, 50, 100]); // 3 pulses for Wicket
+      else if (type === "four" || type === "six")
+        navigator.vibrate([50, 50, 50, 50]); // 4 pulses for Boundary
       else navigator.vibrate(15); // Light tap for normal buttons
     }
   }, []);
@@ -201,7 +198,8 @@ export default function ScoreInput({
     isInning2 && matchContext.target && m.score >= matchContext.target;
 
   // Include the manual force override
-  const isInningsComplete = forceInningsComplete || isAllOut || isOversDone || isTargetChased;
+  const isInningsComplete =
+    forceInningsComplete || isAllOut || isOversDone || isTargetChased;
   const isMatchOver = isInningsComplete && isInning2;
 
   const isStartOfInnings = m.over === 0 && m.overBallCount === 0;
@@ -239,7 +237,7 @@ export default function ScoreInput({
       if (runsVal === 6) triggerFeedback("six");
       else if (runsVal === 4) triggerFeedback("four");
       else triggerFeedback("click");
-      
+
       //setIsSyncing(true);
       try {
         const runsRan = parseInt(runsVal) || 0;
@@ -310,47 +308,81 @@ export default function ScoreInput({
               onClick={async () => {
                 if (!tossWinner) return;
                 setStartLoading(true);
-                const isABat =
-                  (tossWinner === match.meta.teamA && tossDecision === "Bat") ||
-                  (tossWinner === match.meta.teamB && tossDecision === "Bowl");
 
-                await updateDoc(
-                  doc(
-                    db,
-                    "tournaments",
-                    match.tournamentId || match.meta.tournament,
-                    "matches",
-                    match.id,
-                  ),
-                  {
-                    "meta.toss": { winner: tossWinner, decision: tossDecision },
-                    status: "ongoing",
-                    innings: [
-                      {
-                        battingTeam: isABat
-                          ? match.meta.teamA
-                          : match.meta.teamB,
-                        bowlingTeam: isABat
-                          ? match.meta.teamB
-                          : match.meta.teamA,
-                        score: 0,
-                        wickets: 0,
-                        over: 0,
-                        overBallCount: 0,
-                        timeline: [],
-                        striker: null,
-                        nonStriker: null,
-                        currentBowler: null,
+                try {
+                  const tId = match.tournamentId || match.meta.tournament;
+                  const isABat =
+                    (tossWinner === match.meta.teamA &&
+                      tossDecision === "Bat") ||
+                    (tossWinner === match.meta.teamB &&
+                      tossDecision === "Bowl");
+
+                  // 🟢 1. FETCH FULL ROSTERS FROM TOURNAMENT TEAMS
+                  let rosterA = [];
+                  let rosterB = [];
+
+                  if (match.meta.teamAId && match.meta.teamBId) {
+                    const teamASnap = await getDoc(
+                      doc(db, "tournaments", tId, "teams", match.meta.teamAId),
+                    );
+                    const teamBSnap = await getDoc(
+                      doc(db, "tournaments", tId, "teams", match.meta.teamBId),
+                    );
+
+                    rosterA = teamASnap.exists()
+                      ? teamASnap.data().roster ||
+                        teamASnap.data().players ||
+                        []
+                      : [];
+                    rosterB = teamBSnap.exists()
+                      ? teamBSnap.data().roster ||
+                        teamBSnap.data().players ||
+                        []
+                      : [];
+                  }
+
+                  // 🟢 2. SAVE EVERYTHING TO THE MATCH DOCUMENT
+                  await updateDoc(
+                    doc(db, "tournaments", tId, "matches", match.id),
+                    {
+                      "meta.toss": {
+                        winner: tossWinner,
+                        decision: tossDecision,
                       },
-                    ],
-                    currentInnings: 0,
-                  },
-                );
-                setStartLoading(false);
+                      status: "ongoing",
+                      teamASquad: rosterA, // 🔥 MAGIC SQUAD SYNC A
+                      teamBSquad: rosterB, // 🔥 MAGIC SQUAD SYNC B
+                      innings: [
+                        {
+                          battingTeam: isABat
+                            ? match.meta.teamA
+                            : match.meta.teamB,
+                          bowlingTeam: isABat
+                            ? match.meta.teamB
+                            : match.meta.teamA,
+                          score: 0,
+                          wickets: 0,
+                          over: 0,
+                          overBallCount: 0,
+                          timeline: [],
+                          striker: null,
+                          nonStriker: null,
+                          currentBowler: null,
+                        },
+                      ],
+                      currentInnings: 0,
+                    },
+                  );
+                } catch (error) {
+                  console.error("Error starting match:", error);
+                  alert("Failed to start match. Please try again.");
+                } finally {
+                  setStartLoading(false);
+                }
               }}
               disabled={!tossWinner || startLoading}
               className="w-full py-4 bg-teal-700 text-white font-bold rounded-xl shadow-xl active:scale-95 transition-all">
-              Start Match 🚀
+              {startLoading ? "Syncing Rosters..." : "Start Match 🚀"}
             </button>
           </div>
         </div>
@@ -434,8 +466,8 @@ export default function ScoreInput({
                   triggerFeedback("click");
                   setEditStriker(true);
                 }}
-                className="opacity-30 p-1">
-                <Menu size={12} />
+                className="opacity-50 p-1">
+                <Menu size={15} />
               </button>
             </div>
 
@@ -506,7 +538,7 @@ export default function ScoreInput({
               </div>
             ) : (
               <select
-                onClick={(e) => e.stopPropagation()} 
+                onClick={(e) => e.stopPropagation()}
                 className={`w-full text-xs p-1 rounded ${lightMode ? "bg-gray-100" : "bg-black/20"}`}
                 value={strikerName}
                 onChange={(e) => {
@@ -551,8 +583,8 @@ export default function ScoreInput({
                   triggerFeedback("click");
                   setEditNonStriker(true);
                 }}
-                className="opacity-30 p-1">
-                <Menu size={12} />
+                className="opacity-50 p-1">
+                <Menu size={15} />
               </button>
             </div>
 
@@ -665,8 +697,8 @@ export default function ScoreInput({
                   e.stopPropagation();
                   setEditBowler(true);
                 }}
-                className="opacity-30 p-1">
-                <Menu size={12} />
+                className="opacity-50 p-1">
+                <Menu size={15} />
               </button>
             </div>
 
@@ -1488,7 +1520,7 @@ export default function ScoreInput({
                         setIsWicketMenuOpen(false);
                         setExtraType(null);
                         setFielderName("");
-                        setWhoOut("striker"); 
+                        setWhoOut("striker");
                         setIsSyncing(false);
                       }
                     }}

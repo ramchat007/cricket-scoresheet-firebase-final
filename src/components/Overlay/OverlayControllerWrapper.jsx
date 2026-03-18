@@ -1,16 +1,16 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { collection, query, onSnapshot, doc } from "firebase/firestore";
+import { collection, query, onSnapshot, doc, getDoc } from "firebase/firestore";
 import { db } from "../../utils/firebase";
 import OverlayController from "./OverlayController";
-import { ArrowLeft, Loader2, Radio } from "lucide-react";
+import { ArrowLeft, Loader2, MonitorPlay, Globe } from "lucide-react";
 import { useTheme } from "../../context/ThemeContext";
 
 export default function OverlayControllerWrapper() {
   const { tournamentId, matchId } = useParams();
   const navigate = useNavigate();
   const { theme, lightMode } = useTheme();
-  
+
   const [matchData, setMatchData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -19,36 +19,48 @@ export default function OverlayControllerWrapper() {
 
     let unsubscribe;
 
-    // 🔥 AUTO-DETECT MODE
+    // 🔥 MODE 1: GLOBAL TOURNAMENT MODE (No specific match ID in URL)
+    if (!matchId) {
+      // Just verify the tournament exists so we don't render blindly
+      getDoc(doc(db, "tournaments", tournamentId)).then(() => {
+        setMatchData(null); // Explicitly null for global mode
+        setLoading(false);
+      });
+      return;
+    }
+
+    // 🔥 MODE 2: AUTO-DETECT MODE
     if (matchId === "active") {
       const matchesRef = collection(db, "tournaments", tournamentId, "matches");
-      
+
       unsubscribe = onSnapshot(matchesRef, (snapshot) => {
         const matches = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const getStatus = (m) =>
+          (m.status || m.meta?.status || "").toLowerCase().trim();
 
-        const getStatus = (m) => (m.status || m.meta?.status || "").toLowerCase().trim();
-        
         // 1. Look for an ongoing match
         let activeMatch = matches.find((m) =>
-          ["live", "ongoing", "in-progress", "started", "playing"].includes(getStatus(m))
+          ["live", "ongoing", "in-progress", "started", "playing"].includes(
+            getStatus(m),
+          ),
         );
 
-        // 2. If no ongoing match, look for the next scheduled/upcoming match
+        // 2. Look for the next scheduled match
         if (!activeMatch) {
           activeMatch = matches
-            .filter((m) => ["upcoming", "scheduled", "pending", "not started", ""].includes(getStatus(m)))
+            .filter((m) =>
+              ["upcoming", "scheduled", "pending", "not started", ""].includes(
+                getStatus(m),
+              ),
+            )
             .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0))[0];
         }
 
-        if (activeMatch) {
-          setMatchData(activeMatch);
-        } else {
-          setMatchData(null); // Explicitly null if nothing is active/upcoming
-        }
+        setMatchData(activeMatch || null); // If null, it gracefully falls back to Global Mode
         setLoading(false);
       });
-    } 
-    // 🔥 MANUAL OVERRIDE MODE (Specific Match ID in URL)
+    }
+    // 🔥 MODE 3: MANUAL OVERRIDE (Specific Match ID)
     else {
       const matchRef = doc(db, "tournaments", tournamentId, "matches", matchId);
       unsubscribe = onSnapshot(matchRef, (docSnap) => {
@@ -66,65 +78,87 @@ export default function OverlayControllerWrapper() {
 
   if (loading) {
     return (
-      <div className={`min-h-screen flex items-center justify-center ${theme.bg} ${theme.text}`}>
+      <div
+        className={`min-h-screen flex items-center justify-center ${theme.bg} ${theme.text}`}>
         <Loader2 className="animate-spin text-teal-500" size={32} />
       </div>
     );
   }
 
-  // 🔥 STANDBY SCREEN: If looking for "active" but no matches are live/upcoming
-  if (!matchData && matchId === "active") {
+  // If a specific match ID was given in the URL (not 'active') but it doesn't exist
+  if (!matchData && matchId && matchId !== "active") {
     return (
-      <div className={`min-h-screen flex flex-col items-center justify-center ${theme.bg} ${theme.text} p-6 text-center`}>
-        <div className="w-24 h-24 bg-slate-800 rounded-full flex items-center justify-center mb-6 border-4 border-slate-700 shadow-2xl relative">
-          <div className="absolute inset-0 rounded-full border-4 border-teal-500 border-t-transparent animate-spin opacity-50"></div>
-          <Radio size={40} className="text-teal-500 animate-pulse" />
-        </div>
-        <h2 className="text-3xl font-black uppercase tracking-widest mb-2 text-white">Standby Mode</h2>
-        <p className={`text-lg font-bold ${theme.sub} max-w-md`}>
-          Waiting for the scorer to start the next match. This controller will automatically connect when a match goes live.
-        </p>
-        <button
-          onClick={() => navigate(`/tournament/${tournamentId}`)}
-          className="mt-8 px-6 py-3 bg-teal-600 text-white font-bold rounded-xl uppercase tracking-widest hover:bg-teal-500 transition-colors"
-        >
-          Go to Dashboard
-        </button>
-      </div>
-    );
-  }
-
-  // Fallback if manual ID is invalid
-  if (!matchData) {
-    return (
-      <div className={`min-h-screen flex flex-col items-center justify-center ${theme.bg} ${theme.text}`}>
+      <div
+        className={`min-h-screen flex flex-col items-center justify-center ${theme.bg} ${theme.text}`}>
         <h2 className="text-2xl font-bold mb-4">Match Not Found</h2>
-        <button onClick={() => navigate(`/tournament/${tournamentId}`)} className="text-teal-500 underline">
+        <button
+          onClick={() => navigate(`/tournaments/${tournamentId}`)}
+          className="text-teal-500 underline">
           Return to Dashboard
         </button>
       </div>
     );
   }
 
+  // 🧠 THE MAGIC: If no match data is found, we use "global" as the ID.
+  // This allows the OverlayController to save ads/settings to `matches/global/overlays`
+  const resolvedMatchId = matchData?.id || "global";
+
+  // Dummy data so the OverlayController doesn't crash if it expects team names to exist
+  const safeMatchData = matchData || {
+    id: "global",
+    teamA: "Team A",
+    teamB: "Team B",
+    meta: { teamA: "Team A", teamB: "Team B" },
+  };
+
   return (
     <div className={`min-h-screen ${theme.bg} p-4 md:p-8`}>
       <div className="max-w-6xl mx-auto">
-        <button
-          onClick={() => navigate(`/live/${tournamentId}/${matchData.id}`)}
-          className={`mb-6 flex items-center gap-2 text-xs font-bold uppercase tracking-widest px-4 py-2 rounded-xl transition-all ${
-            lightMode
-              ? "bg-gray-200 text-gray-700 hover:bg-gray-300"
-              : "bg-white/10 text-slate-300 hover:bg-white/20"
-          }`}
-        >
-          <ArrowLeft size={16} /> Back to Live Scoring
-        </button>
+        {/* Top Navigation & Status Bar */}
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <button
+            onClick={() =>
+              navigate(
+                matchData
+                  ? `/live/${tournamentId}/${matchData.id}`
+                  : `/tournaments/${tournamentId}`,
+              )
+            }
+            className={`flex items-center gap-2 text-xs font-bold uppercase tracking-widest px-4 py-2 rounded-xl transition-all w-fit ${
+              lightMode
+                ? "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                : "bg-white/10 text-slate-300 hover:bg-white/20"
+            }`}>
+            <ArrowLeft size={16} />{" "}
+            {matchData ? "Back to Live Scoring" : "Back to Tournament"}
+          </button>
 
-        {/* ✅ Passing the RESOLVED matchData.id, NOT the literal word "active" */}
+          {/* Dynamic Status Badge */}
+          <div
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl border shadow-sm ${
+              matchData
+                ? lightMode
+                  ? "bg-teal-50 border-teal-200 text-teal-700"
+                  : "bg-teal-900/20 border-teal-500/30 text-teal-400"
+                : lightMode
+                  ? "bg-purple-50 border-purple-200 text-purple-700"
+                  : "bg-purple-900/20 border-purple-500/30 text-purple-400"
+            }`}>
+            {matchData ? <MonitorPlay size={16} /> : <Globe size={16} />}
+            <span className="text-[10px] font-black uppercase tracking-widest">
+              {matchData
+                ? `Controlling: ${matchData.teamA || matchData.meta?.teamA || "Team A"} vs ${matchData.teamB || matchData.meta?.teamB || "Team B"}`
+                : "Global Tournament Mode"}
+            </span>
+          </div>
+        </div>
+
+        {/* 🟢 Passing the resolved ID and safe data down to the controller */}
         <OverlayController
           tournamentId={tournamentId}
-          matchId={matchData.id} 
-          match={matchData}
+          matchId={resolvedMatchId}
+          match={safeMatchData}
         />
       </div>
     </div>

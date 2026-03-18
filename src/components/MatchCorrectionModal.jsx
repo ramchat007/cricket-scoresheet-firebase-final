@@ -286,6 +286,106 @@ const MatchCorrectionModal = ({ match, tournamentId, onClose }) => {
     }
   };
 
+  // --- 🟢 ADMIN RESOLUTION PANEL ---
+
+  const resolveMatchManually = async (
+    resolutionType,
+    winnerId = null,
+    winnerName = null,
+  ) => {
+    const msg =
+      resolutionType === "WALKOVER"
+        ? `Award walkover to ${winnerName}?`
+        : "Abandon match and share points?";
+
+    if (!window.confirm(msg)) return;
+
+    setLoading(true);
+    try {
+      // 🟢 GET TOURNAMENT FORMAT FIRST
+      const tSnap = await getDoc(doc(db, "tournaments", tournamentId));
+      const tData = tSnap.data();
+      const isKnockout = tData?.format === "knockout";
+
+      let updateData = {
+        status: "finished",
+        isCancelled: true,
+        lastUpdate: Date.now(),
+        "meta.matchStatus": "finished",
+      };
+
+      if (resolutionType === "WALKOVER") {
+        updateData.winner = winnerName;
+        updateData.winnerId = winnerId;
+        updateData.resultType = "walkover";
+        updateData["meta.result"] = `${winnerName} won by Walkover`;
+
+        // If it's a league, give 2 points, otherwise just advance them in bracket
+        if (!isKnockout) {
+          updateData.pointsAwarded = {
+            teamA: winnerId === match.meta?.teamAId ? 2 : 0,
+            teamB: winnerId === match.meta?.teamBId ? 2 : 0,
+          };
+        }
+      } else {
+        // ABANDONED
+        updateData.winner = "No Result";
+        updateData.resultType = "abandoned";
+        updateData["meta.result"] = "Match Abandoned";
+
+        // 🟢 SHARP LOGIC: Leagues get 1 point each. Knockouts stay stuck until a Walkover is decided.
+        if (!isKnockout) {
+          updateData.pointsAwarded = { teamA: 1, teamB: 1 };
+          updateData["meta.result"] += " (Points Shared)";
+        } else {
+          updateData["meta.result"] += " (No Advance)";
+        }
+      }
+
+      await updateMatch(tournamentId, match.id, updateData);
+      alert("✅ Match resolved successfully.");
+      onClose();
+    } catch (e) {
+      alert("Error: " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // UI inside the Modal:
+  <div className="space-y-4 p-4 border-t border-white/10">
+    <h3 className="text-sm font-black uppercase text-orange-500">
+      Emergency Match Resolution
+    </h3>
+
+    <div className="grid grid-cols-1 gap-3">
+      {/* 1. Progress Team A (Walkover) */}
+      <button
+        onClick={() =>
+          resolveMatchManually("WALKOVER", match.meta.teamAId, match.meta.teamA)
+        }
+        className="py-3 bg-white/5 border border-white/10 rounded-xl text-xs font-bold hover:bg-teal-500/20 hover:border-teal-500 transition-all">
+        Award Walkover to {match.meta.teamA}
+      </button>
+
+      {/* 2. Progress Team B (Walkover) */}
+      <button
+        onClick={() =>
+          resolveMatchManually("WALKOVER", match.meta.teamBId, match.meta.teamB)
+        }
+        className="py-3 bg-white/5 border border-white/10 rounded-xl text-xs font-bold hover:bg-teal-500/20 hover:border-teal-500 transition-all">
+        Award Walkover to {match.meta.teamB}
+      </button>
+
+      {/* 3. Abandon (Split Points) */}
+      <button
+        onClick={() => resolveMatchManually("ABANDONED")}
+        className="py-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs font-bold text-red-500 hover:bg-red-500 hover:text-white transition-all">
+        Abandon Match (Split Points)
+      </button>
+    </div>
+  </div>;
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4 animate-in fade-in duration-200">
       <div
@@ -784,6 +884,48 @@ const MatchCorrectionModal = ({ match, tournamentId, onClose }) => {
           {mode === "meta" && (
             <div className="p-4 space-y-6">
               <div
+                className={`p-4 rounded-xl border border-dashed ${lightMode ? "bg-orange-50 border-orange-300" : "bg-orange-950/20 border-orange-500/30"}`}>
+                <label className="text-[10px] font-black uppercase text-orange-500 block mb-3 tracking-widest">
+                  Quick Match Resolution (Walkovers / Rain)
+                </label>
+                <div className="grid grid-cols-1 gap-2">
+                  <button
+                    onClick={() =>
+                      resolveMatchManually(
+                        "WALKOVER",
+                        match.meta?.teamAId,
+                        match.meta?.teamA,
+                      )
+                    }
+                    disabled={loading}
+                    className="py-2.5 bg-white/5 border border-white/10 rounded-lg text-[10px] font-bold uppercase hover:bg-teal-600 hover:text-white transition-all">
+                    Award Walkover to {match.meta?.teamA || "Team A"}
+                  </button>
+                  <button
+                    onClick={() =>
+                      resolveMatchManually(
+                        "WALKOVER",
+                        match.meta?.teamBId,
+                        match.meta?.teamB,
+                      )
+                    }
+                    disabled={loading}
+                    className="py-2.5 bg-white/5 border border-white/10 rounded-lg text-[10px] font-bold uppercase hover:bg-teal-600 hover:text-white transition-all">
+                    Award Walkover to {match.meta?.teamB || "Team B"}
+                  </button>
+                  <button
+                    onClick={() => resolveMatchManually("ABANDONED")}
+                    disabled={loading}
+                    className="py-2.5 bg-red-500/10 border border-red-500/20 rounded-lg text-[10px] font-bold uppercase text-red-500 hover:bg-red-600 hover:text-white transition-all">
+                    Abandon Match (Shared Points)
+                  </button>
+                </div>
+                <p className="text-[9px] mt-3 opacity-60 italic leading-tight">
+                  * Use this for matches that won't be played. It will set
+                  status to "finished" and declare a result immediately.
+                </p>
+              </div>
+              <div
                 className={`p-4 rounded-xl border ${lightMode ? "bg-purple-50 border-purple-200" : "bg-purple-900/10 border-purple-500/20"}`}>
                 <label
                   className={`text-[10px] font-black uppercase block mb-3 ${lightMode ? "text-purple-700" : "text-purple-400"}`}>
@@ -856,7 +998,7 @@ const MatchCorrectionModal = ({ match, tournamentId, onClose }) => {
                   <Loader2 className="animate-spin" />
                 ) : (
                   <CheckCircle2 size={16} />
-                )}{" "}
+                )}
                 Save Match State
               </button>
             </div>

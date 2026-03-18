@@ -10,6 +10,7 @@ export default function MatchesTab({
   tournamentTeams = [], // Passed from parent
   tournamentId,
   canEdit,
+  onOpenCorrection
 }) {
   const { theme, lightMode } = useTheme();
 
@@ -90,6 +91,7 @@ export default function MatchesTab({
                 teams={tournamentTeams}
                 tournamentId={tournamentId}
                 canEdit={canEdit}
+                onOpenCorrection={onOpenCorrection}
               />
             ))}
           </div>

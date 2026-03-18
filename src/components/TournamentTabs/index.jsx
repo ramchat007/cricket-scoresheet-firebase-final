@@ -32,6 +32,7 @@ export default function TournamentTabs({
   canEdit,
   isOwner,
   isAuctionEnabled,
+  onOpenCorrection,
 }) {
   const navigate = useNavigate();
   const { theme, lightMode } = useTheme();
@@ -348,6 +349,7 @@ export default function TournamentTabs({
             finishedMatches={finishedMatches}
             tournamentId={tournamentId}
             canEdit={canEdit}
+            onOpenCorrection={onOpenCorrection}
           />
         )}
         {activeTab === "teams" && (

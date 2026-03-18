@@ -33,6 +33,7 @@ import {
 
 import TournamentTabs from "./TournamentTabs";
 import MatchScheduler from "./MatchScheduler";
+import MatchCorrectionModal from "./MatchCorrectionModal";
 
 // --- 🔴 SMART LIVE BUTTON COMPONENT ---
 const LiveActionButton = ({
@@ -107,6 +108,10 @@ export default function TournamentDetails() {
   const [canEdit, setCanEdit] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
   const [showScheduler, setShowScheduler] = useState(false);
+
+  const [selectedMatchForCorrection, setSelectedMatchForCorrection] =
+    useState(null);
+  const [showCorrectionModal, setShowCorrectionModal] = useState(false);
 
   /* --------------------------------------------
      Load Registered Player Count (Global Registrations)
@@ -441,6 +446,15 @@ export default function TournamentDetails() {
                   {showScheduler ? <X size={14} /> : <CalendarPlus size={14} />}
                   {showScheduler ? "Close" : "Schedule"}
                 </button>
+                <button
+                  onClick={() => navigate(`/tournaments/${id}/bracket`)}
+                  className={`px-4 py-2 rounded-lg transition-all text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 border ${
+                    lightMode
+                      ? "bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100"
+                      : "bg-purple-500/10 border-purple-500/30 text-purple-400 hover:bg-purple-500/20"
+                  }`}>
+                  <Shield size={14} /> Bracket Editor
+                </button>
 
                 {isAuctionEnabled ? (
                   <>
@@ -514,8 +528,22 @@ export default function TournamentDetails() {
           canEdit={canEdit}
           isOwner={isOwner}
           isAuctionEnabled={isAuctionEnabled}
+          onOpenCorrection={(matchObj) => {
+            setSelectedMatchForCorrection(matchObj);
+            setShowCorrectionModal(true);
+          }}
         />
       </div>
+      {showCorrectionModal && selectedMatchForCorrection && (
+        <MatchCorrectionModal
+          match={selectedMatchForCorrection}
+          tournamentId={id}
+          onClose={() => {
+            setShowCorrectionModal(false);
+            setSelectedMatchForCorrection(null);
+          }}
+        />
+      )}
     </div>
   );
 }

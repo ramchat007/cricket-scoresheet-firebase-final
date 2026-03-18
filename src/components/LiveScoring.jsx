@@ -398,11 +398,11 @@ export default function LiveScoring() {
           )}
 
           {/* Theme Toggle */}
-          <button
+          {/* <button
             onClick={toggleTheme}
             className={`w-9 h-9 rounded-xl flex items-center justify-center transition-transform active:scale-90 ${theme.btnBase}`}>
             {lightMode ? <Moon size={18} /> : <Sun size={18} />}
-          </button>
+          </button> */}
         </div>
       </div>
 

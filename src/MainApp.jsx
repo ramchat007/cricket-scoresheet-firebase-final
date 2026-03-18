@@ -42,6 +42,7 @@ import { useAuth } from "./hooks/useAuth.jsx";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import PublicAuctionViewer from "./components/PublicAuctionViewer.jsx";
 import PlayerPhotoUpload from "./components/TournamentTabs/PlayerPhotoUpload.jsx";
+import BracketBuilder from "./components/BracketBuilder.jsx";
 
 // ----------------------------------------------------------------------
 // 1. APP CONTENT (Inner Component)
@@ -336,6 +337,7 @@ function AppContent() {
             {/* Sub-Pages */}
             <Route path="/live/:tournamentId/:matchId" element={<RequireTournamentAccess><LiveScoring /></RequireTournamentAccess>} />
             <Route path="/broadcast-control/:tournamentId/:matchId" element={<OverlayControllerWrapper />} />
+            <Route path="/broadcast-control/:tournamentId/" element={<OverlayControllerWrapper />} />
             <Route path="/scoreboard" element={<Scoreboard />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/create-tournament" element={<RequireAuth><CreateTournament /></RequireAuth>} />
@@ -350,6 +352,7 @@ function AppContent() {
             <Route path="/migrate" element={<RequireAuth><MigrationTool /></RequireAuth>} />
             <Route path="/tournaments/:id" element={<TournamentDetails />} />
             <Route path="/tournaments/:tournamentId/scorecard/:matchId" element={<RequireTournamentAccess><MatchScorecard /></RequireTournamentAccess>} />
+            <Route path="/tournaments/:id/bracket" element={<BracketBuilder />} />
             <Route path="/teams" element={<RequireAuth><TeamsManager /></RequireAuth>} />
             <Route path="/past-leagues" element={<RequireAuth><PastLeague /></RequireAuth>} />
           </Routes>

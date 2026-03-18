@@ -13,6 +13,7 @@ const calculateNRR = (runsScored, oversFaced, runsConceded, oversBowled) => {
 };
 
 // --- Fallback Processor (Client Side Calculation) ---
+// --- Client Side Calculation (Smart Resolution Support) ---
 const processStandings = (teams, matches) => {
   const standings = {};
   teams.forEach((t) => {
@@ -21,11 +22,12 @@ const processStandings = (teams, matches) => {
       id: t.id,
       name,
       logo: t.logoUrl,
-      group: t.group || null, // 🟢 Capture Group from DB if it exists
+      group: t.group || null,
       played: 0,
       won: 0,
       lost: 0,
       tied: 0,
+      nr: 0, // No Result count
       points: 0,
       nrr: "0.000",
       history: [],
@@ -39,33 +41,50 @@ const processStandings = (teams, matches) => {
   matches.forEach((m) => {
     if (m.status !== "finished" && m.meta?.matchStatus !== "finished") return;
 
-    const inn1 = m.innings?.[0];
-    const inn2 = m.innings?.[1];
-    if (!inn1 || !inn2) return;
+    // 🟢 Extract team names safely (Fallback to meta if innings don't exist)
+    const t1 = (m.innings?.[0]?.battingTeam || m.meta?.teamA || "").trim();
+    const t2 = (
+      m.innings?.[1]?.battingTeam ||
+      m.innings?.[0]?.bowlingTeam ||
+      m.meta?.teamB ||
+      ""
+    ).trim();
 
-    const t1 = inn1.battingTeam.trim();
-    const t2 = inn2.battingTeam.trim();
+    if (!t1 || !t2) return;
 
     if (!standings[t1])
-      standings[t1] = { name: t1, played: 0, points: 0, history: [] };
+      standings[t1] = {
+        name: t1,
+        played: 0,
+        points: 0,
+        history: [],
+        runsScored: 0,
+        oversFaced: 0,
+        runsConceded: 0,
+        oversBowled: 0,
+        won: 0,
+        lost: 0,
+        tied: 0,
+        nr: 0,
+      };
     if (!standings[t2])
-      standings[t2] = { name: t2, played: 0, points: 0, history: [] };
+      standings[t2] = {
+        name: t2,
+        played: 0,
+        points: 0,
+        history: [],
+        runsScored: 0,
+        oversFaced: 0,
+        runsConceded: 0,
+        oversBowled: 0,
+        won: 0,
+        lost: 0,
+        tied: 0,
+        nr: 0,
+      };
 
     const s1 = standings[t1];
     const s2 = standings[t2];
-    s1.played++;
-    s2.played++;
-
-    let winner = null;
-    if (inn1.score > inn2.score) {
-      winner = t1;
-    } else if (inn2.score > inn1.score) {
-      winner = t2;
-    } else {
-      const dbWinner = (m.winner || m.meta?.result?.winner || "").trim();
-      if (dbWinner) winner = dbWinner;
-      else winner = t1;
-    }
 
     const tId = m.tournamentId;
     const date = m.date || m.meta?.date;
@@ -79,6 +98,60 @@ const processStandings = (teams, matches) => {
         date: date,
       });
     };
+
+    // 🟢 SCENARIO A: MATCH ABANDONED (Rain / No Show)
+    if (m.resultType === "abandoned") {
+      s1.played++;
+      s2.played++;
+      s1.points++;
+      s2.points++; // Share points
+      s1.nr++;
+      s2.nr++;
+      pushHist(s1, "NR", t2);
+      pushHist(s2, "NR", t1);
+      return; // Skip NRR and standard logic
+    }
+
+    // 🟢 SCENARIO B: WALKOVER
+    if (m.resultType === "walkover") {
+      s1.played++;
+      s2.played++;
+      const wName = (m.winner || "").trim();
+
+      if (wName === t1 || m.winnerId === m.meta?.teamAId) {
+        s1.won++;
+        s1.points += 2;
+        pushHist(s1, "W", t2);
+        s2.lost++;
+        pushHist(s2, "L", t1);
+      } else {
+        s2.won++;
+        s2.points += 2;
+        pushHist(s2, "W", t1);
+        s1.lost++;
+        pushHist(s1, "L", t2);
+      }
+      return; // Skip NRR and standard logic
+    }
+
+    // 🟢 SCENARIO C: STANDARD MATCH (Requires Innings Data)
+    const inn1 = m.innings?.[0];
+    const inn2 = m.innings?.[1];
+    if (!inn1 || !inn2) return;
+
+    s1.played++;
+    s2.played++;
+
+    let winner = null;
+    if (inn1.score > inn2.score) {
+      winner = t1;
+    } else if (inn2.score > inn1.score) {
+      winner = t2;
+    } else {
+      const dbWinner = (m.winner || m.meta?.result?.winner || "").trim();
+      if (dbWinner) winner = dbWinner;
+      else winner = t1; // Default fallback
+    }
 
     if (winner === t1) {
       s1.won++;
@@ -95,12 +168,13 @@ const processStandings = (teams, matches) => {
     } else {
       s1.points++;
       s2.points++;
-      s1.tied = (s1.tied || 0) + 1;
-      s2.tied = (s2.tied || 0) + 1;
+      s1.tied++;
+      s2.tied++;
       pushHist(s1, "T", t2);
       pushHist(s2, "T", t1);
     }
 
+    // Standard NRR Calculation
     const getOvers = (o, b) => parseFloat(o) + parseFloat(b) / 6;
     s1.runsScored += inn1.score;
     s1.oversFaced += getOvers(inn1.over, inn1.overBallCount);
