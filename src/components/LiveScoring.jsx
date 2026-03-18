@@ -196,7 +196,7 @@ export default function LiveScoring() {
   // This URL automatically points to whichever match is currently "Live" in this tournament.
   const obsUrl =
     typeof window !== "undefined"
-      ? `${window.location.origin}/overlay/${tournamentId}/broadcast/active?clean=true`
+      ? `${window.location.origin}/overlay/${tournamentId}/active?clean=true`
       : "";
 
   const copyObsLink = () => {

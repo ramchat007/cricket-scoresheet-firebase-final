@@ -43,6 +43,8 @@ import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import PublicAuctionViewer from "./components/PublicAuctionViewer.jsx";
 import PlayerPhotoUpload from "./components/TournamentTabs/PlayerPhotoUpload.jsx";
 import BracketBuilder from "./components/BracketBuilder.jsx";
+import Broadcaster from "./components/Overlay/Broadcaster.jsx";
+import ObsReceiver from "./components/Overlay/ObsReceiver.jsx";
 
 // ----------------------------------------------------------------------
 // 1. APP CONTENT (Inner Component)
@@ -63,6 +65,7 @@ function AppContent() {
 
   // Route Helpers
   const isOverlay = location.pathname.startsWith("/overlay");
+  const obsCast = location.pathname === "/broadcast" || location.pathname.startsWith("/obs");
   const isRegistration =
     location.pathname.startsWith("/register-player") ||
     location.pathname.startsWith("/view-players");
@@ -121,7 +124,7 @@ function AppContent() {
             </div>
           }>
           <Routes>
-            <Route path="/overlay/:tournamentId/active" element={<MatchOverlay />} />
+            <Route path="/overlay/:tournamentId/:matchId" element={<MatchOverlay />} />
             <Route path="/overlay/tournament-banner/:tournamentId" element={<TournamentBanner />} />
             <Route path="/overlay/:tournamentId/broadcast/active" element={<BroadcastLayer />} />
             {/* <Route path="/overlay/:tournamentId/auction/live" element={<PublicAuctionViewer />} /> */}
@@ -130,6 +133,24 @@ function AppContent() {
       </div>
     );
   }
+
+  if(obsCast) {
+    return (
+      <div className="w-full h-screen bg-transparent font-sans overflow-hidden">
+        <Suspense fallback={
+          <div className="w-full h-full flex items-center justify-center text-xs font-bold uppercase tracking-[0.2em] text-white/70">
+            Loading broadcast...
+          </div>
+        }>
+          <Routes>
+            <Route path="/broadcast" element={<Broadcaster />} />
+            <Route path="/obs/:streamId" element={<ObsReceiver />} />
+          </Routes>
+        </Suspense>
+      </div>
+    );
+  }
+
 
   if (isRegistration) {
     return (

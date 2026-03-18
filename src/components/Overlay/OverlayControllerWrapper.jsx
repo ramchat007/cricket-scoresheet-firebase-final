@@ -7,7 +7,7 @@ import { ArrowLeft, Loader2, MonitorPlay, Globe } from "lucide-react";
 import { useTheme } from "../../context/ThemeContext";
 
 export default function OverlayControllerWrapper() {
-  const { tournamentId, matchId } = useParams();
+  const { tournamentId, matchId = "active" } = useParams();
   const navigate = useNavigate();
   const { theme, lightMode } = useTheme();
 

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react"; // 🟢 Added useMemo
 import { useNavigate } from "react-router-dom";
 import { doc, deleteDoc } from "firebase/firestore";
 import { db } from "../../utils/firebase";
@@ -10,8 +10,13 @@ import {
   Swords,
   Clock,
   MapPin,
+<<<<<<< HEAD
   Settings,
+=======
+  Sparkles, // 🟢 Added Sparkles
+>>>>>>> 964b336b6c26fb7935e5d817317db01628ea322e
 } from "lucide-react";
+import { getManOfTheMatch } from "../../utils/statsHelper";
 
 export default function MatchCard({ match, teams, tournamentId, canEdit, onOpenCorrection }) {
   const navigate = useNavigate();
@@ -120,6 +125,19 @@ export default function MatchCard({ match, teams, tournamentId, canEdit, onOpenC
 
   let statusText = isLive ? "Live" : isFinished ? "Finished" : "Upcoming";
 
+
+  const mom = useMemo(() => {
+    if (!isFinished) return null;
+    // If the match already has a hardcoded MOM, use it, otherwise calculate from stats
+    return match.mom || meta.mom || getManOfTheMatch(match);
+  }, [match, isFinished, meta.mom]);
+
+  // Helper to extract name safely
+  const momName = useMemo(() => {
+    if (!mom) return "";
+    if (typeof mom === "object") return mom.name || mom.playerName || "";
+    return String(mom).trim();
+  }, [mom]);
   // --- 🧠 CALCULATE RESULT CONTEXT ---
   let resultText = match.winner || "Match Ended"; // Default fallback
 
@@ -279,14 +297,28 @@ export default function MatchCard({ match, teams, tournamentId, canEdit, onOpenC
         </div>
 
         {/* Status Message (Updated with Calculated Result) */}
-        <div className="mt-6 text-center">
-          <p
-            className={`text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-1.5 ${theme.sub}`}>
+        <div className="mt-6 text-center space-y-3">
+          {/* 🟢 NEW: Player of the Match Badge */}
+          {isFinished && momName && (
+            <div className="animate-in fade-in zoom-in duration-700">
+               <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border shadow-sm ${
+                 lightMode 
+                   ? "bg-indigo-50 border-indigo-100 text-indigo-700" 
+                   : "bg-indigo-500/10 border-indigo-500/20 text-indigo-300"
+               }`}>
+                 <Sparkles size={12} className="text-indigo-500" />
+                 <span className="text-[10px] font-black uppercase tracking-tighter">
+                   MOM: {momName}
+                 </span>
+               </div>
+            </div>
+          )}
+
+          <p className={`text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-1.5 ${theme.sub}`}>
             {isFinished ? (
               <>
                 <Trophy size={12} className="text-amber-500" />
-                <span
-                  className={lightMode ? "text-amber-600" : "text-amber-400"}>
+                <span className={lightMode ? "text-amber-600" : "text-amber-400"}>
                   {resultText}
                 </span>
               </>

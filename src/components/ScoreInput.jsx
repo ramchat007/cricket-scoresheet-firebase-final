@@ -12,6 +12,7 @@ import {
   Trophy,
   ArrowRightCircle,
   Menu,
+  Check,
 } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 
@@ -66,6 +67,7 @@ export default function ScoreInput({
   const [fielderName, setFielderName] = useState("");
   const [whoOut, setWhoOut] = useState("striker");
   const [wicketRuns, setWicketRuns] = useState(0);
+  const [countAsValidBall, setCountAsValidBall] = useState(false);
 
   const [incoming, setIncoming] = useState("");
   const [newBowler, setNewBowler] = useState("");
@@ -391,10 +393,29 @@ export default function ScoreInput({
   }
 
   // --- MAIN RENDER ---
-  const modalContainerClass = `bg-black/95 absolute inset-0 z-[100] flex flex-col justify-end p-4 pb-10 animate-in slide-in-from-bottom`;
-  const modalContentClass = `${theme.card} border ${lightMode ? "border-gray-200" : "border-white/10"} p-6 rounded-3xl shadow-2xl`;
-  const modalInputClass = `w-full p-4 rounded-xl font-bold mb-4 outline-none border transition-all ${lightMode ? "bg-gray-100 text-black border-gray-300 focus:border-teal-500" : "bg-slate-900 text-white border-slate-700 focus:border-teal-500"}`;
-  const modalLabelClass = `text-xs font-bold uppercase mb-2 block ${lightMode ? "text-gray-500" : "text-slate-400"}`;
+  // 🟢 Fixed: Added lightMode logic to make the overlay softer in Light Mode
+  const modalContainerClass = `absolute inset-0 z-[100] flex flex-col justify-end p-4 pb-10 animate-in slide-in-from-bottom transition-colors ${
+    lightMode
+      ? "bg-slate-900/40 backdrop-blur-sm"
+      : "bg-black/90 backdrop-blur-sm"
+  }`;
+
+  // ✅ Correctly Themed
+  const modalContentClass = `${theme.card} border ${
+    lightMode ? "border-gray-200" : "border-white/10"
+  } p-6 rounded-3xl shadow-2xl transition-colors`;
+
+  // ✅ Correctly Themed
+  const modalInputClass = `w-full p-4 rounded-xl font-bold mb-4 outline-none border transition-all ${
+    lightMode
+      ? "bg-gray-50 text-gray-900 border-gray-300 focus:border-teal-500 focus:bg-white"
+      : "bg-slate-900 text-white border-slate-700 focus:border-teal-500"
+  }`;
+
+  // ✅ Correctly Themed
+  const modalLabelClass = `text-xs font-bold uppercase mb-2 block ${
+    lightMode ? "text-gray-500" : "text-slate-400"
+  }`;
 
   return (
     <div
@@ -811,12 +832,22 @@ export default function ScoreInput({
             .slice(-12)
             .reverse()
             .map((b, i) => {
+              // 🟢 NEW SMART LABEL LOGIC
               let label = b.runs;
               let bubble = lightMode
                 ? "bg-white border-gray-300 text-black"
                 : "bg-slate-700 text-white border-slate-600";
+
               if (b.isWicket) {
-                label = "W";
+                // If it's a wicket, check if it also has extras
+                if (b.isNoBall) {
+                  label = `W+${b.runs}NB`; // Displays W+1NB, W+2NB, etc.
+                } else if (b.isWide) {
+                  label = `W+${b.runs}WD`;
+                } else {
+                  // Standard wicket
+                  label = b.physicalRuns > 0 ? `W+${b.physicalRuns}` : "W";
+                }
                 bubble = "bg-red-500 text-white border-red-600";
               } else if (b.isWide) {
                 label = b.runs - 1 + "+WD";
@@ -829,10 +860,11 @@ export default function ScoreInput({
               } else if (b.runs === 6) {
                 bubble = "bg-yellow-500 text-black border-yellow-600";
               }
+
               return (
                 <div
                   key={i}
-                  className={`w-9 h-9 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${bubble} shadow-sm border`}>
+                  className={`w-12 h-9 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${bubble} shadow-sm border px-1`}>
                   {label}
                 </div>
               );
@@ -885,7 +917,7 @@ export default function ScoreInput({
               val="OUT"
               onClick={() => {
                 triggerFeedback("click");
-                setExtraType(null);
+                // setExtraType(null);
                 setIsWicketMenuOpen(true);
               }}
               disabled={disableBallEntry}
@@ -1359,41 +1391,99 @@ export default function ScoreInput({
 
               {/* 🔥 SHOW "WHO IS OUT" ONLY FOR RUNOUTS */}
               {wicketType === "runout" && (
-                <div className="flex gap-2 mb-4 animate-in fade-in">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setWhoOut("striker");
-                    }}
-                    className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all border ${
-                      whoOut === "striker"
-                        ? "bg-red-600 text-white border-red-500 shadow-lg"
-                        : lightMode
-                          ? "bg-gray-100 text-gray-500 border-gray-200"
-                          : "bg-white/5 text-slate-400 border-white/10"
-                    }`}>
-                    Striker Out
-                    <span className="block text-[10px] font-normal opacity-80 truncate px-2">
-                      {strikerName}
-                    </span>
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setWhoOut("nonStriker");
-                    }}
-                    className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all border ${
-                      whoOut === "nonStriker"
-                        ? "bg-red-600 text-white border-red-500 shadow-lg"
-                        : lightMode
-                          ? "bg-gray-100 text-gray-500 border-gray-200"
-                          : "bg-white/5 text-slate-400 border-white/10"
-                    }`}>
-                    Non-Striker Out
-                    <span className="block text-[10px] font-normal opacity-80 truncate px-2">
-                      {nonStrikerName}
-                    </span>
-                  </button>
+                <div className="animate-in fade-in space-y-4 mb-4">
+                  {/* 1. Runs Completed Row */}
+                  <div>
+                    <label className={modalLabelClass}>
+                      Runs Completed Before Run Out?
+                    </label>
+                    <div className="flex gap-2">
+                      {[0, 1, 2, 3].map((r) => (
+                        <button
+                          key={r}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setWicketRuns(r);
+                          }}
+                          className={`flex-1 py-2 rounded-xl font-bold transition-all border ${
+                            wicketRuns === r
+                              ? "bg-teal-600 text-white border-teal-500 shadow-md"
+                              : lightMode
+                                ? "bg-white text-teal-700 border-gray-200"
+                                : "bg-black/20 text-teal-400 border-white/10"
+                          }`}>
+                          {r}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 2. Who is Out? */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setWhoOut("striker");
+                      }}
+                      className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all border ${
+                        whoOut === "striker"
+                          ? "bg-red-600 text-white border-red-500 shadow-lg"
+                          : lightMode
+                            ? "bg-gray-100 text-gray-500 border-gray-200"
+                            : "bg-white/5 text-slate-400 border-white/10"
+                      }`}>
+                      Striker Out
+                      <span className="block text-[10px] font-normal opacity-80 truncate px-2">
+                        {strikerName}
+                      </span>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setWhoOut("nonStriker");
+                      }}
+                      className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all border ${
+                        whoOut === "nonStriker"
+                          ? "bg-red-600 text-white border-red-500 shadow-lg"
+                          : lightMode
+                            ? "bg-gray-100 text-gray-500 border-gray-200"
+                            : "bg-white/5 text-slate-400 border-white/10"
+                      }`}>
+                      Non-Striker Out
+                      <span className="block text-[10px] font-normal opacity-80 truncate px-2">
+                        {nonStrikerName}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* 3. NB LOCAL RULE TOGGLE (Only shows if extraType is NB) */}
+                  {extraType === "NB" && (
+                    <div
+                      className={`p-3 rounded-xl border flex items-center gap-3 ${lightMode ? "bg-amber-50 border-amber-200" : "bg-amber-900/10 border-amber-500/20"}`}>
+                      <div className="relative flex items-center shrink-0">
+                        <input
+                          type="checkbox"
+                          id="validBallCheck"
+                          checked={countAsValidBall}
+                          onChange={(e) =>
+                            setCountAsValidBall(e.target.checked)
+                          }
+                          className="peer h-6 w-6 cursor-pointer appearance-none rounded-lg border-2 border-amber-400 bg-white checked:bg-amber-500 checked:border-amber-500 transition-all"
+                        />
+                        <Check
+                          size={14}
+                          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white opacity-0 peer-checked:opacity-100 pointer-events-none"
+                        />
+                      </div>
+                      <div>
+                        <label
+                          htmlFor="validBallCheck"
+                          className="text-xs font-black text-amber-700 cursor-pointer uppercase tracking-widest">
+                          Count as Valid Ball?
+                        </label>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1511,6 +1601,8 @@ export default function ScoreInput({
                                 : strikerName,
                             isWide: extraType === "WD",
                             isNoBall: extraType === "NB",
+                            // 🟢 ADD THIS LINE:
+                            isValidBall: countAsValidBall,
                           },
                           wicketRuns,
                         );
@@ -1522,6 +1614,10 @@ export default function ScoreInput({
                         setFielderName("");
                         setWhoOut("striker");
                         setIsSyncing(false);
+                        setWicketRuns(0); // 🟢 Add this
+                        setCountAsValidBall(false); // 🟢 Add this
+                        setEditStriker(false);
+                        setEditNonStriker(false);
                       }
                     }}
                     className="w-full py-4 bg-red-600 text-white font-bold rounded-xl text-lg mb-3 shadow-lg active:scale-95 transition-transform flex items-center justify-center">
@@ -1533,6 +1629,8 @@ export default function ScoreInput({
                       setIsAddingNew(false);
                       setFielderName("");
                       setWhoOut("striker");
+                      setWicketRuns(0); // 🟢 Add this
+                      setCountAsValidBall(false); // 🟢 Add this
                     }}
                     className="w-full py-4 font-bold opacity-50 active:opacity-100 transition-opacity">
                     Cancel

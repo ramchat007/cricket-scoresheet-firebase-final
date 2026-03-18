@@ -347,7 +347,7 @@ export default function MatchOverlay() {
           </div>
 
           {/* Teams VS */}
-          <h1 className="text-white text-[10rem] font-black uppercase drop-shadow-2xl italic tracking-tighter flex items-center gap-16">
+          <h4 className="text-white text-[6rem] font-black uppercase drop-shadow-2xl italic tracking-tighter flex items-center gap-16">
             <span className="drop-shadow-[0_0_30px_rgba(255,255,255,0.1)] text-slate-100">
               {match.meta?.teamA || "Team A"}
             </span>
@@ -357,10 +357,10 @@ export default function MatchOverlay() {
             <span className="drop-shadow-[0_0_30px_rgba(255,255,255,0.1)] text-slate-100">
               {match.meta?.teamB || "Team B"}
             </span>
-          </h1>
+          </h4>
 
           {/* Status Badge */}
-          <div className="mt-24 bg-gradient-to-r from-teal-800 to-slate-800 px-16 py-5 rounded-full text-white text-5xl animate-pulse font-black border-4 border-teal-500/50 shadow-[0_0_50px_rgba(20,184,166,0.3)] tracking-widest uppercase">
+          <div className="mt-24 bg-gradient-to-r from-teal-800 to-slate-800 px-16 py-5 rounded-full text-white text-3xl animate-pulse font-black border-4 border-teal-500/50 shadow-[0_0_50px_rgba(20,184,166,0.3)] tracking-widest uppercase">
             Starting Soon...
           </div>
         </div>

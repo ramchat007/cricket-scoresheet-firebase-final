@@ -73,115 +73,86 @@ function recalculateInningsState(inn) {
   inn.bowlerStats = inn.bowlerStats || {};
 
   Object.values(inn.batsmenStats).forEach((p) => {
-    p.runs = 0;
-    p.balls = 0;
-    p.fours = 0;
-    p.sixes = 0;
-    p.thirties = 0;
-    p.fifties = 0;
-    p.centuries = 0;
-    p.out = null;
-    p.wicketType = null;
-    p.fielderName = null;
-    p.bowler = null;
+    p.runs = 0; p.balls = 0; p.fours = 0; p.sixes = 0;
+    p.out = null; p.wicketType = null; p.fielderName = null; p.bowler = null;
   });
 
   Object.values(inn.bowlerStats).forEach((b) => {
-    b.runs = 0;
-    b.balls = 0;
-    b.wickets = 0;
+    b.runs = 0; b.balls = 0; b.wickets = 0;
   });
 
   // C. Replay History
   const history = inn.timeline || [];
 
   history.forEach((ball, index) => {
-    let runVal = ball.runs || 0;
     const {
-      isWicket,
-      isWide,
-      isNoBall,
-      isBye,
-      isLegBye,
-      batter,
-      bowler,
-      isLegalOverride,
+      isWicket, isWide, isNoBall, isBye, isLegBye,
+      batter, bowler, isLegalOverride, isValidBall, physicalRuns
     } = ball;
 
-    // Initialize stats
-    if (batter && !inn.batsmenStats[batter])
-      inn.batsmenStats[batter] = {
-        runs: 0,
-        balls: 0,
-        fours: 0,
-        sixes: 0,
-        thirties: 0,
-        fifties: 0,
-        centuries: 0,
-      };
-    if (bowler && !inn.bowlerStats[bowler])
-      inn.bowlerStats[bowler] = { runs: 0, balls: 0, wickets: 0 };
+    // Initialize stats if missing
+    if (batter && !inn.batsmenStats[batter]) inn.batsmenStats[batter] = { runs: 0, balls: 0, fours: 0, sixes: 0 };
+    if (bowler && !inn.bowlerStats[bowler]) inn.bowlerStats[bowler] = { runs: 0, balls: 0, wickets: 0 };
 
-    // --- 1. TEAM SCORE ---
-    inn.score += runVal;
+    // 🟢 THE CORE MATH ENGINE
+    let ballRunsForTeam = 0;
+    let ballRunsForBatter = 0;
+    const pRuns = Number(physicalRuns || 0);
 
-    // --- 2. EXTRAS CALCULATION ---
     if (isWide) {
-      inn.extras.wides += runVal;
-    } else if (isNoBall) {
+      ballRunsForTeam = 1 + pRuns;
+      inn.extras.wides += (1 + pRuns);
+    } 
+    else if (isNoBall) {
+      ballRunsForTeam = 1 + pRuns; // 1 (NB Penalty) + whatever was ran
       inn.extras.noBalls += 1;
-      const physicalRuns = Math.max(0, runVal - 1);
-      if (isBye) inn.extras.byes += physicalRuns;
-      else if (isLegBye) inn.extras.legByes += physicalRuns;
-      else {
-        // Runs off bat on NB
-        if (batter && inn.batsmenStats[batter]) {
-          const p = inn.batsmenStats[batter];
-          p.runs += physicalRuns;
-          p.balls += 1;
-          if (physicalRuns === 4) p.fours += 1;
-          if (physicalRuns === 6) p.sixes += 1;
-        }
-      }
-    } else {
-      // Legal Delivery
-      if (isBye) inn.extras.byes += runVal;
-      else if (isLegBye) inn.extras.legByes += runVal;
-      else {
-        if (batter && inn.batsmenStats[batter]) {
-          const p = inn.batsmenStats[batter];
-          p.runs += runVal;
-          p.balls += 1;
-          if (runVal === 4) p.fours += 1;
-          if (runVal === 6) p.sixes += 1;
-        }
+      
+      if (isBye) {
+        inn.extras.byes += pRuns;
+      } else if (isLegBye) {
+        // 🟢 LEG BYE ON NB:
+        // Batter gets 0 runs, but team gets the physical runs as LB extras.
+        inn.extras.legByes += pRuns;
+        ballRunsForBatter = 0; 
+      } else {
+        // Runs off bat
+        ballRunsForBatter = pRuns;
       }
     }
+    else {
+      // Legal Delivery
+      ballRunsForTeam = pRuns || Number(ball.runs || 0);
+      if (isBye) inn.extras.byes += ballRunsForTeam;
+      else if (isLegBye) inn.extras.legByes += ballRunsForTeam;
+      else ballRunsForBatter = ballRunsForTeam;
+    }
 
-    // --- 3. BOWLER STATS ---
+    // 1. Update Team Score
+    inn.score += ballRunsForTeam;
+
+    // 2. Update Batter Stats
+    if (batter && inn.batsmenStats[batter]) {
+      const p = inn.batsmenStats[batter];
+      p.runs += ballRunsForBatter;
+      // Batter faces a ball if it's NOT a Wide
+      if (!isWide) p.balls += 1;
+      if (ballRunsForBatter === 4) p.fours += 1;
+      if (ballRunsForBatter === 6) p.sixes += 1;
+    }
+
+    // 3. Update Bowler Stats
     if (bowler && inn.bowlerStats[bowler]) {
       const b = inn.bowlerStats[bowler];
-      let runsConceded = 0;
-
-      if (isWide) runsConceded = runVal;
-      else if (isNoBall) {
-        runsConceded = 1;
-        if (!isBye && !isLegBye) runsConceded += Math.max(0, runVal - 1);
-      } else if (!isBye && !isLegBye) {
-        runsConceded = runVal;
-      }
-      b.runs += runsConceded;
-
-      // Count ball if Legal OR Override (Underarm Rule)
-      const countBall = (!isWide && !isNoBall) || isLegalOverride;
-      if (countBall) b.balls += 1;
+      b.runs += ballRunsForTeam; // Local rules usually charge all runs to bowler
+      
+      const countsAsLegal = (!isWide && !isNoBall) || isLegalOverride || isValidBall;
+      if (countsAsLegal) b.balls += 1;
     }
 
-    // --- 4. OVER COUNT ---
-    const countBall = (!isWide && !isNoBall) || isLegalOverride;
+    // 4. Over Count
+    const countsAsLegal = (!isWide && !isNoBall) || isLegalOverride || isValidBall;
     let isOverComplete = false;
-
-    if (countBall) {
+    if (countsAsLegal) {
       inn.overBallCount += 1;
       if (inn.overBallCount === 6) {
         inn.over += 1;
@@ -190,73 +161,32 @@ function recalculateInningsState(inn) {
       }
     }
 
-    // --- 5. WICKET LOGIC ---
+    // 5. Wicket Logic (Remains the same)
     if (isWicket && ball.wicketType !== "retiredhurt") {
       const victim = ball.whoOut || batter;
-      const wType = ball.wicketType || "out";
-      const fielder = ball.fielderName || ball.fielder || "";
-
-      if (wType !== "retiredhurt") {
-        inn.wickets += 1;
-        inn.fallOfWickets.push({
-          score: inn.score,
-          wicketNo: inn.wickets,
-          over: `${inn.over}.${inn.overBallCount}`,
-          batsman: victim,
-        });
-      }
-
+      inn.wickets += 1;
+      inn.fallOfWickets.push({
+        score: inn.score,
+        wicketNo: inn.wickets,
+        over: `${inn.over}.${inn.overBallCount}`,
+        batsman: victim,
+      });
       if (inn.batsmenStats[victim]) {
         inn.batsmenStats[victim].out = "out";
-        inn.batsmenStats[victim].wicketType = wType;
-        inn.batsmenStats[victim].fielderName = fielder;
-
-        const creditToBowler = [
-          "bowled",
-          "caught",
-          "lbw",
-          "stumped",
-          "hitwicket",
-        ].includes(wType);
-
-        if (creditToBowler) {
-          inn.batsmenStats[victim].bowler = bowler;
+        inn.batsmenStats[victim].wicketType = ball.wicketType;
+        if (["bowled", "caught", "lbw", "stumped"].includes(ball.wicketType)) {
           if (inn.bowlerStats[bowler]) inn.bowlerStats[bowler].wickets += 1;
         }
       }
     }
 
-    // --- 6. STATE RECOVERY ---
+    // 6. End of Ball Slot Updates
     if (index === history.length - 1) {
-      // 🔥 FIX 1: Strict undefined checks so we don't accidentally override a valid 'null'
-      inn.striker =
-        ball.nextStriker !== undefined ? ball.nextStriker : inn.striker;
-      inn.nonStriker =
-        ball.nextNonStriker !== undefined
-          ? ball.nextNonStriker
-          : inn.nonStriker;
-      inn.currentBowler =
-        ball.nextBowler !== undefined ? ball.nextBowler : inn.currentBowler;
-
-      // 🔥 FIX 2: Awaiting new batsman if EITHER slot is strictly null after a wicket
-      inn.awaitingNewBatsman =
-        isWicket && (inn.striker === null || inn.nonStriker === null);
-
+      inn.striker = ball.nextStriker !== undefined ? ball.nextStriker : inn.striker;
+      inn.nonStriker = ball.nextNonStriker !== undefined ? ball.nextNonStriker : inn.nonStriker;
+      inn.currentBowler = ball.nextBowler !== undefined ? ball.nextBowler : inn.currentBowler;
+      inn.awaitingNewBatsman = isWicket && (inn.striker === null || inn.nonStriker === null);
       inn.awaitingNewBowler = isOverComplete;
-    }
-  });
-
-  // Milestones
-  Object.values(inn.batsmenStats).forEach((p) => {
-    if (p.runs >= 100) {
-      p.centuries = 1;
-      p.fifties = 0;
-      p.thirties = 0;
-    } else if (p.runs >= 50) {
-      p.fifties = 1;
-      p.thirties = 0;
-    } else if (p.runs >= 30) {
-      p.thirties = 1;
     }
   });
 
@@ -279,8 +209,13 @@ function applyBallLogic(s, code, extraData = {}, physicalRuns = 0) {
   const isNB = code === "NB" || extraData.isNoBall;
 
   // Calculate Total Runs (Penalty + Physical)
-  const totalRuns =
-    isWD || isNB ? 1 + physicalRuns : parseInt(code) || physicalRuns || 0;
+  let totalRuns = 0;
+  if (isNB || isWD) {
+    totalRuns = 1 + Number(physicalRuns || 0); // 1 Penalty + whatever they ran
+  } else {
+    // If just a wicket with no extras, totalRuns is just the physical runs completed
+    totalRuns = code === "W" ? Number(physicalRuns || 0) : parseInt(code) || 0;
+  }
 
   const newBall = {
     id: Date.now(),
@@ -297,6 +232,7 @@ function applyBallLogic(s, code, extraData = {}, physicalRuns = 0) {
     isLegalOverride: extraData.isLegalOverride || false,
     whoOut: extraData.whoOut, // Critical for survivor logic
     ...extraData,
+    physicalRuns: Number(physicalRuns || 0),
   };
 
   // 1. Determine positions AFTER running (crossing)
