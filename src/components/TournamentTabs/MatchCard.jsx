@@ -10,15 +10,18 @@ import {
   Swords,
   Clock,
   MapPin,
-<<<<<<< HEAD
   Settings,
-=======
   Sparkles, // 🟢 Added Sparkles
->>>>>>> 964b336b6c26fb7935e5d817317db01628ea322e
 } from "lucide-react";
 import { getManOfTheMatch } from "../../utils/statsHelper";
 
-export default function MatchCard({ match, teams, tournamentId, canEdit, onOpenCorrection }) {
+export default function MatchCard({
+  match,
+  teams,
+  tournamentId,
+  canEdit,
+  onOpenCorrection,
+}) {
   const navigate = useNavigate();
   const { theme, lightMode } = useTheme();
 
@@ -124,7 +127,6 @@ export default function MatchCard({ match, teams, tournamentId, canEdit, onOpenC
   const isFinished = ["finished", "completed"].includes(status);
 
   let statusText = isLive ? "Live" : isFinished ? "Finished" : "Upcoming";
-
 
   const mom = useMemo(() => {
     if (!isFinished) return null;
@@ -301,24 +303,27 @@ export default function MatchCard({ match, teams, tournamentId, canEdit, onOpenC
           {/* 🟢 NEW: Player of the Match Badge */}
           {isFinished && momName && (
             <div className="animate-in fade-in zoom-in duration-700">
-               <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border shadow-sm ${
-                 lightMode 
-                   ? "bg-indigo-50 border-indigo-100 text-indigo-700" 
-                   : "bg-indigo-500/10 border-indigo-500/20 text-indigo-300"
-               }`}>
-                 <Sparkles size={12} className="text-indigo-500" />
-                 <span className="text-[10px] font-black uppercase tracking-tighter">
-                   MOM: {momName}
-                 </span>
-               </div>
+              <div
+                className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border shadow-sm ${
+                  lightMode
+                    ? "bg-indigo-50 border-indigo-100 text-indigo-700"
+                    : "bg-indigo-500/10 border-indigo-500/20 text-indigo-300"
+                }`}>
+                <Sparkles size={12} className="text-indigo-500" />
+                <span className="text-[10px] font-black uppercase tracking-tighter">
+                  MOM: {momName}
+                </span>
+              </div>
             </div>
           )}
 
-          <p className={`text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-1.5 ${theme.sub}`}>
+          <p
+            className={`text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-1.5 ${theme.sub}`}>
             {isFinished ? (
               <>
                 <Trophy size={12} className="text-amber-500" />
-                <span className={lightMode ? "text-amber-600" : "text-amber-400"}>
+                <span
+                  className={lightMode ? "text-amber-600" : "text-amber-400"}>
                   {resultText}
                 </span>
               </>
