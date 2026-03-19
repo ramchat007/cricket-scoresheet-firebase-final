@@ -438,7 +438,7 @@ const playOverlaySound = (type) => {
       if (banners.length <= 1) return;
       const int = setInterval(
         () => setIdx((prev) => (prev + 1) % banners.length),
-        8000,
+        4000,
       );
       return () => clearInterval(int);
     }, [banners.length]);

@@ -21,11 +21,17 @@ const norm = (k) =>
 // ✅ 1. SANITIZE SQUAD
 const sanitizeSquadImages = (squad) => {
   if (!Array.isArray(squad)) return [];
-  return squad.map((p) => ({
-    ...p,
-    photoURL:
-      p.photoURL && p.photoURL.startsWith("data:image") ? "" : p.photoURL,
-  }));
+  return squad.map((p) => {
+    const cleanPlayer = { ...p };
+    // Wipe out massive base64 strings so they don't bloat the match document
+    if (cleanPlayer.photoURL && cleanPlayer.photoURL.includes("base64")) {
+      cleanPlayer.photoURL = "";
+    }
+    if (cleanPlayer.image && cleanPlayer.image.includes("base64")) {
+      cleanPlayer.image = "";
+    }
+    return cleanPlayer;
+  });
 };
 
 // ✅ 2. SNAPSHOT CREATOR
@@ -73,12 +79,20 @@ function recalculateInningsState(inn) {
   inn.bowlerStats = inn.bowlerStats || {};
 
   Object.values(inn.batsmenStats).forEach((p) => {
-    p.runs = 0; p.balls = 0; p.fours = 0; p.sixes = 0;
-    p.out = null; p.wicketType = null; p.fielderName = null; p.bowler = null;
+    p.runs = 0;
+    p.balls = 0;
+    p.fours = 0;
+    p.sixes = 0;
+    p.out = null;
+    p.wicketType = null;
+    p.fielderName = null;
+    p.bowler = null;
   });
 
   Object.values(inn.bowlerStats).forEach((b) => {
-    b.runs = 0; b.balls = 0; b.wickets = 0;
+    b.runs = 0;
+    b.balls = 0;
+    b.wickets = 0;
   });
 
   // C. Replay History
@@ -86,13 +100,23 @@ function recalculateInningsState(inn) {
 
   history.forEach((ball, index) => {
     const {
-      isWicket, isWide, isNoBall, isBye, isLegBye,
-      batter, bowler, isLegalOverride, isValidBall, physicalRuns
+      isWicket,
+      isWide,
+      isNoBall,
+      isBye,
+      isLegBye,
+      batter,
+      bowler,
+      isLegalOverride,
+      isValidBall,
+      physicalRuns,
     } = ball;
 
     // Initialize stats if missing
-    if (batter && !inn.batsmenStats[batter]) inn.batsmenStats[batter] = { runs: 0, balls: 0, fours: 0, sixes: 0 };
-    if (bowler && !inn.bowlerStats[bowler]) inn.bowlerStats[bowler] = { runs: 0, balls: 0, wickets: 0 };
+    if (batter && !inn.batsmenStats[batter])
+      inn.batsmenStats[batter] = { runs: 0, balls: 0, fours: 0, sixes: 0 };
+    if (bowler && !inn.bowlerStats[bowler])
+      inn.bowlerStats[bowler] = { runs: 0, balls: 0, wickets: 0 };
 
     // 🟢 THE CORE MATH ENGINE
     let ballRunsForTeam = 0;
@@ -101,25 +125,23 @@ function recalculateInningsState(inn) {
 
     if (isWide) {
       ballRunsForTeam = 1 + pRuns;
-      inn.extras.wides += (1 + pRuns);
-    } 
-    else if (isNoBall) {
+      inn.extras.wides += 1 + pRuns;
+    } else if (isNoBall) {
       ballRunsForTeam = 1 + pRuns; // 1 (NB Penalty) + whatever was ran
       inn.extras.noBalls += 1;
-      
+
       if (isBye) {
         inn.extras.byes += pRuns;
       } else if (isLegBye) {
         // 🟢 LEG BYE ON NB:
         // Batter gets 0 runs, but team gets the physical runs as LB extras.
         inn.extras.legByes += pRuns;
-        ballRunsForBatter = 0; 
+        ballRunsForBatter = 0;
       } else {
         // Runs off bat
         ballRunsForBatter = pRuns;
       }
-    }
-    else {
+    } else {
       // Legal Delivery
       ballRunsForTeam = pRuns || Number(ball.runs || 0);
       if (isBye) inn.extras.byes += ballRunsForTeam;
@@ -144,13 +166,15 @@ function recalculateInningsState(inn) {
     if (bowler && inn.bowlerStats[bowler]) {
       const b = inn.bowlerStats[bowler];
       b.runs += ballRunsForTeam; // Local rules usually charge all runs to bowler
-      
-      const countsAsLegal = (!isWide && !isNoBall) || isLegalOverride || isValidBall;
+
+      const countsAsLegal =
+        (!isWide && !isNoBall) || isLegalOverride || isValidBall;
       if (countsAsLegal) b.balls += 1;
     }
 
     // 4. Over Count
-    const countsAsLegal = (!isWide && !isNoBall) || isLegalOverride || isValidBall;
+    const countsAsLegal =
+      (!isWide && !isNoBall) || isLegalOverride || isValidBall;
     let isOverComplete = false;
     if (countsAsLegal) {
       inn.overBallCount += 1;
@@ -182,10 +206,15 @@ function recalculateInningsState(inn) {
 
     // 6. End of Ball Slot Updates
     if (index === history.length - 1) {
-      inn.striker = ball.nextStriker !== undefined ? ball.nextStriker : inn.striker;
-      inn.nonStriker = ball.nextNonStriker !== undefined ? ball.nextNonStriker : inn.nonStriker;
-      inn.currentBowler = ball.nextBowler !== undefined ? ball.nextBowler : inn.currentBowler;
-      inn.awaitingNewBatsman = isWicket && (inn.striker === null || inn.nonStriker === null);
+      inn.striker =
+        ball.nextStriker !== undefined ? ball.nextStriker : inn.striker;
+      inn.nonStriker =
+        ball.nextNonStriker !== undefined
+          ? ball.nextNonStriker
+          : inn.nonStriker;
+      inn.currentBowler =
+        ball.nextBowler !== undefined ? ball.nextBowler : inn.currentBowler;
+      inn.awaitingNewBatsman = isWicket && (!inn.striker || !inn.nonStriker);
       inn.awaitingNewBowler = isOverComplete;
     }
   });
@@ -198,8 +227,13 @@ function applyBallLogic(s, code, extraData = {}, physicalRuns = 0) {
   const inn = s.innings?.[s.currentInnings || 0];
   if (!inn || inn.completed) return s;
 
+  // 🟢 NEW: Aggressively sanitize all possible squad locations
   if (s.teamASquad) s.teamASquad = sanitizeSquadImages(s.teamASquad);
   if (s.teamBSquad) s.teamBSquad = sanitizeSquadImages(s.teamBSquad);
+  if (s.meta?.teamASquad)
+    s.meta.teamASquad = sanitizeSquadImages(s.meta.teamASquad);
+  if (s.meta?.teamBSquad)
+    s.meta.teamBSquad = sanitizeSquadImages(s.meta.teamBSquad);
 
   s.undoStack = s.undoStack || [];
   s.undoStack.push(createSnapshot(inn));
@@ -370,6 +404,7 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
     if (setMatch && match) {
       const matchDraft = JSON.parse(JSON.stringify(match));
       const updatedMatch = actionFn(matchDraft);
+      updatedMatch.lastUpdate = Date.now() + 5000;
       setMatch(updatedMatch);
     }
   };
@@ -423,8 +458,8 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
       NEW_BATSMAN: (s) => {
         const inn = s.innings[s.currentInnings];
 
-        // 🔥 SMART SLOT FILLING
-        if (inn.nonStriker === null) {
+        // 🟢 FIX: Smart Slot Filling using falsy check
+        if (!inn.nonStriker) {
           inn.nonStriker = payload.player;
         } else {
           inn.striker = payload.player;
@@ -435,9 +470,9 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
         if (inn.timeline && inn.timeline.length > 0) {
           const lastBall = inn.timeline[inn.timeline.length - 1];
           // Update the exact slot in the timeline
-          if (lastBall.nextNonStriker === null) {
+          if (!lastBall.nextNonStriker) {
             lastBall.nextNonStriker = payload.player;
-          } else if (lastBall.nextStriker === null) {
+          } else {
             lastBall.nextStriker = payload.player;
           }
         }
@@ -522,8 +557,8 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
         (s) => {
           const inn = s.innings[s.currentInnings];
 
-          // 🔥 SMART SLOT FILLING
-          if (inn.nonStriker === null) {
+          // 🟢 FIX: Smart Slot Filling using falsy check
+          if (!inn.nonStriker) {
             inn.nonStriker = p;
           } else {
             inn.striker = p;
@@ -533,10 +568,9 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
 
           if (inn.timeline && inn.timeline.length > 0) {
             const lastBall = inn.timeline[inn.timeline.length - 1];
-            // Update the exact slot in the timeline
-            if (lastBall.nextNonStriker === null) {
+            if (!lastBall.nextNonStriker) {
               lastBall.nextNonStriker = p;
-            } else if (lastBall.nextStriker === null) {
+            } else {
               lastBall.nextStriker = p;
             }
           }
