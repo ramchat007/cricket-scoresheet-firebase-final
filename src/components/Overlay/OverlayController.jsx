@@ -222,14 +222,14 @@ export default function OverlayController({ tournamentId, matchId, match }) {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        const MAX_WIDTH = 300;
+        const MAX_WIDTH = 150;
         const scaleSize = MAX_WIDTH / img.width;
         canvas.width = MAX_WIDTH;
         canvas.height = img.height * scaleSize;
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-        const base64 = canvas.toDataURL("image/webp", 0.8);
+        const base64 = canvas.toDataURL("image/webp", 0.6);
         const newSponsor = {
           id: Date.now().toString(),
           name: newSponsorName,
@@ -258,14 +258,14 @@ export default function OverlayController({ tournamentId, matchId, match }) {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        const MAX_WIDTH = 1280;
+        const MAX_WIDTH = 800;
         const scaleSize = MAX_WIDTH / img.width;
         canvas.width = MAX_WIDTH;
         canvas.height = img.height * scaleSize;
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-        const base64 = canvas.toDataURL("image/webp", 0.7);
+        const base64 = canvas.toDataURL("image/webp", 0.5);
         const newBanner = { id: Date.now().toString(), image: base64 };
 
         updateOverlay({
