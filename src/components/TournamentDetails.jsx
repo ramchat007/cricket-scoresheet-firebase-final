@@ -57,15 +57,15 @@ const LiveActionButton = ({
           href={broadcastUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-3 bg-[#FF0000] hover:bg-red-700 text-white pl-4 pr-6 py-3 rounded-xl font-bold text-xs md:text-sm animate-pulse transition-all shadow-[0_0_15px_rgba(220,38,38,0.5)] border border-red-500/50 uppercase tracking-widest group">
+          className="flex items-center gap-2 md:gap-3 bg-[#FF0000] hover:bg-red-700 text-white pl-3 pr-4 py-2 md:pl-4 md:pr-6 md:py-3 rounded-lg md:rounded-xl font-bold text-[10px] md:text-sm animate-pulse transition-all shadow-[0_0_15px_rgba(220,38,38,0.5)] border border-red-500/50 uppercase tracking-widest group">
           <Tv
-            size={20}
-            className="group-hover:scale-110 transition-transform"
+            size={18}
+            className="md:w-5 md:h-5 group-hover:scale-110 transition-transform"
           />
           <div className="flex flex-col leading-none text-left">
             <span>YouTube Live</span>
             {currentMatch && (
-              <span className="text-[9px] opacity-80 normal-case tracking-normal font-medium">
+              <span className="text-[8px] md:text-[9px] opacity-80 normal-case tracking-normal font-medium mt-0.5">
                 {currentMatch.teamA} vs {currentMatch.teamB}
               </span>
             )}
@@ -77,8 +77,8 @@ const LiveActionButton = ({
       {isAuctionLive && (
         <button
           onClick={() => navigate(`/tournaments/${tournamentId}/auction/live`)}
-          className="flex items-center gap-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white px-5 py-3 rounded-xl font-bold text-xs md:text-sm shadow-lg shadow-orange-900/40 border-b-4 border-orange-800 active:border-b-0 active:translate-y-1 uppercase tracking-widest transition-all">
-          <Gavel size={18} />
+          className="flex items-center gap-1.5 md:gap-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white px-3 py-2 md:px-5 md:py-3 rounded-lg md:rounded-xl font-bold text-[10px] md:text-sm shadow-lg shadow-orange-900/40 border-b-[3px] md:border-b-4 border-orange-800 active:border-b-0 active:translate-y-1 uppercase tracking-widest transition-all">
+          <Gavel size={16} className="md:w-[18px] md:h-[18px]" />
           <span>Auction Live</span>
         </button>
       )}
@@ -330,18 +330,18 @@ export default function TournamentDetails() {
   return (
     <div
       className={`w-full min-h-screen pb-20 font-sans transition-colors duration-300 ${theme.bg} ${theme.text}`}>
-      {/* HERO SECTION */}
+      {/* HERO SECTION - TIGHTER PADDING ON MOBILE */}
       <div
-        className={`relative border-b pt-10 pb-12 px-4 overflow-hidden shadow-2xl ${
+        className={`relative border-b pt-6 pb-8 md:pt-10 md:pb-12 px-3 md:px-4 overflow-hidden shadow-2xl ${
           lightMode ? "bg-white border-gray-200" : "bg-[#161920] border-white/5"
         }`}>
-        <div className="max-w-7xl mx-auto relative z-10 flex flex-col md:flex-row md:items-end md:justify-between gap-6">
+        <div className="max-w-7xl mx-auto relative z-10 flex flex-col md:flex-row md:items-end md:justify-between gap-3 md:gap-6">
           {/* TITLE & INFO */}
           <div className="flex-1">
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-1.5 md:gap-2 mb-1.5 md:mb-2">
               {isOwner && (
                 <span
-                  className={`text-[9px] font-black px-2 py-0.5 rounded-md border uppercase tracking-widest ${
+                  className={`text-[8px] md:text-[9px] font-black px-1.5 md:px-2 py-0.5 rounded md:rounded-md border uppercase tracking-widest ${
                     lightMode
                       ? "bg-red-50 text-red-600 border-red-200"
                       : "bg-red-900/30 text-red-400 border-red-500/30"
@@ -351,7 +351,7 @@ export default function TournamentDetails() {
               )}
               {canEdit && !isOwner && (
                 <span
-                  className={`text-[9px] font-black px-2 py-0.5 rounded-md border uppercase tracking-widest ${
+                  className={`text-[8px] md:text-[9px] font-black px-1.5 md:px-2 py-0.5 rounded md:rounded-md border uppercase tracking-widest ${
                     lightMode
                       ? "bg-indigo-50 text-indigo-600 border-indigo-200"
                       : "bg-indigo-900/30 text-indigo-400 border-indigo-500/30"
@@ -360,39 +360,40 @@ export default function TournamentDetails() {
                 </span>
               )}
             </div>
+            {/* TIGHTER TITLE FOR MOBILE */}
             <h1
-              className={`text-3xl md:text-5xl font-black uppercase tracking-tighter italic leading-none ${theme.text}`}>
+              className={`text-2xl sm:text-3xl md:text-5xl font-black uppercase tracking-tighter italic leading-none ${theme.text}`}>
               {tournamentData?.name}
             </h1>
             <div
-              className={`text-sm font-bold mt-3 flex flex-wrap items-center gap-3 uppercase tracking-wide ${theme.sub}`}>
+              className={`text-xs md:text-sm font-bold mt-2 md:mt-3 flex flex-wrap items-center gap-2 md:gap-3 uppercase tracking-wide ${theme.sub}`}>
               <span className="flex items-center gap-1">
-                <Shield size={16} /> {tournamentTeams.length} Teams
+                <Shield size={14} className="md:w-4 md:h-4" />{" "}
+                {tournamentTeams.length} Teams
               </span>
               <span
-                className={`hidden sm:block w-1.5 h-1.5 rounded-full ${lightMode ? "bg-gray-300" : "bg-slate-700"}`}></span>
+                className={`hidden sm:block w-1 md:w-1.5 h-1 md:h-1.5 rounded-full ${lightMode ? "bg-gray-300" : "bg-slate-700"}`}></span>
               <span className="flex items-center gap-1">
-                <Trophy size={16} /> {matches.length} Matches
+                <Trophy size={14} className="md:w-4 md:h-4" /> {matches.length}{" "}
+                Matches
               </span>
               <span
-                className={`hidden sm:block w-1.5 h-1.5 rounded-full ${lightMode ? "bg-gray-300" : "bg-slate-700"}`}></span>
+                className={`hidden sm:block w-1 md:w-1.5 h-1 md:h-1.5 rounded-full ${lightMode ? "bg-gray-300" : "bg-slate-700"}`}></span>
 
               {/* 🟢 DYNAMIC PLAYER BUTTON: Registration List (Pre-Auction) vs Stats (Post-Auction) */}
               <button
                 onClick={() => {
                   if (uniqueTeamPlayersCount === 0) {
-                    // Pre-Auction: No teams formed yet -> Go to registration list
                     navigate(`/view-players/${id}`);
                   } else {
-                    // Post-Auction: Teams exist -> Go to the stats tab
                     setActiveTab("players");
                     window.scrollTo({ top: 500, behavior: "smooth" });
                   }
                 }}
                 className={`flex items-center gap-1 transition-colors cursor-pointer ${
                   uniqueTeamPlayersCount === 0 && !(canEdit || isOwner)
-                    ? "pointer-events-none opacity-80" // Lock registration list for public
-                    : "hover:text-teal-500" // Unlock stats for everyone
+                    ? "pointer-events-none opacity-80"
+                    : "hover:text-teal-500"
                 }`}
                 title={
                   uniqueTeamPlayersCount === 0
@@ -401,15 +402,16 @@ export default function TournamentDetails() {
                       : "Players Registered"
                     : "View Player Stats"
                 }>
-                <Users size={16} /> {displayPlayerCount} Players
+                <Users size={14} className="md:w-4 md:h-4" />{" "}
+                {displayPlayerCount} Players
               </button>
             </div>
           </div>
 
           {/* ACTIONS AREA */}
-          <div className="flex flex-col items-end gap-3 w-full md:w-auto">
+          <div className="flex flex-col items-start md:items-end gap-2 md:gap-3 w-full md:w-auto mt-2 md:mt-0">
             {/* ROW 1: PRIMARY ACTION BUTTONS */}
-            <div className="flex flex-wrap gap-3 justify-end w-full">
+            <div className="flex flex-wrap gap-2 md:gap-3 justify-start md:justify-end w-full">
               <LiveActionButton
                 liveMatches={matches}
                 broadcastUrl={streamUrl}
@@ -421,8 +423,8 @@ export default function TournamentDetails() {
               {canEdit && isAuctionEnabled && auctionInitialized && (
                 <button
                   onClick={() => navigate(`/tournaments/${id}/auction`)}
-                  className="bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest">
-                  <Settings size={18} />
+                  className="bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-white font-bold px-4 py-2 md:px-6 md:py-3 rounded-lg md:rounded-xl shadow-lg flex items-center gap-1.5 md:gap-2 transition-all active:scale-95 text-[10px] md:text-xs uppercase tracking-widest">
+                  <Settings size={14} className="md:w-[18px] md:h-[18px]" />
                   <span>Enter Console</span>
                 </button>
               )}
@@ -431,29 +433,34 @@ export default function TournamentDetails() {
             {/* ROW 2: ADMIN MANAGEMENT TOOLS */}
             {canEdit && (
               <div
-                className={`flex flex-wrap gap-2 justify-end p-2 rounded-xl border backdrop-blur-sm ${
+                className={`flex flex-wrap gap-1.5 md:gap-2 justify-start md:justify-end p-1.5 md:p-2 rounded-lg md:rounded-xl border backdrop-blur-sm ${
                   lightMode
                     ? "bg-gray-100 border-gray-200"
                     : "bg-black/20 border-white/5"
                 }`}>
                 <button
                   onClick={() => setShowScheduler(!showScheduler)}
-                  className={`px-4 py-2 rounded-lg transition-all text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 border ${
+                  className={`px-2.5 py-1.5 md:px-4 md:py-2 rounded-md md:rounded-lg transition-all text-[9px] md:text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 md:gap-2 border ${
                     lightMode
                       ? "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
                       : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
                   }`}>
-                  {showScheduler ? <X size={14} /> : <CalendarPlus size={14} />}
+                  {showScheduler ? (
+                    <X size={12} className="md:w-3.5 md:h-3.5" />
+                  ) : (
+                    <CalendarPlus size={12} className="md:w-3.5 md:h-3.5" />
+                  )}
                   {showScheduler ? "Close" : "Schedule"}
                 </button>
                 <button
                   onClick={() => navigate(`/tournaments/${id}/bracket`)}
-                  className={`px-4 py-2 rounded-lg transition-all text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 border ${
+                  className={`px-2.5 py-1.5 md:px-4 md:py-2 rounded-md md:rounded-lg transition-all text-[9px] md:text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 md:gap-2 border ${
                     lightMode
                       ? "bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100"
                       : "bg-purple-500/10 border-purple-500/30 text-purple-400 hover:bg-purple-500/20"
                   }`}>
-                  <Shield size={14} /> Bracket Editor
+                  <Shield size={12} className="md:w-3.5 md:h-3.5" /> Bracket
+                  Editor
                 </button>
 
                 {isAuctionEnabled ? (
@@ -461,33 +468,36 @@ export default function TournamentDetails() {
                     {!auctionInitialized && (
                       <button
                         onClick={handleInitializeAuction}
-                        className={`px-4 py-2 rounded-lg transition-all text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 border ${
+                        className={`px-2.5 py-1.5 md:px-4 md:py-2 rounded-md md:rounded-lg transition-all text-[9px] md:text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 md:gap-2 border ${
                           lightMode
                             ? "bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100"
                             : "bg-purple-600/20 text-purple-300 border-purple-500/30 hover:bg-purple-600/40"
                         }`}>
-                        <Rocket size={14} /> Init Auction
+                        <Rocket size={12} className="md:w-3.5 md:h-3.5" /> Init
+                        Auction
                       </button>
                     )}
                     <button
                       onClick={toggleAuctionMode}
-                      className={`px-4 py-2 rounded-lg transition-all text-[10px] font-bold uppercase tracking-widest border flex items-center gap-2 ${
+                      className={`px-2.5 py-1.5 md:px-4 md:py-2 rounded-md md:rounded-lg transition-all text-[9px] md:text-[10px] font-bold uppercase tracking-widest border flex items-center gap-1 md:gap-2 ${
                         lightMode
                           ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
                           : "bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20"
                       }`}>
-                      <Lock size={14} /> Disable Auction
+                      <Lock size={12} className="md:w-3.5 md:h-3.5" /> Disable
+                      Auction
                     </button>
                   </>
                 ) : (
                   <button
                     onClick={toggleAuctionMode}
-                    className={`px-4 py-2 rounded-lg transition-all text-[10px] font-bold uppercase tracking-widest border flex items-center gap-2 ${
+                    className={`px-2.5 py-1.5 md:px-4 md:py-2 rounded-md md:rounded-lg transition-all text-[9px] md:text-[10px] font-bold uppercase tracking-widest border flex items-center gap-1 md:gap-2 ${
                       lightMode
                         ? "bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100"
                         : "bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/20"
                     }`}>
-                    <Unlock size={14} /> Enable Auction
+                    <Unlock size={12} className="md:w-3.5 md:h-3.5" /> Enable
+                    Auction
                   </button>
                 )}
               </div>
@@ -496,11 +506,11 @@ export default function TournamentDetails() {
         </div>
       </div>
 
-      {/* SCHEDULER SECTION */}
-      <div className="max-w-7xl mx-auto px-4 -mt-8 relative z-30 animate-in fade-in slide-in-from-top-4 duration-500">
+      {/* SCHEDULER SECTION - REDUCED MARGINS FOR MOBILE */}
+      <div className="max-w-7xl mx-auto px-2 md:px-4 -mt-4 md:-mt-8 relative z-30 animate-in fade-in slide-in-from-top-4 duration-500">
         {showScheduler && (
           <div
-            className={`border rounded-[2rem] shadow-2xl p-2 mb-8 ${
+            className={`border rounded-[1.5rem] md:rounded-[2rem] shadow-2xl p-1 md:p-2 mb-4 md:mb-8 ${
               lightMode
                 ? "bg-white border-gray-200"
                 : "bg-[#1C2128] border-white/10"
@@ -516,7 +526,7 @@ export default function TournamentDetails() {
 
       {/* TABS CONTAINER */}
       <div
-        className={`max-w-7xl mx-auto px-4 relative z-20 ${showScheduler ? "mt-0" : "-mt-6"}`}>
+        className={`max-w-7xl mx-auto px-2 md:px-4 relative z-20 ${showScheduler ? "mt-0" : "-mt-3 md:-mt-6"}`}>
         <TournamentTabs
           activeTab={activeTab}
           setActiveTab={setActiveTab}

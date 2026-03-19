@@ -10,7 +10,7 @@ export default function MatchesTab({
   tournamentTeams = [], // Passed from parent
   tournamentId,
   canEdit,
-  onOpenCorrection
+  onOpenCorrection,
 }) {
   const { theme, lightMode } = useTheme();
 
@@ -52,16 +52,19 @@ export default function MatchesTab({
     if (matches.length === 0 && type !== "upcoming") return null;
 
     return (
-      <section className="mb-12">
-        <div className="flex items-center gap-4 mb-6">
+      <section className="mb-6 md:mb-12">
+        <div className="flex items-center gap-2 md:gap-4 mb-3 md:mb-6">
           {type === "live" && (
-            <div className="relative flex items-center justify-center w-6 h-6">
+            <div className="relative flex items-center justify-center w-5 h-5 md:w-6 md:h-6">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
-              <Radio size={16} className="relative z-10 text-red-600" />
+              <Radio
+                size={14}
+                className="relative z-10 text-red-600 md:w-4 md:h-4"
+              />
             </div>
           )}
           <h3
-            className={`text-xs font-black uppercase tracking-[0.3em] ${
+            className={`text-[10px] md:text-xs font-black uppercase tracking-[0.2em] md:tracking-[0.3em] ${
               type === "live" ? "text-red-600" : theme.sub
             }`}>
             {title}
@@ -72,18 +75,18 @@ export default function MatchesTab({
 
         {matches.length === 0 ? (
           <div
-            className={`border border-dashed rounded-[2rem] p-12 flex flex-col items-center justify-center gap-3 text-center transition-colors ${
+            className={`border border-dashed rounded-2xl md:rounded-[2rem] p-6 md:p-12 flex flex-col items-center justify-center gap-2 md:gap-3 text-center transition-colors ${
               lightMode
                 ? "bg-gray-50 border-gray-200 text-gray-400"
                 : "bg-[#161920]/50 border-white/5 text-slate-600"
             }`}>
-            <CalendarX size={32} className="opacity-50" />
-            <span className="text-sm italic font-medium">
+            <CalendarX size={24} className="opacity-50 md:w-8 md:h-8" />
+            <span className="text-xs md:text-sm italic font-medium">
               No matches found in this category.
             </span>
           </div>
         ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-3 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-6">
             {matches.map((m) => (
               <MatchCard
                 key={m.id}
@@ -101,7 +104,7 @@ export default function MatchesTab({
   };
 
   return (
-    <div className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="mt-4 md:mt-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {renderSection("Live Action", sortedLive, "live")}
       {renderSection("Upcoming Fixtures", sortedUpcoming, "upcoming")}
       {renderSection("Recent Results", sortedFinished, "finished")}

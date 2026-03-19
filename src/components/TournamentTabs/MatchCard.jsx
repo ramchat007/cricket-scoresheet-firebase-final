@@ -1,18 +1,9 @@
-import React, { useMemo } from "react"; // 🟢 Added useMemo
+import React, { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { doc, deleteDoc } from "firebase/firestore";
 import { db } from "../../utils/firebase";
 import { useTheme } from "../../context/ThemeContext";
-import {
-  Trash2,
-  ExternalLink,
-  Trophy,
-  Swords,
-  Clock,
-  MapPin,
-  Settings,
-  Sparkles, // 🟢 Added Sparkles
-} from "lucide-react";
+import { Trash2, ExternalLink, Settings, Shield } from "lucide-react";
 import { getManOfTheMatch } from "../../utils/statsHelper";
 
 export default function MatchCard({
@@ -27,13 +18,8 @@ export default function MatchCard({
 
   // --- DELETE HANDLER ---
   const handleDelete = async (e) => {
-    e.stopPropagation(); // 🛑 Stop the card from opening
-    if (
-      !window.confirm(
-        `Are you sure you want to delete the match:\n${match.teamA} vs ${match.teamB}?`,
-      )
-    )
-      return;
+    e.stopPropagation();
+    if (!window.confirm(`Are you sure you want to delete this match?`)) return;
 
     try {
       await deleteDoc(
@@ -47,121 +33,139 @@ export default function MatchCard({
 
   // --- DATA EXTRACTION ---
   const meta = match.meta || {};
-  const venue = match.venue || meta.venue;
+  const venue = match.venue || meta.venue || "Venue TBA";
 
-  // 1. Team Names
   const teamAName = match.teamA || meta.teamA || "Team A";
   const teamBName = match.teamB || meta.teamB || "Team B";
 
-  // 2. Format Date & Time
+  const teamAId = match.teamAId || meta.teamAId;
+  const teamBId = match.teamBId || meta.teamBId;
+
+  // --- DATE & TIME FORMATTING ---
   const rawDate = match.date || meta.date;
   const rawTime = match.time || meta.time;
 
-  let formattedDateTime = "TBA";
+  let formattedDate = "";
+  let formattedTime = "";
 
   if (rawDate) {
     const dateObj = new Date(rawDate);
-    const datePart = dateObj.toLocaleDateString("en-GB", {
+    formattedDate = dateObj.toLocaleDateString("en-GB", {
       day: "numeric",
       month: "short",
       year: "numeric",
     });
-
-    let timePart = "";
-    if (rawTime) {
-      try {
-        const [hours, minutes] = rawTime.split(":");
-        const timeObj = new Date();
-        timeObj.setHours(hours);
-        timeObj.setMinutes(minutes);
-
-        timePart = timeObj
-          .toLocaleTimeString("en-US", {
-            hour: "numeric",
-            minute: "2-digit",
-            hour12: true,
-          })
-          .replace(":", ".");
-      } catch (e) {
-        timePart = rawTime;
-      }
-    } else if (match.startAt || meta.startAt) {
-      const startObj = new Date(match.startAt || meta.startAt);
-      if (!isNaN(startObj)) {
-        timePart = startObj
-          .toLocaleTimeString("en-US", {
-            hour: "numeric",
-            minute: "2-digit",
-            hour12: true,
-          })
-          .replace(":", ".");
-      }
-    }
-
-    formattedDateTime = timePart ? `${datePart}, ${timePart}` : datePart;
   }
 
-  // 3. Match Details
+  if (rawTime) {
+    try {
+      const [hours, minutes] = rawTime.split(":");
+      const timeObj = new Date();
+      timeObj.setHours(hours);
+      timeObj.setMinutes(minutes);
+      formattedTime = timeObj.toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
+    } catch (e) {
+      formattedTime = rawTime;
+    }
+  }
+
   const displayId =
     match.matchTitle ||
     meta.matchTitle ||
-    `#${match.matchNo || match.id.substring(0, 4)}`;
-  const overs = match.overs || meta.overs || "T20";
+    `Match ${match.matchNo || match.id.substring(0, 4)}`;
 
-  // --- LOGO LOOKUP ---
-  let logoA = meta.teamALogo;
-  let logoB = meta.teamBLogo;
+  // --- 🛡️ AGGRESSIVE LOGO LOOKUP (Fixed for Live Matches) ---
+  // Always prioritize the master 'teams' array over the match document
+  const tA = teams.find(
+    (t) =>
+      (teamAId && t.id === teamAId) ||
+      t.name?.trim().toLowerCase() === teamAName?.trim().toLowerCase(),
+  );
+  const tB = teams.find(
+    (t) =>
+      (teamBId && t.id === teamBId) ||
+      t.name?.trim().toLowerCase() === teamBName?.trim().toLowerCase(),
+  );
 
-  if (!logoA) {
-    const teamAData = teams.find((t) => t.name === teamAName);
-    logoA = teamAData?.logoUrl;
-  }
-  if (!logoB) {
-    const teamBData = teams.find((t) => t.name === teamBName);
-    logoB = teamBData?.logoUrl;
-  }
+  const logoA =
+    tA?.logoUrl || tA?.logo || tA?.image || match.teamALogo || meta.teamALogo;
+  const logoB =
+    tB?.logoUrl || tB?.logo || tB?.image || match.teamBLogo || meta.teamBLogo;
 
   // --- STATUS CHECK ---
   const status = (match?.status || "upcoming").toLowerCase();
   const isLive = ["in-progress", "ongoing", "live"].includes(status);
   const isFinished = ["finished", "completed"].includes(status);
 
-  let statusText = isLive ? "Live" : isFinished ? "Finished" : "Upcoming";
+  // --- EXTRACT LIVE SCORES ---
+  const getTeamScore = (teamName) => {
+    if (!match.innings) return null;
+    const inn = match.innings.find(
+      (i) => i?.battingTeam?.trim() === teamName?.trim(),
+    );
+    if (!inn) return null;
+    return {
+      runs: inn.score || 0,
+      wickets: inn.wickets || 0,
+      overs: `${inn.over || 0}.${inn.overBallCount || 0}`,
+    };
+  };
 
-  const mom = useMemo(() => {
-    if (!isFinished) return null;
-    // If the match already has a hardcoded MOM, use it, otherwise calculate from stats
-    return match.mom || meta.mom || getManOfTheMatch(match);
-  }, [match, isFinished, meta.mom]);
+  const scoreA = getTeamScore(teamAName);
+  const scoreB = getTeamScore(teamBName);
 
-  // Helper to extract name safely
+  // --- CALCULATE FOOTER TEXT (Context Aware) ---
+  let footerText = "";
+  let footerColorClass = theme.sub; // default gray
+
+  // 1. Toss Info
+  let tossText = null;
+  if (meta?.toss?.winner) {
+    tossText = `${meta.toss.winner} elected to ${meta.toss.decision}`;
+  }
+
+  // 2. MOM Info
+  const mom = useMemo(
+    () =>
+      isFinished ? match.mom || meta.mom || getManOfTheMatch(match) : null,
+    [match, isFinished, meta.mom],
+  );
   const momName = useMemo(() => {
     if (!mom) return "";
     if (typeof mom === "object") return mom.name || mom.playerName || "";
     return String(mom).trim();
   }, [mom]);
-  // --- 🧠 CALCULATE RESULT CONTEXT ---
-  let resultText = match.winner || "Match Ended"; // Default fallback
 
-  if (isFinished && match.innings && match.innings.length >= 2) {
-    const inn1 = match.innings[0];
-    const inn2 = match.innings[1];
-
-    if (inn1 && inn2) {
-      if (inn1.score > inn2.score) {
-        const diff = inn1.score - inn2.score;
-        resultText = `${inn1.battingTeam} won by ${diff} run${diff !== 1 ? "s" : ""}`;
-      } else if (inn2.score > inn1.score) {
-        const totalWickets = parseInt(meta.totalWickets || 10);
-        const diff = Math.max(0, totalWickets - inn2.wickets);
-        resultText = `${inn2.battingTeam} won by ${diff} wicket${diff !== 1 ? "s" : ""}`;
-      } else {
-        resultText = "Match Tied";
+  // 3. Determine Final Footer String
+  if (isFinished) {
+    let resultText = match.winner || "Match Ended";
+    if (match.innings && match.innings.length >= 2) {
+      const [inn1, inn2] = match.innings;
+      if (inn1 && inn2) {
+        if (inn1.score > inn2.score) {
+          resultText = `${inn1.battingTeam} won by ${inn1.score - inn2.score} runs`;
+        } else if (inn2.score > inn1.score) {
+          const totalWickets = parseInt(meta.totalWickets || 10);
+          resultText = `${inn2.battingTeam} won by ${Math.max(0, totalWickets - inn2.wickets)} wickets`;
+        } else {
+          resultText = "Match Tied";
+        }
       }
+    } else if (match.meta?.result) {
+      resultText = match.meta.result;
     }
-  } else if (match.meta?.result) {
-    // If backend stored a computed result string
-    resultText = match.meta.result;
+    footerText = momName ? `${resultText} • MOM: ${momName}` : resultText;
+    footerColorClass = lightMode ? "text-indigo-600" : "text-indigo-400";
+  } else if (isLive) {
+    footerText = tossText || "Match is underway";
+    footerColorClass = lightMode ? "text-amber-600" : "text-amber-500";
+  } else {
+    footerText = tossText ? tossText : `Starts at ${formattedTime || "TBA"}`;
+    footerColorClass = theme.sub;
   }
 
   return (
@@ -169,74 +173,31 @@ export default function MatchCard({
       onClick={() =>
         navigate(`/tournaments/${tournamentId}/scorecard/${match.id}`)
       }
-      className={`group border rounded-[2rem] overflow-hidden transition-all duration-300 hover:scale-[1.01] cursor-pointer shadow-lg hover:shadow-xl ${
-        isLive
-          ? lightMode
-            ? "bg-white border-red-500 shadow-red-100"
-            : "bg-[#1C2128] border-red-500/50 shadow-red-900/20"
-          : `${theme.card} ${lightMode ? "border-gray-200" : "border-white/5"}`
+      className={`group flex flex-col border rounded-2xl overflow-hidden transition-all duration-200 hover:shadow-md cursor-pointer ${
+        lightMode ? "bg-white border-gray-200" : "bg-[#161920] border-white/5"
       }`}>
-      {/* Top Bar */}
+      {/* 1. HEADER: Match Info (Settings removed, Live stays right) */}
       <div
-        className={`px-6 py-3 flex justify-between items-center border-b ${
-          lightMode
-            ? "bg-gray-50 border-gray-200"
-            : "bg-[#0F1115]/50 border-white/5"
-        }`}>
+        className={`px-4 py-2.5 flex justify-between items-center border-b ${lightMode ? "bg-gray-50/80 border-gray-100" : "bg-white/[0.02] border-white/5"}`}>
         <span
-          className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-2 truncate max-w-[60%] ${theme.sub}`}>
-          <span
-            className={`px-1.5 py-0.5 rounded truncate ${lightMode ? "bg-white border border-gray-200" : "bg-white/10 text-slate-300"}`}>
-            {displayId}
-          </span>
-          <span className="shrink-0 text-gray-400">•</span>
-          <span className="shrink-0">{overs} Overs</span>
+          className={`text-[10px] md:text-xs font-semibold truncate pr-2 ${theme.sub}`}>
+          {displayId} • {venue} • {formattedDate}
         </span>
-
-        <div className="flex items-center gap-2">
-          <span
-            className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-tighter border ${
-              isLive
-                ? "bg-red-600 text-white animate-pulse border-red-600"
-                : isFinished
-                  ? lightMode
-                    ? "bg-teal-50 text-teal-600 border-teal-200"
-                    : "bg-teal-500/10 text-teal-500 border-teal-500/20"
-                  : lightMode
-                    ? "bg-gray-200 text-gray-600 border-gray-300"
-                    : "bg-white/10 text-slate-400 border-white/10"
-            }`}>
-            {statusText}
+        {isLive && (
+          <span className="shrink-0 flex items-center gap-1.5 text-[9px] md:text-[10px] font-black text-red-600 uppercase tracking-widest bg-red-50 dark:bg-red-500/10 px-2.5 py-0.5 rounded-full border border-red-200 dark:border-red-500/20">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse"></span>
+            Live
           </span>
-
-          {canEdit && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation(); // 🟢 Prevent navigating to scorecard
-                onOpenCorrection(match); // 🟢 Open the Emergency Console
-              }}
-              className={`p-2 rounded-lg transition-all ${
-                lightMode
-                  ? "hover:bg-gray-200 text-gray-600"
-                  : "hover:bg-white/10 text-slate-400"
-              }`}
-              title="Match Settings & Resolution">
-              <Settings size={16} />
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
-      <div className="p-8">
-        <div className="flex items-center justify-between gap-4">
-          {/* Team A */}
-          <div className="flex flex-col items-center gap-3 flex-1 text-center">
+      {/* 2. BODY: Teams & Scores */}
+      <div className="flex flex-col gap-4 px-4 py-4">
+        {/* TEAM A ROW */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
             <div
-              className={`w-16 h-16 md:w-20 md:h-20 rounded-3xl p-2 overflow-hidden border flex items-center justify-center shadow-inner group-hover:rotate-[-5deg] transition-transform ${
-                lightMode
-                  ? "bg-white border-gray-200"
-                  : "bg-[#0F1115] border-white/5"
-              }`}>
+              className={`shrink-0 w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center overflow-hidden border p-0.5 shadow-sm ${lightMode ? "bg-white border-gray-200" : "bg-black/40 border-white/10"}`}>
               {logoA ? (
                 <img
                   src={logoA}
@@ -244,40 +205,45 @@ export default function MatchCard({
                   alt={teamAName}
                 />
               ) : (
-                <Swords size={32} className="text-gray-400 opacity-50" />
+                <Shield size={16} className="text-gray-400" />
               )}
             </div>
-            <h4
-              className={`text-sm md:text-base font-black uppercase tracking-tighter leading-tight break-words w-full ${theme.text}`}>
+            {/* REMOVED TRUNCATE - ALLOWS WRAPPING */}
+            <span
+              className={`text-sm md:text-base font-bold leading-snug break-words ${theme.text}`}>
               {teamAName}
-            </h4>
-          </div>
-
-          {/* VS Divider */}
-          <div className="flex flex-col items-center gap-2">
-            <span
-              className={`text-[10px] font-black px-2 py-1 rounded border italic ${
-                lightMode
-                  ? "bg-gray-100 text-gray-500 border-gray-200"
-                  : "bg-[#0F1115] text-slate-600 border-white/5"
-              }`}>
-              VS
-            </span>
-            <span
-              className={`text-[10px] font-bold flex items-center gap-1 ${lightMode ? "text-teal-600" : "text-teal-500"}`}>
-              <Clock size={10} />
-              {formattedDateTime}
             </span>
           </div>
 
-          {/* Team B */}
-          <div className="flex flex-col items-center gap-3 flex-1 text-center">
+          {/* TEAM A SCORE (Locked to the right) */}
+          <div className="shrink-0 text-right flex items-baseline gap-1.5">
+            {scoreA ? (
+              <>
+                <span
+                  className={`text-base md:text-lg font-black font-mono leading-none ${theme.text}`}>
+                  {scoreA.runs}
+                  <span className="text-sm md:text-base opacity-60">
+                    /{scoreA.wickets}
+                  </span>
+                </span>
+                <span className={`text-[10px] md:text-xs font-mono opacity-60`}>
+                  ({scoreA.overs})
+                </span>
+              </>
+            ) : (
+              <span
+                className={`text-xs italic opacity-40 font-medium ${theme.sub}`}>
+                Yet to bat
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* TEAM B ROW */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
             <div
-              className={`w-16 h-16 md:w-20 md:h-20 rounded-3xl p-2 overflow-hidden border flex items-center justify-center shadow-inner group-hover:rotate-[5deg] transition-transform ${
-                lightMode
-                  ? "bg-white border-gray-200"
-                  : "bg-[#0F1115] border-white/5"
-              }`}>
+              className={`shrink-0 w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center overflow-hidden border p-0.5 shadow-sm ${lightMode ? "bg-white border-gray-200" : "bg-black/40 border-white/10"}`}>
               {logoB ? (
                 <img
                   src={logoB}
@@ -285,87 +251,85 @@ export default function MatchCard({
                   alt={teamBName}
                 />
               ) : (
-                <Swords
-                  size={32}
-                  className="text-gray-400 opacity-50 scale-x-[-1]"
-                />
+                <Shield size={16} className="text-gray-400" />
               )}
             </div>
-            <h4
-              className={`text-sm md:text-base font-black uppercase tracking-tighter leading-tight break-words w-full ${theme.text}`}>
+            {/* REMOVED TRUNCATE - ALLOWS WRAPPING */}
+            <span
+              className={`text-sm md:text-base font-bold leading-snug break-words ${theme.text}`}>
               {teamBName}
-            </h4>
+            </span>
           </div>
-        </div>
 
-        {/* Status Message (Updated with Calculated Result) */}
-        <div className="mt-6 text-center space-y-3">
-          {/* 🟢 NEW: Player of the Match Badge */}
-          {isFinished && momName && (
-            <div className="animate-in fade-in zoom-in duration-700">
-              <div
-                className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border shadow-sm ${
-                  lightMode
-                    ? "bg-indigo-50 border-indigo-100 text-indigo-700"
-                    : "bg-indigo-500/10 border-indigo-500/20 text-indigo-300"
-                }`}>
-                <Sparkles size={12} className="text-indigo-500" />
-                <span className="text-[10px] font-black uppercase tracking-tighter">
-                  MOM: {momName}
-                </span>
-              </div>
-            </div>
-          )}
-
-          <p
-            className={`text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-1.5 ${theme.sub}`}>
-            {isFinished ? (
+          {/* TEAM B SCORE (Locked to the right) */}
+          <div className="shrink-0 text-right flex items-baseline gap-1.5">
+            {scoreB ? (
               <>
-                <Trophy size={12} className="text-amber-500" />
                 <span
-                  className={lightMode ? "text-amber-600" : "text-amber-400"}>
-                  {resultText}
+                  className={`text-base md:text-lg font-black font-mono leading-none ${theme.text}`}>
+                  {scoreB.runs}
+                  <span className="text-sm md:text-base opacity-60">
+                    /{scoreB.wickets}
+                  </span>
+                </span>
+                <span className={`text-[10px] md:text-xs font-mono opacity-60`}>
+                  ({scoreB.overs})
                 </span>
               </>
             ) : (
-              <>
-                <MapPin size={12} />
-                {venue || "Venue TBA"}
-              </>
+              <span
+                className={`text-xs italic opacity-40 font-medium ${theme.sub}`}>
+                Yet to bat
+              </span>
             )}
-          </p>
+          </div>
         </div>
       </div>
 
-      {/* ADMIN FOOTER */}
+      {/* 3. STATUS FOOTER */}
+      <div
+        className={`px-4 py-2.5 border-t ${lightMode ? "bg-gray-50/50 border-gray-100" : "bg-white/[0.02] border-white/5"}`}>
+        <p
+          className={`text-[10px] md:text-xs font-bold tracking-wide break-words leading-tight ${footerColorClass}`}>
+          {footerText}
+        </p>
+      </div>
+
+      {/* 4. ADMIN QUICK ACTIONS (Settings moved here!) */}
       {canEdit && (
         <div
-          className={`p-3 border-t flex items-center justify-between gap-3 ${
-            lightMode
-              ? "bg-gray-50 border-gray-200"
-              : "bg-[#0F1115]/30 border-white/5"
-          }`}>
-          <button
-            onClick={handleDelete}
-            className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-colors border flex items-center justify-center gap-2 ${
-              lightMode
-                ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
-                : "bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20"
-            }`}>
-            <Trash2 size={12} /> Delete
-          </button>
+          className={`px-3 py-2 flex items-center justify-between gap-2 border-t ${lightMode ? "bg-gray-50 border-gray-100" : "bg-white/[0.02] border-white/5"}`}>
+          {/* Left Side: Delete & Settings */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDelete}
+              className="p-1.5 rounded-md hover:bg-red-100 dark:hover:bg-red-500/20 text-red-500 transition-colors"
+              title="Delete Match">
+              <Trash2 size={14} />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenCorrection(match);
+              }}
+              className={`p-1.5 rounded-md transition-colors ${lightMode ? "hover:bg-gray-200 text-gray-500" : "hover:bg-white/10 text-gray-400"}`}
+              title="Match Settings & Resolution">
+              <Settings size={14} />
+            </button>
+          </div>
 
+          {/* Right Side: Score Button */}
           <button
             onClick={(e) => {
               e.stopPropagation();
               navigate(`/live/${tournamentId}/${match.id}`);
             }}
-            className={`flex-[2] py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-colors border flex items-center justify-center gap-2 ${
+            className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors ${
               lightMode
-                ? "bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100"
-                : "bg-teal-500/10 text-teal-500 border-teal-500/20 hover:bg-teal-500/20"
+                ? "bg-teal-100 text-teal-700 hover:bg-teal-200"
+                : "bg-teal-500/20 text-teal-400 hover:bg-teal-500/30"
             }`}>
-            Scorer Dashboard <ExternalLink size={12} />
+            Scoring Board <ExternalLink size={12} />
           </button>
         </div>
       )}

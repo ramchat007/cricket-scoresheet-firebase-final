@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { recalculateTournamentStats } from "../../utils/matchService";
 import { useTheme } from "../../context/ThemeContext";
-import { RefreshCw, History, Trophy } from "lucide-react"; // 🟢 Added Trophy
+import { RefreshCw, History, Trophy } from "lucide-react";
 
 // --- NRR Helper ---
 const calculateNRR = (runsScored, oversFaced, runsConceded, oversBowled) => {
@@ -12,7 +12,6 @@ const calculateNRR = (runsScored, oversFaced, runsConceded, oversBowled) => {
   return (runRateFor - runRateAgainst).toFixed(3);
 };
 
-// --- Fallback Processor (Client Side Calculation) ---
 // --- Client Side Calculation (Smart Resolution Support) ---
 const processStandings = (teams, matches) => {
   const standings = {};
@@ -27,7 +26,7 @@ const processStandings = (teams, matches) => {
       won: 0,
       lost: 0,
       tied: 0,
-      nr: 0, // No Result count
+      nr: 0,
       points: 0,
       nrr: "0.000",
       history: [],
@@ -41,7 +40,6 @@ const processStandings = (teams, matches) => {
   matches.forEach((m) => {
     if (m.status !== "finished" && m.meta?.matchStatus !== "finished") return;
 
-    // 🟢 Extract team names safely (Fallback to meta if innings don't exist)
     const t1 = (m.innings?.[0]?.battingTeam || m.meta?.teamA || "").trim();
     const t2 = (
       m.innings?.[1]?.battingTeam ||
@@ -99,20 +97,20 @@ const processStandings = (teams, matches) => {
       });
     };
 
-    // 🟢 SCENARIO A: MATCH ABANDONED (Rain / No Show)
+    // SCENARIO A: MATCH ABANDONED (Rain / No Show)
     if (m.resultType === "abandoned") {
       s1.played++;
       s2.played++;
       s1.points++;
-      s2.points++; // Share points
+      s2.points++;
       s1.nr++;
       s2.nr++;
       pushHist(s1, "NR", t2);
       pushHist(s2, "NR", t1);
-      return; // Skip NRR and standard logic
+      return;
     }
 
-    // 🟢 SCENARIO B: WALKOVER
+    // SCENARIO B: WALKOVER
     if (m.resultType === "walkover") {
       s1.played++;
       s2.played++;
@@ -131,10 +129,10 @@ const processStandings = (teams, matches) => {
         s1.lost++;
         pushHist(s1, "L", t2);
       }
-      return; // Skip NRR and standard logic
+      return;
     }
 
-    // 🟢 SCENARIO C: STANDARD MATCH (Requires Innings Data)
+    // SCENARIO C: STANDARD MATCH
     const inn1 = m.innings?.[0];
     const inn2 = m.innings?.[1];
     if (!inn1 || !inn2) return;
@@ -150,7 +148,7 @@ const processStandings = (teams, matches) => {
     } else {
       const dbWinner = (m.winner || m.meta?.result?.winner || "").trim();
       if (dbWinner) winner = dbWinner;
-      else winner = t1; // Default fallback
+      else winner = t1;
     }
 
     if (winner === t1) {
@@ -210,7 +208,6 @@ export default function PointsTab({
   const [isSyncing, setIsSyncing] = useState(false);
   const [expandedTeamId, setExpandedTeamId] = useState(null);
 
-  // 🟢 1. GET RAW DATA
   const rawTableData = useMemo(() => {
     if (matches && matches.length > 0) return processStandings(teams, matches);
     if (
@@ -222,13 +219,10 @@ export default function PointsTab({
     return [];
   }, [pointsTable, matches, teams]);
 
-  // 🟢 2. GROUP THE DATA (Cricbuzz Style)
   const groupedTables = useMemo(() => {
     const groups = {};
 
     rawTableData.forEach((team) => {
-      // If the team has a 'group' field, use it. Otherwise, use "Overall Standings".
-      // E.g. team.group = "A" -> "Group A"
       const groupName = team.group
         ? `Group ${team.group.replace("Group", "").trim()}`
         : "Overall Standings";
@@ -237,7 +231,6 @@ export default function PointsTab({
       groups[groupName].push(team);
     });
 
-    // Sort each group internally by Points -> Wins -> NRR
     Object.keys(groups).forEach((key) => {
       groups[key].sort((a, b) => {
         if (b.points !== a.points) return b.points - a.points;
@@ -251,12 +244,9 @@ export default function PointsTab({
 
   const handleSync = async () => {
     if (!tournamentId) return alert("Missing Tournament ID");
-    // if (!window.confirm("Recalculate Table using latest rules?")) return;
     setIsSyncing(true);
     try {
       await recalculateTournamentStats(tournamentId);
-      // alert("✅ Sync Complete. Page will reload.");
-      // window.location.reload();
     } catch (e) {
       alert("Error: " + e.message);
     } finally {
@@ -268,52 +258,56 @@ export default function PointsTab({
     setExpandedTeamId((prev) => (prev === id ? null : id));
   };
 
-  // Themed class for table headers
-  const thClass = `px-3 py-4 text-center font-black uppercase tracking-widest text-[10px]`;
+  // 🟢 Highly Responsive Header Class
+  const thClass = `px-1.5 md:px-3 py-2.5 md:py-4 text-center font-black uppercase tracking-wider md:tracking-widest text-[9px] md:text-[10px]`;
 
   return (
-    <div className="space-y-6">
-      {/* Sync Button */}
+    <div className="space-y-4 md:space-y-6">
       {canEdit && (
         <div className="flex justify-end px-1 mb-2">
           <button
             onClick={handleSync}
             disabled={isSyncing}
-            className={`flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-lg border transition-all disabled:opacity-50 ${
+            className={`flex items-center gap-1.5 md:gap-2 text-[10px] md:text-xs font-bold px-2.5 py-1.5 md:px-3 md:py-1.5 rounded-md md:rounded-lg border transition-all disabled:opacity-50 ${
               lightMode
                 ? "bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border-indigo-200"
                 : "bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 border-indigo-500/30"
             }`}>
-            <RefreshCw size={14} className={isSyncing ? "animate-spin" : ""} />
+            <RefreshCw
+              size={12}
+              className={`md:w-3.5 md:h-3.5 ${isSyncing ? "animate-spin" : ""}`}
+            />
             {isSyncing ? "Syncing..." : "Sync Stats"}
           </button>
         </div>
       )}
 
-      {/* 🟢 3. RENDER EACH GROUP AS A SEPARATE CARD */}
       {Object.entries(groupedTables)
-        .sort(([keyA], [keyB]) => keyA.localeCompare(keyB)) // Sorts Group A, Group B, etc.
+        .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
         .map(([groupName, teamsInGroup]) => (
           <div
             key={groupName}
-            className={`border rounded-2xl overflow-hidden shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500 ${
+            className={`border rounded-xl md:rounded-2xl overflow-hidden shadow-xl md:shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500 ${
               lightMode
                 ? "bg-white border-gray-200"
                 : "bg-[#1C2128] border-white/5"
             }`}>
             {/* Group Header */}
             <div
-              className={`px-6 py-4 border-b flex items-center gap-3 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/5"}`}>
-              <Trophy size={18} className="text-teal-500" />
+              className={`px-4 py-3 md:px-6 md:py-4 border-b flex items-center gap-2 md:gap-3 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/5"}`}>
+              <Trophy
+                size={16}
+                className="md:w-[18px] md:h-[18px] text-teal-500"
+              />
               <h3
-                className={`font-black uppercase tracking-widest text-sm ${theme.text}`}>
+                className={`font-black uppercase tracking-widest text-xs md:text-sm ${theme.text}`}>
                 {groupName}
               </h3>
             </div>
 
-            {/* Table Container */}
-            <div className="overflow-x-auto no-scrollbar pb-2">
-              <table className="w-full text-sm text-left border-collapse whitespace-nowrap min-w-[600px]">
+            {/* Table Container - 🟢 Removed fixed 600px width on mobile */}
+            <div className="overflow-x-auto no-scrollbar pb-1 md:pb-2">
+              <table className="w-full text-sm text-left border-collapse whitespace-nowrap min-w-max md:min-w-[600px]">
                 <thead
                   className={`border-b ${
                     lightMode
@@ -321,9 +315,9 @@ export default function PointsTab({
                       : "bg-[#0F1115] text-slate-500 border-white/5"
                   }`}>
                   <tr>
-                    <th className={`${thClass} w-10`}>#</th>
+                    <th className={`${thClass} w-8 md:w-10`}>#</th>
                     <th
-                      className={`${thClass} text-left sticky left-0 z-10 shadow-[4px_0_10px_rgba(0,0,0,0.1)] ${
+                      className={`${thClass} text-left sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.05)] md:shadow-[4px_0_10px_rgba(0,0,0,0.1)] ${
                         lightMode ? "bg-gray-50" : "bg-[#0F1115]"
                       }`}>
                       Team
@@ -333,7 +327,7 @@ export default function PointsTab({
                     <th className={`${thClass} text-red-500`}>L</th>
                     <th className={`${thClass} ${theme.text}`}>Pts</th>
                     <th
-                      className={`${thClass} text-right pr-6 text-indigo-400`}>
+                      className={`${thClass} text-right pr-3 md:pr-6 text-indigo-400`}>
                       NRR
                     </th>
                   </tr>
@@ -342,7 +336,7 @@ export default function PointsTab({
                   className={`divide-y ${lightMode ? "divide-gray-100" : "divide-white/5"}`}>
                   {teamsInGroup.length > 0 ? (
                     teamsInGroup.map((t, i) => {
-                      const isQualifier = i < 4; // Top 4 in group highlight
+                      const isQualifier = i < 4;
                       const isExpanded = expandedTeamId === t.id;
 
                       return (
@@ -358,12 +352,15 @@ export default function PointsTab({
                                   ? "hover:bg-gray-50"
                                   : "hover:bg-white/5"
                             } ${isQualifier ? "border-teal-500" : "border-transparent"}`}>
+                            {/* RANK */}
                             <td
-                              className={`px-4 py-3 font-mono text-center text-xs ${theme.sub}`}>
+                              className={`px-2 md:px-4 py-2 md:py-3 font-mono text-center text-[10px] md:text-xs ${theme.sub}`}>
                               {i + 1}
                             </td>
+
+                            {/* TEAM NAME (Sticky) */}
                             <td
-                              className={`px-4 py-3 sticky left-0 z-10 shadow-[4px_0_10px_rgba(0,0,0,0.1)] transition-colors ${
+                              className={`px-2 md:px-4 py-2 md:py-3 sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.05)] md:shadow-[4px_0_10px_rgba(0,0,0,0.1)] transition-colors ${
                                 isExpanded
                                   ? lightMode
                                     ? "bg-gray-50"
@@ -372,9 +369,9 @@ export default function PointsTab({
                                     ? "bg-white group-hover:bg-gray-50"
                                     : "bg-[#1C2128] group-hover:bg-[#252b33]"
                               }`}>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1.5 md:gap-2">
                                 <div
-                                  className={`w-6 h-6 rounded flex-none flex items-center justify-center text-[10px] shadow-inner ${
+                                  className={`w-5 h-5 md:w-6 md:h-6 rounded flex-none flex items-center justify-center text-[8px] md:text-[10px] shadow-inner ${
                                     isQualifier
                                       ? lightMode
                                         ? "bg-teal-100 text-teal-700"
@@ -394,7 +391,7 @@ export default function PointsTab({
                                   )}
                                 </div>
                                 <span
-                                  className={`text-xs font-bold truncate max-w-[120px] ${
+                                  className={`text-[10px] md:text-xs font-bold truncate max-w-[80px] sm:max-w-[100px] md:max-w-[120px] ${
                                     isQualifier
                                       ? lightMode
                                         ? "text-teal-900"
@@ -407,19 +404,23 @@ export default function PointsTab({
                                 </span>
                               </div>
                             </td>
+
+                            {/* P, W, L */}
                             <td
-                              className={`px-3 text-center font-medium ${theme.sub}`}>
+                              className={`px-1.5 md:px-3 text-center font-medium text-[10px] md:text-xs ${theme.sub}`}>
                               {t.played}
                             </td>
-                            <td className="px-3 text-center font-bold text-teal-500">
+                            <td className="px-1.5 md:px-3 text-center font-bold text-teal-500 text-[10px] md:text-xs">
                               {t.won}
                             </td>
-                            <td className="px-3 text-center text-red-500 font-medium">
+                            <td className="px-1.5 md:px-3 text-center text-red-500 font-medium text-[10px] md:text-xs">
                               {t.lost}
                             </td>
-                            <td className="px-4 text-center">
+
+                            {/* POINTS */}
+                            <td className="px-1.5 md:px-4 text-center">
                               <span
-                                className={`inline-block font-black px-2 py-1 rounded border min-w-[28px] text-xs ${
+                                className={`inline-block font-black px-1.5 py-0.5 md:px-2 md:py-1 rounded border min-w-[20px] md:min-w-[28px] text-[10px] md:text-xs ${
                                   lightMode
                                     ? "bg-gray-800 text-white border-gray-600"
                                     : "bg-black/40 text-white border-white/10"
@@ -427,7 +428,9 @@ export default function PointsTab({
                                 {t.points}
                               </span>
                             </td>
-                            <td className="px-6 text-right font-mono font-medium text-xs">
+
+                            {/* NRR */}
+                            <td className="px-2 md:px-6 text-right font-mono font-medium text-[9px] md:text-xs">
                               <span
                                 className={`${parseFloat(t.nrr) >= 0 ? "text-indigo-400" : "text-red-400"}`}>
                                 {parseFloat(t.nrr) > 0 ? "+" : ""}
@@ -442,12 +445,16 @@ export default function PointsTab({
                               <td
                                 colSpan={7}
                                 className={`p-0 border-b ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115]/50 border-white/5"}`}>
-                                <div className="p-4 animate-in slide-in-from-top-2 duration-300">
+                                <div className="p-2.5 md:p-4 animate-in slide-in-from-top-2 duration-300">
                                   <h4
-                                    className={`text-[10px] font-bold uppercase tracking-widest mb-3 pl-1 flex items-center gap-2 ${theme.sub}`}>
-                                    <History size={12} /> Recent Match History
+                                    className={`text-[9px] md:text-[10px] font-bold uppercase tracking-widest mb-2 md:mb-3 pl-1 flex items-center gap-1.5 md:gap-2 ${theme.sub}`}>
+                                    <History
+                                      size={10}
+                                      className="md:w-3 md:h-3"
+                                    />{" "}
+                                    Recent Match History
                                   </h4>
-                                  <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar snap-x">
+                                  <div className="flex gap-2 md:gap-3 overflow-x-auto pb-2 no-scrollbar snap-x">
                                     {(t.history || []).length > 0 ? (
                                       [...(t.history || [])]
                                         .reverse()
@@ -479,13 +486,13 @@ export default function PointsTab({
                                                     `/tournaments/${tournamentId}/scorecard/${mId}`,
                                                   );
                                               }}
-                                              className={`snap-start flex-shrink-0 w-32 border rounded-xl p-3 flex flex-col items-center gap-2 cursor-pointer transition-all group ${
+                                              className={`snap-start flex-shrink-0 w-24 md:w-32 border rounded-lg md:rounded-xl p-2 md:p-3 flex flex-col items-center gap-1.5 md:gap-2 cursor-pointer transition-all group ${
                                                 lightMode
                                                   ? "bg-white border-gray-200 hover:border-teal-300 hover:shadow-md"
                                                   : "bg-[#1C2128] border-white/10 hover:border-teal-500/50 hover:bg-[#252b33]"
                                               }`}>
                                               <div
-                                                className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shadow-lg ${
+                                                className={`w-6 h-6 md:w-8 md:h-8 rounded-full flex items-center justify-center text-[10px] md:text-xs font-black shadow-md md:shadow-lg ${
                                                   result === "W"
                                                     ? "bg-teal-500 text-black shadow-teal-500/20"
                                                     : result === "L"
@@ -496,18 +503,18 @@ export default function PointsTab({
                                               </div>
                                               <div className="text-center">
                                                 <div
-                                                  className={`text-[9px] uppercase font-bold tracking-tight ${theme.sub}`}>
+                                                  className={`text-[8px] md:text-[9px] uppercase font-bold tracking-tight ${theme.sub}`}>
                                                   vs
                                                 </div>
                                                 <div
-                                                  className={`text-[10px] font-bold truncate max-w-[100px] ${theme.text}`}
+                                                  className={`text-[9px] md:text-[10px] font-bold truncate max-w-[80px] md:max-w-[100px] ${theme.text}`}
                                                   title={oppName}>
                                                   {oppName || "Opponent"}
                                                 </div>
                                               </div>
                                               {dateStr && (
                                                 <div
-                                                  className={`text-[9px] font-mono mt-1 ${theme.sub}`}>
+                                                  className={`text-[8px] md:text-[9px] font-mono mt-0.5 md:mt-1 ${theme.sub}`}>
                                                   {new Date(
                                                     dateStr,
                                                   ).toLocaleDateString(
@@ -524,7 +531,7 @@ export default function PointsTab({
                                         })
                                     ) : (
                                       <div
-                                        className={`text-xs italic px-2 ${theme.sub}`}>
+                                        className={`text-[10px] md:text-xs italic px-2 ${theme.sub}`}>
                                         No matches played yet.
                                       </div>
                                     )}
@@ -540,7 +547,7 @@ export default function PointsTab({
                     <tr>
                       <td
                         colSpan={7}
-                        className={`px-6 py-12 text-center italic text-xs ${theme.sub}`}>
+                        className={`px-6 py-8 md:py-12 text-center italic text-xs ${theme.sub}`}>
                         No standings available in this group.
                       </td>
                     </tr>

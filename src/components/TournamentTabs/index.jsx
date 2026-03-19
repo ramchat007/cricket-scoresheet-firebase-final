@@ -302,9 +302,9 @@ export default function TournamentTabs({
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 min-h-screen">
       {/* TABS NAVIGATION */}
-      <div className="sticky top-2 z-40 mb-6 mx-[-16px] px-4 md:mx-0 md:px-0">
+      <div className="sticky top-2 z-40 mb-3 md:mb-6 mx-[-16px] px-3 md:mx-0 md:px-0">
         <div
-          className={`backdrop-blur-xl border p-1.5 rounded-2xl flex overflow-x-auto shadow-2xl no-scrollbar snap-x snap-mandatory ${
+          className={`backdrop-blur-xl border p-1 md:p-1.5 rounded-xl md:rounded-2xl flex overflow-x-auto shadow-2xl no-scrollbar snap-x snap-mandatory ${
             lightMode
               ? "bg-white/90 border-gray-200"
               : "bg-[#1C2128]/90 border-white/10"
@@ -328,12 +328,15 @@ export default function TournamentTabs({
                     setActiveTab(tab.id);
                     window.scrollTo({ top: 0, behavior: "smooth" });
                   }}
-                  className={`flex-shrink-0 flex-1 min-w-[90px] md:min-w-[120px] px-3 py-3 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider transition-all flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 snap-center ${
+                  className={`flex-shrink-0 flex-1 min-w-[76px] md:min-w-[120px] px-2 py-2 md:px-3 md:py-3 rounded-lg md:rounded-xl text-[9px] md:text-xs font-black uppercase tracking-wider transition-all flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 snap-center ${
                     isActive
                       ? "bg-teal-600 text-white shadow-lg scale-95 md:scale-100"
                       : `text-slate-500 hover:bg-white/5 border border-transparent ${lightMode ? "hover:text-teal-600 hover:bg-gray-50" : "hover:text-slate-300"}`
                   }`}>
-                  <Icon size={16} className={isActive ? "text-white" : ""} />
+                  <Icon
+                    size={16}
+                    className={`md:w-4 md:h-4 ${isActive ? "text-white" : ""}`}
+                  />
                   <span>{tab.label}</span>
                 </button>
               );
@@ -390,30 +393,32 @@ export default function TournamentTabs({
         )}
 
         {activeTab === "admin" && (canEdit || isOwner) && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in zoom-in-95">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 animate-in zoom-in-95">
             <div
-              className={`border rounded-2xl p-6 shadow-xl relative overflow-hidden group ${theme.card} ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+              className={`border rounded-xl md:rounded-2xl p-4 md:p-6 shadow-xl relative overflow-hidden group ${theme.card} ${lightMode ? "border-gray-200" : "border-white/5"}`}>
               <h3
-                className={`font-bold text-lg mb-6 flex items-center gap-2 ${theme.text}`}>
-                <Shield size={20} className="text-cyan-500" /> Team Management
+                className={`font-bold text-base md:text-lg mb-4 md:mb-6 flex items-center gap-2 ${theme.text}`}>
+                <Shield size={18} className="text-cyan-500 md:w-5 md:h-5" />{" "}
+                Team Management
               </h3>
               {isAuctionEnabled ? (
                 <div
-                  className={`border rounded-xl p-8 text-center ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
-                  <div className="flex justify-center mb-4">
-                    <Lock size={32} className="text-gray-400" />
+                  className={`border rounded-xl p-5 md:p-8 text-center ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
+                  <div className="flex justify-center mb-3 md:mb-4">
+                    <Lock size={28} className="text-gray-400 md:w-8 md:h-8" />
                   </div>
-                  <h4 className={`font-bold mb-2 ${theme.text}`}>
+                  <h4
+                    className={`font-bold text-sm md:text-base mb-1.5 md:mb-2 ${theme.text}`}>
                     Rosters Locked
                   </h4>
-                  <p className={`text-sm mb-6 ${theme.sub}`}>
+                  <p className={`text-xs md:text-sm mb-4 md:mb-6 ${theme.sub}`}>
                     Teams are managed in the Auction Console.
                   </p>
                   <button
                     onClick={() =>
                       navigate(`/tournaments/${tournamentId}/auction`)
                     }
-                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:shadow-purple-500/20 transition-all">
+                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold py-2.5 px-4 md:py-3 md:px-6 rounded-lg md:rounded-xl text-xs md:text-base shadow-lg hover:shadow-purple-500/20 transition-all">
                     Go to Auction Console
                   </button>
                 </div>
@@ -421,7 +426,7 @@ export default function TournamentTabs({
                 <TeamManager tournamentId={tournamentId} />
               )}
             </div>
-            <div className="space-y-6">
+            <div className="space-y-4 md:space-y-6">
               {canEdit && (
                 <TournamentSettings
                   tournament={tournamentData}
