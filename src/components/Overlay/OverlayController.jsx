@@ -252,20 +252,41 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     const file = e.target.files[0];
     if (!file) return;
 
+    // 🛡️ DEFENSE LAYER 1: Cap the number of banners
+    if ((config.fullScreenBanners || []).length >= 3) {
+      alert("Maximum of 3 banners allowed to protect database limits. Please delete one first.");
+      e.target.value = null;
+      return;
+    }
+
     setProcessingImage(true);
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        const MAX_WIDTH = 800;
+        
+        // 🛡️ DEFENSE LAYER 2: Extreme Shrinking
+        const MAX_WIDTH = 600; // Dropped from 800
         const scaleSize = MAX_WIDTH / img.width;
         canvas.width = MAX_WIDTH;
         canvas.height = img.height * scaleSize;
+        
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-        const base64 = canvas.toDataURL("image/webp", 0.5);
+        // Compress to 30% quality WebP
+        const base64 = canvas.toDataURL("image/webp", 0.3);
+
+        // 🛡️ DEFENSE LAYER 3: The Size Failsafe
+        // If the resulting string is larger than ~250KB, block it.
+        if (base64.length > 250000) {
+            alert("Image is still too complex/large after compression. Please use a simpler image with fewer colors.");
+            setProcessingImage(false);
+            e.target.value = null;
+            return;
+        }
+
         const newBanner = { id: Date.now().toString(), image: base64 };
 
         updateOverlay({
@@ -297,13 +318,13 @@ export default function OverlayController({ tournamentId, matchId, match }) {
   const liveScore = `${currentInn?.score || 0}/${currentInn?.wickets || 0}`;
   const liveOvers = `${currentInn?.over || 0}.${currentInn?.overBallCount || 0}`;
 
-  const allPlayers = [
-    ...(match?.teamASquad || []),
-    ...(match?.teamBSquad || []),
-  ];
-  const strikerId = allPlayers.find((p) => p.name === strikerName)?.id;
-  const nonStrikerId = allPlayers.find((p) => p.name === nonStrikerName)?.id;
-  const bowlerId = allPlayers.find((p) => p.name === bowlerName)?.id;
+  // const allPlayers = [
+  //   ...(match?.teamASquad || []),
+  //   ...(match?.teamBSquad || []),
+  // ];
+  // const strikerId = allPlayers.find((p) => p.name === strikerName)?.id;
+  // const nonStrikerId = allPlayers.find((p) => p.name === nonStrikerName)?.id;
+  // const bowlerId = allPlayers.find((p) => p.name === bowlerName)?.id;
 
   const cardClass = `p-5 rounded-2xl border shadow-sm transition-all flex flex-col h-full ${lightMode ? "bg-white border-gray-200" : "bg-[#161920] border-white/5"}`;
   const labelClass = `block text-[10px] font-black uppercase tracking-[0.2em] mb-2 ${theme.sub}`;
@@ -854,7 +875,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
           </div>
         </div>
 
-        {/* --- 5. PLAYER SPOTLIGHT --- */}
+        {/* --- 5. PLAYER SPOTLIGHT ---
         <div
           className={`${cardClass} border-teal-500/30 shadow-[0_0_15px_rgba(20,184,166,0.1)] relative overflow-hidden`}>
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-teal-400 to-emerald-400"></div>
@@ -908,7 +929,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               />
             </div>
           </div>
-        </div>
+        </div> */}
 
         {/* --- 6. NEWS TICKER & ALERT --- */}
         <div className={`${cardClass} relative overflow-hidden`}>

@@ -23,13 +23,9 @@ const sanitizeSquadImages = (squad) => {
   if (!Array.isArray(squad)) return [];
   return squad.map((p) => {
     const cleanPlayer = { ...p };
-    // Wipe out massive base64 strings so they don't bloat the match document
-    if (cleanPlayer.photoURL && cleanPlayer.photoURL.includes("base64")) {
-      cleanPlayer.photoURL = "";
-    }
-    if (cleanPlayer.image && cleanPlayer.image.includes("base64")) {
-      cleanPlayer.image = "";
-    }
+    // Completely delete the image data so it doesn't bloat the match
+    delete cleanPlayer.photoURL;
+    delete cleanPlayer.image;
     return cleanPlayer;
   });
 };
@@ -227,7 +223,7 @@ function applyBallLogic(s, code, extraData = {}, physicalRuns = 0) {
   const inn = s.innings?.[s.currentInnings || 0];
   if (!inn || inn.completed) return s;
 
-  // 🟢 NEW: Aggressively sanitize all possible squad locations
+  // 🟢 The mid-match bouncer protecting the document size
   if (s.teamASquad) s.teamASquad = sanitizeSquadImages(s.teamASquad);
   if (s.teamBSquad) s.teamBSquad = sanitizeSquadImages(s.teamBSquad);
   if (s.meta?.teamASquad)
