@@ -30,6 +30,11 @@ import {
   VolumeX,
 } from "lucide-react";
 
+// ☁️ CLOUDINARY CONFIGURATION (Replace these with your actual details);
+
+const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+
 export default function OverlayController({ tournamentId, matchId, match }) {
   const { theme, lightMode } = useTheme();
 
@@ -53,15 +58,29 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     broadcastAudioEnabled: true,
   });
 
-  // ✅ NEW: Global Logo State
   const [globalLogo, setGlobalLogo] = useState("");
-
   const [saving, setSaving] = useState(false);
   const [newSponsorName, setNewSponsorName] = useState("");
   const [newSponsorPhone, setNewSponsorPhone] = useState("");
   const [processingImage, setProcessingImage] = useState(false);
 
-  // 2. 🟢 FETCH AND LISTEN TO OVERLAY DATA DIRECTLY
+  // --- ☁️ UNIVERSAL CLOUDINARY UPLOADER ---
+  const uploadToCloudinary = async (file) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+    formData.append("cloud_name", CLOUDINARY_CLOUD_NAME);
+
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+      { method: "POST", body: formData },
+    );
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error?.message || "Upload failed");
+    return data.secure_url;
+  };
+
   useEffect(() => {
     if (!tournamentId || !matchId) return;
 
@@ -70,21 +89,17 @@ export default function OverlayController({ tournamentId, matchId, match }) {
       if (docSnap.exists()) {
         const data = docSnap.data()?.meta?.overlay;
         if (data) {
-          // Normalize the data so nothing crashes
           if (data.activeView && !data.activeViews)
             data.activeViews = [data.activeView];
           if (!data.sponsors) data.sponsors = [];
           if (!data.fullScreenBanners) data.fullScreenBanners = [];
-
           setConfig((prev) => ({ ...prev, ...data }));
         }
       }
     });
-
     return () => unsubscribe();
   }, [tournamentId, matchId]);
 
-  // 1. 🔥 FETCH GLOBAL LOGO ON MOUNT
   useEffect(() => {
     const fetchGlobalBranding = async () => {
       try {
@@ -99,7 +114,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     fetchGlobalBranding();
   }, []);
 
-  // 2. SET MATCH OVERLAY DATA
   useEffect(() => {
     if (match?.meta?.overlay) {
       const data = match.meta.overlay;
@@ -111,60 +125,12 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     }
   }, [match?.meta?.overlay]);
 
-  // 3. 🔥 UPLOAD AND SAVE GLOBALLY (1 Time Upload)
-  const handleAppLogoUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    setProcessingImage(true);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = async () => {
-        const canvas = document.createElement("canvas");
-        const MAX_WIDTH = 400; // High quality for branding
-        const scaleSize = MAX_WIDTH / img.width;
-        canvas.width = MAX_WIDTH;
-        canvas.height = img.height * scaleSize;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-        const base64 = canvas.toDataURL("image/webp", 0.9);
-
-        try {
-          // A. Save to Global Settings Collection
-          await setDoc(
-            doc(db, "settings", "branding"),
-            { defaultLogo: base64 },
-            { merge: true },
-          );
-          setGlobalLogo(base64);
-
-          // B. Instantly apply to current Match Overlay
-          updateOverlay({
-            appLogo: base64,
-            showAppLogo: true,
-          });
-        } catch (err) {
-          console.error("Error saving global logo:", err);
-          alert("Failed to save global logo securely.");
-        }
-
-        e.target.value = null;
-        setProcessingImage(false);
-      };
-      img.src = event.target.result;
-    };
-    reader.readAsDataURL(file);
-  };
-
   const updateOverlay = async (updates) => {
     setSaving(true);
     const newConfig = { ...config, ...updates };
-    setConfig(newConfig); // Optimistic UI update
+    setConfig(newConfig);
 
     try {
-      // 🟢 Use setDoc with merge: true so it auto-creates the "global" doc if it's missing!
       await setDoc(
         doc(db, "tournaments", tournamentId, "matches", matchId),
         { meta: { overlay: newConfig } },
@@ -207,7 +173,37 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     });
   };
 
-  const handleLogoUpload = (e) => {
+  // 🔥 1. CLOUDINARY: App Logo Upload
+  const handleAppLogoUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setProcessingImage(true);
+    try {
+      const secureUrl = await uploadToCloudinary(file);
+
+      await setDoc(
+        doc(db, "settings", "branding"),
+        { defaultLogo: secureUrl },
+        { merge: true },
+      );
+      setGlobalLogo(secureUrl);
+
+      updateOverlay({
+        appLogo: secureUrl,
+        showAppLogo: true,
+      });
+    } catch (err) {
+      console.error("Error uploading logo:", err);
+      alert("Failed to upload logo to Cloudinary.");
+    } finally {
+      e.target.value = null;
+      setProcessingImage(false);
+    }
+  };
+
+  // 🔥 2. CLOUDINARY: Sponsor Bug Upload
+  const handleLogoUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     if (!newSponsorName.trim()) {
@@ -217,87 +213,54 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     }
 
     setProcessingImage(true);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const MAX_WIDTH = 150;
-        const scaleSize = MAX_WIDTH / img.width;
-        canvas.width = MAX_WIDTH;
-        canvas.height = img.height * scaleSize;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    try {
+      const secureUrl = await uploadToCloudinary(file);
 
-        const base64 = canvas.toDataURL("image/webp", 0.6);
-        const newSponsor = {
-          id: Date.now().toString(),
-          name: newSponsorName,
-          phone: newSponsorPhone,
-          image: base64,
-        };
-
-        updateOverlay({ sponsors: [...(config.sponsors || []), newSponsor] });
-        setNewSponsorName("");
-        setNewSponsorPhone("");
-        e.target.value = null;
-        setProcessingImage(false);
+      const newSponsor = {
+        id: Date.now().toString(),
+        name: newSponsorName,
+        phone: newSponsorPhone,
+        image: secureUrl, // Storing URL instead of base64
       };
-      img.src = event.target.result;
-    };
-    reader.readAsDataURL(file);
+
+      updateOverlay({ sponsors: [...(config.sponsors || []), newSponsor] });
+      setNewSponsorName("");
+      setNewSponsorPhone("");
+    } catch (err) {
+      console.error("Error uploading sponsor logo:", err);
+      alert("Failed to upload sponsor logo.");
+    } finally {
+      e.target.value = null;
+      setProcessingImage(false);
+    }
   };
 
-  const handleBannerUpload = (e) => {
+  // 🔥 3. CLOUDINARY: Full-Screen Banner Upload
+  const handleBannerUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // 🛡️ DEFENSE LAYER 1: Cap the number of banners
-    if ((config.fullScreenBanners || []).length >= 3) {
-      alert("Maximum of 3 banners allowed to protect database limits. Please delete one first.");
+    if ((config.fullScreenBanners || []).length >= 5) {
+      alert("Maximum of 5 banners allowed. Please delete one first.");
       e.target.value = null;
       return;
     }
 
     setProcessingImage(true);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        
-        // 🛡️ DEFENSE LAYER 2: Extreme Shrinking
-        const MAX_WIDTH = 600; // Dropped from 800
-        const scaleSize = MAX_WIDTH / img.width;
-        canvas.width = MAX_WIDTH;
-        canvas.height = img.height * scaleSize;
-        
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    try {
+      const secureUrl = await uploadToCloudinary(file);
+      const newBanner = { id: Date.now().toString(), image: secureUrl };
 
-        // Compress to 30% quality WebP
-        const base64 = canvas.toDataURL("image/webp", 0.3);
-
-        // 🛡️ DEFENSE LAYER 3: The Size Failsafe
-        // If the resulting string is larger than ~250KB, block it.
-        if (base64.length > 250000) {
-            alert("Image is still too complex/large after compression. Please use a simpler image with fewer colors.");
-            setProcessingImage(false);
-            e.target.value = null;
-            return;
-        }
-
-        const newBanner = { id: Date.now().toString(), image: base64 };
-
-        updateOverlay({
-          fullScreenBanners: [...(config.fullScreenBanners || []), newBanner],
-        });
-        e.target.value = null;
-        setProcessingImage(false);
-      };
-      img.src = event.target.result;
-    };
-    reader.readAsDataURL(file);
+      updateOverlay({
+        fullScreenBanners: [...(config.fullScreenBanners || []), newBanner],
+      });
+    } catch (err) {
+      console.error("Error uploading banner:", err);
+      alert("Failed to upload banner.");
+    } finally {
+      e.target.value = null;
+      setProcessingImage(false);
+    }
   };
 
   const removeSponsor = (id) =>
@@ -312,19 +275,8 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     });
 
   const currentInn = match?.innings?.[match?.currentInnings || 0];
-  const strikerName = currentInn?.striker || "";
-  const nonStrikerName = currentInn?.nonStriker || "";
-  const bowlerName = currentInn?.currentBowler || "";
   const liveScore = `${currentInn?.score || 0}/${currentInn?.wickets || 0}`;
   const liveOvers = `${currentInn?.over || 0}.${currentInn?.overBallCount || 0}`;
-
-  // const allPlayers = [
-  //   ...(match?.teamASquad || []),
-  //   ...(match?.teamBSquad || []),
-  // ];
-  // const strikerId = allPlayers.find((p) => p.name === strikerName)?.id;
-  // const nonStrikerId = allPlayers.find((p) => p.name === nonStrikerName)?.id;
-  // const bowlerId = allPlayers.find((p) => p.name === bowlerName)?.id;
 
   const cardClass = `p-5 rounded-2xl border shadow-sm transition-all flex flex-col h-full ${lightMode ? "bg-white border-gray-200" : "bg-[#161920] border-white/5"}`;
   const labelClass = `block text-[10px] font-black uppercase tracking-[0.2em] mb-2 ${theme.sub}`;
@@ -339,10 +291,12 @@ export default function OverlayController({ tournamentId, matchId, match }) {
   }) => (
     <button
       onClick={onClick}
-      className={`w-full py-3 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-between transition-all shadow-md active:scale-95 ${active ? `${colorClass} text-white shadow-lg shadow-teal-500/20 ring-2 ring-white/20` : lightMode ? "bg-gray-100 text-gray-500 hover:bg-gray-200" : "bg-white/5 text-slate-400 hover:bg-white/10"}`}>
+      className={`w-full py-3 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-between transition-all shadow-md active:scale-95 ${active ? `${colorClass} text-white shadow-lg shadow-teal-500/20 ring-2 ring-white/20` : lightMode ? "bg-gray-100 text-gray-500 hover:bg-gray-200" : "bg-white/5 text-slate-400 hover:bg-white/10"}`}
+    >
       <div className="flex items-center gap-2">
         <div
-          className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${active ? "border-white bg-white/20" : "border-current opacity-50"}`}>
+          className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${active ? "border-white bg-white/20" : "border-current opacity-50"}`}
+        >
           {active && <Check size={12} strokeWidth={4} />}
         </div>
         <Icon
@@ -358,7 +312,8 @@ export default function OverlayController({ tournamentId, matchId, match }) {
   const TriggerButton = ({ label, onClick, colorClass }) => (
     <button
       onClick={onClick}
-      className={`w-full py-3 px-4 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 text-white ${colorClass} hover:opacity-90`}>
+      className={`w-full py-3 px-4 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 text-white ${colorClass} hover:opacity-90`}
+    >
       <Play size={14} fill="currentColor" /> {label}
     </button>
   );
@@ -367,7 +322,8 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     <div className="space-y-6">
       {/* HEADER */}
       <div
-        className={`flex items-start md:items-center justify-between p-5 rounded-2xl border shadow-lg flex-col md:flex-row gap-4 ${lightMode ? "bg-gradient-to-r from-indigo-50 to-white border-indigo-100 text-indigo-900" : "bg-gradient-to-r from-indigo-900/30 to-[#0F1115] border-indigo-500/20 text-indigo-100"}`}>
+        className={`flex items-start md:items-center justify-between p-5 rounded-2xl border shadow-lg flex-col md:flex-row gap-4 ${lightMode ? "bg-gradient-to-r from-indigo-50 to-white border-indigo-100 text-indigo-900" : "bg-gradient-to-r from-indigo-900/30 to-[#0F1115] border-indigo-500/20 text-indigo-100"}`}
+      >
         <div className="flex items-start gap-4">
           <div className="p-3 rounded-xl bg-indigo-500 text-white shadow-lg shadow-indigo-500/30">
             <Tv size={28} />
@@ -383,7 +339,8 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               href={`/overlay/${tournamentId}/broadcast/active?clean=true`}
               target="_blank"
               rel="noreferrer"
-              className={`mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${lightMode ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200" : "bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30"}`}>
+              className={`mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${lightMode ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200" : "bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30"}`}
+            >
               <ExternalLink size={12} /> Open Live Preview
             </a>
           </div>
@@ -406,7 +363,8 @@ export default function OverlayController({ tournamentId, matchId, match }) {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {/* --- 1. CORE MATCH GRAPHICS --- */}
         <div
-          className={`${cardClass} border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.1)] relative overflow-hidden`}>
+          className={`${cardClass} border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.1)] relative overflow-hidden`}
+        >
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-teal-400"></div>
           <div className="flex items-center gap-2 mb-5 text-indigo-500">
             <LayoutTemplate size={20} />
@@ -420,8 +378,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                 <label className={`${labelClass} mb-0`}>
                   App Branding Logo
                 </label>
-
-                {/* 🟢 Visual indicator of Hierarchy */}
                 {match?.meta?.overlay?.appLogo ? (
                   <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-500">
                     Custom Match Logo Active
@@ -433,10 +389,10 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                 ) : null}
               </div>
 
-              {/* 🖼️ PREVIEW ACTIVE LOGO */}
               {(match?.meta?.overlay?.appLogo || globalLogo) && (
                 <div
-                  className={`mb-3 p-4 rounded-xl border flex flex-col items-center justify-center ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/10"}`}>
+                  className={`mb-3 p-4 rounded-xl border flex flex-col items-center justify-center ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/10"}`}
+                >
                   <img
                     src={match?.meta?.overlay?.appLogo || globalLogo}
                     alt="Broadcast Logo"
@@ -451,17 +407,16 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               )}
 
               <div className="flex gap-2">
-                {/* UPLOAD BUTTON */}
                 <button
                   onClick={() => fileInputAppLogoRef.current?.click()}
-                  className={`flex-1 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all border flex items-center justify-center gap-1 ${lightMode ? "bg-white border-gray-200 hover:bg-gray-50" : "bg-white/5 border-white/10 hover:bg-white/10"}`}>
+                  className={`flex-1 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all border flex items-center justify-center gap-1 ${lightMode ? "bg-white border-gray-200 hover:bg-gray-50" : "bg-white/5 border-white/10 hover:bg-white/10"}`}
+                >
                   <Upload size={12} />{" "}
                   {match?.meta?.overlay?.appLogo
                     ? "Change Custom Logo"
                     : "Upload Custom Logo"}
                 </button>
 
-                {/* ❌ REMOVE OVERRIDE BUTTON (Only shows if custom logo is set) */}
                 {match?.meta?.overlay?.appLogo && (
                   <button
                     onClick={async () => {
@@ -471,7 +426,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                         )
                       ) {
                         try {
-                          // 🔥 FIX: Use match.id instead of matchId, and use your existing updateDoc import!
                           await updateDoc(
                             doc(
                               db,
@@ -480,9 +434,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                               "matches",
                               match.id,
                             ),
-                            {
-                              "meta.overlay.appLogo": "",
-                            },
+                            { "meta.overlay.appLogo": "" },
                           );
                         } catch (err) {
                           console.error("Error removing logo:", err);
@@ -490,23 +442,11 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                       }
                     }}
                     className={`px-4 py-2.5 rounded-xl font-black transition-all border flex items-center justify-center text-red-500 ${lightMode ? "bg-red-50 border-red-200 hover:bg-red-100" : "bg-red-500/10 border-red-500/20 hover:bg-red-500/30"}`}
-                    title="Revert to Global Logo">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round">
-                      <line x1="18" y1="6" x2="6" y2="18"></line>
-                      <line x1="6" y1="6" x2="18" y2="18"></line>
-                    </svg>
+                    title="Revert to Global Logo"
+                  >
+                    <X size={16} strokeWidth={3} />
                   </button>
                 )}
-
                 <input
                   type="file"
                   accept="image/*"
@@ -522,22 +462,18 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               active={config.showAppLogo}
               onClick={() => {
                 const newStatus = !config.showAppLogo;
-                // If we are turning it on, make sure the overlay object has the global logo data
-                if (newStatus && globalLogo) {
+                if (newStatus && globalLogo)
                   updateOverlay({
                     showAppLogo: newStatus,
                     appLogo: globalLogo,
                   });
-                } else if (newStatus && !globalLogo) {
+                else if (newStatus && !globalLogo)
                   alert("Please upload a Global Logo first!");
-                } else {
-                  updateOverlay({ showAppLogo: newStatus });
-                }
+                else updateOverlay({ showAppLogo: newStatus });
               }}
               icon={Star}
               colorClass="bg-gradient-to-r from-indigo-600 to-blue-500"
             />
-
             <ToggleButton
               label="Hide Bottom Score Bar"
               active={config.hideBottomScoreTicker}
@@ -582,7 +518,8 @@ export default function OverlayController({ tournamentId, matchId, match }) {
 
         {/* --- 2. BREAK SCREENS --- */}
         <div
-          className={`${cardClass} border-yellow-500/30 shadow-[0_0_15px_rgba(234,179,8,0.1)] relative overflow-hidden`}>
+          className={`${cardClass} border-yellow-500/30 shadow-[0_0_15px_rgba(234,179,8,0.1)] relative overflow-hidden`}
+        >
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-400 to-orange-500"></div>
           <div className="flex items-center gap-2 mb-5 text-yellow-500">
             <MonitorPlay size={20} />
@@ -596,9 +533,10 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                 <button
                   onClick={() => fileInputBannerRef.current?.click()}
                   disabled={processingImage}
-                  className={`w-full py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all border ${lightMode ? "bg-white hover:bg-gray-50 border-gray-200" : "bg-white/5 hover:bg-white/10 border-white/10"}`}>
+                  className={`w-full py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all border ${lightMode ? "bg-white hover:bg-gray-50 border-gray-200" : "bg-white/5 hover:bg-white/10 border-white/10"}`}
+                >
                   {processingImage ? (
-                    <span className="animate-pulse">Compressing...</span>
+                    <span className="animate-pulse">Uploading...</span>
                   ) : (
                     <>
                       <ImageIcon size={14} /> Upload Giant Ad Banner
@@ -615,7 +553,8 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               </div>
               {config.fullScreenBanners?.length > 0 && (
                 <div
-                  className={`p-2 rounded-xl border flex gap-2 overflow-x-auto ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/5"}`}>
+                  className={`p-2 rounded-xl border flex gap-2 overflow-x-auto ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/5"}`}
+                >
                   {config.fullScreenBanners.map((b) => (
                     <div key={b.id} className="relative shrink-0">
                       <img
@@ -625,7 +564,8 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                       />
                       <button
                         onClick={() => removeBanner(b.id)}
-                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 shadow">
+                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 shadow"
+                      >
                         <X size={10} />
                       </button>
                     </div>
@@ -633,7 +573,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                 </div>
               )}
             </div>
-
             <div className="mt-auto space-y-3 pt-2">
               <ToggleButton
                 label="Show App Tournament Banner"
@@ -682,11 +621,11 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                   value={newSponsorPhone}
                   onChange={(e) => setNewSponsorPhone(e.target.value)}
                 />
-
                 <button
                   onClick={() => fileInputLogoRef.current?.click()}
                   disabled={processingImage}
-                  className={`px-4 rounded-xl flex items-center justify-center transition-all border ${lightMode ? "bg-white hover:bg-gray-50 border-gray-200" : "bg-white/5 hover:bg-white/10 border-white/10"}`}>
+                  className={`px-4 rounded-xl flex items-center justify-center transition-all border ${lightMode ? "bg-white hover:bg-gray-50 border-gray-200" : "bg-white/5 hover:bg-white/10 border-white/10"}`}
+                >
                   {processingImage ? (
                     <span className="animate-pulse">...</span>
                   ) : (
@@ -701,14 +640,15 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                   onChange={handleLogoUpload}
                 />
               </div>
-
               {config.sponsors?.length > 0 && (
                 <div
-                  className={`p-2 rounded-xl border max-h-24 overflow-y-auto ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/5"}`}>
+                  className={`p-2 rounded-xl border max-h-24 overflow-y-auto ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/5"}`}
+                >
                   {config.sponsors.map((s) => (
                     <div
                       key={s.id}
-                      className={`flex items-center gap-3 p-1.5 border-b last:border-0 ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+                      className={`flex items-center gap-3 p-1.5 border-b last:border-0 ${lightMode ? "border-gray-200" : "border-white/5"}`}
+                    >
                       <img
                         src={s.image}
                         alt=""
@@ -726,7 +666,8 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                       </div>
                       <button
                         onClick={() => removeSponsor(s.id)}
-                        className="text-red-500 hover:bg-red-500/10 p-1 rounded">
+                        className="text-red-500 hover:bg-red-500/10 p-1 rounded"
+                      >
                         <X size={12} />
                       </button>
                     </div>
@@ -734,7 +675,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                 </div>
               )}
             </div>
-
             <div className="mt-auto space-y-3">
               <ToggleButton
                 label="Show Top-Right Sponsor Bug"
@@ -770,7 +710,8 @@ export default function OverlayController({ tournamentId, matchId, match }) {
 
         {/* 🔥 4. MATCH EVENTS & INFO CARDS */}
         <div
-          className={`${cardClass} border-green-500/30 shadow-[0_0_15px_rgba(34,197,94,0.1)] relative overflow-hidden`}>
+          className={`${cardClass} border-green-500/30 shadow-[0_0_15px_rgba(34,197,94,0.1)] relative overflow-hidden`}
+        >
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-400 to-emerald-600"></div>
           <div className="flex items-center gap-2 mb-4 text-green-500">
             <Zap size={20} />
@@ -778,11 +719,11 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               Events & Info Cards
             </h4>
           </div>
-
           <div className="space-y-4 flex-grow flex flex-col">
             <div>
               <p
-                className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${theme.sub}`}>
+                className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${theme.sub}`}
+              >
                 Instant Event Triggers
               </p>
               <div className="grid grid-cols-3 gap-2">
@@ -804,7 +745,8 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               </div>
               <div>
                 <p
-                  className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${theme.sub}`}>
+                  className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${theme.sub}`}
+                >
                   Automated Stream Audio
                 </p>
                 <ToggleButton
@@ -825,10 +767,10 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                 </p>
               </div>
             </div>
-
             <div className="pt-3 border-t border-black/5 dark:border-white/5">
               <p
-                className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${theme.sub}`}>
+                className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${theme.sub}`}
+              >
                 Full-Screen Info Cards
               </p>
               <div className="space-y-2.5">
@@ -839,16 +781,13 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                   icon={BarChart}
                   colorClass="bg-indigo-600"
                 />
-
-                {/* 🔥 NEW: WIN PREDICTOR TOGGLE */}
                 <ToggleButton
                   label="Live Win Predictor"
                   active={isActive("WIN_PREDICTOR")}
                   onClick={() => toggleView("WIN_PREDICTOR")}
-                  icon={Activity} // You can use Activity or BarChart here
-                  colorClass="bg-red-600" // Red to make it stand out as a dynamic stat
+                  icon={Activity}
+                  colorClass="bg-red-600"
                 />
-
                 <ToggleButton
                   label="Toss Report"
                   active={isActive("TOSS_CARD")}
@@ -874,62 +813,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
             </div>
           </div>
         </div>
-
-        {/* --- 5. PLAYER SPOTLIGHT ---
-        <div
-          className={`${cardClass} border-teal-500/30 shadow-[0_0_15px_rgba(20,184,166,0.1)] relative overflow-hidden`}>
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-teal-400 to-emerald-400"></div>
-          <div className="flex items-center gap-2 mb-5 text-teal-500">
-            <Target size={20} />
-            <h4 className="font-black uppercase italic tracking-tight text-sm">
-              Live Player Spotlight
-            </h4>
-          </div>
-          <div className="space-y-4 flex-grow flex flex-col">
-            <p className={`text-xs font-medium mb-2 ${theme.sub}`}>
-              Select a player to flash their live match stats.
-            </p>
-            <select
-              className={inputClass}
-              value={config.spotlightPlayerId}
-              onChange={(e) =>
-                updateOverlay({ spotlightPlayerId: e.target.value })
-              }>
-              <option value="">-- Select Active Player --</option>
-              {strikerName && (
-                <option value={strikerId}>🏏 Striker: {strikerName}</option>
-              )}
-              {nonStrikerName && (
-                <option value={nonStrikerId}>
-                  🏏 Non-Striker: {nonStrikerName}
-                </option>
-              )}
-              {bowlerName && (
-                <option value={bowlerId}>🥎 Bowler: {bowlerName}</option>
-              )}
-              <optgroup label="Other Players">
-                {allPlayers.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-            <div className="mt-auto pt-4">
-              <ToggleButton
-                label="Show Player Profile"
-                active={isActive("SPOTLIGHT")}
-                onClick={() => {
-                  if (!config.spotlightPlayerId)
-                    return alert("Select a player first!");
-                  toggleView("SPOTLIGHT");
-                }}
-                icon={Target}
-                colorClass="bg-teal-500"
-              />
-            </div>
-          </div>
-        </div> */}
 
         {/* --- 6. NEWS TICKER & ALERT --- */}
         <div className={`${cardClass} relative overflow-hidden`}>
@@ -957,7 +840,8 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                   onClick={() =>
                     updateOverlay({ showTicker: !config.showTicker })
                   }
-                  className={`px-4 rounded-xl font-bold text-xs uppercase ${config.showTicker ? "bg-slate-700 text-white" : lightMode ? "bg-gray-200 text-gray-500" : "bg-white/10 text-white"}`}>
+                  className={`px-4 rounded-xl font-bold text-xs uppercase ${config.showTicker ? "bg-slate-700 text-white" : lightMode ? "bg-gray-200 text-gray-500" : "bg-white/10 text-white"}`}
+                >
                   {config.showTicker ? "ON" : "OFF"}
                 </button>
               </div>
