@@ -4,6 +4,7 @@ import TournamentAccessManager from "../TournamentAccessManager";
 import TeamManager from "../TeamManager";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "../../context/ThemeContext";
+import BracketTab from "../BracketTab";
 import {
   LayoutList,
   Users,
@@ -12,6 +13,7 @@ import {
   Settings,
   Shield,
   Lock,
+  GitMerge,
 } from "lucide-react";
 
 // Helper components
@@ -25,6 +27,7 @@ export default function TournamentTabs({
   activeTab,
   setActiveTab,
   tournamentId,
+  tournament,
   tournamentData,
   tournamentName,
   tournamentTeams = [],
@@ -42,6 +45,7 @@ export default function TournamentTabs({
   const [teamFilter, setTeamFilter] = useState("all");
   const [sortStyle, setSortStyle] = useState("most_runs");
   const [expandedPlayer, setExpandedPlayer] = useState(null);
+  
 
   // --- 1. FILTER MATCHES ---
   const { liveMatches, upcomingMatches, finishedMatches } = useMemo(() => {
@@ -311,6 +315,7 @@ export default function TournamentTabs({
           }`}>
           {[
             { id: "matches", label: "Matches", icon: LayoutList },
+            { id: "bracket", label: "Bracket", icon: GitMerge },
             { id: "teams", label: "Teams", icon: Users },
             { id: "points", label: "Points", icon: Trophy },
             { id: "players", label: "Stats", icon: BarChart2 },
@@ -353,6 +358,17 @@ export default function TournamentTabs({
             tournamentId={tournamentId}
             canEdit={canEdit}
             onOpenCorrection={onOpenCorrection}
+          />
+        )}
+        {activeTab === "bracket" && (
+          <BracketTab 
+             tournament={tournament} 
+             liveMatches={liveMatches}
+             upcomingMatches={upcomingMatches}
+             finishedMatches={finishedMatches}
+             matches={matches} 
+             tournamentId={tournamentId}
+             teams={tournamentTeams}
           />
         )}
         {activeTab === "teams" && (
