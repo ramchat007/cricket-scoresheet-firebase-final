@@ -240,8 +240,8 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     const file = e.target.files[0];
     if (!file) return;
 
-    if ((config.fullScreenBanners || []).length >= 5) {
-      alert("Maximum of 5 banners allowed. Please delete one first.");
+    if ((config.fullScreenBanners || []).length >= 15) {
+      alert("Maximum of 15 banners allowed. Please delete one first.");
       e.target.value = null;
       return;
     }
