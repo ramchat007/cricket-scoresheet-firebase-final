@@ -20,7 +20,33 @@ import {
   Link as LinkIcon,
   Users,
   Trash2,
+  Clock,
+  MapPin,
+  Edit3, // 🟢 Added Edit icon
 } from "lucide-react";
+
+// 🟢 Math Helper to perfectly calculate durations & rollover hours
+const calculateNextTime = (baseDate, baseTime, duration, gap) => {
+  if (!baseTime) return { date: baseDate, time: "" };
+
+  const safeDate = baseDate || "2026-01-01";
+  const dt = new Date(`${safeDate}T${baseTime}`);
+
+  if (isNaN(dt.getTime())) return { date: baseDate, time: baseTime };
+
+  dt.setMinutes(dt.getMinutes() + parseInt(duration || 0) + parseInt(gap || 0));
+
+  const year = dt.getFullYear();
+  const month = String(dt.getMonth() + 1).padStart(2, "0");
+  const day = String(dt.getDate()).padStart(2, "0");
+  const nextDate = `${year}-${month}-${day}`;
+
+  const hours = String(dt.getHours()).padStart(2, "0");
+  const mins = String(dt.getMinutes()).padStart(2, "0");
+  const nextTime = `${hours}:${mins}`;
+
+  return { date: baseDate ? nextDate : "", time: nextTime };
+};
 
 export default function BracketBuilder() {
   const { id } = useParams();
@@ -29,7 +55,7 @@ export default function BracketBuilder() {
 
   const [loading, setLoading] = useState(true);
   const [teams, setTeams] = useState([]);
-  // 🟢 NEW: Group teams automatically for the sidebar
+
   const groupedTeams = useMemo(() => {
     const groups = { Unassigned: [] };
 
@@ -41,7 +67,6 @@ export default function BracketBuilder() {
       groups[groupName].push(team);
     });
 
-    // Remove the Unassigned group if it's empty
     if (groups["Unassigned"].length === 0) delete groups["Unassigned"];
 
     return groups;
@@ -49,20 +74,24 @@ export default function BracketBuilder() {
 
   // --- 🟢 DYNAMIC BRACKET STATE ---
   const [rounds, setRounds] = useState([
-    { id: "r1", name: "Round 1 (Group Stage)" },
-    { id: "r2", name: "Round 2 (Playoffs)" },
+    { id: "r1", name: "Round 1" },
+    { id: "r2", name: "Quarter Finals" },
   ]);
 
   const [matches, setMatches] = useState([]);
   const [matchCounter, setMatchCounter] = useState(1);
   const [activeConfigMatch, setActiveConfigMatch] = useState(null);
   const [showGlobalConfig, setShowGlobalConfig] = useState(false);
+
+  // 🟢 ENHANCED GLOBAL SETTINGS
   const [globalSettings, setGlobalSettings] = useState({
     overs: 4,
     date: "",
     time: "",
     venue: "",
-    label: "", // Optional prefix like "Qualifier" or "Knockout"
+    label: "",
+    matchDuration: 45,
+    matchGap: 10,
   });
 
   useEffect(() => {
@@ -84,19 +113,16 @@ export default function BracketBuilder() {
       try {
         setLoading(true);
 
-        // 1. Fetch Available Teams
         const teamsSnap = await getDocs(
           collection(db, "tournaments", id, "teams"),
         );
         setTeams(teamsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
 
-        // 2. Fetch Actual Live Matches to cross-reference
         const matchesSnap = await getDocs(
           collection(db, "tournaments", id, "matches"),
         );
         const activeDbMatchIds = new Set(matchesSnap.docs.map((d) => d.id));
 
-        // 3. Fetch Saved Bracket Layout
         const tourneySnap = await getDoc(doc(db, "tournaments", id));
         if (tourneySnap.exists()) {
           const tData = tourneySnap.data();
@@ -104,12 +130,10 @@ export default function BracketBuilder() {
           if (tData.bracketLayout) {
             const savedMatches = tData.bracketLayout.matches || [];
 
-            // 🟢 SELF-HEALING: Filter out matches that were deleted from the main tournament page
             const validMatches = savedMatches.filter((m) =>
               activeDbMatchIds.has(`BRACKET-${m.id}`),
             );
 
-            // 🟢 SMART CLEANUP: If a deleted match was linked somewhere else, reset that slot to "Manual"
             const cleanedMatches = validMatches.map((m) => {
               let updatedMatch = { ...m };
 
@@ -137,19 +161,18 @@ export default function BracketBuilder() {
               return updatedMatch;
             });
 
-            // 🟢 NEW: DYNAMIC COUNTER RESET
-            // Finds the highest "M" number currently on the board. If the board is empty, it resets to 0.
             const highestMatchNum = cleanedMatches.reduce((max, m) => {
               const num = parseInt(m.id.replace("M", "")) || 0;
               return num > max ? num : max;
             }, 0);
 
-            // Restore the sanitized blueprint
             setRounds(tData.bracketLayout.rounds || []);
             setMatches(cleanedMatches);
-
-            // 🟢 Set the counter to 1 higher than the highest existing match
             setMatchCounter(highestMatchNum + 1);
+
+            if (tData.bracketLayout.globalSettings) {
+              setGlobalSettings(tData.bracketLayout.globalSettings);
+            }
           }
         }
       } catch (e) {
@@ -173,20 +196,35 @@ export default function BracketBuilder() {
       ? globalSettings.label
       : "Match";
 
+    let nextDate = globalSettings.date;
+    let nextTime = globalSettings.time;
+
+    if (matches.length > 0) {
+      const lastMatch = matches[matches.length - 1];
+      const result = calculateNextTime(
+        lastMatch.settings?.date || globalSettings.date,
+        lastMatch.settings?.time || globalSettings.time,
+        globalSettings.matchDuration,
+        globalSettings.matchGap,
+      );
+      nextDate = result.date;
+      nextTime = result.time;
+    }
+
     const newMatch = {
       id: `M${matchCounter}`,
       roundId,
       title: `${matchPrefix} ${matchCounter}`,
       slotA: { type: "team", team: null, sourceMatchId: "" },
       slotB: { type: "team", team: null, sourceMatchId: "" },
-      // 🟢 Inherit Global Settings instantly!
       settings: {
-        date: globalSettings.date,
-        time: globalSettings.time,
+        date: nextDate,
+        time: nextTime,
         venue: globalSettings.venue,
         overs: globalSettings.overs,
       },
     };
+
     setMatches([...matches, newMatch]);
     setMatchCounter(matchCounter + 1);
   };
@@ -195,15 +233,22 @@ export default function BracketBuilder() {
     setMatches(matches.map((m) => (m.id === matchId ? { ...m, title } : m)));
   };
 
-  const toggleSlotType = (matchId, slotKey) => {
+  // 🟢 NEW: 3-Way Toggle for Slot Type (Manual -> Linked -> BYE -> Manual)
+  const cycleSlotType = (matchId, slotKey) => {
     setMatches(
       matches.map((m) => {
         if (m.id === matchId) {
-          const currentSlot = m[slotKey];
+          const currentType = m[slotKey].type;
+          const nextType =
+            currentType === "team"
+              ? "link"
+              : currentType === "link"
+                ? "bye"
+                : "team";
           return {
             ...m,
             [slotKey]: {
-              type: currentSlot.type === "team" ? "link" : "team",
+              type: nextType,
               team: null,
               sourceMatchId: "",
             },
@@ -224,10 +269,10 @@ export default function BracketBuilder() {
     );
   };
 
-  // --- 🎯 DRAG AND DROP ---
   const handleDragStart = (e, team) => {
     e.dataTransfer.setData("teamObj", JSON.stringify(team));
   };
+  const handleDragOver = (e) => e.preventDefault();
 
   const handleDrop = (e, matchId, slotKey) => {
     e.preventDefault();
@@ -255,16 +300,11 @@ export default function BracketBuilder() {
     );
   };
 
-  const handleDragOver = (e) => e.preventDefault();
-
   const deleteMatch = (matchId) => {
     if (!window.confirm(`Are you sure you want to delete ${matchId}?`)) return;
 
     setMatches((prevMatches) => {
-      // 1. Remove the target match
       const filteredMatches = prevMatches.filter((m) => m.id !== matchId);
-
-      // 2. SMART CLEANUP: If any other match was linked to this deleted match, reset that slot to empty
       return filteredMatches.map((m) => {
         let updatedMatch = { ...m };
         if (m.slotA.type === "link" && m.slotA.sourceMatchId === matchId) {
@@ -283,7 +323,6 @@ export default function BracketBuilder() {
       alert("Add at least one match to save.");
       return;
     }
-
     if (
       !window.confirm(
         "Save and schedule these matches? This will update your tournament schedule.",
@@ -295,20 +334,18 @@ export default function BracketBuilder() {
     try {
       const batch = writeBatch(db);
 
-      // 🟢 1. Save the visual layout directly inside the Tournament Document (Bypasses Rule Restrictions)
       const tourneyRef = doc(db, "tournaments", id);
       batch.update(tourneyRef, {
         bracketLayout: {
           rounds,
           matches,
           matchCounter,
+          globalSettings,
           lastUpdated: Date.now(),
         },
       });
 
-      // 2. Schedule the actual matches in your database
       matches.forEach((m, index) => {
-        // Create a unique, predictable ID for bracket matches
         const matchRef = doc(
           db,
           "tournaments",
@@ -317,7 +354,7 @@ export default function BracketBuilder() {
           `BRACKET-${m.id}`,
         );
 
-        // --- Resolve Team A ---
+        // 🟢 Handle the new BYE type securely
         let teamAName = "TBD";
         let teamAId = null;
         let teamALogo = null;
@@ -327,9 +364,10 @@ export default function BracketBuilder() {
           teamALogo = m.slotA.team.logo || m.slotA.team.logoUrl || null;
         } else if (m.slotA.type === "link" && m.slotA.sourceMatchId) {
           teamAName = `Winner of ${m.slotA.sourceMatchId}`;
+        } else if (m.slotA.type === "bye") {
+          teamAName = "BYE"; // 🟢 Assigns BYE
         }
 
-        // --- Resolve Team B ---
         let teamBName = "TBD";
         let teamBId = null;
         let teamBLogo = null;
@@ -339,9 +377,10 @@ export default function BracketBuilder() {
           teamBLogo = m.slotB.team.logo || m.slotB.team.logoUrl || null;
         } else if (m.slotB.type === "link" && m.slotB.sourceMatchId) {
           teamBName = `Winner of ${m.slotB.sourceMatchId}`;
+        } else if (m.slotB.type === "bye") {
+          teamBName = "BYE"; // 🟢 Assigns BYE
         }
 
-        // --- Build Match Data ---
         const matchData = {
           matchNo: 100 + index,
           matchTitle: m.title,
@@ -354,9 +393,9 @@ export default function BracketBuilder() {
           status: "upcoming",
           createdAt: Date.now(),
           meta: {
-            teamA: teamAName, // 🟢 FIX: Required for Toss Screen
-            teamB: teamBName, // 🟢 FIX: Required for Toss Screen
-            tournament: id, // 🟢 FIX: Required for proper routing/saves
+            teamA: teamAName,
+            teamB: teamBName,
+            tournament: id,
             teamAId,
             teamBId,
             teamALogo,
@@ -371,7 +410,6 @@ export default function BracketBuilder() {
           },
         };
 
-        // Use merge: true so we don't overwrite scores if the match has already started!
         batch.set(matchRef, matchData, { merge: true });
       });
 
@@ -394,32 +432,22 @@ export default function BracketBuilder() {
     setLoading(true);
     try {
       const batch = writeBatch(db);
-
-      // 1. Wipe the blueprint layout from the Tournament document
       const tourneyRef = doc(db, "tournaments", id);
       batch.update(tourneyRef, { bracketLayout: null });
 
-      // 2. Find and delete all actual matches marked as bracket matches
       const matchesSnap = await getDocs(
         collection(db, "tournaments", id, "matches"),
       );
       matchesSnap.forEach((docSnap) => {
-        const mData = docSnap.data();
-        if (mData.meta?.isBracketMatch) {
-          batch.delete(docSnap.ref);
-        }
+        if (docSnap.data().meta?.isBracketMatch) batch.delete(docSnap.ref);
       });
 
-      // 3. Commit the deletions
       await batch.commit();
-
-      // 4. Reset the local screen instantly
       setMatches([]);
       setRounds([{ id: "r1", name: "Round 1" }]);
       setMatchCounter(1);
       setShowGlobalConfig(false);
-
-      alert("🗑️ Bracket completely wiped from the board and the database!");
+      alert("🗑️ Bracket completely wiped!");
     } catch (e) {
       console.error("Error clearing bracket:", e);
       alert("Failed to clear bracket: " + e.message);
@@ -428,7 +456,62 @@ export default function BracketBuilder() {
     }
   };
 
-  // --- UI RENDERERS ---
+  const applyChronologicalSettings = () => {
+    if (
+      !window.confirm(
+        "Auto-Schedule ALL matches based on the Default Start Time, Duration, and Gap?",
+      )
+    )
+      return;
+
+    setMatches((prevMatches) => {
+      let currentDateTime = null;
+
+      if (globalSettings.date && globalSettings.time) {
+        currentDateTime = new Date(
+          `${globalSettings.date}T${globalSettings.time}`,
+        );
+      } else if (globalSettings.time) {
+        currentDateTime = new Date(`2026-01-01T${globalSettings.time}`);
+      }
+
+      return prevMatches.map((m) => {
+        let calcDate = globalSettings.date;
+        let calcTime = globalSettings.time;
+
+        if (currentDateTime && !isNaN(currentDateTime.getTime())) {
+          const year = currentDateTime.getFullYear();
+          const month = String(currentDateTime.getMonth() + 1).padStart(2, "0");
+          const day = String(currentDateTime.getDate()).padStart(2, "0");
+
+          calcDate = globalSettings.date ? `${year}-${month}-${day}` : "";
+
+          const hours = String(currentDateTime.getHours()).padStart(2, "0");
+          const mins = String(currentDateTime.getMinutes()).padStart(2, "0");
+          calcTime = `${hours}:${mins}`;
+
+          currentDateTime.setMinutes(
+            currentDateTime.getMinutes() +
+              parseInt(globalSettings.matchDuration || 0) +
+              parseInt(globalSettings.matchGap || 0),
+          );
+        }
+
+        return {
+          ...m,
+          settings: {
+            ...m.settings,
+            date: calcDate,
+            time: calcTime,
+          },
+        };
+      });
+    });
+
+    alert("✅ Matches chronologically scheduled!");
+    setShowGlobalConfig(false);
+  };
+
   const renderSlot = (match, slotKey) => {
     const slot = match[slotKey];
 
@@ -438,18 +521,37 @@ export default function BracketBuilder() {
           <span className={`text-[9px] font-black uppercase ${theme.sub}`}>
             {slotKey === "slotA" ? "Team 1" : "Team 2"}
           </span>
+          {/* 🟢 3-Way Toggle Button */}
           <button
-            onClick={() => toggleSlotType(match.id, slotKey)}
+            onClick={() => cycleSlotType(match.id, slotKey)}
             className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase border transition-colors ${
               slot.type === "link"
                 ? "bg-purple-500/10 text-purple-500 border-purple-500/30"
-                : "bg-teal-500/10 text-teal-500 border-teal-500/30"
-            }`}>
-            {slot.type === "link" ? "Linked" : "Manual"}
+                : slot.type === "bye"
+                  ? "bg-gray-500/10 text-gray-500 border-gray-500/30"
+                  : "bg-teal-500/10 text-teal-500 border-teal-500/30"
+            }`}
+          >
+            {slot.type === "link"
+              ? "Linked"
+              : slot.type === "bye"
+                ? "BYE / TBA"
+                : "Manual"}
           </button>
         </div>
 
-        {slot.type === "team" ? (
+        {/* 🟢 Render BYE state */}
+        {slot.type === "bye" ? (
+          <div
+            className={`h-10 rounded-lg border flex items-center justify-center ${lightMode ? "bg-gray-100 border-gray-200" : "bg-white/5 border-white/10"}`}
+          >
+            <span
+              className={`text-[10px] font-black uppercase tracking-widest opacity-50 ${theme.sub}`}
+            >
+              BYE (Advances)
+            </span>
+          </div>
+        ) : slot.type === "team" ? (
           <div
             onDrop={(e) => handleDrop(e, match.id, slotKey)}
             onDragOver={handleDragOver}
@@ -461,7 +563,8 @@ export default function BracketBuilder() {
                 : lightMode
                   ? "bg-gray-50 border-gray-200 border-dashed"
                   : "bg-black/20 border-white/10 border-dashed"
-            }`}>
+            }`}
+          >
             {slot.team ? (
               <>
                 <span className={`font-bold text-xs ${theme.text}`}>
@@ -469,13 +572,15 @@ export default function BracketBuilder() {
                 </span>
                 <button
                   onClick={() => removeTeamFromSlot(match.id, slotKey)}
-                  className="absolute right-2 text-red-500 text-[10px] font-bold">
+                  className="absolute right-2 text-red-500 text-[10px] font-bold"
+                >
                   X
                 </button>
               </>
             ) : (
               <span
-                className={`text-[10px] font-bold italic opacity-40 flex items-center gap-1 ${theme.text}`}>
+                className={`text-[10px] font-bold italic opacity-40 flex items-center gap-1 ${theme.text}`}
+              >
                 <Users size={12} /> Drag Team Here
               </span>
             )}
@@ -483,14 +588,16 @@ export default function BracketBuilder() {
         ) : (
           <div className="flex items-center gap-2">
             <div
-              className={`h-10 px-3 rounded-lg border flex-1 flex items-center gap-2 ${lightMode ? "bg-purple-50 border-purple-200" : "bg-purple-900/10 border-purple-500/30"}`}>
+              className={`h-10 px-3 rounded-lg border flex-1 flex items-center gap-2 ${lightMode ? "bg-purple-50 border-purple-200" : "bg-purple-900/10 border-purple-500/30"}`}
+            >
               <LinkIcon size={12} className="text-purple-500" />
               <select
                 value={slot.sourceMatchId}
                 onChange={(e) =>
                   updateSlotLink(match.id, slotKey, e.target.value)
                 }
-                className={`w-full bg-transparent text-xs font-bold outline-none ${lightMode ? "text-purple-900" : "text-purple-200"}`}>
+                className={`w-full bg-transparent text-xs font-bold outline-none ${lightMode ? "text-purple-900" : "text-purple-200"}`}
+              >
                 <option value="">Select Match Winner</option>
                 {matches
                   .filter((m) => m.id !== match.id)
@@ -512,14 +619,17 @@ export default function BracketBuilder() {
 
   return (
     <div
-      className={`h-screen flex flex-col ${theme.bg} ${theme.text} overflow-hidden`}>
+      className={`h-screen flex flex-col ${theme.bg} ${theme.text} overflow-hidden`}
+    >
       {/* Header */}
       <div
-        className={`p-4 border-b flex justify-between items-center shrink-0 shadow-sm z-10 ${lightMode ? "bg-white border-gray-200" : "bg-[#161920] border-white/10"}`}>
+        className={`p-4 border-b flex justify-between items-center shrink-0 shadow-sm z-10 ${lightMode ? "bg-white border-gray-200" : "bg-[#161920] border-white/10"}`}
+      >
         <div className="flex items-center gap-4">
           <button
             onClick={() => navigate(-1)}
-            className="p-2 rounded-lg bg-gray-500/10 hover:bg-gray-500/20">
+            className="p-2 rounded-lg bg-gray-500/10 hover:bg-gray-500/20"
+          >
             <ArrowLeft size={20} />
           </button>
           <h1 className="text-lg font-black uppercase tracking-widest italic flex items-center gap-2">
@@ -528,20 +638,21 @@ export default function BracketBuilder() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* 🟢 NEW: Global Settings Button */}
           <button
             onClick={() => setShowGlobalConfig(true)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest border transition-all ${
               lightMode
                 ? "bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100"
                 : "bg-white/5 border-white/10 text-gray-300 hover:bg-white/10"
-            }`}>
+            }`}
+          >
             <Settings size={16} /> Global Defaults
           </button>
 
           <button
             onClick={handleSaveBracket}
-            className="flex items-center gap-2 px-4 py-2 bg-cyan-600 text-white rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-cyan-500 transition-all shadow-lg active:scale-95">
+            className="flex items-center gap-2 px-4 py-2 bg-cyan-600 text-white rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-cyan-500 transition-all shadow-lg active:scale-95"
+          >
             <Save size={16} /> Save Setup
           </button>
         </div>
@@ -550,35 +661,39 @@ export default function BracketBuilder() {
       <div className="flex flex-1 overflow-hidden">
         {/* LEFT: Available Teams Sidebar */}
         <div
-          className={`w-64 border-r flex flex-col shrink-0 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
+          className={`w-64 border-r flex flex-col shrink-0 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}
+        >
           <div
-            className={`p-4 border-b z-10 shadow-sm ${lightMode ? "border-gray-200 bg-gray-50" : "border-white/5 bg-[#0F1115]"}`}>
+            className={`p-4 border-b z-10 shadow-sm ${lightMode ? "border-gray-200 bg-gray-50" : "border-white/5 bg-[#0F1115]"}`}
+          >
             <h2
-              className={`text-xs font-black uppercase tracking-widest ${theme.sub}`}>
+              className={`text-xs font-black uppercase tracking-widest ${theme.sub}`}
+            >
               Available Teams
             </h2>
           </div>
 
           <div className="p-4 overflow-y-auto space-y-5 flex-1 custom-scrollbar">
             {Object.entries(groupedTeams)
-              .sort(([keyA], [keyB]) => keyA.localeCompare(keyB)) // Sorts Group A, Group B, etc.
+              .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
               .map(([groupName, groupTeams]) => (
                 <div key={groupName} className="space-y-2">
-                  {/* Group Header */}
                   <div
-                    className={`flex items-center gap-2 mb-1 border-b pb-1 ${lightMode ? "border-gray-200" : "border-white/10"}`}>
+                    className={`flex items-center gap-2 mb-1 border-b pb-1 ${lightMode ? "border-gray-200" : "border-white/10"}`}
+                  >
                     <Shield size={12} className="text-teal-500" />
                     <h3
-                      className={`text-[10px] font-black uppercase tracking-widest ${theme.text}`}>
+                      className={`text-[10px] font-black uppercase tracking-widest ${theme.text}`}
+                    >
                       {groupName}
                     </h3>
                     <span
-                      className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full ${lightMode ? "bg-gray-200 text-gray-600" : "bg-white/10 text-gray-400"}`}>
+                      className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full ${lightMode ? "bg-gray-200 text-gray-600" : "bg-white/10 text-gray-400"}`}
+                    >
                       {groupTeams.length}
                     </span>
                   </div>
 
-                  {/* Draggable Teams in this Group */}
                   {groupTeams.map((team) => (
                     <div
                       key={team.id}
@@ -588,7 +703,8 @@ export default function BracketBuilder() {
                         lightMode
                           ? "bg-white border-gray-200 hover:border-cyan-400"
                           : "bg-[#1C2128] border-white/5 hover:border-cyan-500/50"
-                      }`}>
+                      }`}
+                    >
                       <GripVertical
                         size={14}
                         className="text-gray-400 opacity-50 shrink-0"
@@ -613,8 +729,8 @@ export default function BracketBuilder() {
         <div className="flex-1 overflow-x-auto overflow-y-hidden flex p-6 gap-6 custom-scrollbar bg-black/[0.02]">
           {rounds.map((round) => (
             <div key={round.id} className="w-80 flex flex-col shrink-0 h-full">
-              {/* Round Header */}
-              <div className="flex justify-between items-center mb-4 px-1">
+              {/* 🟢 UPGRADED Round Header (Now visually obvious it is editable) */}
+              <div className="flex justify-between items-center mb-4 px-1 group relative">
                 <input
                   value={round.name}
                   onChange={(e) =>
@@ -624,7 +740,12 @@ export default function BracketBuilder() {
                       ),
                     )
                   }
-                  className={`font-black uppercase tracking-widest text-sm outline-none bg-transparent ${theme.text}`}
+                  className={`font-black uppercase tracking-widest text-sm outline-none bg-transparent border-b border-transparent focus:border-cyan-500 transition-colors w-full pb-1 ${theme.text}`}
+                  title="Click to edit round name"
+                />
+                <Edit3
+                  size={14}
+                  className={`absolute right-2 opacity-30 group-hover:opacity-100 transition-opacity ${theme.sub} pointer-events-none`}
                 />
               </div>
 
@@ -635,7 +756,8 @@ export default function BracketBuilder() {
                   .map((match) => (
                     <div
                       key={match.id}
-                      className={`p-3 rounded-xl border shadow-sm ${lightMode ? "bg-white border-gray-200" : "bg-[#1C2128] border-white/10"}`}>
+                      className={`p-3 rounded-xl border shadow-sm ${lightMode ? "bg-white border-gray-200" : "bg-[#1C2128] border-white/10"}`}
+                    >
                       {/* Match Header */}
                       <div className="flex justify-between items-center border-b pb-2 mb-2 border-white/10">
                         <div className="flex items-center gap-2">
@@ -652,18 +774,19 @@ export default function BracketBuilder() {
                           />
                         </div>
 
-                        {/* 🟢 NEW: Button Group (Settings + Delete) */}
                         <div className="flex items-center gap-1">
                           <button
                             onClick={() => setActiveConfigMatch(match.id)}
                             title="Match Settings"
-                            className={`p-1.5 rounded-md transition-colors ${lightMode ? "bg-gray-100 hover:bg-gray-200 text-gray-600" : "bg-white/5 hover:bg-white/10 text-gray-400"}`}>
+                            className={`p-1.5 rounded-md transition-colors ${lightMode ? "bg-gray-100 hover:bg-gray-200 text-gray-600" : "bg-white/5 hover:bg-white/10 text-gray-400"}`}
+                          >
                             <Settings size={14} />
                           </button>
                           <button
                             onClick={() => deleteMatch(match.id)}
                             title="Delete Match"
-                            className={`p-1.5 rounded-md transition-colors ${lightMode ? "bg-red-50 hover:bg-red-100 text-red-500" : "bg-red-500/10 hover:bg-red-500/20 text-red-400"}`}>
+                            className={`p-1.5 rounded-md transition-colors ${lightMode ? "bg-red-50 hover:bg-red-100 text-red-500" : "bg-red-500/10 hover:bg-red-500/20 text-red-400"}`}
+                          >
                             <Trash2 size={14} />
                           </button>
                         </div>
@@ -685,7 +808,8 @@ export default function BracketBuilder() {
                     lightMode
                       ? "border-gray-300 text-gray-500 hover:bg-gray-50 hover:text-cyan-600 hover:border-cyan-300"
                       : "border-white/20 text-gray-400 hover:bg-white/5 hover:text-cyan-400 hover:border-cyan-500/50"
-                  }`}>
+                  }`}
+                >
                   <Plus size={14} /> Add Match Here
                 </button>
               </div>
@@ -700,34 +824,128 @@ export default function BracketBuilder() {
                 lightMode
                   ? "border-gray-300 text-gray-400 hover:bg-gray-50 hover:text-cyan-600"
                   : "border-white/10 text-gray-500 hover:bg-white/5 hover:text-cyan-400"
-              }`}>
+              }`}
+            >
               <Plus size={20} /> Add Next Round
             </button>
           </div>
         </div>
       </div>
 
-      {/* 🔴 SETTINGS MODAL */}
+      {/* 🔴 MATCH-LEVEL SETTINGS MODAL */}
       {activeConfigMatch && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 animate-in fade-in">
-          {/* Settings modal logic remains similar... */}
           <div
-            className={`w-full max-w-sm p-6 rounded-3xl border shadow-2xl ${theme.card} ${lightMode ? "border-gray-200" : "border-white/10"}`}>
+            className={`w-full max-w-sm p-6 rounded-3xl border shadow-2xl ${theme.card} ${lightMode ? "border-gray-200" : "border-white/10"}`}
+          >
             <h3 className="text-lg font-black uppercase mb-4 text-cyan-500 flex items-center gap-2">
-              <Calendar size={18} /> Match Settings ({activeConfigMatch})
+              <Calendar size={18} /> Match {activeConfigMatch} Settings
             </h3>
 
             <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label
+                    className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}
+                  >
+                    Overs
+                  </label>
+                  <input
+                    type="number"
+                    value={
+                      matches.find((m) => m.id === activeConfigMatch)?.settings
+                        ?.overs || ""
+                    }
+                    onChange={(e) =>
+                      setMatches(
+                        matches.map((m) =>
+                          m.id === activeConfigMatch
+                            ? {
+                                ...m,
+                                settings: {
+                                  ...m.settings,
+                                  overs: e.target.value,
+                                },
+                              }
+                            : m,
+                        ),
+                      )
+                    }
+                    className={`w-full p-2.5 rounded-xl border outline-none font-bold text-sm ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10 text-white"}`}
+                  />
+                </div>
+                <div>
+                  <label
+                    className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}
+                  >
+                    Time
+                  </label>
+                  <input
+                    type="time"
+                    value={
+                      matches.find((m) => m.id === activeConfigMatch)?.settings
+                        ?.time || ""
+                    }
+                    onChange={(e) =>
+                      setMatches(
+                        matches.map((m) =>
+                          m.id === activeConfigMatch
+                            ? {
+                                ...m,
+                                settings: {
+                                  ...m.settings,
+                                  time: e.target.value,
+                                },
+                              }
+                            : m,
+                        ),
+                      )
+                    }
+                    className={`w-full p-2.5 rounded-xl border outline-none font-bold text-sm ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10 text-white"}`}
+                  />
+                </div>
+              </div>
+
               <div>
                 <label
-                  className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}>
-                  Overs
+                  className={`text-[10px] font-bold uppercase mb-1 block flex items-center gap-1 ${theme.sub}`}
+                >
+                  <Calendar size={10} /> Date
                 </label>
                 <input
-                  type="number"
+                  type="date"
                   value={
                     matches.find((m) => m.id === activeConfigMatch)?.settings
-                      .overs
+                      ?.date || ""
+                  }
+                  onChange={(e) =>
+                    setMatches(
+                      matches.map((m) =>
+                        m.id === activeConfigMatch
+                          ? {
+                              ...m,
+                              settings: { ...m.settings, date: e.target.value },
+                            }
+                          : m,
+                      ),
+                    )
+                  }
+                  className={`w-full p-2.5 rounded-xl border outline-none font-bold text-sm ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10 text-white"}`}
+                />
+              </div>
+
+              <div>
+                <label
+                  className={`text-[10px] font-bold uppercase mb-1 block flex items-center gap-1 ${theme.sub}`}
+                >
+                  <MapPin size={10} /> Venue
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Center Court"
+                  value={
+                    matches.find((m) => m.id === activeConfigMatch)?.settings
+                      ?.venue || ""
                   }
                   onChange={(e) =>
                     setMatches(
@@ -737,22 +955,22 @@ export default function BracketBuilder() {
                               ...m,
                               settings: {
                                 ...m.settings,
-                                overs: e.target.value,
+                                venue: e.target.value,
                               },
                             }
                           : m,
                       ),
                     )
                   }
-                  className={`w-full p-3 rounded-xl border outline-none ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10 text-white"}`}
+                  className={`w-full p-2.5 rounded-xl border outline-none font-bold text-sm ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10 text-white"}`}
                 />
               </div>
-              {/* Add Date and Venue similarly... */}
             </div>
 
             <button
               onClick={() => setActiveConfigMatch(null)}
-              className="w-full mt-6 py-3 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl font-bold uppercase tracking-widest text-xs transition-all active:scale-95">
+              className="w-full mt-6 py-3 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl font-bold uppercase tracking-widest text-xs transition-all active:scale-95"
+            >
               Done
             </button>
           </div>
@@ -763,7 +981,8 @@ export default function BracketBuilder() {
       {showGlobalConfig && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 animate-in fade-in">
           <div
-            className={`w-full max-w-md p-6 rounded-3xl border shadow-2xl ${theme.card} ${lightMode ? "border-gray-200" : "border-white/10"}`}>
+            className={`w-full max-w-md p-6 rounded-3xl border shadow-2xl ${theme.card} ${lightMode ? "border-gray-200" : "border-white/10"}`}
+          >
             <h3 className="text-lg font-black uppercase mb-1 text-cyan-500 flex items-center gap-2">
               <Settings size={18} /> Global Match Settings
             </h3>
@@ -775,25 +994,27 @@ export default function BracketBuilder() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label
-                    className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}>
-                    Default Overs
+                    className={`text-[10px] font-bold uppercase mb-1 block flex items-center gap-1 ${theme.sub}`}
+                  >
+                    <Calendar size={10} /> Starting Date
                   </label>
                   <input
-                    type="number"
-                    value={globalSettings.overs}
+                    type="date"
+                    value={globalSettings.date}
                     onChange={(e) =>
                       setGlobalSettings({
                         ...globalSettings,
-                        overs: e.target.value,
+                        date: e.target.value,
                       })
                     }
-                    className={`w-full p-3 rounded-xl border outline-none text-sm font-bold ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10 text-white"}`}
+                    className={`w-full p-2.5 rounded-xl border outline-none text-sm font-bold ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10 text-white"}`}
                   />
                 </div>
                 <div>
                   <label
-                    className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}>
-                    Time
+                    className={`text-[10px] font-bold uppercase mb-1 block flex items-center gap-1 ${theme.sub}`}
+                  >
+                    <Clock size={10} /> Start Time
                   </label>
                   <input
                     type="time"
@@ -804,112 +1025,118 @@ export default function BracketBuilder() {
                         time: e.target.value,
                       })
                     }
-                    className={`w-full p-3 rounded-xl border outline-none text-sm font-bold ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10 text-white"}`}
+                    className={`w-full p-2.5 rounded-xl border outline-none text-sm font-bold ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10 text-white"}`}
                   />
                 </div>
               </div>
 
-              <div>
-                <label
-                  className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}>
-                  Default Date
-                </label>
-                <input
-                  type="date"
-                  value={globalSettings.date}
-                  onChange={(e) =>
-                    setGlobalSettings({
-                      ...globalSettings,
-                      date: e.target.value,
-                    })
-                  }
-                  className={`w-full p-3 rounded-xl border outline-none text-sm font-bold ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10 text-white"}`}
-                />
+              <div className="grid grid-cols-2 gap-3 p-3 rounded-xl border border-cyan-500/30 bg-cyan-500/5">
+                <div>
+                  <label
+                    className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}
+                  >
+                    Match Duration (Mins)
+                  </label>
+                  <input
+                    type="number"
+                    value={globalSettings.matchDuration}
+                    onChange={(e) =>
+                      setGlobalSettings({
+                        ...globalSettings,
+                        matchDuration: e.target.value,
+                      })
+                    }
+                    className={`w-full p-2.5 rounded-xl border outline-none text-sm font-bold ${lightMode ? "bg-white border-gray-200" : "bg-black/40 border-white/10 text-white"}`}
+                  />
+                </div>
+                <div>
+                  <label
+                    className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}
+                  >
+                    Break Gap (Mins)
+                  </label>
+                  <input
+                    type="number"
+                    value={globalSettings.matchGap}
+                    onChange={(e) =>
+                      setGlobalSettings({
+                        ...globalSettings,
+                        matchGap: e.target.value,
+                      })
+                    }
+                    className={`w-full p-2.5 rounded-xl border outline-none text-sm font-bold ${lightMode ? "bg-white border-gray-200" : "bg-black/40 border-white/10 text-white"}`}
+                  />
+                </div>
               </div>
 
-              <div>
-                <label
-                  className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}>
-                  Default Venue
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Main Ground"
-                  value={globalSettings.venue}
-                  onChange={(e) =>
-                    setGlobalSettings({
-                      ...globalSettings,
-                      venue: e.target.value,
-                    })
-                  }
-                  className={`w-full p-3 rounded-xl border outline-none text-sm font-bold ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10 text-white"}`}
-                />
-              </div>
-
-              <div>
-                <label
-                  className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}>
-                  Optional Prefix Label
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Qualifier (New matches will be 'Qualifier 1')"
-                  value={globalSettings.label}
-                  onChange={(e) =>
-                    setGlobalSettings({
-                      ...globalSettings,
-                      label: e.target.value,
-                    })
-                  }
-                  className={`w-full p-3 rounded-xl border outline-none text-sm font-bold ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10 text-white"}`}
-                />
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label
+                    className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}
+                  >
+                    Default Venue
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Main Ground"
+                    value={globalSettings.venue}
+                    onChange={(e) =>
+                      setGlobalSettings({
+                        ...globalSettings,
+                        venue: e.target.value,
+                      })
+                    }
+                    className={`w-full p-2.5 rounded-xl border outline-none text-sm font-bold ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10 text-white"}`}
+                  />
+                </div>
+                <div>
+                  <label
+                    className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}
+                  >
+                    Overs
+                  </label>
+                  <input
+                    type="number"
+                    value={globalSettings.overs}
+                    onChange={(e) =>
+                      setGlobalSettings({
+                        ...globalSettings,
+                        overs: e.target.value,
+                      })
+                    }
+                    className={`w-full p-2.5 rounded-xl border outline-none text-sm font-bold ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10 text-white"}`}
+                  />
+                </div>
               </div>
             </div>
 
             <div className="flex flex-col gap-2 mt-6">
-              {/* 🟢 NEW: Nuke Button */}
               <button
                 onClick={handleClearEntireBracket}
-                className={`w-full py-3 mb-4 rounded-xl font-black uppercase tracking-widest text-[10px] border transition-all flex justify-center items-center gap-2 shadow-sm ${
+                className={`w-full py-3 mb-2 rounded-xl font-black uppercase tracking-widest text-[10px] border transition-all flex justify-center items-center gap-2 shadow-sm ${
                   lightMode
                     ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
                     : "bg-red-900/20 text-red-500 border-red-500/30 hover:bg-red-900/40"
-                }`}>
-                <Trash2 size={14} />
-                Clear Entire Bracket
+                }`}
+              >
+                <Trash2 size={14} /> Clear Entire Bracket
               </button>
-              {/* Magic Apply to All Button */}
+
               <button
-                onClick={() => {
-                  if (
-                    !window.confirm(
-                      "Overwrite the Date, Time, Venue, and Overs for ALL matches currently in the bracket?",
-                    )
-                  )
-                    return;
-                  setMatches(
-                    matches.map((m) => ({
-                      ...m,
-                      settings: {
-                        overs: globalSettings.overs,
-                        date: globalSettings.date,
-                        time: globalSettings.time,
-                        venue: globalSettings.venue,
-                      },
-                    })),
-                  );
-                  alert("Settings applied to all current matches!");
-                }}
+                onClick={applyChronologicalSettings}
                 className={`w-full py-3 rounded-xl font-bold uppercase tracking-widest text-[10px] border transition-all ${
                   lightMode
                     ? "bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100"
                     : "bg-purple-900/20 text-purple-400 border-purple-500/30 hover:bg-purple-900/40"
-                }`}>
-                Overwrite All Current Matches
+                }`}
+              >
+                Auto-Schedule Current Matches
               </button>
+
               <button
                 onClick={() => setShowGlobalConfig(false)}
-                className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl font-bold uppercase tracking-widest text-xs transition-all active:scale-95">
+                className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl font-bold uppercase tracking-widest text-xs transition-all active:scale-95"
+              >
                 Save Defaults & Close
               </button>
             </div>
