@@ -34,6 +34,10 @@ import {
 // 2. Cropper Import
 import Cropper from "react-easy-crop";
 
+// ☁️ 3. CLOUDINARY CONFIGURATION
+const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+
 // --- INTERNAL TOAST COMPONENT ---
 const NotificationToast = ({ message, type, onClose }) => {
   if (!message) return null;
@@ -44,7 +48,8 @@ const NotificationToast = ({ message, type, onClose }) => {
         isError
           ? "bg-red-500/10 border-red-500/20 text-red-500 bg-white dark:bg-red-900/10"
           : "bg-teal-500/10 border-teal-500/20 text-teal-600 dark:text-teal-400 bg-white dark:bg-teal-900/10"
-      }`}>
+      }`}
+    >
       {isError ? <AlertCircle size={20} /> : <Check size={20} />}
       <div>
         <h4 className="font-bold text-sm uppercase tracking-wider">
@@ -101,27 +106,6 @@ export default function GlobalPlayerRegistration() {
   const [tournamentName, setTournamentName] = useState("");
   const { user } = useAuth();
 
-  useEffect(() => {
-    const fetchTournamentDetails = async () => {
-      if (!tournamentId) return;
-
-      try {
-        const tDocRef = doc(db, "tournaments", tournamentId);
-        const tDocSnap = await getDoc(tDocRef);
-
-        if (tDocSnap.exists()) {
-          setTournamentName(tDocSnap.data().name);
-        } else {
-          setTournamentName(tournamentId.replace(/-/g, " "));
-        }
-      } catch (error) {
-        console.error("Failed to fetch tournament name:", error);
-      }
-    };
-
-    fetchTournamentDetails();
-  }, [tournamentId]);
-
   const { theme, lightMode, toggleTheme } = useTheme();
 
   const [formData, setFormData] = useState({
@@ -140,6 +124,11 @@ export default function GlobalPlayerRegistration() {
   const [photoBase64, setPhotoBase64] = useState("");
   const [paymentBase64, setPaymentBase64] = useState("");
 
+  // 🟢 NEW: Trackers to decide whether to upload to Cloudinary or keep existing Base64
+  const [photoChanged, setPhotoChanged] = useState(false);
+  const [paymentChanged, setPaymentChanged] = useState(false);
+  const [uploadText, setUploadText] = useState(""); // Dynamic loading text
+
   // --- CROPPER STATE ---
   const [cropModalOpen, setCropModalOpen] = useState(false);
   const [imageToCrop, setImageToCrop] = useState(null);
@@ -154,6 +143,23 @@ export default function GlobalPlayerRegistration() {
   const [status, setStatus] = useState("idle");
   const [notification, setNotification] = useState(null);
 
+  // --- ☁️ UNIVERSAL CLOUDINARY UPLOADER ---
+  const uploadToCloudinary = async (dataUri) => {
+    const formData = new FormData();
+    formData.append("file", dataUri);
+    formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+    formData.append("cloud_name", CLOUDINARY_CLOUD_NAME);
+
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+      { method: "POST", body: formData },
+    );
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error?.message || "Upload failed");
+    return data.secure_url;
+  };
+
   useEffect(() => {
     const fetchTournamentDetails = async () => {
       if (!tournamentId) return;
@@ -165,8 +171,6 @@ export default function GlobalPlayerRegistration() {
         if (tDocSnap.exists()) {
           const data = tDocSnap.data();
           setTournamentName(data.name);
-
-          // 🟢 NEW: Read the max limit from the database (if it exists)
           if (data.maxPlayers) {
             setMaxPlayersLimit(Number(data.maxPlayers));
           }
@@ -184,7 +188,6 @@ export default function GlobalPlayerRegistration() {
   // 🟢 SMART LIMIT CHECKER
   useEffect(() => {
     const checkRegistrationLimit = async () => {
-      // Only run the count if this specific tournament actually has a limit set in the DB
       if (!tournamentId || !maxPlayersLimit) return;
 
       try {
@@ -198,7 +201,6 @@ export default function GlobalPlayerRegistration() {
 
         setCurrentRegCount(count);
 
-        // Dynamically check against the database limit
         if (count >= maxPlayersLimit) {
           setIsRegistrationClosed(true);
         }
@@ -208,7 +210,7 @@ export default function GlobalPlayerRegistration() {
     };
 
     checkRegistrationLimit();
-  }, [tournamentId, maxPlayersLimit]); // 🟢 Re-runs if the limit is loaded
+  }, [tournamentId, maxPlayersLimit]);
 
   const showToast = (message, type = "success") => {
     setNotification({ message, type });
@@ -258,6 +260,7 @@ export default function GlobalPlayerRegistration() {
     try {
       const croppedImage = await getCroppedImg(imageToCrop, croppedAreaPixels);
       setPhotoBase64(croppedImage);
+      setPhotoChanged(true); // 🟢 Flag that a new photo was added
       setCropModalOpen(false);
       setImageToCrop(null);
     } catch (e) {
@@ -277,6 +280,7 @@ export default function GlobalPlayerRegistration() {
     if (file) {
       const compressed = await compressImage(file, 400);
       setPaymentBase64(compressed);
+      setPaymentChanged(true); // 🟢 Flag that a new payment was added
     }
   };
 
@@ -287,10 +291,12 @@ export default function GlobalPlayerRegistration() {
       role: playerData.role,
       battingStyle: playerData.battingStyle || "Right Hand Bat",
       bowlingStyle: playerData.bowlingStyle || "Right Arm Medium",
-      tshirtSize: playerData.tshirtSize || "M", // 🟢 NEW FIELD
+      tshirtSize: playerData.tshirtSize || "M",
     });
     setPhotoBase64(playerData.photoURL || "");
     setPaymentBase64(playerData.paymentScreenshotURL || "");
+    setPhotoChanged(false); // Reset flags so we don't upload old DB base64s
+    setPaymentChanged(false);
     setExistingPlayerId(docId);
     setIsEditing(true);
     setStatus("idle");
@@ -302,6 +308,7 @@ export default function GlobalPlayerRegistration() {
     setLoading(true);
     setStatus("checking");
     setNotification(null);
+    setUploadText("Preparing data...");
 
     const cleanMobile = formData.mobile.trim().replace(/\D/g, "");
 
@@ -321,6 +328,22 @@ export default function GlobalPlayerRegistration() {
     }
 
     try {
+      // 🟢 UPLOAD NEW IMAGES TO CLOUDINARY (Skip if untouched)
+      let finalPhotoUrl = photoBase64;
+      let finalPaymentUrl = paymentBase64;
+
+      if (photoChanged && photoBase64) {
+        setUploadText("Uploading Profile Photo...");
+        finalPhotoUrl = await uploadToCloudinary(photoBase64);
+      }
+
+      if (paymentChanged && paymentBase64) {
+        setUploadText("Uploading Payment Info...");
+        finalPaymentUrl = await uploadToCloudinary(paymentBase64);
+      }
+
+      setUploadText("Saving Registration...");
+
       const playersRef = collection(db, "players");
       const isoDate = new Date().toISOString();
       const currentTournament = tournamentId || "global";
@@ -336,8 +359,8 @@ export default function GlobalPlayerRegistration() {
             battingStyle: formData.battingStyle || "Right Hand Bat",
             bowlingStyle: formData.bowlingStyle || "Right Arm Medium",
             tshirtSize: formData.tshirtSize,
-            photoURL: photoBase64,
-            paymentScreenshotURL: paymentBase64,
+            photoURL: finalPhotoUrl,
+            paymentScreenshotURL: finalPaymentUrl,
             updatedAt: isoDate,
           },
           { merge: true },
@@ -363,8 +386,6 @@ export default function GlobalPlayerRegistration() {
           // 2. Add existing player to this NEW tournament
           const playerDocRef = doc(db, "players", docSnap.id);
 
-          // 🔥 FIX: Use setDoc with merge: true instead of updateDoc.
-          // This safely merges the new tournament into the map without overwriting old ones.
           await setDoc(
             playerDocRef,
             {
@@ -376,8 +397,8 @@ export default function GlobalPlayerRegistration() {
                   battingStyle: formData.battingStyle || "Right Hand Bat",
                   bowlingStyle: formData.bowlingStyle || "Right Arm Medium",
                   tshirtSize: formData.tshirtSize,
-                  photoURL: photoBase64 || "",
-                  paymentScreenshotURL: paymentBase64 || "",
+                  photoURL: finalPhotoUrl || "",
+                  paymentScreenshotURL: finalPaymentUrl || "",
                   registeredAt: isoDate,
                 },
               },
@@ -410,8 +431,8 @@ export default function GlobalPlayerRegistration() {
               battingStyle: formData.battingStyle || "Right Hand Bat",
               bowlingStyle: formData.bowlingStyle || "Right Arm Medium",
               tshirtSize: formData.tshirtSize,
-              photoURL: photoBase64 || "",
-              paymentScreenshotURL: paymentBase64 || "",
+              photoURL: finalPhotoUrl || "",
+              paymentScreenshotURL: finalPaymentUrl || "",
               registeredAt: isoDate,
             },
           },
@@ -422,7 +443,6 @@ export default function GlobalPlayerRegistration() {
       console.error("Error registering:", error);
       setStatus("error");
 
-      // 🔥 Make the error super obvious so you know EXACTLY what failed
       if (error.code === "permission-denied") {
         showToast("Database Permission Denied. Contact Admin.", "error");
       } else {
@@ -430,6 +450,7 @@ export default function GlobalPlayerRegistration() {
       }
     } finally {
       setLoading(false);
+      setUploadText("");
     }
   };
 
@@ -476,12 +497,14 @@ export default function GlobalPlayerRegistration() {
           <div className="flex justify-between gap-4 px-4">
             <button
               onClick={handleCancelCrop}
-              className="flex-1 py-4 rounded-xl border border-white/20 text-white font-bold uppercase tracking-widest text-xs hover:bg-white/10 transition-colors">
+              className="flex-1 py-4 rounded-xl border border-white/20 text-white font-bold uppercase tracking-widest text-xs hover:bg-white/10 transition-colors"
+            >
               Cancel
             </button>
             <button
               onClick={handleSaveCrop}
-              className="flex-1 py-4 rounded-xl bg-teal-500 text-white font-black uppercase tracking-widest text-xs shadow-lg shadow-teal-500/20 active:scale-95 transition-all">
+              className="flex-1 py-4 rounded-xl bg-teal-500 text-white font-black uppercase tracking-widest text-xs shadow-lg shadow-teal-500/20 active:scale-95 transition-all"
+            >
               Save Picture
             </button>
           </div>
@@ -494,7 +517,8 @@ export default function GlobalPlayerRegistration() {
   if (status === "success" || status === "updated") {
     return (
       <div
-        className={`min-h-screen flex items-center justify-center p-4 font-sans ${theme.bg}`}>
+        className={`min-h-screen flex items-center justify-center p-4 font-sans ${theme.bg}`}
+      >
         {toggleTheme && (
           <button
             onClick={toggleTheme}
@@ -503,18 +527,21 @@ export default function GlobalPlayerRegistration() {
                 ? "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
                 : "bg-[#0F1115] border-white/10 text-slate-300 hover:bg-white/5"
             }`}
-            title="Toggle Theme">
+            title="Toggle Theme"
+          >
             {lightMode ? <Moon size={16} /> : <Sun size={16} />}
           </button>
         )}
 
         <div
-          className={`border p-8 rounded-3xl max-w-md w-full text-center shadow-2xl animate-in zoom-in-95 ${theme.card}`}>
+          className={`border p-8 rounded-3xl max-w-md w-full text-center shadow-2xl animate-in zoom-in-95 ${theme.card}`}
+        >
           <div className="w-20 h-20 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center text-4xl mx-auto mb-6 border border-green-500/20 shadow-lg shadow-green-500/10">
             <Check size={40} strokeWidth={3} />
           </div>
           <h2
-            className={`text-2xl font-black mb-2 uppercase tracking-tight italic ${theme.text}`}>
+            className={`text-2xl font-black mb-2 uppercase tracking-tight italic ${theme.text}`}
+          >
             {status === "updated"
               ? "Profile Updated!"
               : "Registration Complete!"}
@@ -525,12 +552,14 @@ export default function GlobalPlayerRegistration() {
           </p>
           <button
             onClick={() => window.location.reload()}
-            className={`block w-full font-bold py-4 rounded-xl transition-all mb-4 text-xs uppercase tracking-widest ${theme.btnBase}`}>
+            className={`block w-full font-bold py-4 rounded-xl transition-all mb-4 text-xs uppercase tracking-widest ${theme.btnBase}`}
+          >
             Back to Form
           </button>
           <Link
             to="/"
-            className={`block text-xs font-bold uppercase tracking-widest transition-colors ${theme.sub} hover:text-teal-500`}>
+            className={`block text-xs font-bold uppercase tracking-widest transition-colors ${theme.sub} hover:text-teal-500`}
+          >
             Back to Home
           </Link>
         </div>
@@ -538,18 +567,21 @@ export default function GlobalPlayerRegistration() {
     );
   }
 
-  // 🟢 NEW: REGISTRATION CLOSED VIEW
+  // 🟢 REGISTRATION CLOSED VIEW
   if (isRegistrationClosed && !isEditing) {
     return (
       <div
-        className={`min-h-screen flex items-center justify-center p-4 font-sans ${theme.bg}`}>
+        className={`min-h-screen flex items-center justify-center p-4 font-sans ${theme.bg}`}
+      >
         <div
-          className={`border p-8 rounded-3xl max-w-md w-full text-center shadow-2xl animate-in zoom-in-95 ${theme.card}`}>
+          className={`border p-8 rounded-3xl max-w-md w-full text-center shadow-2xl animate-in zoom-in-95 ${theme.card}`}
+        >
           <div className="w-20 h-20 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6 border border-red-500/20">
             <X size={40} strokeWidth={3} />
           </div>
           <h2
-            className={`text-2xl font-black mb-2 uppercase tracking-tight italic ${theme.text}`}>
+            className={`text-2xl font-black mb-2 uppercase tracking-tight italic ${theme.text}`}
+          >
             Registration Closed
           </h2>
           <p className={`mb-6 text-sm font-medium ${theme.sub}`}>
@@ -557,14 +589,16 @@ export default function GlobalPlayerRegistration() {
             for this tournament.
           </p>
           <div
-            className={`p-4 rounded-xl mb-8 border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
+            className={`p-4 rounded-xl mb-8 border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}
+          >
             <p className="text-xs font-bold uppercase tracking-widest text-teal-500">
               Thank you for the overwhelming response!
             </p>
           </div>
           <Link
             to="/"
-            className={`block w-full font-bold py-4 rounded-xl transition-all mb-4 text-xs uppercase tracking-widest ${theme.btnBase}`}>
+            className={`block w-full font-bold py-4 rounded-xl transition-all mb-4 text-xs uppercase tracking-widest ${theme.btnBase}`}
+          >
             Back to Home
           </Link>
         </div>
@@ -575,7 +609,8 @@ export default function GlobalPlayerRegistration() {
   // --- FORM VIEW ---
   return (
     <div
-      className={`min-h-screen p-4 flex flex-col items-center justify-center font-sans ${theme.bg} ${theme.text}`}>
+      className={`min-h-screen p-4 flex flex-col items-center justify-center font-sans ${theme.bg} ${theme.text}`}
+    >
       <NotificationToast
         message={notification?.message}
         type={notification?.type}
@@ -592,7 +627,8 @@ export default function GlobalPlayerRegistration() {
               ? "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
               : "bg-[#0F1115] border-white/10 text-slate-300 hover:bg-white/5"
           }`}
-          title="Toggle Theme">
+          title="Toggle Theme"
+        >
           {lightMode ? <Moon size={16} /> : <Sun size={16} />}
         </button>
       )}
@@ -610,7 +646,8 @@ export default function GlobalPlayerRegistration() {
       <div className="relative z-10 w-full max-w-lg">
         <div className="text-center mb-10">
           <p
-            className={`text-xs font-bold uppercase tracking-widest ${theme.sub}`}>
+            className={`text-xs font-bold uppercase tracking-widest ${theme.sub}`}
+          >
             {tournamentName
               ? "Join the tournament • Create your profile"
               : isEditing
@@ -620,27 +657,31 @@ export default function GlobalPlayerRegistration() {
         </div>
 
         <div
-          className={`border rounded-[2.5rem] p-8 shadow-2xl backdrop-blur-md ${theme.card}`}>
+          className={`border rounded-[2.5rem] p-8 shadow-2xl backdrop-blur-md ${theme.card}`}
+        >
           {status === "exists" && (
             <div
               className={`border p-6 rounded-3xl mb-8 animate-in shake ${
                 lightMode
                   ? "bg-amber-50 border-amber-200"
                   : "bg-amber-900/30 border-amber-500/50"
-              }`}>
+              }`}
+            >
               <div className="flex items-center gap-3 mb-3">
                 <AlertCircle className="text-amber-500" />
                 <h4
                   className={`font-black uppercase text-sm italic tracking-tight ${
                     lightMode ? "text-amber-800" : "text-amber-200"
-                  }`}>
+                  }`}
+                >
                   Profile Already Registered
                 </h4>
               </div>
               <p
                 className={`text-xs leading-relaxed mb-4 font-bold ${
                   lightMode ? "text-amber-700" : "text-slate-200"
-                }`}>
+                }`}
+              >
                 This mobile number is already registered in our global
                 directory.
               </p>
@@ -649,7 +690,8 @@ export default function GlobalPlayerRegistration() {
                   lightMode
                     ? "bg-white border-amber-100"
                     : "bg-[#0F1115] border-white/5"
-                }`}>
+                }`}
+              >
                 <p className="text-teal-500 text-[10px] font-black uppercase tracking-widest">
                   Please contact the Admin to update your profile.
                 </p>
@@ -660,7 +702,8 @@ export default function GlobalPlayerRegistration() {
                   lightMode
                     ? "text-amber-600 border-amber-200 hover:text-amber-800"
                     : "text-slate-500 border-white/5 hover:text-white"
-                }`}>
+                }`}
+              >
                 Register a different number
               </button>
             </div>
@@ -677,13 +720,13 @@ export default function GlobalPlayerRegistration() {
                   className="hidden"
                   id="profile-upload"
                   onClick={(e) => {
-                    // Reset value so selecting the same file triggers onChange again
                     e.target.value = null;
                   }}
                 />
                 <label
                   htmlFor="profile-upload"
-                  className="cursor-pointer group relative block">
+                  className="cursor-pointer group relative block"
+                >
                   <div
                     className={`w-32 h-32 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl relative z-10 
                     ${
@@ -692,7 +735,8 @@ export default function GlobalPlayerRegistration() {
                         : lightMode
                           ? "border-dashed border-gray-300 bg-gray-50 group-hover:bg-white"
                           : "border-dashed border-white/10 bg-[#0F1115] group-hover:border-white/30"
-                    }`}>
+                    }`}
+                  >
                     {photoBase64 ? (
                       <img
                         src={photoBase64}
@@ -705,7 +749,8 @@ export default function GlobalPlayerRegistration() {
                           className={`w-8 h-8 mx-auto mb-2 opacity-50 ${theme.sub}`}
                         />
                         <p
-                          className={`text-[9px] uppercase font-black tracking-widest ${theme.sub}`}>
+                          className={`text-[9px] uppercase font-black tracking-widest ${theme.sub}`}
+                        >
                           Upload
                         </p>
                       </div>
@@ -768,7 +813,8 @@ export default function GlobalPlayerRegistration() {
                         formData.role === role
                           ? "bg-teal-500/10 border-teal-500/50 text-teal-600 dark:text-teal-400 shadow-lg"
                           : theme.btnBase
-                      }`}>
+                      }`}
+                    >
                       {role}
                     </button>
                   ),
@@ -781,7 +827,8 @@ export default function GlobalPlayerRegistration() {
                   value={formData.battingStyle}
                   onChange={(e) =>
                     setFormData({ ...formData, battingStyle: e.target.value })
-                  }>
+                  }
+                >
                   <option>Right Hand Bat</option>
                   <option>Left Hand Bat</option>
                 </select>
@@ -790,7 +837,8 @@ export default function GlobalPlayerRegistration() {
                   value={formData.bowlingStyle}
                   onChange={(e) =>
                     setFormData({ ...formData, bowlingStyle: e.target.value })
-                  }>
+                  }
+                >
                   <option>Right Arm Medium</option>
                   <option>Right Arm Fast</option>
                   <option>Right Arm Spin</option>
@@ -801,10 +849,10 @@ export default function GlobalPlayerRegistration() {
                 </select>
               </div>
 
-              {/* 🟢 NEW: T-SHIRT SIZE FIELD */}
               <div className="relative mt-4">
                 <span
-                  className={`absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase tracking-widest ${theme.sub}`}>
+                  className={`absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase tracking-widest ${theme.sub}`}
+                >
                   Jersey Size
                 </span>
                 <select
@@ -812,7 +860,8 @@ export default function GlobalPlayerRegistration() {
                   value={formData.tshirtSize}
                   onChange={(e) =>
                     setFormData({ ...formData, tshirtSize: e.target.value })
-                  }>
+                  }
+                >
                   <option value="S">S (36)</option>
                   <option value="M">M (38)</option>
                   <option value="L">L (40)</option>
@@ -829,9 +878,11 @@ export default function GlobalPlayerRegistration() {
                 lightMode
                   ? "bg-gray-50 border-gray-300 hover:bg-white"
                   : "bg-[#0F1115] border-white/10 hover:border-white/20"
-              }`}>
+              }`}
+            >
               <label
-                className={`block text-[10px] font-black uppercase mb-4 text-center tracking-[0.2em] ${theme.sub}`}>
+                className={`block text-[10px] font-black uppercase mb-4 text-center tracking-[0.2em] ${theme.sub}`}
+              >
                 Payment Screenshot *
               </label>
               <input
@@ -843,7 +894,8 @@ export default function GlobalPlayerRegistration() {
               />
               <label
                 htmlFor="payment-upload"
-                className="cursor-pointer block w-full">
+                className="cursor-pointer block w-full"
+              >
                 {paymentBase64 ? (
                   <div className="relative">
                     <img
@@ -861,13 +913,15 @@ export default function GlobalPlayerRegistration() {
                   <div
                     className={`h-32 flex flex-col items-center justify-center rounded-xl transition-colors ${
                       lightMode ? "bg-white border" : "bg-[#161920]"
-                    }`}>
+                    }`}
+                  >
                     <Receipt
                       className={`mb-3 opacity-30 ${theme.text}`}
                       size={32}
                     />
                     <span
-                      className={`text-xs font-bold uppercase tracking-wide ${theme.sub}`}>
+                      className={`text-xs font-bold uppercase tracking-wide ${theme.sub}`}
+                    >
                       Click to upload proof
                     </span>
                   </div>
@@ -878,10 +932,11 @@ export default function GlobalPlayerRegistration() {
             <button
               disabled={loading}
               type="submit"
-              className="w-full bg-gradient-to-r from-teal-600 to-indigo-600 hover:from-teal-500 hover:to-indigo-500 text-white font-black uppercase tracking-widest text-xs py-5 rounded-2xl shadow-xl shadow-teal-900/20 transition-all disabled:opacity-50 active:scale-[0.98] flex items-center justify-center gap-2">
+              className="w-full bg-gradient-to-r from-teal-600 to-indigo-600 hover:from-teal-500 hover:to-indigo-500 text-white font-black uppercase tracking-widest text-xs py-5 rounded-2xl shadow-xl shadow-teal-900/20 transition-all disabled:opacity-50 active:scale-[0.98] flex items-center justify-center gap-2"
+            >
               {loading && <Loader2 className="animate-spin" />}
               {loading
-                ? "Processing..."
+                ? uploadText || "Processing..."
                 : isEditing
                   ? "Update Profile"
                   : "Submit Registration"}
@@ -891,7 +946,8 @@ export default function GlobalPlayerRegistration() {
               <button
                 type="button"
                 onClick={() => window.location.reload()}
-                className={`w-full text-xs font-bold uppercase tracking-widest transition-colors ${theme.sub} hover:text-teal-500`}>
+                className={`w-full text-xs font-bold uppercase tracking-widest transition-colors ${theme.sub} hover:text-teal-500`}
+              >
                 Cancel Edit
               </button>
             )}
