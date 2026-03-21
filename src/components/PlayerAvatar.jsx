@@ -9,8 +9,9 @@ const generateFallbackAvatar = (name) => {
     <rect width="200" height="200" fill="#1C2128"/>
     <text x="100" y="115" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="90" font-weight="bold">${initial}</text>
   </svg>`;
-  // Convert the SVG to a base64 Data URI
-  return `data:image/svg+xml;base64,${btoa(svg)}`;
+  
+  // ✅ FIX: Replaced btoa() with encodeURIComponent to safely handle all characters
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 };
 
 export default function PlayerAvatar({
