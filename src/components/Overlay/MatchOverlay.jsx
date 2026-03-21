@@ -14,12 +14,11 @@ import { db } from "../../utils/firebase";
 import ScoreTicker from "./ScoreTicker";
 import BroadcastSummaryCard from "./BroadcastSummaryCard";
 
-// --- ANIMATION COMPONENT (LIGHTER THEME) ---
+// --- ANIMATION COMPONENT ---
 const EventAnimation = ({ type }) => {
   if (!type) return null;
   const styles = {
     FOUR: {
-      // Lighter Teal Gradient
       bg: "bg-gradient-to-br from-teal-400 to-teal-600",
       border: "border-teal-200",
       text: "4",
@@ -27,7 +26,6 @@ const EventAnimation = ({ type }) => {
       shadow: "shadow-[0_0_60px_rgba(45,212,191,0.6)]",
     },
     SIX: {
-      // Brighter Amber Gradient
       bg: "bg-gradient-to-br from-amber-300 to-orange-500",
       border: "border-yellow-100",
       text: "6",
@@ -35,7 +33,6 @@ const EventAnimation = ({ type }) => {
       shadow: "shadow-[0_0_60px_rgba(251,191,36,0.6)]",
     },
     WICKET: {
-      // Vibrant Red Gradient
       bg: "bg-gradient-to-br from-red-400 to-red-700",
       border: "border-red-200",
       text: "OUT",
@@ -48,13 +45,11 @@ const EventAnimation = ({ type }) => {
     <div className="absolute top-[200px] left-1/2 -translate-x-1/2 z-[100] animate-in zoom-in duration-300">
       <div
         className={`relative ${current.bg} border-4 ${current.border} ${current.shadow} rounded-[3rem] px-24 py-10 flex flex-col items-center transform scale-110`}>
-        {/* Glossy Overlay */}
         <div className="absolute inset-0 bg-gradient-to-b from-white/30 to-transparent rounded-[2.8rem] pointer-events-none"></div>
 
         <div className="text-white font-black text-[14rem] leading-none drop-shadow-xl text-center italic tracking-tighter">
           {current.text}
         </div>
-        {/* Lighter Bottom Pill */}
         <div className="absolute -bottom-8 bg-slate-900 text-white px-12 py-3 font-black text-4xl uppercase tracking-[0.3em] rounded-full border-4 border-white/20 shadow-2xl whitespace-nowrap">
           {current.sub}
         </div>
@@ -68,14 +63,17 @@ export default function MatchOverlay() {
   const [match, setMatch] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // States
+  // 🟢 NEW STATE: Used for the 30-Second "Holding Pattern" Timer
+  const [allMatches, setAllMatches] = useState([]);
+  const [lockedResultMatch, setLockedResultMatch] = useState(null);
+  const lastLiveMatchId = useRef(null);
+
   const [showPopup, setShowPopup] = useState(false);
   const [popupType, setPopupType] = useState("SUMMARY");
   const [animationType, setAnimationType] = useState(null);
   const [scale, setScale] = useState(1);
   const [tournamentName, setTournamentName] = useState("Tournament");
 
-  // Refs
   const prevTimelineLength = useRef(0);
   const prevOver = useRef(0);
   const timerRef = useRef(null);
@@ -97,14 +95,7 @@ export default function MatchOverlay() {
     const trackViewer = async () => {
       try {
         const docRef = await addDoc(
-          collection(
-            db,
-            "tournaments",
-            tournamentId,
-            "matches",
-            matchId,
-            "viewers",
-          ),
+          collection(db, "tournaments", tournamentId, "matches", matchId, "viewers"),
           {
             timestamp: serverTimestamp(),
             type: "overlay",
@@ -118,15 +109,7 @@ export default function MatchOverlay() {
     return () => {
       if (viewerDocId)
         deleteDoc(
-          doc(
-            db,
-            "tournaments",
-            tournamentId,
-            "matches",
-            matchId,
-            "viewers",
-            viewerDocId,
-          ),
+          doc(db, "tournaments", tournamentId, "matches", matchId, "viewers", viewerDocId),
         ).catch((e) => {});
     };
   }, [matchId, tournamentId]);
@@ -139,7 +122,7 @@ export default function MatchOverlay() {
     });
   }, [tournamentId]);
 
-  // --- 4. FETCH MATCH DATA ---
+  // --- 4. FETCH ALL MATCH DATA ---
   useEffect(() => {
     if (!tournamentId) return;
 
@@ -147,56 +130,13 @@ export default function MatchOverlay() {
     const isAutoMode = !matchId || matchId === "active";
 
     if (isAutoMode) {
-      console.log("[Overlay] Auto-Pilot Mode: Scanning for matches...");
       const q = query(collection(db, "tournaments", tournamentId, "matches"));
-
       unsubscribe = onSnapshot(q, (snapshot) => {
-        const matches = snapshot.docs.map((doc) => ({
+        const matchesData = snapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
         }));
-
-        const getStatus = (m) =>
-          (m.status || m.meta?.status || "").toLowerCase().trim();
-
-        let activeMatch = matches.find((m) => {
-          const s = getStatus(m);
-          return s === "live" || s === "ongoing" || s === "in-progress";
-        });
-
-        if (!activeMatch) {
-          const upcoming = matches
-            .filter((m) => {
-              const s = getStatus(m);
-              return (
-                s === "upcoming" ||
-                s === "scheduled" ||
-                s === "pending" ||
-                s === ""
-              );
-            })
-            .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
-
-          if (upcoming.length > 0) activeMatch = upcoming[0];
-        }
-
-        if (!activeMatch) {
-          const finished = matches
-            .filter((m) =>
-              ["finished", "completed", "ended"].includes(getStatus(m)),
-            )
-            .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-
-          if (finished.length > 0) activeMatch = finished[0];
-        }
-
-        if (activeMatch) {
-          console.log("[Overlay] Auto-Selected:", activeMatch.id);
-          setMatch(activeMatch);
-        } else {
-          setMatch(null);
-        }
-        setLoading(false);
+        setAllMatches(matchesData);
       });
     } else {
       unsubscribe = onSnapshot(
@@ -213,37 +153,105 @@ export default function MatchOverlay() {
     return () => unsubscribe && unsubscribe();
   }, [tournamentId, matchId]);
 
+  // --- 4.5 🤖 THE AUTOMATED HOLDING PATTERN (30s Timer) ---
+  useEffect(() => {
+    const isAutoMode = !matchId || matchId === "active";
+    if (!isAutoMode || allMatches.length === 0) return;
+
+    const getStatus = (m) => (m.status || m.meta?.status || "").toLowerCase().trim();
+
+    const liveMatches = allMatches.filter((m) => ["live", "ongoing", "in-progress"].includes(getStatus(m)));
+    const upcomingMatches = allMatches
+      .filter((m) => ["upcoming", "scheduled", "pending", ""].includes(getStatus(m)))
+      .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+    const finishedMatches = allMatches
+      .filter((m) => ["finished", "completed", "ended"].includes(getStatus(m)))
+      .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+
+    let selectedMatch = null;
+
+    // A. Is there a locked result screen right now? Keep showing it!
+    if (lockedResultMatch) {
+      selectedMatch = allMatches.find(m => m.id === lockedResultMatch.id) || lockedResultMatch;
+    }
+    // B. Did the match we were JUST watching finish?
+    else if (lastLiveMatchId.current && finishedMatches.some(m => m.id === lastLiveMatchId.current)) {
+      const justFinishedMatch = finishedMatches.find(m => m.id === lastLiveMatchId.current);
+      setLockedResultMatch(justFinishedMatch);
+      selectedMatch = justFinishedMatch;
+
+      // ⏳ The Magic 30 Second Timer!
+      setTimeout(() => {
+        setLockedResultMatch(null);
+        lastLiveMatchId.current = null; // Wipe memory so it moves to next match
+      }, 30000);
+    }
+    // C. Normal Logic: Find Live Match
+    else if (liveMatches.length > 0) {
+      selectedMatch = liveMatches[0];
+      lastLiveMatchId.current = selectedMatch.id; // Remember what we are watching!
+    }
+    // D. Normal Logic: Find Upcoming Match
+    else if (upcomingMatches.length > 0) {
+      selectedMatch = upcomingMatches[0];
+      lastLiveMatchId.current = null;
+    }
+    // E. Normal Logic: Fallback to Last Finished Match
+    else if (finishedMatches.length > 0) {
+      selectedMatch = finishedMatches[0];
+      lastLiveMatchId.current = null;
+    }
+
+    setMatch(selectedMatch);
+    setLoading(false);
+  }, [allMatches, lockedResultMatch, matchId]);
+
   // --- 5. VIEW MODE CALCULATIONS ---
   const currentInn = match?.innings?.[match?.currentInnings || 0];
-
   const isChasing = match?.currentInnings === 1;
   const inn1 = match?.innings?.[0];
-  const target = match?.meta?.target || (inn1 ? inn1.score + 1 : 0);
-  const hasWon = isChasing && currentInn?.score >= target;
+
+  // 🛡️ Added safety fix to prevent false Match Over lock
+  const target = match?.meta?.target || (inn1 && inn1.score !== undefined ? inn1.score + 1 : null);
+  const hasWon = isChasing && target !== null && currentInn?.score >= target;
 
   const rawStatus = (match?.status || match?.meta?.status || "").toLowerCase();
+  const hasValidResultStr = match?.result && match.result.trim() !== "";
   const isMatchFinished =
     rawStatus === "completed" ||
     rawStatus === "finished" ||
-    match?.result ||
+    hasValidResultStr ||
     hasWon;
 
   const tossData = match?.toss || match?.meta?.toss;
   const hasToss = tossData && tossData.winner;
 
-  const isPlayStarted =
-    currentInn && (currentInn.over > 0 || currentInn.overBallCount > 0);
-  const isInningsBreak =
-    match?.currentInnings === 1 && !isPlayStarted && !isMatchFinished;
+  const isPlayStarted = currentInn && (currentInn.over > 0 || currentInn.overBallCount > 0);
+  const isInningsBreak = match?.currentInnings === 1 && !isPlayStarted && !isMatchFinished;
 
-  let viewMode = "LOADING";
-  if (loading) viewMode = "LOADING";
-  else if (!match) viewMode = "ERROR";
-  else if (isMatchFinished) viewMode = "RESULT";
-  else if (isInningsBreak) viewMode = "INNINGS_BREAK";
-  else if (hasToss && !isPlayStarted) viewMode = "TOSS";
-  else if (!currentInn && !hasToss) viewMode = "WAITING";
-  else viewMode = "LIVE";
+  let autoViewMode = "LOADING";
+  if (loading) autoViewMode = "LOADING";
+  else if (!match) autoViewMode = "ERROR";
+  else if (isMatchFinished) autoViewMode = "RESULT";
+  else if (isInningsBreak) autoViewMode = "INNINGS_BREAK";
+  else if (hasToss && !isPlayStarted) autoViewMode = "TOSS";
+  else if (!currentInn && !hasToss) autoViewMode = "WAITING";
+  else autoViewMode = "LIVE";
+
+  // 🟢 APPLY CONTROLLER VIEWS (Win Predictor, Scorebug, etc.)
+  const config = match?.meta?.overlay || {};
+  const activeViews = config.activeViews || [];
+  let viewMode = autoViewMode;
+
+  if (activeViews.includes("RESULT_CARD")) {
+    viewMode = "RESULT";
+  } else if (activeViews.includes("INNINGS_BREAK_CARD")) {
+    viewMode = "INNINGS_BREAK";
+  } else if (activeViews.includes("TOSS_CARD")) {
+    viewMode = "TOSS";
+  } else if (activeViews.includes("SUMMARY_CARD")) {
+    viewMode = "SUMMARY";
+  }
 
   // --- 6. EVENT AUTOMATION ---
   useEffect(() => {
@@ -328,25 +336,21 @@ export default function MatchOverlay() {
   // 🔴 VIEW 1: WAITING (Scheduled but not started)
   if (viewMode === "WAITING") {
     return (
-      // ✅ UPDATED: Lighter "Slate" Background
       <div
         className="flex items-center justify-center overflow-hidden bg-slate-900"
         style={{ width: 1920, height: 1080 }}>
-        {/* Background Texture */}
         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-5 mix-blend-overlay"></div>
         <div className="absolute inset-0 bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 opacity-90"></div>
 
         <div
           style={containerStyle}
           className="relative z-10 flex flex-col items-center justify-center">
-          {/* Tournament Pill */}
           <div className="bg-teal-500/10 border border-teal-500/30 px-10 py-3 rounded-full mb-10 backdrop-blur-md">
             <h2 className="text-teal-400 text-4xl font-black uppercase tracking-[0.4em] drop-shadow-md">
               {tournamentName}
             </h2>
           </div>
 
-          {/* Teams VS */}
           <h4 className="text-white text-[6rem] font-black uppercase drop-shadow-2xl italic tracking-tighter flex items-center gap-16">
             <span className="drop-shadow-[0_0_30px_rgba(255,255,255,0.1)] text-slate-100">
               {match.meta?.teamA || "Team A"}
@@ -359,7 +363,6 @@ export default function MatchOverlay() {
             </span>
           </h4>
 
-          {/* Status Badge */}
           <div className="mt-24 bg-gradient-to-r from-teal-800 to-slate-800 px-16 py-5 rounded-full text-white text-3xl animate-pulse font-black border-4 border-teal-500/50 shadow-[0_0_50px_rgba(20,184,166,0.3)] tracking-widest uppercase">
             Starting Soon...
           </div>
@@ -368,7 +371,7 @@ export default function MatchOverlay() {
     );
   }
 
-  // 🟣 VIEW 2: FULL SCREEN CARDS
+  // 🟣 VIEW 2: FULL SCREEN CARDS (Toss, Break, Result)
   if (["TOSS", "INNINGS_BREAK", "RESULT"].includes(viewMode)) {
     return (
       <div className="w-screen h-screen flex items-center justify-center overflow-hidden bg-transparent">
@@ -382,7 +385,7 @@ export default function MatchOverlay() {
               type={viewMode}
             />
           </div>
-          {currentInn && (
+          {currentInn && viewMode !== "RESULT" && (
             <div
               className={`absolute bottom-[50px] w-full z-10 flex justify-center`}>
               <ScoreTicker match={match} />
