@@ -44,7 +44,8 @@ const EventAnimation = ({ type }) => {
   return (
     <div className="absolute top-[200px] left-1/2 -translate-x-1/2 z-[100] animate-in zoom-in duration-300">
       <div
-        className={`relative ${current.bg} border-4 ${current.border} ${current.shadow} rounded-[3rem] px-24 py-10 flex flex-col items-center transform scale-110`}>
+        className={`relative ${current.bg} border-4 ${current.border} ${current.shadow} rounded-[3rem] px-24 py-10 flex flex-col items-center transform scale-110`}
+      >
         <div className="absolute inset-0 bg-gradient-to-b from-white/30 to-transparent rounded-[2.8rem] pointer-events-none"></div>
 
         <div className="text-white font-black text-[14rem] leading-none drop-shadow-xl text-center italic tracking-tighter">
@@ -63,7 +64,6 @@ export default function MatchOverlay() {
   const [match, setMatch] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // 🟢 NEW STATE: Used for the 30-Second "Holding Pattern" Timer
   const [allMatches, setAllMatches] = useState([]);
   const [lockedResultMatch, setLockedResultMatch] = useState(null);
   const lastLiveMatchId = useRef(null);
@@ -77,6 +77,9 @@ export default function MatchOverlay() {
   const prevTimelineLength = useRef(0);
   const prevOver = useRef(0);
   const timerRef = useRef(null);
+
+  // 🟢 FIX 1: The "Ghost Animation" blocker
+  const isInitialMount = useRef(true);
 
   // --- 1. TV SCALING ---
   useLayoutEffect(() => {
@@ -95,7 +98,14 @@ export default function MatchOverlay() {
     const trackViewer = async () => {
       try {
         const docRef = await addDoc(
-          collection(db, "tournaments", tournamentId, "matches", matchId, "viewers"),
+          collection(
+            db,
+            "tournaments",
+            tournamentId,
+            "matches",
+            matchId,
+            "viewers",
+          ),
           {
             timestamp: serverTimestamp(),
             type: "overlay",
@@ -109,7 +119,15 @@ export default function MatchOverlay() {
     return () => {
       if (viewerDocId)
         deleteDoc(
-          doc(db, "tournaments", tournamentId, "matches", matchId, "viewers", viewerDocId),
+          doc(
+            db,
+            "tournaments",
+            tournamentId,
+            "matches",
+            matchId,
+            "viewers",
+            viewerDocId,
+          ),
         ).catch((e) => {});
     };
   }, [matchId, tournamentId]);
@@ -153,16 +171,21 @@ export default function MatchOverlay() {
     return () => unsubscribe && unsubscribe();
   }, [tournamentId, matchId]);
 
-  // --- 4.5 🤖 THE AUTOMATED HOLDING PATTERN (30s Timer) ---
+  // --- 4.5 AUTOMATED HOLDING PATTERN ---
   useEffect(() => {
     const isAutoMode = !matchId || matchId === "active";
     if (!isAutoMode || allMatches.length === 0) return;
 
-    const getStatus = (m) => (m.status || m.meta?.status || "").toLowerCase().trim();
+    const getStatus = (m) =>
+      (m.status || m.meta?.status || "").toLowerCase().trim();
 
-    const liveMatches = allMatches.filter((m) => ["live", "ongoing", "in-progress"].includes(getStatus(m)));
+    const liveMatches = allMatches.filter((m) =>
+      ["live", "ongoing", "in-progress"].includes(getStatus(m)),
+    );
     const upcomingMatches = allMatches
-      .filter((m) => ["upcoming", "scheduled", "pending", ""].includes(getStatus(m)))
+      .filter((m) =>
+        ["upcoming", "scheduled", "pending", ""].includes(getStatus(m)),
+      )
       .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
     const finishedMatches = allMatches
       .filter((m) => ["finished", "completed", "ended"].includes(getStatus(m)))
@@ -170,34 +193,30 @@ export default function MatchOverlay() {
 
     let selectedMatch = null;
 
-    // A. Is there a locked result screen right now? Keep showing it!
     if (lockedResultMatch) {
-      selectedMatch = allMatches.find(m => m.id === lockedResultMatch.id) || lockedResultMatch;
-    }
-    // B. Did the match we were JUST watching finish?
-    else if (lastLiveMatchId.current && finishedMatches.some(m => m.id === lastLiveMatchId.current)) {
-      const justFinishedMatch = finishedMatches.find(m => m.id === lastLiveMatchId.current);
+      selectedMatch =
+        allMatches.find((m) => m.id === lockedResultMatch.id) ||
+        lockedResultMatch;
+    } else if (
+      lastLiveMatchId.current &&
+      finishedMatches.some((m) => m.id === lastLiveMatchId.current)
+    ) {
+      const justFinishedMatch = finishedMatches.find(
+        (m) => m.id === lastLiveMatchId.current,
+      );
       setLockedResultMatch(justFinishedMatch);
       selectedMatch = justFinishedMatch;
-
-      // ⏳ The Magic 30 Second Timer!
       setTimeout(() => {
         setLockedResultMatch(null);
-        lastLiveMatchId.current = null; // Wipe memory so it moves to next match
+        lastLiveMatchId.current = null;
       }, 30000);
-    }
-    // C. Normal Logic: Find Live Match
-    else if (liveMatches.length > 0) {
+    } else if (liveMatches.length > 0) {
       selectedMatch = liveMatches[0];
-      lastLiveMatchId.current = selectedMatch.id; // Remember what we are watching!
-    }
-    // D. Normal Logic: Find Upcoming Match
-    else if (upcomingMatches.length > 0) {
+      lastLiveMatchId.current = selectedMatch.id;
+    } else if (upcomingMatches.length > 0) {
       selectedMatch = upcomingMatches[0];
       lastLiveMatchId.current = null;
-    }
-    // E. Normal Logic: Fallback to Last Finished Match
-    else if (finishedMatches.length > 0) {
+    } else if (finishedMatches.length > 0) {
       selectedMatch = finishedMatches[0];
       lastLiveMatchId.current = null;
     }
@@ -211,8 +230,9 @@ export default function MatchOverlay() {
   const isChasing = match?.currentInnings === 1;
   const inn1 = match?.innings?.[0];
 
-  // 🛡️ Added safety fix to prevent false Match Over lock
-  const target = match?.meta?.target || (inn1 && inn1.score !== undefined ? inn1.score + 1 : null);
+  const target =
+    match?.meta?.target ||
+    (inn1 && inn1.score !== undefined ? inn1.score + 1 : null);
   const hasWon = isChasing && target !== null && currentInn?.score >= target;
 
   const rawStatus = (match?.status || match?.meta?.status || "").toLowerCase();
@@ -226,8 +246,10 @@ export default function MatchOverlay() {
   const tossData = match?.toss || match?.meta?.toss;
   const hasToss = tossData && tossData.winner;
 
-  const isPlayStarted = currentInn && (currentInn.over > 0 || currentInn.overBallCount > 0);
-  const isInningsBreak = match?.currentInnings === 1 && !isPlayStarted && !isMatchFinished;
+  const isPlayStarted =
+    currentInn && (currentInn.over > 0 || currentInn.overBallCount > 0);
+  const isInningsBreak =
+    match?.currentInnings === 1 && !isPlayStarted && !isMatchFinished;
 
   let autoViewMode = "LOADING";
   if (loading) autoViewMode = "LOADING";
@@ -238,7 +260,6 @@ export default function MatchOverlay() {
   else if (!currentInn && !hasToss) autoViewMode = "WAITING";
   else autoViewMode = "LIVE";
 
-  // 🟢 APPLY CONTROLLER VIEWS (Win Predictor, Scorebug, etc.)
   const config = match?.meta?.overlay || {};
   const activeViews = config.activeViews || [];
   let viewMode = autoViewMode;
@@ -253,6 +274,16 @@ export default function MatchOverlay() {
     viewMode = "SUMMARY";
   }
 
+  // 🟢 FIX 2: THE KILL SWITCH LISTENER
+  // If the controller toggles a kill flag, instantly hide local popups
+  useEffect(() => {
+    if (config.forceClearOverlay) {
+      setShowPopup(false);
+      setAnimationType(null);
+      if (timerRef.current) clearTimeout(timerRef.current);
+    }
+  }, [config.forceClearOverlay]);
+
   // --- 6. EVENT AUTOMATION ---
   useEffect(() => {
     if (viewMode !== "LIVE" || !currentInn) return;
@@ -261,10 +292,20 @@ export default function MatchOverlay() {
     const currentBalls = currentInn.overBallCount || 0;
     const currentOver = currentInn.over || 0;
 
+    // 🟢 PREVENT REFRESH ANIMATIONS
+    // If this is the very first time the component loads, just memorize the length and stop.
+    if (isInitialMount.current) {
+      prevTimelineLength.current = timeline.length;
+      prevOver.current = currentOver;
+      isInitialMount.current = false;
+      return;
+    }
+
     if (timeline.length > prevTimelineLength.current) {
       const lastBall = timeline[timeline.length - 1];
       let eventHandled = false;
 
+      // 🟢 WICKET POPUP
       if (lastBall && lastBall.isWicket) {
         eventHandled = true;
         setAnimationType("WICKET");
@@ -274,13 +315,18 @@ export default function MatchOverlay() {
           setAnimationType(null);
           setPopupType("WICKET");
           setShowPopup(true);
-          setTimeout(() => setShowPopup(false), 9000);
+          // Changed from 9000 to 3000
+          setTimeout(() => setShowPopup(false), 3000);
         }, 2000);
-      } else if (lastBall && (lastBall.runs === 4 || lastBall.runs === 6)) {
+      }
+      // 🟢 BOUNDARY POPUPS
+      else if (lastBall && (lastBall.runs === 4 || lastBall.runs === 6)) {
         setAnimationType(lastBall.runs === 4 ? "FOUR" : "SIX");
-        setTimeout(() => setAnimationType(null), 2000);
+        // Reduced animation stay time slightly to 1.5 seconds
+        setTimeout(() => setAnimationType(null), 1500);
       }
 
+      // 🟢 OVER SUMMARY POPUP
       if (
         !eventHandled &&
         currentBalls === 0 &&
@@ -290,7 +336,8 @@ export default function MatchOverlay() {
         setTimeout(() => {
           setPopupType("SUMMARY");
           setShowPopup(true);
-          setTimeout(() => setShowPopup(false), 9000);
+          // Changed from 9000 to 3000
+          setTimeout(() => setShowPopup(false), 3000);
         }, 1000);
         prevOver.current = currentOver;
       }
@@ -315,7 +362,8 @@ export default function MatchOverlay() {
         <div className="w-screen h-screen bg-slate-900 flex items-center justify-center">
           <div
             style={containerStyle}
-            className="flex flex-col items-center justify-center text-white">
+            className="flex flex-col items-center justify-center text-white"
+          >
             <h1 className="text-6xl font-black uppercase tracking-widest text-teal-400">
               Tournament Standby
             </h1>
@@ -333,18 +381,20 @@ export default function MatchOverlay() {
     );
   }
 
-  // 🔴 VIEW 1: WAITING (Scheduled but not started)
+  // 🔴 VIEW 1: WAITING
   if (viewMode === "WAITING") {
     return (
       <div
         className="flex items-center justify-center overflow-hidden bg-slate-900"
-        style={{ width: 1920, height: 1080 }}>
+        style={{ width: 1920, height: 1080 }}
+      >
         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-5 mix-blend-overlay"></div>
         <div className="absolute inset-0 bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 opacity-90"></div>
 
         <div
           style={containerStyle}
-          className="relative z-10 flex flex-col items-center justify-center">
+          className="relative z-10 flex flex-col items-center justify-center"
+        >
           <div className="bg-teal-500/10 border border-teal-500/30 px-10 py-3 rounded-full mb-10 backdrop-blur-md">
             <h2 className="text-teal-400 text-4xl font-black uppercase tracking-[0.4em] drop-shadow-md">
               {tournamentName}
@@ -371,13 +421,14 @@ export default function MatchOverlay() {
     );
   }
 
-  // 🟣 VIEW 2: FULL SCREEN CARDS (Toss, Break, Result)
+  // 🟣 VIEW 2: FULL SCREEN CARDS
   if (["TOSS", "INNINGS_BREAK", "RESULT"].includes(viewMode)) {
     return (
       <div className="w-screen h-screen flex items-center justify-center overflow-hidden bg-transparent">
         <div
           style={containerStyle}
-          className="relative bg-transparent font-sans pointer-events-none">
+          className="relative bg-transparent font-sans pointer-events-none"
+        >
           <div className="absolute inset-0 flex items-center justify-center">
             <BroadcastSummaryCard
               tournamentName={tournamentName}
@@ -387,7 +438,8 @@ export default function MatchOverlay() {
           </div>
           {currentInn && viewMode !== "RESULT" && (
             <div
-              className={`absolute bottom-[50px] w-full z-10 flex justify-center`}>
+              className={`absolute bottom-[50px] w-full z-10 flex justify-center`}
+            >
               <ScoreTicker match={match} />
             </div>
           )}
@@ -401,11 +453,13 @@ export default function MatchOverlay() {
     <div className="w-screen h-screen flex items-center justify-center overflow-hidden bg-transparent">
       <div
         style={containerStyle}
-        className="relative bg-transparent font-sans pointer-events-none">
+        className="relative bg-transparent font-sans pointer-events-none"
+      >
         <EventAnimation type={animationType} />
 
         <div
-          className={`absolute inset-0 z-50 flex items-center justify-center transition-all duration-500 ${showPopup ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20"}`}>
+          className={`absolute inset-0 z-50 flex items-center justify-center transition-all duration-500 ${showPopup ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20"}`}
+        >
           <BroadcastSummaryCard
             tournamentName={tournamentName}
             match={match}
@@ -414,7 +468,8 @@ export default function MatchOverlay() {
         </div>
 
         <div
-          className={`absolute bottom-[50px] w-full z-10 flex justify-center transition-all duration-500 ${showPopup ? "translate-y-[200px] opacity-0" : "translate-y-0 opacity-100"}`}>
+          className={`absolute bottom-[50px] w-full z-10 flex justify-center transition-all duration-500 ${showPopup ? "translate-y-[200px] opacity-0" : "translate-y-0 opacity-100"}`}
+        >
           <ScoreTicker match={match} />
         </div>
       </div>

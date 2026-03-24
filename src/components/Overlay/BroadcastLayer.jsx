@@ -50,13 +50,15 @@ const EventAnimation = ({ type }) => {
   return (
     <div
       key={Date.now()}
-      className="absolute inset-0 flex items-center justify-center z-[300] pointer-events-none">
+      className="absolute inset-0 flex items-center justify-center z-[300] pointer-events-none"
+    >
       <div
         className="absolute w-[900px] h-[900px] rounded-full bg-white/10 animate-ping"
         style={{ animationDuration: "1.5s" }}
       />
       <div
-        className={`relative ${current.bg} ${current.border} border-4 px-28 py-10 rounded-[4rem] flex flex-col items-center animate-slamAndShake ${current.glow}`}>
+        className={`relative ${current.bg} ${current.border} border-4 px-28 py-10 rounded-[4rem] flex flex-col items-center animate-slamAndShake ${current.glow}`}
+      >
         <div className="text-white font-black text-[11rem] leading-none tracking-tight drop-shadow-2xl">
           {current.text}
         </div>
@@ -82,10 +84,9 @@ export default function BroadcastLayer() {
   const [popupType, setPopupType] = useState("SUMMARY");
   const [animationType, setAnimationType] = useState(null);
   const [overlayConfig, setOverlayConfig] = useState({});
-  
+
   const [globalBranding, setGlobalBranding] = useState(null);
 
-  // Fetch global branding once when the overlay loads
   useEffect(() => {
     getDoc(doc(db, "settings", "branding")).then((docSnap) => {
       if (docSnap.exists()) {
@@ -95,10 +96,8 @@ export default function BroadcastLayer() {
   }, []);
 
   useEffect(() => {
-    // 🔥 SAFEGUARD: Do not query Firebase with 'active' or missing IDs
     if (!tournamentId || !matchId || matchId === "active") return;
 
-    // Listen for real-time changes to the match meta/overlay
     const unsub = onSnapshot(
       doc(db, "tournaments", tournamentId, "matches", matchId),
       (doc) => {
@@ -124,6 +123,15 @@ export default function BroadcastLayer() {
   const prevTimelineLength = useRef(0);
   const prevOver = useRef(0);
   const timerRef = useRef(null);
+
+  // 🔴 KILL SWITCH LISTENER (Still active)
+  useEffect(() => {
+    if (overlayConfig?.forceClearOverlay) {
+      setShowPopup(false);
+      setAnimationType(null);
+      if (timerRef.current) clearTimeout(timerRef.current);
+    }
+  }, [overlayConfig?.forceClearOverlay]);
 
   useLayoutEffect(() => {
     const handleResize = () =>
@@ -221,7 +229,6 @@ export default function BroadcastLayer() {
     return () => unsubscribe && unsubscribe();
   }, [tournamentId, matchId]);
 
-  // --- 🔥 BULLETPROOF AUDIO SYSTEM (INVISIBLE PRIME) ---
   const [sounds, setSounds] = useState(null);
 
   useEffect(() => {
@@ -245,35 +252,40 @@ export default function BroadcastLayer() {
 
     const primeAudioEngine = async () => {
       try {
-        const dummyAudio = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA");
+        const dummyAudio = new Audio(
+          "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA",
+        );
         dummyAudio.volume = 0;
         await dummyAudio.play();
-        console.log("✅ Audio successfully unlocked in background!");
-      } catch (e) {
-        // Silently catch error if browser strictly blocks auto-play
-      }
+      } catch (e) {}
     };
 
     primeAudioEngine();
 
-    // Secondary listener: clicking ANYWHERE on the screen (or OBS Interact) unlocks it
     const handleInteraction = () => {
       primeAudioEngine();
-      document.removeEventListener('click', handleInteraction);
+      document.removeEventListener("click", handleInteraction);
     };
-    document.addEventListener('click', handleInteraction);
-    return () => document.removeEventListener('click', handleInteraction);
+    document.addEventListener("click", handleInteraction);
+    return () => document.removeEventListener("click", handleInteraction);
   }, []);
 
-const playOverlaySound = (type) => {
-    if (overlayState?.broadcastAudioEnabled === false || !sounds || !sounds[type]) return;
-        
+  const playOverlaySound = (type) => {
+    if (
+      overlayState?.broadcastAudioEnabled === false ||
+      !sounds ||
+      !sounds[type]
+    )
+      return;
+
     try {
       sounds[type].currentTime = 0;
       const playPromise = sounds[type].play();
       if (playPromise !== undefined) {
-        playPromise.catch(err => {
-          console.warn(`Audio blocked (${type}). OBS Users: Add '--autoplay-policy=no-user-gesture-required' to OBS shortcut.`);
+        playPromise.catch((err) => {
+          console.warn(
+            `Audio blocked (${type}). OBS Users: Add '--autoplay-policy=no-user-gesture-required' to OBS shortcut.`,
+          );
         });
       }
     } catch (err) {
@@ -281,7 +293,8 @@ const playOverlaySound = (type) => {
     }
   };
 
-  const isActiveView = (viewName) => overlayState.activeViews?.includes(viewName);
+  const isActiveView = (viewName) =>
+    overlayState.activeViews?.includes(viewName);
 
   const currentInn = match?.innings?.[match?.currentInnings || 0];
 
@@ -330,38 +343,44 @@ const playOverlaySound = (type) => {
         return () => clearTimeout(timer);
       }
     }
-  }, [overlayState.manualAnimationTrigger, overlayState.manualAnimation, sounds, overlayConfig]);
+  }, [
+    overlayState.manualAnimationTrigger,
+    overlayState.manualAnimation,
+    sounds,
+    overlayConfig,
+  ]);
 
-  // --- AUTOMATED EVENTS TRIGGER ---
+  // --- AUTOMATED EVENTS TRIGGER (Shortened 3s timers) ---
   useEffect(() => {
     if (viewMode !== "LIVE" || !currentInn) return;
     const timeline = currentInn.timeline || [];
-    
+
     if (timeline.length > prevTimelineLength.current) {
       const lastBall = timeline[timeline.length - 1];
       let eventHandled = false;
 
+      // REDUCED TIMERS TO 3 SECONDS
       if (lastBall && lastBall.isWicket) {
         eventHandled = true;
         setAnimationType("WICKET");
         playOverlaySound("wicket");
-        
+
         setShowPopup(false);
         if (timerRef.current) clearTimeout(timerRef.current);
         timerRef.current = setTimeout(() => {
           setAnimationType(null);
           setPopupType("WICKET");
           setShowPopup(true);
-          setTimeout(() => setShowPopup(false), 9000);
-        }, 4500);
+          setTimeout(() => setShowPopup(false), 3000); // 3 seconds
+        }, 2000);
       } else if (lastBall && lastBall.runs === 4 && !lastBall.isWide) {
         setAnimationType("FOUR");
         playOverlaySound("four");
-        setTimeout(() => setAnimationType(null), 3500);
+        setTimeout(() => setAnimationType(null), 1500); // 1.5 seconds
       } else if (lastBall && lastBall.runs === 6 && !lastBall.isWide) {
         setAnimationType("SIX");
         playOverlaySound("six");
-        setTimeout(() => setAnimationType(null), 4000);
+        setTimeout(() => setAnimationType(null), 1500); // 1.5 seconds
       }
 
       if (
@@ -373,14 +392,13 @@ const playOverlaySound = (type) => {
         setTimeout(() => {
           setPopupType("SUMMARY");
           setShowPopup(true);
-          setTimeout(() => setShowPopup(false), 9000);
+          setTimeout(() => setShowPopup(false), 3000); // 3 seconds
         }, 1000);
         prevOver.current = currentInn.over;
       }
     }
-    
+
     prevTimelineLength.current = timeline.length;
-    
   }, [currentInn, viewMode, sounds, overlayConfig]);
 
   // --- COMPONENTS ---
@@ -413,7 +431,8 @@ const playOverlaySound = (type) => {
         </div>
         <div
           key={`text-${idx}`}
-          className="ml-5 flex flex-col justify-center animate-in fade-in slide-in-from-right-4 duration-500 pr-2">
+          className="ml-5 flex flex-col justify-center animate-in fade-in slide-in-from-right-4 duration-500 pr-2"
+        >
           <span className="text-[10px] text-amber-500 font-black uppercase tracking-widest mb-0.5 drop-shadow-md">
             Tournament Partner
           </span>
@@ -474,7 +493,8 @@ const playOverlaySound = (type) => {
     if (!currentInn) return null;
     return (
       <div
-        className={`flex flex-col rounded-xl border-l-8 border-blue-500 slide-in-from-top-8 ${TV_CARD_BASE}`}>
+        className={`flex flex-col rounded-xl border-l-8 border-blue-500 slide-in-from-top-8 ${TV_CARD_BASE}`}
+      >
         <div className="bg-blue-600/20 px-4 py-1.5 flex justify-between items-center text-blue-100 text-[10px] font-bold tracking-wider uppercase border-b border-blue-500/20">
           <span>
             {match.name || "Match"} • {match.meta?.teamA} vs {match.meta?.teamB}
@@ -507,7 +527,8 @@ const playOverlaySound = (type) => {
 
   const OrganizerCard = () => (
     <div
-      className={`flex rounded-xl border-l-8 border-purple-500 slide-in-from-left-8 ${TV_CARD_BASE}`}>
+      className={`flex rounded-xl border-l-8 border-purple-500 slide-in-from-left-8 ${TV_CARD_BASE}`}
+    >
       <div className="bg-purple-600 px-4 flex items-center justify-center border-r border-black/30">
         <Users size={30} className="text-white" />
       </div>
@@ -523,8 +544,7 @@ const playOverlaySound = (type) => {
   );
 
   const PartnershipCard = () => {
-    if (!currentInn || !currentInn.striker || !currentInn.nonStriker)
-      return null;
+    if (!currentInn || !currentInn.striker || !currentNonStriker) return null;
     let pRuns = 0;
     let pBalls = 0;
     const timeline = currentInn.timeline || [];
@@ -545,7 +565,8 @@ const playOverlaySound = (type) => {
 
     return (
       <div
-        className={`w-[600px] flex flex-col rounded-xl border-l-8 border-amber-500 slide-in-from-left-8 ${TV_CARD_BASE}`}>
+        className={`w-[600px] flex flex-col rounded-xl border-l-8 border-amber-500 slide-in-from-left-8 ${TV_CARD_BASE}`}
+      >
         <div className="bg-amber-500 text-black font-black text-sm px-6 py-2 uppercase tracking-widest flex items-center gap-2 shadow-md">
           <Activity size={18} /> Current Partnership
         </div>
@@ -625,7 +646,6 @@ const playOverlaySound = (type) => {
 
     if (!basePlayer) return null;
 
-    // Merge base match data with fetched global career data
     const pData = { ...basePlayer, ...careerStats };
 
     const batStats = currentInn?.batsmenStats?.[pData.name];
@@ -666,7 +686,8 @@ const playOverlaySound = (type) => {
 
     return (
       <div
-        className={`flex rounded-xl border-l-8 border-teal-400 slide-in-from-left-8 ${TV_CARD_BASE}`}>
+        className={`flex rounded-xl border-l-8 border-teal-400 slide-in-from-left-8 ${TV_CARD_BASE}`}
+      >
         {/* PHOTO COLUMN */}
         <div className="w-48 bg-gradient-to-b from-slate-800 to-[#0B1120] flex flex-col items-center justify-center relative shadow-inner border-r border-white/10 p-4 pt-6">
           <img
@@ -688,7 +709,7 @@ const playOverlaySound = (type) => {
             {pData.role || pData.playerRole || "Squad Member"}
           </p>
 
-          {/* LIVE MATCH STATS (If active on field) */}
+          {/* LIVE MATCH STATS */}
           {hasLiveStats && (
             <div className="flex gap-3 mb-4">
               {batStats && (
@@ -793,9 +814,11 @@ const playOverlaySound = (type) => {
 
     return (
       <div
-        className={`w-[400px] flex flex-col rounded-xl border-r-8 ${color} slide-in-from-right-8 ${TV_CARD_BASE}`}>
+        className={`w-[400px] flex flex-col rounded-xl border-r-8 ${color} slide-in-from-right-8 ${TV_CARD_BASE}`}
+      >
         <div
-          className={`${headerColor} text-white font-black text-lg px-6 py-4 uppercase tracking-widest flex justify-between items-center shadow-md`}>
+          className={`${headerColor} text-white font-black text-lg px-6 py-4 uppercase tracking-widest flex justify-between items-center shadow-md`}
+        >
           <span>Playing XI</span>
           <span className="truncate max-w-[180px] text-right drop-shadow-md">
             {teamName}
@@ -806,7 +829,8 @@ const playOverlaySound = (type) => {
             {squad?.map((p, i) => (
               <li
                 key={i}
-                className="flex items-center gap-4 border-b border-white/10 pb-2 last:border-0 last:pb-0">
+                className="flex items-center gap-4 border-b border-white/10 pb-2 last:border-0 last:pb-0"
+              >
                 <span className="text-slate-400 font-mono font-black text-lg w-8">
                   {(i + 1).toString().padStart(2, "0")}
                 </span>
@@ -879,8 +903,8 @@ const playOverlaySound = (type) => {
     <div className="w-screen h-screen flex items-center justify-center overflow-hidden bg-transparent pointer-events-none">
       <div
         style={containerStyle}
-        className="relative bg-transparent font-sans w-[1920px] h-[1080px]">
-        
+        className="relative bg-transparent font-sans w-[1920px] h-[1080px]"
+      >
         {/* --- 1. BACKGROUND STANDBY LAYER (Shown before match starts) --- */}
         {(viewMode === "NOT_FOUND" || viewMode === "WAITING") && (
           <div className="absolute inset-0 z-0 flex items-center justify-center bg-slate-900">
@@ -923,7 +947,8 @@ const playOverlaySound = (type) => {
 
         {/* --- 3. TOURNAMENT BANNER (Highest Priority Fullscreen) --- */}
         <div
-          className={`absolute inset-0 w-[1920px] h-[1080px] overflow-hidden z-[500] transition-all duration-500 ${isActiveView("APP_TOURNAMENT_BANNER") ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}>
+          className={`absolute inset-0 w-[1920px] h-[1080px] overflow-hidden z-[500] transition-all duration-500 ${isActiveView("APP_TOURNAMENT_BANNER") ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}
+        >
           {isActiveView("APP_TOURNAMENT_BANNER") && (
             <TournamentBanner tournamentId={tournamentId} />
           )}
@@ -940,7 +965,8 @@ const playOverlaySound = (type) => {
 
         {/* --- 4. THE AUTOMATIC POPUP (Over summary/Wicket) --- */}
         <div
-          className={`absolute inset-0 z-[60] flex items-center justify-center transition-all duration-500 ${showPopup && !manualCardActive ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}>
+          className={`absolute inset-0 z-[60] flex items-center justify-center transition-all duration-500 ${showPopup && !manualCardActive ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}
+        >
           <BroadcastSummaryCard
             tournamentName={tournamentName}
             match={match}
@@ -950,7 +976,8 @@ const playOverlaySound = (type) => {
 
         {/* --- 5. THE MANUAL OVERRIDE INFO CARDS --- */}
         <div
-          className={`absolute inset-0 z-[60] flex items-center justify-center transition-all duration-500 ${manualCardActive ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}>
+          className={`absolute inset-0 z-[60] flex items-center justify-center transition-all duration-500 ${manualCardActive ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}
+        >
           <BroadcastSummaryCard
             tournamentName={tournamentName}
             match={match}
@@ -958,24 +985,32 @@ const playOverlaySound = (type) => {
           />
         </div>
 
-        {overlayState.showAppLogo && (overlayState.appLogo || globalBranding?.appLogo) && (
-          <div className="absolute top-8 left-8 animate-slide-in flex items-center justify-center">
-            {/* ✨ THE GLOWING BACKGROUND AURA */}
-            <div
-              className="absolute w-24 h-24 bg-blue-500 rounded-full blur-2xl opacity-60"
-              style={{
-                animation: "pulseGlow 2.5s infinite alternate ease-in-out",
-              }}></div>
+        {/* 🔄 THE CLEAN, REFINED LOGO COIN (TOP LEFT) */}
+        {overlayState.showAppLogo &&
+          (overlayState.appLogo || globalBranding?.appLogo) && (
+            <div className="absolute top-8 left-8 z-[100] animate-fade-in flex flex-col items-center">
+              {/* 🛡️ The container (Smaller, clean border, complementary sky-blue bg) */}
+              <div
+                className="relative bg-cyan-100 rounded-full p-2.5 border-[3px] border-white ring-2 ring-black/20 flex items-center justify-center shadow-lg"
+                style={{ animation: "spin3D_Coin 10s ease-in-out infinite" }}
+              >
+                <img
+                  src={overlayState.appLogo || globalBranding?.appLogo}
+                  alt="App Logo"
+                  className="h-16 w-auto object-contain" /* Logo itself is slightly smaller */
+                />
+              </div>
 
-            {/* 🔄 THE ROTATING LOGO: Prioritize Custom Match Logo, fallback to Global Logo */}
-            <img
-              src={overlayState.appLogo || globalBranding?.appLogo}
-              alt="Broadcast Logo"
-              className="relative h-16 w-auto object-contain drop-shadow-xl"
-              style={{ animation: "spin3D 8s linear infinite" }}
-            />
-          </div>
-        )}
+              {/* 🔴 Fluorescent Neon Red LIVE Badge */}
+              <div className="relative z-10 -mt-3 bg-slate-950 border-2 border-slate-700 px-3 py-0.5 rounded-full flex items-center gap-1.5 shadow-xl">
+                <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_10px_#ef4444]" />
+                <span className="text-[9px] font-black text-white uppercase tracking-[0.4em]">
+                  LIVE
+                </span>
+              </div>
+            </div>
+          )}
+
         {isActiveView("WIN_PREDICTOR") && (
           <div className="absolute bottom-[180px] left-1/2 -translate-x-1/2 w-[600px] z-40">
             <WinPredictor match={match} />
@@ -984,17 +1019,18 @@ const playOverlaySound = (type) => {
 
         {/* TICKER */}
         <div
-          className={`absolute bottom-[50px] w-full z-10 flex justify-center transition-all duration-500 ${hideTicker ? "translate-y-[200px] opacity-0 pointer-events-none" : "translate-y-0 opacity-100"}`}>
+          className={`absolute bottom-[50px] w-full z-10 flex justify-center transition-all duration-500 ${hideTicker ? "translate-y-[200px] opacity-0 pointer-events-none" : "translate-y-0 opacity-100"}`}
+        >
           {currentInn && <ScoreTicker match={match} />}
         </div>
 
-        {/* TOP LEFT */}
-        <div className="absolute top-[150px] left-[50px] flex flex-col gap-6 items-start z-40">
+        {/* TOP LEFT (Shifted down slightly to avoid the refined logo) */}
+        <div className="absolute top-[200px] left-[50px] flex flex-col gap-6 items-start z-40">
           {isActiveView("MINI_SCORE") && <MiniScorebug />}
         </div>
 
         {/* TOP RIGHT */}
-        <div className="absolute top-[30px] right-[50px] flex flex-col gap-6 items-end z-40">
+        <div className="absolute top-[50px] right-[50px] flex flex-col gap-6 items-end z-40">
           {isActiveView("SPONSOR_BUG") && <SponsorBug />}
           {isActiveView("SQUAD_A") && <SquadCard teamSide="A" />}
           {isActiveView("SQUAD_B") && <SquadCard teamSide="B" />}
@@ -1055,17 +1091,14 @@ const playOverlaySound = (type) => {
             animation: slideIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
           }
 
-          /* 1. The Glowing Aura Animation */
-          @keyframes pulseGlow {
-            0% { transform: scale(0.8); opacity: 0.4; background-color: #3b82f6; } /* Blue */
-            100% { transform: scale(1.2); opacity: 0.8; background-color: #8b5cf6; } /* Purple */
-          }
+          /* 🔥 CSS KEYFRAMES FOR REFINED LOGO */
+          @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+          .animate-fade-in { animation: fade-in 0.5s ease-out forwards; }
 
-          /* 2. The 3D Coin-Spin Animation */
-          @keyframes spin3D {
+          @keyframes spin3D_Coin {
             0% { transform: rotateY(0deg); }
-            10% { transform: rotateY(360deg); } /* Fast spin for 10% of the time */
-            100% { transform: rotateY(360deg); } /* Pause for the rest of the time */
+            10% { transform: rotateY(360deg); } /* Fast spin for 1s */
+            100% { transform: rotateY(360deg); } /* Pause for 9s */
           }
         `}</style>
       </div>

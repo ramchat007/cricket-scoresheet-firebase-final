@@ -220,7 +220,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
         id: Date.now().toString(),
         name: newSponsorName,
         phone: newSponsorPhone,
-        image: secureUrl, // Storing URL instead of base64
+        image: secureUrl,
       };
 
       updateOverlay({ sponsors: [...(config.sponsors || []), newSponsor] });
@@ -719,7 +719,32 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               Events & Info Cards
             </h4>
           </div>
+
           <div className="space-y-4 flex-grow flex flex-col">
+            {/* 🚨 THE KILL SWITCH 🚨 */}
+            <button
+              onClick={() => {
+                // Trigger the clear timestamp AND untoggle all full-screen cards!
+                updateOverlay({
+                  forceClearOverlay: Date.now(),
+                  activeViews: (config.activeViews || []).filter(
+                    (v) =>
+                      ![
+                        "SUMMARY_CARD",
+                        "WIN_PREDICTOR",
+                        "TOSS_CARD",
+                        "INNINGS_BREAK_CARD",
+                        "RESULT_CARD",
+                        "CUSTOM_MSG",
+                      ].includes(v),
+                  ),
+                });
+              }}
+              className="w-full py-3 px-4 rounded-xl font-black text-[13px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-lg shadow-red-500/20 active:scale-95 text-white bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 border border-red-400/50"
+            >
+              <X size={18} strokeWidth={4} /> Clear Screen (Kill Switch)
+            </button>
+
             <div>
               <p
                 className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${theme.sub}`}
@@ -745,7 +770,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               </div>
               <div>
                 <p
-                  className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${theme.sub}`}
+                  className={`text-[10px] uppercase font-bold tracking-widest mt-4 mb-2 ${theme.sub}`}
                 >
                   Automated Stream Audio
                 </p>
