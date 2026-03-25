@@ -1,18 +1,34 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
-import { doc, onSnapshot } from "firebase/firestore";
+import { useParams, useLocation } from "react-router-dom";
+import { doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { db } from "../../utils/firebase";
 import { rtcConfig, joinStreamAnswer } from "../../utils/webrtc";
+import { ZoomIn, Flashlight, ZapOff } from "lucide-react";
 
 export default function ObsReceiver() {
   const { streamId } = useParams();
-  
+  const location = useLocation();
+
   const videoRef = useRef(null);
   const peerConnectionRef = useRef(null);
-  
+
   const [error, setError] = useState("Waiting for broadcaster...");
   const [connected, setConnected] = useState(false);
-  const [needsInteraction, setNeedsInteraction] = useState(false); // 🟢 Autoplay Block State
+  const [needsInteraction, setNeedsInteraction] = useState(false);
+
+  // 🟢 REMOTE CONTROL STATE
+  const [isRemoteMode, setIsRemoteMode] = useState(false);
+  const [camCapabilities, setCamCapabilities] = useState(null);
+  const [remoteZoom, setRemoteZoom] = useState(1);
+  const [remoteTorch, setRemoteTorch] = useState(false);
+
+  useEffect(() => {
+    // Check if ?control=true is in the URL
+    const searchParams = new URLSearchParams(location.search);
+    if (searchParams.get("control") === "true") {
+      setIsRemoteMode(true);
+    }
+  }, [location]);
 
   useEffect(() => {
     if (!streamId) {
@@ -21,60 +37,70 @@ export default function ObsReceiver() {
     }
 
     const streamDocRef = doc(db, "streams", streamId);
-    let hasJoined = false; 
+    let hasJoined = false;
 
     const initializeReceiver = async () => {
       try {
         const peerConnection = new RTCPeerConnection(rtcConfig);
         peerConnectionRef.current = peerConnection;
 
-        const remoteStream = new MediaStream();
-        if (videoRef.current) {
-          videoRef.current.srcObject = remoteStream;
-        }
-
         peerConnection.ontrack = (event) => {
-          event.streams[0].getTracks().forEach((track) => {
-            remoteStream.addTrack(track);
-          });
+          if (videoRef.current && event.streams && event.streams.length > 0) {
+            videoRef.current.srcObject = event.streams[0];
+          }
         };
 
         peerConnection.addEventListener("connectionstatechange", () => {
           if (peerConnection.connectionState === "connected") {
             setConnected(true);
             setError("");
-            
-            // 🟢 Handle Browser Autoplay Policy
             if (videoRef.current) {
-              videoRef.current.play().catch(err => {
-                console.warn("Autoplay blocked by browser. User interaction needed.", err);
+              videoRef.current.play().catch((err) => {
                 setNeedsInteraction(true);
               });
             }
-
           } else if (
-            peerConnection.connectionState === "disconnected" || 
+            peerConnection.connectionState === "disconnected" ||
             peerConnection.connectionState === "failed" ||
             peerConnection.connectionState === "closed"
           ) {
             setConnected(false);
             setError("Stream interrupted. Waiting to reconnect...");
-            hasJoined = false; 
+            hasJoined = false;
+            setCamCapabilities(null);
+            if (peerConnectionRef.current) {
+              peerConnectionRef.current.close();
+              peerConnectionRef.current = null;
+            }
           }
         });
 
         await joinStreamAnswer(streamId, peerConnection);
-
       } catch (err) {
-        console.error("Error joining stream:", err);
         setError("Failed to connect. Will retry automatically.");
         hasJoined = false;
+        if (peerConnectionRef.current) {
+          peerConnectionRef.current.close();
+          peerConnectionRef.current = null;
+        }
       }
     };
 
     const unsubscribe = onSnapshot(streamDocRef, (snapshot) => {
-      if (snapshot.exists() && snapshot.data().offer) {
-        if (!hasJoined) {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+
+        // 🟢 Listen for Camera Capabilities from Broadcaster
+        if (data.capabilities) {
+          setCamCapabilities(data.capabilities);
+        }
+        // Sync local remote UI with broadcaster's actual state
+        if (data.currentState) {
+          setRemoteZoom(data.currentState.zoom || 1);
+          setRemoteTorch(data.currentState.torch || false);
+        }
+
+        if (data.offer && !hasJoined) {
           hasJoined = true;
           setError("Connecting to stream...");
           initializeReceiver();
@@ -83,23 +109,23 @@ export default function ObsReceiver() {
         setConnected(false);
         setError("Waiting for camera operator to go live...");
         hasJoined = false;
-        
+        setCamCapabilities(null);
         if (peerConnectionRef.current) {
           peerConnectionRef.current.close();
           peerConnectionRef.current = null;
+        }
+        if (videoRef.current) {
+          videoRef.current.srcObject = null;
         }
       }
     });
 
     return () => {
       unsubscribe();
-      if (peerConnectionRef.current) {
-        peerConnectionRef.current.close();
-      }
+      if (peerConnectionRef.current) peerConnectionRef.current.close();
     };
   }, [streamId]);
 
-  // 🟢 Allow manual playback if browser blocks autoplay during testing
   const handleManualPlay = () => {
     if (videoRef.current) {
       videoRef.current.play();
@@ -107,32 +133,167 @@ export default function ObsReceiver() {
     }
   };
 
+  // 🟢 SEND COMMANDS TO FIREBASE
+  const sendCommand = async (type, value) => {
+    try {
+      await updateDoc(doc(db, "streams", streamId), {
+        remoteCommand: { type, value, timestamp: Date.now() },
+      });
+    } catch (err) {
+      console.error("Failed to send command", err);
+    }
+  };
+
+  const handleRemoteZoom = (e) => {
+    const val = Number(e.target.value);
+    setRemoteZoom(val); // Update UI instantly
+    sendCommand("zoom", val); // Tell broadcaster
+  };
+
+  const toggleRemoteTorch = () => {
+    const newVal = !remoteTorch;
+    setRemoteTorch(newVal);
+    sendCommand("torch", newVal);
+  };
+
   return (
-    <div style={{ width: "100vw", height: "100vh", backgroundColor: "black", margin: 0, padding: 0, overflow: "hidden", display: "flex", justifyContent: "center", alignItems: "center", position: "relative" }}>
-      
-      {/* STATUS OVERLAYS */}
+    <div
+      style={{
+        width: "100vw",
+        height: "100vh",
+        backgroundColor: "black",
+        margin: 0,
+        padding: 0,
+        overflow: "hidden",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        position: "relative",
+        fontFamily: "sans-serif",
+      }}
+    >
       {!connected && (
-        <div style={{ color: "white", fontFamily: "monospace", textAlign: "center", zIndex: 10 }}>
-          <p style={{ fontSize: "24px", color: error.includes("Failed") ? "#ef4444" : "#f59e0b", fontWeight: "bold" }}>
-            {error.includes("Failed") ? "🔴 " : "🟡 "}{error}
+        <div style={{ color: "white", textAlign: "center", zIndex: 10 }}>
+          <p
+            style={{
+              fontSize: "24px",
+              color: error.includes("Failed") ? "#ef4444" : "#f59e0b",
+              fontWeight: "bold",
+            }}
+          >
+            {error.includes("Failed") ? "🔴 " : "🟡 "}
+            {error}
           </p>
-          <p style={{ fontSize: "14px", opacity: 0.7, marginTop: "8px" }}>Stream ID: {streamId}</p>
+          <p style={{ fontSize: "14px", opacity: 0.7, marginTop: "8px" }}>
+            Stream ID: {streamId}
+          </p>
         </div>
       )}
 
-      {/* 🟢 BROWSER AUTOPLAY OVERLAY (Only shows if testing in Chrome/Safari tab) */}
       {connected && needsInteraction && (
-        <div 
+        <div
           onClick={handleManualPlay}
-          style={{ position: "absolute", inset: 0, backgroundColor: "rgba(0,0,0,0.8)", zIndex: 50, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", cursor: "pointer", color: "white" }}
+          style={{
+            position: "absolute",
+            inset: 0,
+            backgroundColor: "rgba(0,0,0,0.8)",
+            zIndex: 50,
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            alignItems: "center",
+            cursor: "pointer",
+            color: "white",
+          }}
         >
           <div style={{ fontSize: "48px", marginBottom: "20px" }}>▶️</div>
-          <h2 style={{ fontSize: "24px", fontWeight: "bold", fontFamily: "sans-serif" }}>Click to Unmute & Play</h2>
-          <p style={{ opacity: 0.7, marginTop: "10px", fontFamily: "sans-serif" }}>(Browser security requires a click to play audio)</p>
+          <h2 style={{ fontSize: "24px", fontWeight: "bold" }}>
+            Click to Unmute & Play
+          </h2>
         </div>
       )}
 
-      {/* THE ACTUAL VIDEO STREAM */}
+      {/* 🟢 THE REMOTE CONTROL DASHBOARD (Only visible if ?control=true) */}
+      {isRemoteMode && connected && camCapabilities && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: "40px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            backgroundColor: "rgba(15, 23, 42, 0.85)",
+            backdropFilter: "blur(10px)",
+            border: "2px solid rgba(255,255,255,0.1)",
+            padding: "15px 30px",
+            borderRadius: "50px",
+            display: "flex",
+            alignItems: "center",
+            gap: "24px",
+            zIndex: 100,
+            boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
+          }}
+        >
+          <div
+            style={{
+              color: "white",
+              fontSize: "12px",
+              fontWeight: "bold",
+              textTransform: "uppercase",
+              letterSpacing: "2px",
+              opacity: 0.5,
+              marginRight: "10px",
+            }}
+          >
+            Remote PTZ
+          </div>
+
+          {camCapabilities.zoom && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                width: "200px",
+              }}
+            >
+              <ZoomIn size={20} color="white" />
+              <input
+                type="range"
+                min={camCapabilities.zoom.min}
+                max={camCapabilities.zoom.max}
+                step={camCapabilities.zoom.step}
+                value={remoteZoom}
+                onChange={handleRemoteZoom}
+                style={{ flex: 1, accentColor: "#14b8a6", cursor: "pointer" }}
+              />
+            </div>
+          )}
+
+          {camCapabilities.torch && (
+            <button
+              onClick={toggleRemoteTorch}
+              style={{
+                backgroundColor: remoteTorch
+                  ? "#f59e0b"
+                  : "rgba(255,255,255,0.1)",
+                border: "none",
+                width: "45px",
+                height: "45px",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                color: remoteTorch ? "black" : "white",
+                transition: "0.2s",
+              }}
+            >
+              {remoteTorch ? <Flashlight size={20} /> : <ZapOff size={20} />}
+            </button>
+          )}
+        </div>
+      )}
+
       <video
         ref={videoRef}
         autoPlay
@@ -142,7 +303,7 @@ export default function ObsReceiver() {
           width: "100%",
           height: "100%",
           objectFit: "contain",
-          display: connected ? "block" : "none"
+          display: connected ? "block" : "none",
         }}
       />
     </div>

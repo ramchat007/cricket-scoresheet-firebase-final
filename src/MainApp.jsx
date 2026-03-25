@@ -45,6 +45,7 @@ import PlayerPhotoUpload from "./components/TournamentTabs/PlayerPhotoUpload.jsx
 import BracketBuilder from "./components/BracketBuilder.jsx";
 import Broadcaster from "./components/Overlay/Broadcaster.jsx";
 import ObsReceiver from "./components/Overlay/ObsReceiver.jsx";
+import RemoteControl from "./components/Overlay/RemoteControl.jsx";
 
 // ----------------------------------------------------------------------
 // 1. APP CONTENT (Inner Component)
@@ -65,7 +66,7 @@ function AppContent() {
 
   // Route Helpers
   const isOverlay = location.pathname.startsWith("/overlay");
-  const obsCast = location.pathname === "/broadcast" || location.pathname.startsWith("/obs");
+  const obsCast = location.pathname === "/broadcast" || location.pathname.startsWith("/obs") || location.pathname.startsWith("/remote");
   const isRegistration =
     location.pathname.startsWith("/register-player") ||
     location.pathname.startsWith("/view-players");
@@ -145,6 +146,7 @@ function AppContent() {
           <Routes>
             <Route path="/broadcast" element={<Broadcaster />} />
             <Route path="/obs/:streamId" element={<ObsReceiver />} />
+            <Route path="/remote/:streamId" element={<RemoteControl />} />
           </Routes>
         </Suspense>
       </div>
