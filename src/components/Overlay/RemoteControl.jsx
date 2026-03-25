@@ -25,15 +25,14 @@ export default function RemoteControl() {
   const { streamId } = useParams();
 
   const [camCapabilities, setCamCapabilities] = useState(null);
+  const [deviceHealth, setDeviceHealth] = useState(null);
 
-  // Local UI State mapped to the Broadcaster
   const [remoteZoom, setRemoteZoom] = useState(1);
   const [remoteTorch, setRemoteTorch] = useState(false);
   const [remoteMuted, setRemoteMuted] = useState(false);
   const [remoteLens, setRemoteLens] = useState("");
-  const [remoteOled, setRemoteOled] = useState(false); // 🟢 OLED Sleep State
+  const [remoteOled, setRemoteOled] = useState(false);
   const [isLive, setIsLive] = useState(false);
-  const [deviceHealth, setDeviceHealth] = useState(null);
 
   useEffect(() => {
     if (!streamId) return;
@@ -48,24 +47,23 @@ export default function RemoteControl() {
         if (data.capabilities) setCamCapabilities(data.capabilities);
         if (data.health) setDeviceHealth(data.health);
 
-        // Auto-sync UI if the phone operator changes something manually
         if (data.currentState) {
           setRemoteZoom(data.currentState.zoom || 1);
           setRemoteTorch(data.currentState.torch || false);
           setRemoteMuted(data.currentState.isMuted || false);
           setRemoteLens(data.currentState.selectedCamera || "");
-          setRemoteOled(data.currentState.oled || false); // Sync OLED state
+          setRemoteOled(data.currentState.oled || false);
         }
       } else {
         setIsLive(false);
         setCamCapabilities(null);
+        setDeviceHealth(null);
       }
     });
 
     return () => unsubscribe();
   }, [streamId]);
 
-  // 🟢 BEAM COMMANDS TO PHONE
   const sendCommand = async (type, value) => {
     try {
       await updateDoc(doc(db, "streams", streamId), {
@@ -100,7 +98,6 @@ export default function RemoteControl() {
     sendCommand("lens", val);
   };
 
-  // 🟢 TOGGLE OLED SLEEP
   const toggleOledSleep = () => {
     const newVal = !remoteOled;
     setRemoteOled(newVal);
@@ -126,47 +123,47 @@ export default function RemoteControl() {
         </h1>
         <p className="text-gray-400 mt-2">
           Waiting for camera{" "}
-          <span className="text-cyan-500 font-mono">{streamId}</span> to go
-          live...
+          <span className="text-cyan-500 font-mono">{streamId}</span>...
         </p>
       </div>
     );
   }
 
   return (
-    <div className="h-screen w-screen bg-gray-950 flex flex-col items-center justify-center p-6 font-sans">
-      <div className="w-full max-w-md bg-gray-900 border border-gray-800 rounded-3xl p-8 shadow-2xl">
-        <div className="flex justify-between items-center mb-8 border-b border-gray-800 pb-4">
+    <div className="min-h-screen w-screen bg-gray-950 flex items-center justify-center p-4 font-sans">
+      {/* 🟢 COMPACT WIDE CONTAINER */}
+      <div className="w-full max-w-3xl bg-gray-900 border border-gray-800 rounded-3xl p-6 shadow-2xl">
+        {/* HEADER */}
+        <div className="flex justify-between items-center mb-4 border-b border-gray-800 pb-4">
           <div>
-            <h1 className="text-2xl font-black uppercase tracking-widest text-white">
+            <h1 className="text-xl font-black uppercase tracking-widest text-white">
               PTZ Remote
             </h1>
-            <p className="text-xs text-gray-500 font-mono mt-1">
+            <p className="text-[10px] text-gray-500 font-mono mt-1">
               ID: {streamId}
             </p>
           </div>
           <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 px-3 py-1 rounded-full animate-pulse">
-            <Radio size={14} />
+            <Radio size={12} />
             <span className="text-[10px] font-black uppercase tracking-widest">
               Live
             </span>
           </div>
         </div>
 
-        {/* 🟢 LIVE TELEMETRY DASHBOARD */}
-        {deviceHealth && (
-          <div className="bg-gray-950 rounded-2xl border border-gray-800 p-4 mb-6 grid grid-cols-4 gap-2">
-            {/* Battery */}
-            <div className="flex flex-col items-center justify-center p-2 bg-gray-900 rounded-xl border border-gray-800">
+        {/* 🟢 SLEEK TELEMETRY STRIP */}
+        {deviceHealth ? (
+          <div className="flex justify-between bg-gray-950 rounded-xl border border-gray-800 p-3 mb-6">
+            <div className="flex items-center gap-2 px-4 border-r border-gray-800 last:border-0">
               {deviceHealth.isCharging ? (
-                <BatteryCharging size={18} className="text-emerald-500 mb-1" />
+                <BatteryCharging size={16} className="text-emerald-500" />
               ) : (
                 <Battery
-                  size={18}
+                  size={16}
                   className={
                     deviceHealth.batteryLevel <= 20
-                      ? "text-red-500 mb-1"
-                      : "text-gray-400 mb-1"
+                      ? "text-red-500"
+                      : "text-gray-400"
                   }
                 />
               )}
@@ -176,15 +173,13 @@ export default function RemoteControl() {
                   : "N/A"}
               </span>
             </div>
-
-            {/* Network & Latency */}
-            <div className="flex flex-col items-center justify-center p-2 bg-gray-900 rounded-xl border border-gray-800">
+            <div className="flex items-center gap-2 px-4 border-r border-gray-800 last:border-0">
               <Wifi
-                size={18}
+                size={16}
                 className={
                   deviceHealth.latency > 150
-                    ? "text-amber-500 mb-1"
-                    : "text-cyan-500 mb-1"
+                    ? "text-amber-500"
+                    : "text-cyan-500"
                 }
               />
               <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">
@@ -193,29 +188,27 @@ export default function RemoteControl() {
                   : "N/A"}
               </span>
             </div>
-
-            {/* Frame Rate (Thermal proxy) */}
-            <div className="flex flex-col items-center justify-center p-2 bg-gray-900 rounded-xl border border-gray-800">
+            <div className="flex items-center gap-2 px-4 border-r border-gray-800 last:border-0">
               <Activity
-                size={18}
+                size={16}
                 className={
-                  deviceHealth.fps < 20
-                    ? "text-red-500 mb-1"
-                    : "text-emerald-500 mb-1"
+                  deviceHealth.fps < 20 ? "text-red-500" : "text-emerald-500"
                 }
               />
               <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">
                 {deviceHealth.fps || 0} FPS
               </span>
             </div>
-
-            {/* Bitrate */}
-            <div className="flex flex-col items-center justify-center p-2 bg-gray-900 rounded-xl border border-gray-800">
-              <Zap size={18} className="text-amber-500 mb-1" />
+            <div className="flex items-center gap-2 px-4">
+              <Zap size={16} className="text-amber-500" />
               <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">
                 {deviceHealth.bitrate ? `${deviceHealth.bitrate} kbps` : "N/A"}
               </span>
             </div>
+          </div>
+        ) : (
+          <div className="text-center py-2 mb-6 text-gray-600 text-[10px] font-bold uppercase tracking-widest bg-gray-950 rounded-xl border border-gray-800">
+            Awaiting Telemetry Data...
           </div>
         )}
 
@@ -224,118 +217,112 @@ export default function RemoteControl() {
             Waiting for lens data...
           </div>
         ) : (
-          <div className="space-y-6">
-            {/* 🟢 NEW: CAMERA SCREEN OLED TOGGLE */}
-            <div className="bg-gray-950 p-5 rounded-2xl border border-indigo-900/50 flex justify-between items-center shadow-inner">
-              <label className="text-xs font-black uppercase tracking-widest text-indigo-400 flex items-center gap-2">
-                {remoteOled ? <Moon size={16} /> : <Sun size={16} />}
-                Camera Screen
-              </label>
-              <button
-                onClick={toggleOledSleep}
-                className={`px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-widest transition-all shadow-lg active:scale-95 border ${
-                  remoteOled
-                    ? "bg-indigo-600 text-white border-indigo-500 shadow-[0_0_20px_rgba(79,70,229,0.4)]"
-                    : "bg-gray-800 text-gray-400 border-gray-700"
-                }`}>
-                {remoteOled ? "Sleeping" : "Awake"}
-              </button>
-            </div>
-
-            {/* LENS SWITCHER */}
-            {camCapabilities.cameras && camCapabilities.cameras.length > 0 && (
-              <div className="bg-gray-950 p-5 rounded-2xl border border-gray-800">
-                <label className="text-xs font-black uppercase tracking-widest text-gray-400 flex items-center gap-2 mb-3">
-                  <Video size={16} className="text-cyan-500" /> Active Lens
-                </label>
-                <select
-                  value={remoteLens}
-                  onChange={handleLensChange}
-                  className="w-full bg-gray-800 border border-gray-700 text-white font-bold text-sm rounded-xl px-4 py-3 outline-none focus:border-cyan-500">
-                  {camCapabilities.cameras.map((cam) => (
-                    <option key={cam.deviceId} value={cam.deviceId}>
-                      {cam.label || `Lens ${cam.deviceId.substring(0, 5)}`}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* AUDIO MUTE TOGGLE */}
-            <div className="bg-gray-950 p-5 rounded-2xl border border-gray-800 flex justify-between items-center">
-              <label className="text-xs font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
-                {remoteMuted ? (
-                  <MicOff size={16} className="text-red-500" />
-                ) : (
-                  <Mic size={16} className="text-emerald-500" />
+          /* 🟢 2-COLUMN COMPACT GRID */
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* LEFT COLUMN: System Controls */}
+            <div className="space-y-4">
+              {camCapabilities.cameras &&
+                camCapabilities.cameras.length > 0 && (
+                  <div className="bg-gray-950 p-3.5 rounded-xl border border-gray-800">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-1.5 mb-2">
+                      <Video size={14} className="text-cyan-500" /> Active Lens
+                    </label>
+                    <select
+                      value={remoteLens}
+                      onChange={handleLensChange}
+                      className="w-full bg-gray-800 border border-gray-700 text-white font-bold text-xs rounded-lg px-3 py-2 outline-none focus:border-cyan-500">
+                      {camCapabilities.cameras.map((cam) => (
+                        <option key={cam.deviceId} value={cam.deviceId}>
+                          {cam.label || `Lens ${cam.deviceId.substring(0, 5)}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 )}
-                Microphone
-              </label>
-              <button
-                onClick={toggleRemoteMute}
-                className={`px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-widest transition-all shadow-lg active:scale-95 ${
-                  remoteMuted
-                    ? "bg-red-500/20 text-red-500 border border-red-500/50"
-                    : "bg-emerald-500/20 text-emerald-500 border border-emerald-500/50"
-                }`}>
-                {remoteMuted ? "Muted" : "Active"}
-              </button>
-            </div>
 
-            {/* ZOOM CONTROL */}
-            {camCapabilities.zoom && (
-              <div className="bg-gray-950 p-5 rounded-2xl border border-gray-800">
-                <div className="flex justify-between items-center mb-4">
-                  <label className="text-xs font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
-                    <ZoomIn size={16} className="text-cyan-500" /> Optical Zoom
-                  </label>
-                  <span className="text-cyan-500 font-mono font-bold text-sm">
-                    {remoteZoom.toFixed(1)}x
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={camCapabilities.zoom.min}
-                  max={camCapabilities.zoom.max}
-                  step={camCapabilities.zoom.step}
-                  value={remoteZoom}
-                  onChange={handleRemoteZoom}
-                  className="w-full accent-cyan-500 h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer"
-                />
-              </div>
-            )}
-
-            {/* TORCH CONTROL */}
-            {camCapabilities.torch && (
-              <div className="bg-gray-950 p-5 rounded-2xl border border-gray-800 flex justify-between items-center">
-                <label className="text-xs font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
-                  <Flashlight size={16} className="text-amber-500" /> Camera
-                  Flash
-                </label>
+              <div className="grid grid-cols-2 gap-4">
+                {/* Audio */}
                 <button
-                  onClick={toggleRemoteTorch}
-                  className={`w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-lg active:scale-95 ${
-                    remoteTorch
-                      ? "bg-amber-500 text-black shadow-[0_0_20px_rgba(245,158,11,0.4)]"
-                      : "bg-gray-800 text-gray-400 border border-gray-700"
+                  onClick={toggleRemoteMute}
+                  className={`p-3 rounded-xl flex flex-col items-center justify-center gap-1.5 font-bold text-[10px] uppercase tracking-widest transition-all border ${
+                    remoteMuted
+                      ? "bg-red-500/20 text-red-500 border-red-500/50"
+                      : "bg-gray-950 text-emerald-500 border-gray-800"
                   }`}>
-                  {remoteTorch ? (
-                    <Flashlight size={24} />
-                  ) : (
-                    <ZapOff size={24} />
-                  )}
+                  {remoteMuted ? <MicOff size={18} /> : <Mic size={18} />}
+                  {remoteMuted ? "Muted" : "Mic Active"}
+                </button>
+
+                {/* OLED */}
+                <button
+                  onClick={toggleOledSleep}
+                  className={`p-3 rounded-xl flex flex-col items-center justify-center gap-1.5 font-bold text-[10px] uppercase tracking-widest transition-all border ${
+                    remoteOled
+                      ? "bg-indigo-600 text-white border-indigo-500"
+                      : "bg-gray-950 text-indigo-400 border-gray-800"
+                  }`}>
+                  {remoteOled ? <Moon size={18} /> : <Sun size={18} />}
+                  {remoteOled ? "Screen Off" : "Screen On"}
                 </button>
               </div>
-            )}
+            </div>
 
-            {/* MASTER KILL SWITCH */}
-            <button
-              onClick={handleKillStream}
-              className="w-full mt-4 py-4 bg-red-600/10 hover:bg-red-600/20 text-red-500 border border-red-500/30 rounded-2xl font-black uppercase tracking-widest text-xs transition-all active:scale-95 flex items-center justify-center gap-2">
-              <Power size={16} /> Kill Stream
-            </button>
+            {/* RIGHT COLUMN: Camera Hardware Controls */}
+            <div className="space-y-4 flex flex-col">
+              {camCapabilities.zoom && (
+                <div className="bg-gray-950 p-4 rounded-xl border border-gray-800 flex-1 flex flex-col justify-center">
+                  <div className="flex justify-between items-center mb-3">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
+                      <ZoomIn size={14} className="text-cyan-500" /> Optical
+                      Zoom
+                    </label>
+                    <span className="text-cyan-500 font-mono font-bold text-xs">
+                      {remoteZoom.toFixed(1)}x
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={camCapabilities.zoom.min}
+                    max={camCapabilities.zoom.max}
+                    step={camCapabilities.zoom.step}
+                    value={remoteZoom}
+                    onChange={handleRemoteZoom}
+                    className="w-full accent-cyan-500 h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+              )}
+
+              {camCapabilities.torch && (
+                <div className="bg-gray-950 p-3.5 rounded-xl border border-gray-800 flex justify-between items-center">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
+                    <Flashlight size={14} className="text-amber-500" />{" "}
+                    Flashlight
+                  </label>
+                  <button
+                    onClick={toggleRemoteTorch}
+                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                      remoteTorch
+                        ? "bg-amber-500 text-black shadow-[0_0_15px_rgba(245,158,11,0.4)]"
+                        : "bg-gray-800 text-gray-400 border border-gray-700"
+                    }`}>
+                    {remoteTorch ? (
+                      <Flashlight size={16} />
+                    ) : (
+                      <ZapOff size={16} />
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
+
+        {/* COMPACT MASTER KILL SWITCH */}
+        <button
+          onClick={handleKillStream}
+          className="w-full mt-6 py-3 bg-red-600/10 hover:bg-red-600/20 text-red-500 border border-red-500/30 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-2">
+          <Power size={14} /> Emergency Kill Stream
+        </button>
       </div>
     </div>
   );
