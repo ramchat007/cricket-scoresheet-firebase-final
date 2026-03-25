@@ -14,6 +14,11 @@ import {
   Power,
   Moon,
   Sun,
+  Battery,
+  BatteryCharging,
+  Wifi,
+  Activity,
+  Zap,
 } from "lucide-react";
 
 export default function RemoteControl() {
@@ -28,6 +33,7 @@ export default function RemoteControl() {
   const [remoteLens, setRemoteLens] = useState("");
   const [remoteOled, setRemoteOled] = useState(false); // 🟢 OLED Sleep State
   const [isLive, setIsLive] = useState(false);
+  const [deviceHealth, setDeviceHealth] = useState(null);
 
   useEffect(() => {
     if (!streamId) return;
@@ -40,6 +46,7 @@ export default function RemoteControl() {
         setIsLive(true);
 
         if (data.capabilities) setCamCapabilities(data.capabilities);
+        if (data.health) setDeviceHealth(data.health);
 
         // Auto-sync UI if the phone operator changes something manually
         if (data.currentState) {
@@ -146,13 +153,78 @@ export default function RemoteControl() {
           </div>
         </div>
 
+        {/* 🟢 LIVE TELEMETRY DASHBOARD */}
+        {deviceHealth && (
+          <div className="bg-gray-950 rounded-2xl border border-gray-800 p-4 mb-6 grid grid-cols-4 gap-2">
+            {/* Battery */}
+            <div className="flex flex-col items-center justify-center p-2 bg-gray-900 rounded-xl border border-gray-800">
+              {deviceHealth.isCharging ? (
+                <BatteryCharging size={18} className="text-emerald-500 mb-1" />
+              ) : (
+                <Battery
+                  size={18}
+                  className={
+                    deviceHealth.batteryLevel <= 20
+                      ? "text-red-500 mb-1"
+                      : "text-gray-400 mb-1"
+                  }
+                />
+              )}
+              <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">
+                {deviceHealth.batteryLevel !== undefined
+                  ? `${deviceHealth.batteryLevel}%`
+                  : "N/A"}
+              </span>
+            </div>
+
+            {/* Network & Latency */}
+            <div className="flex flex-col items-center justify-center p-2 bg-gray-900 rounded-xl border border-gray-800">
+              <Wifi
+                size={18}
+                className={
+                  deviceHealth.latency > 150
+                    ? "text-amber-500 mb-1"
+                    : "text-cyan-500 mb-1"
+                }
+              />
+              <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">
+                {deviceHealth.latency !== undefined
+                  ? `${deviceHealth.latency}ms`
+                  : "N/A"}
+              </span>
+            </div>
+
+            {/* Frame Rate (Thermal proxy) */}
+            <div className="flex flex-col items-center justify-center p-2 bg-gray-900 rounded-xl border border-gray-800">
+              <Activity
+                size={18}
+                className={
+                  deviceHealth.fps < 20
+                    ? "text-red-500 mb-1"
+                    : "text-emerald-500 mb-1"
+                }
+              />
+              <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">
+                {deviceHealth.fps || 0} FPS
+              </span>
+            </div>
+
+            {/* Bitrate */}
+            <div className="flex flex-col items-center justify-center p-2 bg-gray-900 rounded-xl border border-gray-800">
+              <Zap size={18} className="text-amber-500 mb-1" />
+              <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">
+                {deviceHealth.bitrate ? `${deviceHealth.bitrate} kbps` : "N/A"}
+              </span>
+            </div>
+          </div>
+        )}
+
         {!camCapabilities ? (
           <div className="text-center py-10 text-gray-500 text-sm font-bold uppercase tracking-widest">
             Waiting for lens data...
           </div>
         ) : (
           <div className="space-y-6">
-            
             {/* 🟢 NEW: CAMERA SCREEN OLED TOGGLE */}
             <div className="bg-gray-950 p-5 rounded-2xl border border-indigo-900/50 flex justify-between items-center shadow-inner">
               <label className="text-xs font-black uppercase tracking-widest text-indigo-400 flex items-center gap-2">
@@ -165,8 +237,7 @@ export default function RemoteControl() {
                   remoteOled
                     ? "bg-indigo-600 text-white border-indigo-500 shadow-[0_0_20px_rgba(79,70,229,0.4)]"
                     : "bg-gray-800 text-gray-400 border-gray-700"
-                }`}
-              >
+                }`}>
                 {remoteOled ? "Sleeping" : "Awake"}
               </button>
             </div>
@@ -180,8 +251,7 @@ export default function RemoteControl() {
                 <select
                   value={remoteLens}
                   onChange={handleLensChange}
-                  className="w-full bg-gray-800 border border-gray-700 text-white font-bold text-sm rounded-xl px-4 py-3 outline-none focus:border-cyan-500"
-                >
+                  className="w-full bg-gray-800 border border-gray-700 text-white font-bold text-sm rounded-xl px-4 py-3 outline-none focus:border-cyan-500">
                   {camCapabilities.cameras.map((cam) => (
                     <option key={cam.deviceId} value={cam.deviceId}>
                       {cam.label || `Lens ${cam.deviceId.substring(0, 5)}`}
@@ -207,8 +277,7 @@ export default function RemoteControl() {
                   remoteMuted
                     ? "bg-red-500/20 text-red-500 border border-red-500/50"
                     : "bg-emerald-500/20 text-emerald-500 border border-emerald-500/50"
-                }`}
-              >
+                }`}>
                 {remoteMuted ? "Muted" : "Active"}
               </button>
             </div>
@@ -249,8 +318,7 @@ export default function RemoteControl() {
                     remoteTorch
                       ? "bg-amber-500 text-black shadow-[0_0_20px_rgba(245,158,11,0.4)]"
                       : "bg-gray-800 text-gray-400 border border-gray-700"
-                  }`}
-                >
+                  }`}>
                   {remoteTorch ? (
                     <Flashlight size={24} />
                   ) : (
@@ -263,8 +331,7 @@ export default function RemoteControl() {
             {/* MASTER KILL SWITCH */}
             <button
               onClick={handleKillStream}
-              className="w-full mt-4 py-4 bg-red-600/10 hover:bg-red-600/20 text-red-500 border border-red-500/30 rounded-2xl font-black uppercase tracking-widest text-xs transition-all active:scale-95 flex items-center justify-center gap-2"
-            >
+              className="w-full mt-4 py-4 bg-red-600/10 hover:bg-red-600/20 text-red-500 border border-red-500/30 rounded-2xl font-black uppercase tracking-widest text-xs transition-all active:scale-95 flex items-center justify-center gap-2">
               <Power size={16} /> Kill Stream
             </button>
           </div>
