@@ -12,6 +12,8 @@ import {
   MicOff,
   Video,
   Power,
+  Moon,
+  Sun,
 } from "lucide-react";
 
 export default function RemoteControl() {
@@ -24,6 +26,7 @@ export default function RemoteControl() {
   const [remoteTorch, setRemoteTorch] = useState(false);
   const [remoteMuted, setRemoteMuted] = useState(false);
   const [remoteLens, setRemoteLens] = useState("");
+  const [remoteOled, setRemoteOled] = useState(false); // 🟢 OLED Sleep State
   const [isLive, setIsLive] = useState(false);
 
   useEffect(() => {
@@ -44,6 +47,7 @@ export default function RemoteControl() {
           setRemoteTorch(data.currentState.torch || false);
           setRemoteMuted(data.currentState.isMuted || false);
           setRemoteLens(data.currentState.selectedCamera || "");
+          setRemoteOled(data.currentState.oled || false); // Sync OLED state
         }
       } else {
         setIsLive(false);
@@ -87,6 +91,13 @@ export default function RemoteControl() {
     const val = e.target.value;
     setRemoteLens(val);
     sendCommand("lens", val);
+  };
+
+  // 🟢 TOGGLE OLED SLEEP
+  const toggleOledSleep = () => {
+    const newVal = !remoteOled;
+    setRemoteOled(newVal);
+    sendCommand("oled", newVal);
   };
 
   const handleKillStream = () => {
@@ -141,6 +152,25 @@ export default function RemoteControl() {
           </div>
         ) : (
           <div className="space-y-6">
+            
+            {/* 🟢 NEW: CAMERA SCREEN OLED TOGGLE */}
+            <div className="bg-gray-950 p-5 rounded-2xl border border-indigo-900/50 flex justify-between items-center shadow-inner">
+              <label className="text-xs font-black uppercase tracking-widest text-indigo-400 flex items-center gap-2">
+                {remoteOled ? <Moon size={16} /> : <Sun size={16} />}
+                Camera Screen
+              </label>
+              <button
+                onClick={toggleOledSleep}
+                className={`px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-widest transition-all shadow-lg active:scale-95 border ${
+                  remoteOled
+                    ? "bg-indigo-600 text-white border-indigo-500 shadow-[0_0_20px_rgba(79,70,229,0.4)]"
+                    : "bg-gray-800 text-gray-400 border-gray-700"
+                }`}
+              >
+                {remoteOled ? "Sleeping" : "Awake"}
+              </button>
+            </div>
+
             {/* LENS SWITCHER */}
             {camCapabilities.cameras && camCapabilities.cameras.length > 0 && (
               <div className="bg-gray-950 p-5 rounded-2xl border border-gray-800">

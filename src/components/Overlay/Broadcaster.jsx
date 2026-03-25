@@ -17,6 +17,7 @@ import {
   ZapOff,
   ZoomIn,
   Video,
+  Moon,
 } from "lucide-react";
 import {
   rtcConfig,
@@ -53,6 +54,8 @@ export default function Broadcaster() {
   const [zoomCap, setZoomCap] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(1);
 
+  const [isOledSleep, setIsOledSleep] = useState(false);
+
   // --- WAKE LOCK ---
   const requestWakeLock = async () => {
     try {
@@ -70,6 +73,19 @@ export default function Broadcaster() {
       wakeLockRef.current = null;
     }
   };
+
+  // 🟢 AUTO-SYNC STATE TO FIREBASE
+  useEffect(() => {
+    if (isStreaming && streamId) {
+      updateDoc(doc(db, "streams", streamId), {
+        "currentState.isMuted": isMuted,
+        "currentState.torch": torchOn,
+        "currentState.zoom": zoomLevel,
+        "currentState.selectedCamera": selectedCamera,
+        "currentState.oled": isOledSleep // <-- Add this line
+      }).catch(() => {});
+    }
+  }, [isMuted, torchOn, zoomLevel, selectedCamera, isOledSleep, isStreaming, streamId]);
 
   useEffect(() => {
     let savedId = localStorage.getItem("cricsync_stream_id");
@@ -157,14 +173,14 @@ export default function Broadcaster() {
         } else if (cmd.type === "mute") {
           setIsMuted(cmd.value);
           if (activeStreamRef.current) {
-            activeStreamRef.current
-              .getAudioTracks()
-              .forEach((t) => (t.enabled = !cmd.value));
+            activeStreamRef.current.getAudioTracks().forEach(t => t.enabled = !cmd.value);
           }
         } else if (cmd.type === "lens") {
           switchLiveCamera(cmd.value);
         } else if (cmd.type === "stop") {
           handleStopStream();
+        } else if (cmd.type === "oled") { // <-- Add this block
+          setIsOledSleep(cmd.value);
         }
       }
     });
@@ -646,6 +662,19 @@ export default function Broadcaster() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+      {/* 🟢 OLED SLEEP MODE OVERLAY */}
+      {isOledSleep && (
+        <div 
+          onClick={() => setIsOledSleep(false)} 
+          className="fixed inset-0 z-[9999] bg-black flex items-center justify-center cursor-pointer"
+        >
+          <div className="flex flex-col items-center opacity-30">
+            <Moon size={48} className="text-indigo-500 mb-4" />
+            <p className="text-white text-xs font-black uppercase tracking-widest">OLED Sleep Mode Active</p>
+            <p className="text-gray-500 text-[10px] mt-2">Tap anywhere to wake</p>
           </div>
         </div>
       )}
