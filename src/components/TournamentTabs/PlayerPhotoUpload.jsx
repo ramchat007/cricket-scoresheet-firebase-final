@@ -17,9 +17,10 @@ import {
   User,
   Edit3,
 } from "lucide-react";
-
-// 🟢 CROPPER IMPORT
 import Cropper from "react-easy-crop";
+
+const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 
 // --- CROP UTILITY FUNCTIONS ---
 const createImage = (url) =>
@@ -27,7 +28,6 @@ const createImage = (url) =>
     const image = new Image();
     image.addEventListener("load", () => resolve(image));
     image.addEventListener("error", (error) => reject(error));
-    // 🟢 CRITICAL: Allows existing Firebase images to be loaded into the canvas without CORS errors
     image.setAttribute("crossOrigin", "anonymous");
     image.src = url;
   });
@@ -55,7 +55,20 @@ async function getCroppedImg(imageSrc, pixelCrop) {
     TARGET_SIZE,
   );
 
-  return canvas.toDataURL("image/jpeg", 0.8);
+  // 🟢 MODERN APPROACH: Return a real File/Blob instead of a Base64 string
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error("Canvas is empty"));
+          return;
+        }
+        resolve(blob);
+      },
+      "image/jpeg",
+      0.8,
+    );
+  });
 }
 
 export default function PlayerPhotoUpload() {
@@ -66,10 +79,9 @@ export default function PlayerPhotoUpload() {
   const [search, setSearch] = useState("");
   const [selectedPlayer, setSelectedPlayer] = useState(null);
 
-  const [finalPhotoBase64, setFinalPhotoBase64] = useState(null);
+  const [finalPhotoBlob, setFinalPhotoBlob] = useState(null);
   const [preview, setPreview] = useState(null);
 
-  // --- CROPPER STATE ---
   const [cropModalOpen, setCropModalOpen] = useState(false);
   const [imageToCrop, setImageToCrop] = useState(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -123,7 +135,7 @@ export default function PlayerPhotoUpload() {
   // 2. HANDLE PLAYER SELECTION
   const handleSelectPlayer = async (player) => {
     setSelectedPlayer(player);
-    setFinalPhotoBase64(null);
+    setFinalPhotoBlob(null);
     setSuccess(false);
 
     let existingPhoto =
@@ -145,7 +157,6 @@ export default function PlayerPhotoUpload() {
     }
   };
 
-  // 3A. HANDLE NEW IMAGE SELECTION
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -161,7 +172,6 @@ export default function PlayerPhotoUpload() {
     e.target.value = null;
   };
 
-  // 3B. 🟢 HANDLE EDIT EXISTING IMAGE (Safely inside the component now!)
   const handleEditExistingPhoto = () => {
     if (!preview) return;
     setImageToCrop(preview);
@@ -170,24 +180,26 @@ export default function PlayerPhotoUpload() {
     setCropModalOpen(true);
   };
 
-  // 3C. CROP HANDLERS
   const onCropComplete = useCallback((croppedArea, croppedAreaPixels) => {
     setCroppedAreaPixels(croppedAreaPixels);
   }, []);
 
   const handleSaveCrop = async () => {
     try {
-      const croppedImage = await getCroppedImg(imageToCrop, croppedAreaPixels);
-      setFinalPhotoBase64(croppedImage);
-      setPreview(croppedImage);
+      const croppedBlob = await getCroppedImg(imageToCrop, croppedAreaPixels);
+
+      // 🟢 Save the raw file for Cloudinary
+      setFinalPhotoBlob(croppedBlob);
+
+      // 🟢 Create a temporary local URL just for the preview UI
+      setPreview(URL.createObjectURL(croppedBlob));
+
       setCropModalOpen(false);
       setImageToCrop(null);
       setSuccess(false);
     } catch (e) {
       console.error(e);
-      alert(
-        "Failed to crop image. It might be blocked by browser security. Please upload a new photo from your gallery.",
-      );
+      alert("Failed to crop image.");
     }
   };
 
@@ -196,13 +208,39 @@ export default function PlayerPhotoUpload() {
     setImageToCrop(null);
   };
 
-  // 4. UPLOAD LOGIC
+  // 🟢 4. CLOUDINARY UPLOAD & FIREBASE SAVE LOGIC
   const handleUpload = async () => {
-    if (!selectedPlayer || !finalPhotoBase64)
+    if (!selectedPlayer || !finalPhotoBlob)
       return alert("Please select your name and a photo.");
 
     setUploading(true);
     try {
+      let finalPhotoUrl = null;
+
+      // 1. Upload Blob to Cloudinary
+      const formData = new FormData();
+      formData.append("file", finalPhotoBlob);
+      formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+      formData.append("cloud_name", CLOUDINARY_CLOUD_NAME);
+
+      const res = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
+
+      const data = await res.json();
+
+      if (data.secure_url) {
+        finalPhotoUrl = data.secure_url; // 🟢 We got the Cloudinary link!
+      } else {
+        console.error("Cloudinary Error:", data);
+        throw new Error("Photo upload failed on Cloudinary side.");
+      }
+
+      // 2. Save the Cloudinary URL to Firestore
       const globalId =
         selectedPlayer.originalPlayerId ||
         selectedPlayer.originalId ||
@@ -211,10 +249,10 @@ export default function PlayerPhotoUpload() {
 
       if (globalId) {
         await updateDoc(doc(db, "players", globalId), {
-          photoURL: finalPhotoBase64,
+          photoURL: finalPhotoUrl,
         }).catch(() => {});
         await updateDoc(doc(db, "globalPlayers", globalId), {
-          photoURL: finalPhotoBase64,
+          photoURL: finalPhotoUrl,
         }).catch(() => {});
       }
 
@@ -233,7 +271,7 @@ export default function PlayerPhotoUpload() {
               p.id === selectedPlayer.localId ||
               p.name === selectedPlayer.name
             ) {
-              return { ...p, photoURL: finalPhotoBase64 };
+              return { ...p, photoURL: finalPhotoUrl }; // Save URL here too
             }
             return p;
           });
@@ -243,10 +281,11 @@ export default function PlayerPhotoUpload() {
       }
 
       setSuccess(true);
-      setFinalPhotoBase64(null);
+      setFinalPhotoBlob(null); // Clear blob from memory
+      setPreview(finalPhotoUrl); // Show Cloudinary image in preview
     } catch (error) {
       console.error("Upload failed:", error);
-      alert("Failed to upload photo. Please try again.");
+      alert("Failed to upload photo. Please check your Cloudinary settings.");
     } finally {
       setUploading(false);
     }
@@ -256,7 +295,6 @@ export default function PlayerPhotoUpload() {
     p.name.toLowerCase().includes(search.toLowerCase()),
   );
 
-  // --- CROP MODAL UI ---
   const renderCropModal = () => {
     if (!cropModalOpen || !imageToCrop) return null;
 
@@ -493,12 +531,12 @@ export default function PlayerPhotoUpload() {
 
                 <button
                   onClick={handleUpload}
-                  disabled={uploading || !finalPhotoBase64}
+                  disabled={uploading || !finalPhotoBlob}
                   className="w-full bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-black py-4 rounded-xl shadow-lg uppercase tracking-widest text-sm disabled:opacity-50 transition-all flex justify-center items-center gap-2 active:scale-95">
                   {uploading ? (
                     <>
-                      <Loader2 size={18} className="animate-spin" />{" "}
-                      Uploading...
+                      <Loader2 size={18} className="animate-spin" /> Uploading
+                      to Cloud...
                     </>
                   ) : (
                     "Save Photo"
