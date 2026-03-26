@@ -421,7 +421,7 @@ export default function TeamsTab({
   tournamentName,
   isAuctionEnabled,
   matches = [],
-  tournamentId, // 🟢 ADDED TOURNAMENT ID
+  tournamentId, 
 }) {
   const { theme, lightMode } = useTheme();
   const [selectedPlayer, setSelectedPlayer] = useState(null);
@@ -430,7 +430,6 @@ export default function TeamsTab({
 
   const displayName = tournamentName || "OFFICIAL SQUAD";
 
-  // Fallback ID if not passed down directly
   const safeTournamentId =
     tournamentId ||
     matches[0]?.tournamentId ||
@@ -452,6 +451,9 @@ export default function TeamsTab({
         const remaining = (team.purse || 0) - (team.spent || 0);
         const spentPercentage =
           team.purse > 0 ? Math.min((team.spent / team.purse) * 100, 100) : 0;
+        
+        // 🔥 FETCH EXACT LOGO SAVED BY TEAM MANAGER
+        const displayLogo = team.logo || team.logoUrl; 
 
         return (
           <div
@@ -476,11 +478,12 @@ export default function TeamsTab({
 
             <div className="p-6 pb-4 flex items-center gap-4">
               <div className="relative">
-                {team.logoUrl ? (
+                {/* 🔥 DISPLAY THE LOGO OR FALLBACK SHIELD */}
+                {displayLogo ? (
                   <img
-                    src={team.logoUrl}
+                    src={displayLogo}
                     className={`w-16 h-16 rounded-2xl object-cover border shadow-2xl ${lightMode ? "bg-white border-gray-200" : "bg-black border-white/5"}`}
-                    alt=""
+                    alt={team.name}
                   />
                 ) : (
                   <div
@@ -488,7 +491,7 @@ export default function TeamsTab({
                     <Shield size={32} className="text-gray-400" />
                   </div>
                 )}
-                <div className="absolute -bottom-1 -right-1 bg-teal-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-md shadow-md border border-teal-400/50">
+                <div className="absolute -bottom-1 -right-1 z-20 bg-teal-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-md shadow-md border border-teal-400/50">
                   {team.roster?.length || 0}
                 </div>
               </div>
@@ -552,7 +555,6 @@ export default function TeamsTab({
                     key={i}
                     className="relative cursor-pointer hover:scale-110 transition-transform group/player shadow-lg"
                     onClick={() => setSelectedPlayer(player)}>
-                    {/* 🟢 SMART AVATAR HERE */}
                     <PlayerAvatar
                       player={player}
                       playerId={player.id || player.originalId}
@@ -604,7 +606,7 @@ export default function TeamsTab({
         isOpen={!!selectedPlayer}
         matches={matches}
         onClose={() => setSelectedPlayer(null)}
-        tournamentId={safeTournamentId} // 🟢 Pass down tournamentId so the modal can use the avatar component
+        tournamentId={safeTournamentId}
       />
       <TeamStatsModal
         team={viewingTeamStats}

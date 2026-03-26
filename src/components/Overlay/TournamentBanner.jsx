@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { doc, collection, onSnapshot } from "firebase/firestore";
 import { db } from "../../utils/firebase";
+import PlayerAvatar from "../PlayerAvatar";
 
 export default function TournamentBanner({ tournamentId }) {
   const [tournament, setTournament] = useState(null);
@@ -8,11 +9,10 @@ export default function TournamentBanner({ tournamentId }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  // --- 1. FETCH DATA ---
+  // --- 1. DATA SUBSCRIPTION ---
   useEffect(() => {
     if (!tournamentId) return;
 
-    // A. Tournament Info
     const unsubTournament = onSnapshot(
       doc(db, "tournaments", tournamentId),
       (docSnap) => {
@@ -20,16 +20,17 @@ export default function TournamentBanner({ tournamentId }) {
       },
     );
 
-    // B. Teams Subcollection
-    const teamsRef = collection(db, "tournaments", tournamentId, "teams");
-    const unsubTeams = onSnapshot(teamsRef, (snapshot) => {
-      const teamsData = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setTeams(teamsData);
-      setLoading(false);
-    });
+    const unsubTeams = onSnapshot(
+      collection(db, "tournaments", tournamentId, "teams"),
+      (snapshot) => {
+        const teamsData = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        setTeams(teamsData);
+        setLoading(false);
+      },
+    );
 
     return () => {
       unsubTournament();
@@ -37,21 +38,52 @@ export default function TournamentBanner({ tournamentId }) {
     };
   }, [tournamentId]);
 
-  // --- 2. AUTO-ROTATE SLIDER ---
+  // --- 🔥 2. PRELOAD ENGINE: CACHE ALL IMAGES IN BACKGROUND 🔥 ---
+  useEffect(() => {
+    if (teams.length === 0) return;
+
+    // We look through every team and every player to find photo URLs to preload
+    const urlsToPreload = new Set();
+
+    teams.forEach((team) => {
+      // Team Logo
+      const tLogo = team.logo || team.logoUrl;
+      if (tLogo) urlsToPreload.add(tLogo);
+
+      // Player Photos
+      if (team.roster) {
+        team.roster.forEach((p) => {
+          const pPhoto = p.photoURL || p.photoUrl || p.image;
+          if (pPhoto) urlsToPreload.add(pPhoto);
+        });
+      }
+    });
+
+    // Fire off the preload requests
+    urlsToPreload.forEach((url) => {
+      const img = new Image();
+      img.src = url;
+    });
+
+    console.log(
+      `🚀 Preloaded ${urlsToPreload.size} broadcast assets to memory.`,
+    );
+  }, [teams]);
+
+  // --- 3. TRANSITION TIMER ---
   useEffect(() => {
     if (teams.length <= 1) return;
     const interval = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % teams.length);
-    }, 3000);
+    }, 4000);
     return () => clearInterval(interval);
   }, [teams.length]);
 
-  // --- 3. DISPLAY LOGIC (FIXED DUPLICATES) ---
+  // --- 4. ROSTER COMPILATION ---
   const activeTeam = teams[currentIndex];
 
   const displayList = useMemo(() => {
     if (!activeTeam) return [];
-
     const rawRoster = activeTeam.roster || [];
     const ownerName = activeTeam.ownerName || activeTeam.owner;
 
@@ -72,9 +104,9 @@ export default function TournamentBanner({ tournamentId }) {
         );
       } else {
         ownerObj = {
+          id: `owner_${activeTeam.id}`,
           name: ownerName,
           role: "TEAM OWNER",
-          photo: null,
           isOwner: true,
         };
         playingRoster = [...rawRoster];
@@ -84,176 +116,198 @@ export default function TournamentBanner({ tournamentId }) {
     }
 
     playingRoster.sort((a, b) => (b.isIcon ? 1 : 0) - (a.isIcon ? 1 : 0));
-
     const finalList = [];
     if (ownerObj) finalList.push(ownerObj);
-
     const slotsRemaining = 10 - finalList.length;
     finalList.push(...playingRoster.slice(0, slotsRemaining));
 
     return finalList;
   }, [activeTeam]);
 
-  // Helpers
-  const getTeamLogo = (team) =>
-    team?.logoUrl ||
-    team?.logo ||
-    team?.teamLogo ||
+  // Styling Helpers
+  const activeColor = activeTeam?.color || "#00b4d8";
+  const getTeamLogo = (t) =>
+    t?.logo ||
+    t?.logoUrl ||
     "https://cdn-icons-png.flaticon.com/512/164/164449.png";
-  const getPlayerPhoto = (p) =>
-    p.photoURL ||
-    p.photoUrl ||
-    p.image ||
-    "https://cdn-icons-png.flaticon.com/512/3076/3076134.png";
   const tournamentLogo =
     tournament?.logoUrl ||
     tournament?.logo ||
     "https://placehold.co/400x400/00b4d8/ffffff?text=CUP";
 
-  // 🔥 FIX 1: Transparent loading states so it doesn't block the screen!
-  if (loading)
+  if (loading || !tournament || teams.length === 0) {
     return (
-      <div className="absolute inset-0 w-[1920px] h-[1080px] bg-black/80 backdrop-blur-md text-white flex items-center justify-center text-6xl font-black z-[500]">
-        LOADING DATA...
+      <div className="absolute inset-0 w-[1920px] h-[1080px] bg-[#0b0f19] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-16 h-16 border-4 border-t-teal-500 border-white/10 rounded-full animate-spin"></div>
+          <span className="text-white font-black tracking-widest uppercase opacity-50">
+            Preparing Broadcast...
+          </span>
+        </div>
       </div>
     );
-  if (!tournament || teams.length === 0)
-    return (
-      <div className="absolute inset-0 w-[1920px] h-[1080px] bg-black/80 backdrop-blur-md text-white flex items-center justify-center text-6xl font-black z-[500]">
-        WAITING FOR TEAMS...
-      </div>
-    );
+  }
 
-  // 🔥 FIX 2: Strict 1920x1080 bounds applied to the main container
   return (
-    <div className="absolute inset-0 w-[1920px] h-[1080px] bg-[#0b0f19] text-white overflow-hidden font-sans flex flex-col selection:bg-none z-[500]">
-      {/* Background */}
+    <div className="absolute inset-0 w-[1920px] h-[1080px] bg-[#070a12] text-white overflow-hidden font-sans flex flex-col z-[500]">
+      {/* 🌌 BACKGROUND SYSTEM */}
       <div className="absolute inset-0 z-0 pointer-events-none">
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
         <div
-          key={activeTeam?.id}
-          className="absolute inset-0 bg-gradient-to-br from-[#00b4d8]/20 via-[#0b0f19] to-black opacity-60 transition-colors duration-1000"></div>
+          className="absolute inset-0 transition-colors duration-1000"
+          style={{ backgroundColor: `${activeColor}10` }}
+        ></div>
+        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 mix-blend-overlay"></div>
+
+        <div
+          key={`glow-t-${activeTeam?.id}`}
+          className="absolute inset-0 opacity-30 transition-all duration-1000"
+          style={{
+            background: `radial-gradient(circle at 50% 0%, ${activeColor} 0%, transparent 60%)`,
+          }}
+        ></div>
+        <div
+          key={`glow-b-${activeTeam?.id}`}
+          className="absolute inset-0 opacity-20 transition-all duration-1000"
+          style={{
+            background: `radial-gradient(circle at 50% 100%, ${activeColor} 0%, transparent 50%)`,
+          }}
+        ></div>
       </div>
 
-      {/* --- HEADER --- */}
-      <div className="z-20 h-[160px] flex items-center justify-between px-16 border-b border-white/10 bg-gradient-to-b from-black/90 to-transparent backdrop-blur-sm">
-        <div className="flex items-center gap-6">
+      {/* 🏷️ HEADER SECTION */}
+      <div className="z-20 h-[140px] flex items-center justify-between px-20 border-b border-white/5 bg-gradient-to-b from-black/80 to-transparent">
+        <div className="flex items-center gap-8">
           <img
             src={tournamentLogo}
-            className="h-24 w-24 object-contain drop-shadow-[0_0_15px_rgba(0,180,216,0.6)]"
-            alt="Tourney"
+            className="h-20 w-20 object-contain drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]"
+            alt=""
           />
-          <div className="flex flex-col justify-center">
-            <h2 className="text-4xl font-black uppercase tracking-wider text-white drop-shadow-md">
+          <div className="flex flex-col">
+            <h2 className="text-3xl font-black uppercase tracking-widest text-white">
               {tournament.name}
             </h2>
-            <span className="text-[#00b4d8] font-bold tracking-[0.4em] text-lg uppercase">
-              Official Broadcast
+            <span
+              className="font-bold tracking-[0.5em] text-sm uppercase opacity-80"
+              style={{ color: activeColor }}
+            >
+              Squad Showcase
             </span>
           </div>
         </div>
-        <div className="text-right opacity-80">
-          <span className="text-5xl font-black text-white/20">
+        <div className="flex items-baseline gap-2">
+          <span className="text-6xl font-black opacity-10">
             {currentIndex + 1}
           </span>
-          <span className="text-2xl font-bold text-white/20">
-            /{teams.length}
-          </span>
+          <span className="text-xl font-bold opacity-10">/ {teams.length}</span>
         </div>
       </div>
 
-      {/* --- MAIN CONTENT --- */}
+      {/* 🏆 TEAM IDENTITY SECTION */}
       <div
-        key={activeTeam?.id}
-        className="z-10 flex-1 flex flex-col items-center justify-start pt-10 pb-12 animate-slide-in">
-        {/* TEAM LOGO & NAME */}
-        <div className="flex flex-col items-center mb-10">
-          <div className="w-32 h-32 bg-[#0b0f19] rounded-full p-2 border-4 border-[#00b4d8] shadow-[0_0_50px_rgba(0,180,216,0.3)] mb-3 flex items-center justify-center relative z-10">
-            <img
-              src={getTeamLogo(activeTeam)}
-              className="w-full h-full object-cover rounded-full"
-              alt={activeTeam?.name}
-            />
-          </div>
-          <h1 className="text-6xl font-black uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white via-blue-200 to-white drop-shadow-2xl text-center">
-            {activeTeam?.name}
-          </h1>
+        key={`identity-${activeTeam?.id}`}
+        className="z-20 flex flex-col items-center pt-8 pb-4 animate-slide-in"
+      >
+        <div
+          className="w-28 h-28 bg-white rounded-full p-1.5 border-4 shadow-2xl mb-4 transition-all duration-1000"
+          style={{
+            borderColor: activeColor,
+            boxShadow: `0 0 40px ${activeColor}44`,
+          }}
+        >
+          <img
+            src={getTeamLogo(activeTeam)}
+            className="w-full h-full object-contain rounded-full"
+            alt=""
+          />
         </div>
+        <h1 className="text-7xl font-black uppercase tracking-tighter text-white drop-shadow-[0_10px_15px_rgba(0,0,0,0.8)]">
+          {activeTeam?.name}
+        </h1>
+      </div>
 
-        {/* PLAYERS GRID (5x2) */}
-        {/* 🔥 FIX 3: Added px-10 so the grid items don't bleed out of the 1600px wrapper */}
-        <div className="grid grid-cols-5 gap-8 w-[1600px] px-10">
+      {/* 👥 PLAYER GRID SYSTEM */}
+      <div className="z-10 flex-1 flex items-center justify-center pb-16">
+        <div className="w-[1280px] grid grid-cols-5 gap-6">
           {displayList.map((person, idx) => (
             <div
-              key={idx}
-              className="relative bg-[#131826] border border-white/10 rounded-2xl overflow-hidden shadow-2xl flex flex-col items-center pt-5 pb-3 group transform transition-all duration-300 hover:scale-105 hover:border-[#00b4d8]/40"
-              style={{ animationDelay: `${idx * 80}ms` }}>
-              {/* Top Accent */}
+              key={`${activeTeam.id}-${person.id || idx}`}
+              className="relative bg-[#0f141f]/80 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl flex flex-col group animate-fade-in"
+              style={{ animationDelay: `${idx * 40}ms` }}
+            >
               <div
-                className={`absolute top-0 left-0 right-0 h-1.5 ${person.isOwner ? "bg-yellow-500" : person.isIcon ? "bg-[#00b4d8]" : "bg-slate-600"}`}></div>
+                className="absolute top-0 left-0 right-0 h-1.5 z-20"
+                style={{
+                  backgroundColor: person.isOwner ? "#fbbf24" : activeColor,
+                }}
+              ></div>
 
-              {/* Photo */}
-              <div
-                className={`w-24 h-24 rounded-full border-[3px] ${person.isOwner ? "border-yellow-500" : person.isIcon ? "border-[#00b4d8]" : "border-slate-600"} overflow-hidden bg-black shadow-lg mb-3 flex items-center justify-center`}>
-                {person.isOwner && !person.photo ? (
-                  <img
-                    src={getPlayerPhoto(person)}
-                    className="w-full h-full object-cover"
-                    alt={person.name}
-                  />
-                ) : (
-                  <img
-                    src={getPlayerPhoto(person)}
-                    className="w-full h-full object-cover"
-                    alt={person.name}
-                  />
+              <div className="w-full aspect-square bg-slate-950 overflow-hidden relative">
+                <PlayerAvatar
+                  player={person}
+                  playerId={person.id || person.originalId}
+                  tournamentId={tournamentId}
+                  // 🔥 No grayscale, high quality object-fit
+                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                />
+
+                {person.isIcon && (
+                  <div
+                    className="absolute top-3 right-3 text-3xl animate-pulse z-10"
+                    style={{ color: activeColor }}
+                  >
+                    ★
+                  </div>
                 )}
               </div>
 
-              {/* Info Text */}
-              <div className="text-center px-3 w-full">
+              <div
+                className="p-4 text-center border-t border-white/5"
+                style={{
+                  background: `linear-gradient(to bottom, ${activeColor}08, transparent)`,
+                }}
+              >
                 <div
-                  className={`text-lg font-black uppercase truncate leading-none mb-1 ${person.isOwner ? "text-yellow-400" : "text-white"}`}>
+                  className={`text-lg font-black uppercase truncate leading-tight ${person.isOwner ? "text-amber-400" : "text-white"}`}
+                >
                   {person.name}
                 </div>
-                <div className="text-xs font-bold uppercase tracking-widest text-slate-400">
-                  {person.role || "Player"}
+                <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mt-1">
+                  {person.role || "Squad"}
                 </div>
               </div>
-
-              {/* Star Badge */}
-              {person.isIcon && (
-                <div className="absolute top-3 right-3 text-[#00b4d8] text-2xl animate-pulse">
-                  ★
-                </div>
-              )}
             </div>
           ))}
         </div>
       </div>
 
-      {/* --- PROGRESS BAR --- */}
-      <div className="z-20 absolute bottom-0 left-0 w-full h-3 bg-white/5">
+      {/* ⏱️ FOOTER PROGRESS */}
+      <div className="z-20 absolute bottom-0 left-0 w-full h-2 bg-white/5">
         <div
-          key={currentIndex}
-          className="h-full bg-[#00b4d8] animate-progress-bar origin-left shadow-[0_0_20px_#00b4d8]"></div>
+          key={`timer-${currentIndex}`}
+          className="h-full animate-progress origin-left"
+          style={{
+            backgroundColor: activeColor,
+            boxShadow: `0 0 15px ${activeColor}`,
+          }}
+        ></div>
       </div>
 
       <style>{`
         @keyframes slideIn {
-            from { opacity: 0; transform: translateY(30px); }
-            to { opacity: 1; transform: translateY(0); }
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
         }
-        .animate-slide-in {
-            animation: slideIn 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+        @keyframes fadeIn {
+          from { opacity: 0; transform: scale(0.95); }
+          to { opacity: 1; transform: scale(1); }
         }
         @keyframes progressBar {
-            from { transform: scaleX(0); }
-            to { transform: scaleX(1); }
+          from { transform: scaleX(0); }
+          to { transform: scaleX(1); }
         }
-        .animate-progress-bar {
-            animation: progressBar 3s linear forwards;
-        }
+        .animate-slide-in { animation: slideIn 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+        .animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
+        .animate-progress { animation: progressBar 4s linear forwards; }
       `}</style>
     </div>
   );

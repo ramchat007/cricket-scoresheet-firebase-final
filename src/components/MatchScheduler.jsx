@@ -168,6 +168,9 @@ export default function MatchScheduler({
           teamBId: teamB.id,
           teamALogo: teamA.logoUrl || teamA.logo || "",
           teamBLogo: teamB.logoUrl || teamB.logo || "",
+          // 🔥 NEW: Save exact team colors as a snapshot
+          teamAColor: teamA.color || "#0d9488",
+          teamBColor: teamB.color || "#1e293b",
           overs: Number(overs),
           date: date,
           time: time,
@@ -216,7 +219,7 @@ export default function MatchScheduler({
       let generatedMatches = [];
       let pool = [...teamsToSchedule];
 
-      // 🟢 FIX: unified round-robin pool prevents 3-team bug
+      // unified round-robin pool prevents 3-team bug
       if (pool.length % 2 !== 0) pool.push({ id: "BYE", name: "BYE" });
 
       const numTeams = pool.length;
@@ -248,7 +251,6 @@ export default function MatchScheduler({
 
   // --- 5. AUTO SCHEDULE GROUPS (Strictly respects DB Groups) ---
   const handleAutoScheduleGroups = async () => {
-    // 🟢 FIX: Uses activeTeams instead of propTeams
     const teamList = activeTeams || [];
 
     if (teamList.length < 2)
@@ -346,7 +348,6 @@ export default function MatchScheduler({
       const endDateTime = new Date(currentDateTime);
       endDateTime.setMinutes(endDateTime.getMinutes() + Number(matchDuration));
 
-      // 🟢 FIX: Proper 'meta' nesting for names to show correctly
       const matchData = {
         meta: {
           tournament: tournamentId,
@@ -356,6 +357,9 @@ export default function MatchScheduler({
           teamBId: teamB.id,
           teamALogo: teamA.logoUrl || teamA.logo || "",
           teamBLogo: teamB.logoUrl || teamB.logo || "",
+          // 🔥 NEW: Save exact team colors as a snapshot
+          teamAColor: teamA.color || "#0d9488",
+          teamBColor: teamB.color || "#1e293b",
           overs: Number(autoOvers),
           date: currentDateTime.toISOString().slice(0, 10),
           time: currentDateTime.toTimeString().slice(0, 5),
@@ -400,7 +404,6 @@ export default function MatchScheduler({
 
     const knockoutMatches = [
       {
-        // 🟢 FIX: Moved data inside the 'meta' object so names display properly
         meta: {
           tournament: tournamentId,
           teamA: "Winner Group A",
@@ -409,6 +412,9 @@ export default function MatchScheduler({
           teamBId: "TBD",
           teamALogo: "",
           teamBLogo: "",
+          // 🔥 NEW: Generic placeholders
+          teamAColor: "#0d9488",
+          teamBColor: "#1e293b",
           date: "",
           time: "",
           venue: "TBD",
@@ -431,6 +437,9 @@ export default function MatchScheduler({
           teamBId: "TBD",
           teamALogo: "",
           teamBLogo: "",
+          // 🔥 NEW: Generic placeholders
+          teamAColor: "#0d9488",
+          teamBColor: "#1e293b",
           date: "",
           time: "",
           venue: "TBD",
@@ -453,6 +462,9 @@ export default function MatchScheduler({
           teamBId: "TBD",
           teamALogo: "",
           teamBLogo: "",
+          // 🔥 NEW: Generic placeholders
+          teamAColor: "#0d9488",
+          teamBColor: "#1e293b",
           date: "",
           time: "",
           venue: "TBD",

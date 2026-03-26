@@ -174,51 +174,50 @@ export default function ScoreTicker({ match }) {
         {/* --- MAIN TICKER CONTAINER --- */}
         <div className="w-full max-w-[1750px] flex flex-col items-center relative z-20">
           {/* --- TOP TIER: Match Context Bar --- */}
-          <div
-            className="rounded-t-xl px-10 py-2 grid grid-cols-3 items-center text-slate-300 w-[96%] shadow-lg border-t border-x border-white/20"
-            // 🔥 SMOOTH LONG FADE: Starts instantly from edge and fades slowly to 30% mark
+          <div 
+            className="rounded-t-xl px-10 py-2 flex items-center justify-between relative text-slate-300 w-[96%] shadow-lg border-t border-x border-white/20"
+            // 🔥 REDUCED TOP BAR GRADIENT
             style={{
-              background: `linear-gradient(to right, ${teamAColor} 0%, rgba(15, 23, 42, 0.95) 30%, rgba(15, 23, 42, 0.95) 70%, ${teamBColor} 100%)`,
-            }}>
-            {/* Left: Match Info */}
-            <div className="flex gap-4 items-center justify-start flex-1 truncate pr-4">
-              <span className="text-white font-black tracking-widest text-lg uppercase drop-shadow-md bg-black/30 px-3 py-0.5 rounded shadow shrink-0">
-                {match.name || "Match"}
+              background: `linear-gradient(to right, ${teamAColor} 0%, ${teamAColor} 15%, rgba(15, 23, 42, 0.95) 25%, rgba(15, 23, 42, 0.95) 75%, ${teamBColor} 85%, ${teamBColor} 100%)`
+            }}
+          >
+            {/* Left: Match Info (🟢 Now has 45% of the screen to expand) */}
+            <div className="flex gap-4 items-center justify-start w-[45%] z-10 pr-4">
+              <span className="text-white font-black tracking-widest text-lg uppercase drop-shadow-md bg-black/30 px-3 py-0.5 rounded shadow shrink-0 max-w-[50%] truncate">
+                {match.meta?.matchTitle || "Match"}
               </span>
               <span className="opacity-40 text-sm shrink-0">|</span>
-              <span className="font-bold text-xl tracking-wide text-white drop-shadow-md truncate flex-1">
-                <span style={{ color: teamAColor }}>{match.meta?.teamA}</span>
-                <span className="text-white/60 font-normal mx-2 drop-shadow-none">
-                  vs
-                </span>
-                <span style={{ color: teamBColor }}>{match.meta?.teamB}</span>
+              <span className="font-bold text-xl tracking-wide text-white drop-shadow-md flex items-center truncate">
+                <span className="truncate" style={{ color: teamAColor }}>{match.meta?.teamA}</span>
+                <span className="text-white/60 font-normal mx-2 drop-shadow-none shrink-0">vs</span>
+                <span className="truncate" style={{ color: teamBColor }}>{match.meta?.teamB}</span>
               </span>
             </div>
 
-            {/* Center: 🏏 Equation / Projected Score 🏏 */}
-            <div className="flex justify-center items-center shrink-0">
+            {/* Center: 🏏 Equation / Projected Score (🟢 Absolutely centered) */}
+            <div className="absolute left-1/2 -translate-x-1/2 flex justify-center items-center z-10">
               {!isMatchFinished &&
                 (isChasing && equationStr ? (
-                  <span className="text-amber-400 font-black text-base uppercase tracking-widest bg-amber-500/10 px-6 py-1 rounded border border-amber-500/30 drop-shadow-md">
+                  <span className="text-amber-400 font-black text-base uppercase tracking-widest bg-amber-500/10 px-6 py-1 rounded border border-amber-500/30 drop-shadow-md whitespace-nowrap">
                     {equationStr}
                   </span>
                 ) : !isChasing && projScoreStr ? (
-                  <span className="text-cyan-400 font-black text-base uppercase tracking-widest bg-cyan-500/10 px-6 py-1 rounded border border-cyan-500/30 drop-shadow-md">
+                  <span className="text-cyan-400 font-black text-base uppercase tracking-widest bg-cyan-500/10 px-6 py-1 rounded border border-cyan-500/30 drop-shadow-md whitespace-nowrap">
                     {projScoreStr}
                   </span>
                 ) : null)}
             </div>
 
             {/* Right: Toss OR Target */}
-            <div className="flex justify-end items-center shrink-0">
+            <div className="flex justify-end items-center z-10 w-[30%]">
               {showToss && (
-                <span className="text-white italic text-base font-bold tracking-wide drop-shadow-md">
+                <span className="text-white italic text-base font-bold tracking-wide drop-shadow-md truncate">
                   {tossStr}
                 </span>
               )}
 
               {isChasing && target && (
-                <div className="flex items-center text-amber-400 bg-amber-500/10 px-5 py-1 rounded-md border border-amber-500/20">
+                <div className="flex items-center text-amber-400 bg-amber-500/10 px-5 py-1 rounded-md border border-amber-500/20 whitespace-nowrap shrink-0">
                   <span className="font-black tracking-widest uppercase text-sm">
                     Target:{" "}
                     <span className="text-white text-2xl ml-2">{target}</span>

@@ -50,13 +50,15 @@ const EventAnimation = ({ type }) => {
   return (
     <div
       key={Date.now()}
-      className="absolute inset-0 flex items-center justify-center z-[300] pointer-events-none">
+      className="absolute inset-0 flex items-center justify-center z-[300] pointer-events-none"
+    >
       <div
         className="absolute w-[900px] h-[900px] rounded-full bg-white/10 animate-ping"
         style={{ animationDuration: "1.5s" }}
       />
       <div
-        className={`relative ${current.bg} ${current.border} border-4 px-28 py-10 rounded-[4rem] flex flex-col items-center animate-slamAndShake ${current.glow}`}>
+        className={`relative ${current.bg} ${current.border} border-4 px-28 py-10 rounded-[4rem] flex flex-col items-center animate-slamAndShake ${current.glow}`}
+      >
         <div className="text-white font-black text-[11rem] leading-none tracking-tight drop-shadow-2xl">
           {current.text}
         </div>
@@ -84,6 +86,10 @@ export default function BroadcastLayer() {
   const [overlayConfig, setOverlayConfig] = useState({});
 
   const [globalBranding, setGlobalBranding] = useState(null);
+
+  // 🔥 NEW: State to track temporary Auto-Spotlight
+  const [autoSpotlightPlayerId, setAutoSpotlightPlayerId] = useState(null);
+  const activeBattersRef = useRef([]);
 
   useEffect(() => {
     getDoc(doc(db, "settings", "branding")).then((docSnap) => {
@@ -116,6 +122,7 @@ export default function BroadcastLayer() {
     sponsors: [],
     fullScreenBanners: [],
     spotlightPlayerId: "",
+    autoSpotlightEnabled: false,
   });
 
   const prevTimelineLength = useRef(0);
@@ -126,6 +133,7 @@ export default function BroadcastLayer() {
     if (overlayConfig?.forceClearOverlay) {
       setShowPopup(false);
       setAnimationType(null);
+      setAutoSpotlightPlayerId(null);
       if (timerRef.current) clearTimeout(timerRef.current);
     }
   }, [overlayConfig?.forceClearOverlay]);
@@ -280,9 +288,7 @@ export default function BroadcastLayer() {
       const playPromise = sounds[type].play();
       if (playPromise !== undefined) {
         playPromise.catch((err) => {
-          console.warn(
-            `Audio blocked (${type}). OBS Users: Add '--autoplay-policy=no-user-gesture-required' to OBS shortcut.`,
-          );
+          console.warn(`Audio blocked (${type}).`);
         });
       }
     } catch (err) {
@@ -322,6 +328,51 @@ export default function BroadcastLayer() {
   else if (!currentInn) viewMode = "WAITING";
   else viewMode = "LIVE";
 
+  // 🔥 0. AUTOMATED INCOMING BATTER SPOTLIGHT 🔥
+  useEffect(() => {
+    if (!currentInn || !overlayState.autoSpotlightEnabled || !match) {
+      if (currentInn) {
+        activeBattersRef.current = [
+          currentInn.striker,
+          currentInn.nonStriker,
+        ].filter(Boolean);
+      }
+      return;
+    }
+
+    const currentBatters = [currentInn.striker, currentInn.nonStriker].filter(
+      Boolean,
+    );
+    const newBatter = currentBatters.find(
+      (b) => !activeBattersRef.current.includes(b),
+    );
+
+    if (newBatter && activeBattersRef.current.length > 0) {
+      const allPlayers = [
+        ...(match.teamASquad || []),
+        ...(match.teamBSquad || []),
+      ];
+      const p = allPlayers.find(
+        (p) => p.name?.trim().toLowerCase() === newBatter.trim().toLowerCase(),
+      );
+
+      if (p) {
+        setAutoSpotlightPlayerId(p.id);
+        setTimeout(() => {
+          setAutoSpotlightPlayerId(null);
+        }, 12000);
+      }
+    }
+
+    activeBattersRef.current = currentBatters;
+  }, [
+    currentInn?.striker,
+    currentInn?.nonStriker,
+    overlayState.autoSpotlightEnabled,
+    match,
+  ]);
+
+  // --- MANUAL EVENTS TRIGGER ---
   useEffect(() => {
     if (overlayState.manualAnimation && overlayState.manualAnimationTrigger) {
       if (Date.now() - overlayState.manualAnimationTrigger < 5000) {
@@ -346,6 +397,7 @@ export default function BroadcastLayer() {
     overlayConfig,
   ]);
 
+  // --- AUTOMATED EVENTS TRIGGER ---
   useEffect(() => {
     if (viewMode !== "LIVE" || !currentInn) return;
     const timeline = currentInn.timeline || [];
@@ -395,7 +447,7 @@ export default function BroadcastLayer() {
     prevTimelineLength.current = timeline.length;
   }, [currentInn, viewMode, sounds, overlayConfig]);
 
-  // 🔥 EXTRACT DYNAMIC TEAM COLORS ONCE FOR ALL CARDS 🔥
+  // 🔥 EXTRACT DYNAMIC TEAM COLORS & LOGOS ONCE FOR ALL CARDS 🔥
   const teamA = match?.meta?.teamA;
   const teamB = match?.meta?.teamB;
   const defaultTeamAColor = "#0284c7"; // Default Blue
@@ -403,6 +455,11 @@ export default function BroadcastLayer() {
 
   const teamAColor = match?.meta?.teamAColor || defaultTeamAColor;
   const teamBColor = match?.meta?.teamBColor || defaultTeamBColor;
+
+  const defaultLogo = "https://cdn-icons-png.flaticon.com/512/164/164449.png";
+  const teamALogo = match?.meta?.teamALogo || defaultLogo;
+  const teamBLogo = match?.meta?.teamBLogo || defaultLogo;
+  const matchTitle = match?.meta?.matchTitle || match?.name || "Match";
 
   const battingTeam = currentInn?.battingTeam;
   let battingColor = defaultTeamAColor;
@@ -436,20 +493,23 @@ export default function BroadcastLayer() {
 
     return (
       <div className="flex flex-col items-center animate-in fade-in slide-in-from-top-8">
-        {/* Floating Circular Logo */}
-        <div className="w-28 h-28 bg-white rounded-full shadow-[0_10px_40px_rgba(0,0,0,0.5)] flex items-center justify-center p-2.5 shrink-0 overflow-hidden border-[3px] border-amber-500 z-10">
-          <img
-            key={`img-${idx}`}
-            src={current.image}
-            alt={current.name}
-            className="w-full h-full object-contain animate-in fade-in duration-500"
-          />
-        </div>
+        {/* 🟢 Floating Circular Logo (Only renders if an image was uploaded) */}
+        {current.image && (
+          <div className="w-28 h-28 bg-white rounded-full shadow-[0_10px_40px_rgba(0,0,0,0.5)] flex items-center justify-center p-2.5 shrink-0 overflow-hidden border-[3px] border-amber-500 z-10">
+            <img
+              key={`img-${idx}`}
+              src={current.image}
+              alt={current.name}
+              className="w-full h-full object-contain animate-in fade-in duration-500"
+            />
+          </div>
+        )}
 
-        {/* Sleek Under-Label */}
+        {/* Sleek Under-Label (Adjusts margin dynamically if image is missing) */}
         <div
           key={`text-${idx}`}
-          className="-mt-3 flex flex-col items-center animate-in fade-in slide-in-from-bottom-2 duration-500 bg-[#0B1120]/90 px-5 py-2.5 rounded-full backdrop-blur-md border border-white/20 shadow-lg z-0">
+          className={`${current.image ? "-mt-3" : "mt-2"} flex flex-col items-center animate-in fade-in slide-in-from-bottom-2 duration-500 bg-[#0B1120]/90 px-5 py-2.5 rounded-full backdrop-blur-md border border-white/20 shadow-lg z-0`}
+        >
           <span className="text-white font-black text-sm uppercase tracking-widest drop-shadow-md truncate max-w-[220px] leading-none">
             {current.name}
           </span>
@@ -503,16 +563,17 @@ export default function BroadcastLayer() {
     </div>
   );
 
-  // 🟢 MINI SCOREBUG - DYNAMIC BATTING COLOR
   const MiniScorebug = () => {
     if (!currentInn) return null;
     return (
       <div
         className={`flex flex-col rounded-xl border-l-8 slide-in-from-top-8 ${TV_CARD_BASE}`}
-        style={{ borderColor: battingColor }}>
+        style={{ borderColor: battingColor }}
+      >
         <div
           className="px-4 py-1.5 flex justify-between items-center text-white text-[10px] font-bold tracking-wider uppercase border-b border-white/20"
-          style={{ backgroundColor: battingColor }}>
+          style={{ backgroundColor: battingColor }}
+        >
           <span>
             {match.name || "Match"} • {match.meta?.teamA} vs {match.meta?.teamB}
           </span>
@@ -525,7 +586,8 @@ export default function BroadcastLayer() {
         <div className="flex">
           <div
             className="px-5 flex items-center justify-center border-r border-black/30"
-            style={{ backgroundColor: battingColor }}>
+            style={{ backgroundColor: battingColor }}
+          >
             <Zap size={22} className="text-white drop-shadow-md" />
           </div>
           <div className="px-5 py-2 bg-[#0B1120] flex flex-col justify-center min-w-[180px]">
@@ -546,7 +608,8 @@ export default function BroadcastLayer() {
 
   const OrganizerCard = () => (
     <div
-      className={`flex rounded-xl border-l-8 border-purple-500 slide-in-from-left-8 ${TV_CARD_BASE}`}>
+      className={`flex rounded-xl border-l-8 border-purple-500 slide-in-from-left-8 ${TV_CARD_BASE}`}
+    >
       <div className="bg-purple-600 px-4 flex items-center justify-center border-r border-black/30">
         <Users size={30} className="text-white" />
       </div>
@@ -554,19 +617,13 @@ export default function BroadcastLayer() {
         <h2 className="text-3xl font-black uppercase text-white drop-shadow-lg">
           {overlayState.organizerName || "Organizer"}
         </h2>
-        <p className="text-xs text-purple-300 uppercase tracking-widest font-black mt-1">
-          Managing Committee
-        </p>
       </div>
     </div>
   );
 
-  // 🟢 PARTNERSHIP CARD - DYNAMIC BATTING COLOR
   const PartnershipCard = () => {
-    // Fixed: changed !currentNonStriker to !currentInn.nonStriker
     if (!currentInn || !currentInn.striker || !currentInn.nonStriker)
       return null;
-
     let pRuns = 0;
     let pBalls = 0;
     const timeline = currentInn.timeline || [];
@@ -588,10 +645,12 @@ export default function BroadcastLayer() {
     return (
       <div
         className={`w-[600px] flex flex-col rounded-xl border-l-8 slide-in-from-left-8 ${TV_CARD_BASE}`}
-        style={{ borderColor: battingColor }}>
+        style={{ borderColor: battingColor }}
+      >
         <div
           className="text-white font-black text-sm px-6 py-2 uppercase tracking-widest flex items-center gap-2 shadow-md"
-          style={{ backgroundColor: battingColor }}>
+          style={{ backgroundColor: battingColor }}
+        >
           <Activity size={18} /> Current Partnership
         </div>
         <div className="p-8 bg-[#0B1120] flex items-center justify-between">
@@ -633,15 +692,13 @@ export default function BroadcastLayer() {
     );
   };
 
-  // 🟢 SPOTLIGHT CARD - MATCHES SPECIFIC PLAYER'S TEAM COLOR
-  const PlayerSpotlight = () => {
+  // 🟢 PLAYER SPOTLIGHT CARD - MATCHES SPECIFIC PLAYER'S TEAM COLOR
+  const PlayerSpotlight = ({ playerId }) => {
     const allPlayers = [
       ...(match.teamASquad || []),
       ...(match.teamBSquad || []),
     ];
-    const basePlayer = allPlayers.find(
-      (p) => p.id === overlayState.spotlightPlayerId,
-    );
+    const basePlayer = allPlayers.find((p) => p.id === playerId);
 
     const [careerStats, setCareerStats] = useState(null);
 
@@ -710,15 +767,14 @@ export default function BroadcastLayer() {
       "https://cdn-icons-png.flaticon.com/512/847/847969.png";
 
     // Figure out which team this spotlight player belongs to
-    const isTeamAPlayer = match?.teamASquad?.some(
-      (p) => p.id === overlayState.spotlightPlayerId,
-    );
+    const isTeamAPlayer = match?.teamASquad?.some((p) => p.id === playerId);
     const playerTeamColor = isTeamAPlayer ? teamAColor : teamBColor;
 
     return (
       <div
         className={`flex rounded-xl border-l-8 slide-in-from-left-8 ${TV_CARD_BASE}`}
-        style={{ borderColor: playerTeamColor }}>
+        style={{ borderColor: playerTeamColor }}
+      >
         {/* PHOTO COLUMN */}
         <div className="w-48 bg-gradient-to-b from-slate-800 to-[#0B1120] flex flex-col items-center justify-center relative shadow-inner border-r border-white/10 p-4 pt-6">
           <img
@@ -728,7 +784,8 @@ export default function BroadcastLayer() {
           />
           <div
             className="absolute bottom-0 w-full text-white text-center font-black text-[10px] py-1.5 uppercase tracking-widest"
-            style={{ backgroundColor: playerTeamColor }}>
+            style={{ backgroundColor: playerTeamColor }}
+          >
             Player Profile
           </div>
         </div>
@@ -740,7 +797,8 @@ export default function BroadcastLayer() {
           </h2>
           <p
             className="font-bold uppercase tracking-[0.2em] text-xs mb-4 drop-shadow-md"
-            style={{ color: playerTeamColor }}>
+            style={{ color: playerTeamColor }}
+          >
             {pData.role || pData.playerRole || "Squad Member"}
           </p>
 
@@ -840,7 +898,6 @@ export default function BroadcastLayer() {
     );
   };
 
-  // 🟢 SQUAD CARD - MATCHES SPECIFIC TEAM COLOR
   const SquadCard = ({ teamSide }) => {
     const isTeamA = teamSide === "A";
     const teamName = isTeamA ? match.meta.teamA : match.meta.teamB;
@@ -850,10 +907,12 @@ export default function BroadcastLayer() {
     return (
       <div
         className={`w-[400px] flex flex-col rounded-xl border-r-8 slide-in-from-right-8 ${TV_CARD_BASE}`}
-        style={{ borderColor: color }}>
+        style={{ borderColor: color }}
+      >
         <div
           className="text-white font-black text-lg px-6 py-4 uppercase tracking-widest flex justify-between items-center shadow-md"
-          style={{ backgroundColor: color }}>
+          style={{ backgroundColor: color }}
+        >
           <span>Playing XI</span>
           <span className="truncate max-w-[180px] text-right drop-shadow-md">
             {teamName}
@@ -864,7 +923,8 @@ export default function BroadcastLayer() {
             {squad?.map((p, i) => (
               <li
                 key={i}
-                className="flex items-center gap-4 border-b border-white/10 pb-2 last:border-0 last:pb-0">
+                className="flex items-center gap-4 border-b border-white/10 pb-2 last:border-0 last:pb-0"
+              >
                 <span className="text-slate-400 font-mono font-black text-lg w-8">
                   {(i + 1).toString().padStart(2, "0")}
                 </span>
@@ -933,34 +993,103 @@ export default function BroadcastLayer() {
   if (!overlayConfig) {
     return <div className="transparent-fallback" />;
   }
+
+  const activeSpotlightId =
+    autoSpotlightPlayerId || overlayState.spotlightPlayerId;
+  const isSpotlightVisible = autoSpotlightPlayerId || isActiveView("SPOTLIGHT");
+
   return (
     <div className="w-screen h-screen flex items-center justify-center overflow-hidden bg-transparent pointer-events-none">
       <div
         style={containerStyle}
-        className="relative bg-transparent font-sans w-[1920px] h-[1080px]">
-        {/* --- 1. BACKGROUND STANDBY LAYER (Shown before match starts) --- */}
+        className="relative bg-transparent font-sans w-[1920px] h-[1080px]"
+      >
+        {/* 🔥 NEW PREMIUM STANDBY SCREEN (Shown before match starts) 🔥 */}
         {(viewMode === "NOT_FOUND" || viewMode === "WAITING") && (
-          <div className="absolute inset-0 z-0 flex items-center justify-center bg-slate-900">
-            <div className="absolute inset-0 bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 opacity-90"></div>
-            <div className="relative z-10 flex flex-col items-center justify-center">
-              <div className="bg-teal-500/10 border border-teal-500/30 px-10 py-3 rounded-full mb-10 backdrop-blur-md">
-                <h2 className="text-teal-400 text-4xl font-black uppercase tracking-[0.4em] drop-shadow-md">
-                  {tournamentName}
-                </h2>
+          <div className="absolute inset-0 z-10 flex flex-col bg-slate-950 overflow-hidden">
+            {/* Dynamic Split Background */}
+            <div className="absolute inset-0 flex">
+              <div
+                className="flex-1 opacity-20"
+                style={{
+                  background: `linear-gradient(to bottom right, ${teamAColor}, transparent)`,
+                }}
+              ></div>
+              <div
+                className="flex-1 opacity-20"
+                style={{
+                  background: `linear-gradient(to bottom left, ${teamBColor}, transparent)`,
+                }}
+              ></div>
+            </div>
+
+            {/* Top Info Bar */}
+            <div className="w-full pt-16 flex flex-col items-center justify-center z-20">
+              <span className="text-amber-400 font-black text-2xl uppercase tracking-[0.3em] drop-shadow-md mb-2">
+                {tournamentName}
+              </span>
+              <span className="text-white font-bold text-xl uppercase tracking-widest bg-white/10 px-6 py-2 rounded-full backdrop-blur-md border border-white/20">
+                {matchTitle}
+              </span>
+            </div>
+
+            {/* Center Teams Area */}
+            <div className="flex-1 flex items-center justify-center w-full z-20 px-20 relative mt-[-50px]">
+              {/* VS Badge in Center */}
+              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-30">
+                <div className="bg-slate-900 border-4 border-slate-700 w-24 h-24 rounded-full flex items-center justify-center shadow-2xl">
+                  <span className="text-3xl font-black italic text-slate-300">
+                    VS
+                  </span>
+                </div>
               </div>
-              <h1 className="text-white text-[6rem] font-black uppercase drop-shadow-2xl italic tracking-tighter flex items-center gap-16">
-                <span className="drop-shadow-[0_0_30px_rgba(255,255,255,0.1)] text-slate-100">
-                  {match?.meta?.teamA || "Team A"}
+
+              {/* Team A */}
+              <div className="flex-1 flex flex-col items-center justify-center gap-8">
+                <div
+                  className="w-64 h-64 rounded-full bg-slate-900 border-8 shadow-[0_0_50px_rgba(0,0,0,0.5)] flex items-center justify-center overflow-hidden"
+                  style={{ borderColor: teamAColor }}
+                >
+                  <img
+                    src={teamALogo}
+                    className="w-full h-full object-cover bg-white"
+                    alt={teamA}
+                    onError={(e) => (e.target.src = defaultLogo)}
+                  />
+                </div>
+                <h1 className="text-white text-6xl font-black uppercase tracking-tight text-center drop-shadow-xl max-w-2xl text-balance">
+                  {teamA || "TEAM A"}
+                </h1>
+              </div>
+
+              {/* Team B */}
+              <div className="flex-1 flex flex-col items-center justify-center gap-8">
+                <div
+                  className="w-64 h-64 rounded-full bg-slate-900 border-8 shadow-[0_0_50px_rgba(0,0,0,0.5)] flex items-center justify-center overflow-hidden"
+                  style={{ borderColor: teamBColor }}
+                >
+                  <img
+                    src={teamBLogo}
+                    className="w-full h-full object-cover bg-white"
+                    alt={teamB}
+                    onError={(e) => (e.target.src = defaultLogo)}
+                  />
+                </div>
+                <h1 className="text-white text-6xl font-black uppercase tracking-tight text-center drop-shadow-xl max-w-2xl text-balance">
+                  {teamB || "TEAM B"}
+                </h1>
+              </div>
+            </div>
+
+            {/* Bottom Status Bar */}
+            <div className="absolute bottom-24 w-full flex justify-center z-20">
+              <div className="bg-slate-900/80 backdrop-blur-md px-16 py-6 rounded-full border border-white/10 shadow-2xl flex items-center gap-6">
+                <div className="w-4 h-4 rounded-full bg-red-500 animate-pulse shadow-[0_0_15px_#ef4444]"></div>
+                <span className="text-white text-3xl font-black uppercase tracking-widest">
+                  {viewMode === "NOT_FOUND"
+                    ? "Standby For Match Data..."
+                    : "Match Starting Soon"}
                 </span>
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-cyan-400 text-9xl font-serif italic transform -skew-x-12">
-                  VS
-                </span>
-                <span className="drop-shadow-[0_0_30px_rgba(255,255,255,0.1)] text-slate-100">
-                  {match?.meta?.teamB || "Team B"}
-                </span>
-              </h1>
-              <div className="mt-24 bg-gradient-to-r from-teal-800 to-slate-800 px-16 py-5 rounded-full text-white text-5xl animate-pulse font-black border-4 border-teal-500/50 shadow-[0_0_50px_rgba(20,184,166,0.3)] tracking-widest uppercase">
-                {viewMode === "NOT_FOUND" ? "Standby..." : "Starting Soon..."}
               </div>
             </div>
           </div>
@@ -980,7 +1109,8 @@ export default function BroadcastLayer() {
 
         {/* --- 3. TOURNAMENT BANNER (Highest Priority Fullscreen) --- */}
         <div
-          className={`absolute inset-0 w-[1920px] h-[1080px] overflow-hidden z-[500] transition-all duration-500 ${isActiveView("APP_TOURNAMENT_BANNER") ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}>
+          className={`absolute inset-0 w-[1920px] h-[1080px] overflow-hidden z-[500] transition-all duration-500 ${isActiveView("APP_TOURNAMENT_BANNER") ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}
+        >
           {isActiveView("APP_TOURNAMENT_BANNER") && (
             <TournamentBanner tournamentId={tournamentId} />
           )}
@@ -997,7 +1127,8 @@ export default function BroadcastLayer() {
 
         {/* --- 4. THE AUTOMATIC POPUP (Over summary/Wicket) --- */}
         <div
-          className={`absolute inset-0 z-[60] flex items-center justify-center transition-all duration-500 ${showPopup && !manualCardActive ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}>
+          className={`absolute inset-0 z-[60] flex items-center justify-center transition-all duration-500 ${showPopup && !manualCardActive ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}
+        >
           <BroadcastSummaryCard
             tournamentName={tournamentName}
             match={match}
@@ -1007,7 +1138,8 @@ export default function BroadcastLayer() {
 
         {/* --- 5. THE MANUAL OVERRIDE INFO CARDS --- */}
         <div
-          className={`absolute inset-0 z-[60] flex items-center justify-center transition-all duration-500 ${manualCardActive ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}>
+          className={`absolute inset-0 z-[60] flex items-center justify-center transition-all duration-500 ${manualCardActive ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20 pointer-events-none"}`}
+        >
           <BroadcastSummaryCard
             tournamentName={tournamentName}
             match={match}
@@ -1022,7 +1154,8 @@ export default function BroadcastLayer() {
               {/* 🛡️ The container (Smaller, clean border, complementary sky-blue bg) */}
               <div
                 className="relative bg-cyan-100 rounded-full p-2.5 border-[3px] border-white ring-2 ring-black/20 flex items-center justify-center shadow-lg"
-                style={{ animation: "spin3D_Coin 10s ease-in-out infinite" }}>
+                style={{ animation: "spin3D_Coin 10s ease-in-out infinite" }}
+              >
                 <img
                   src={overlayState.appLogo || globalBranding?.appLogo}
                   alt="App Logo"
@@ -1041,14 +1174,15 @@ export default function BroadcastLayer() {
           )}
 
         {isActiveView("WIN_PREDICTOR") && (
-          <div className="absolute bottom-[180px] left-1/2 -translate-x-1/2 w-[600px] z-40">
+          <div className="absolute bottom-[210px] left-1/2 -translate-x-1/2 w-[600px] z-40">
             <WinPredictor match={match} />
           </div>
         )}
 
         {/* TICKER */}
         <div
-          className={`absolute bottom-[50px] w-full z-10 flex justify-center transition-all duration-500 ${hideTicker ? "translate-y-[200px] opacity-0 pointer-events-none" : "translate-y-0 opacity-100"}`}>
+          className={`absolute bottom-[50px] w-full z-10 flex justify-center transition-all duration-500 ${hideTicker ? "translate-y-[200px] opacity-0 pointer-events-none" : "translate-y-0 opacity-100"}`}
+        >
           {currentInn && <ScoreTicker match={match} />}
         </div>
 
@@ -1068,7 +1202,9 @@ export default function BroadcastLayer() {
         <div className="absolute bottom-[250px] left-[50px] flex flex-col justify-end gap-6 items-start z-40">
           {isActiveView("ORGANIZER") && <OrganizerCard />}
           {isActiveView("PARTNERSHIP") && <PartnershipCard />}
-          {isActiveView("SPOTLIGHT") && <PlayerSpotlight />}
+          {isSpotlightVisible && activeSpotlightId && (
+            <PlayerSpotlight playerId={activeSpotlightId} />
+          )}
         </div>
 
         {/* BOTTOM TICKER */}
