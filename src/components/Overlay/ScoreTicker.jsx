@@ -47,11 +47,9 @@ export default function ScoreTicker({ match }) {
       equationStr = "SCORES LEVEL";
     } else if (ballsRemaining > 0) {
       rrrVal = ((runsNeeded / ballsRemaining) * 6).toFixed(1);
-      // "Runs needed from X balls" formatting for the top center
       equationStr = `NEED ${runsNeeded} RUNS FROM ${ballsRemaining} BALLS`;
     }
   } else if (!isChasing && totalBalls > 0) {
-    // Projected Score for 1st Innings
     const projScore = Math.round((score / totalBalls) * totalMatchBalls);
     projScoreStr = `PROJ. SCORE: ${projScore}`;
   }
@@ -92,7 +90,6 @@ export default function ScoreTicker({ match }) {
       .filter((b) => normalizeName(b.bowler) === bowler);
   }
 
-  // 🔥 DYNAMIC SIZING FOR LONG OVERS
   const isLongOver = timeline.length > 6;
   const timelineGap = isLongOver ? "gap-2" : "gap-3";
 
@@ -127,6 +124,27 @@ export default function ScoreTicker({ match }) {
     }
   }
 
+  // 🔥 5. DYNAMIC TEAM THEME COLORS 🔥
+  const teamA = match.meta?.teamA;
+  const teamB = match.meta?.teamB;
+
+  const defaultTeamAColor = "#0284c7"; // Blue
+  const defaultTeamBColor = "#e11d48"; // Rose
+
+  const teamAColor = match.meta?.teamAColor || defaultTeamAColor;
+  const teamBColor = match.meta?.teamBColor || defaultTeamBColor;
+
+  let battingColor = defaultTeamAColor;
+  let bowlingColor = defaultTeamBColor;
+
+  if (battingTeam === teamA) {
+    battingColor = teamAColor;
+    bowlingColor = teamBColor;
+  } else if (battingTeam === teamB) {
+    battingColor = teamBColor;
+    bowlingColor = teamAColor;
+  }
+
   return (
     <>
       <style>
@@ -142,7 +160,9 @@ export default function ScoreTicker({ match }) {
 
       <div className="w-full flex items-end justify-center font-sans px-4 pb-4">
         {/* --- LEFT TEAM LOGO --- */}
-        <div className="w-36 h-36 flex-shrink-0 rounded-full bg-slate-900 border-[5px] border-slate-700 shadow-2xl z-30 flex items-center justify-center overflow-hidden relative -mr-8 anim-entry mb-2">
+        <div
+          className="w-36 h-36 flex-shrink-0 rounded-full bg-slate-900 border-[5px] shadow-[0_0_20px_rgba(0,0,0,0.5)] z-30 flex items-center justify-center overflow-hidden relative -mr-8 anim-entry mb-2"
+          style={{ borderColor: teamAColor }}>
           <img
             src={leftLogo}
             alt="Team A"
@@ -154,22 +174,29 @@ export default function ScoreTicker({ match }) {
         {/* --- MAIN TICKER CONTAINER --- */}
         <div className="w-full max-w-[1750px] flex flex-col items-center relative z-20">
           {/* --- TOP TIER: Match Context Bar --- */}
-          <div className="bg-slate-900/95 border border-slate-700/50 border-b-0 rounded-t-xl px-10 py-2 grid grid-cols-3 items-center text-slate-300 w-[96%] shadow-lg">
+          <div
+            className="rounded-t-xl px-10 py-2 grid grid-cols-3 items-center text-slate-300 w-[96%] shadow-lg border-t border-x border-white/20"
+            // 🔥 SMOOTH LONG FADE: Starts instantly from edge and fades slowly to 30% mark
+            style={{
+              background: `linear-gradient(to right, ${teamAColor} 0%, rgba(15, 23, 42, 0.95) 30%, rgba(15, 23, 42, 0.95) 70%, ${teamBColor} 100%)`,
+            }}>
             {/* Left: Match Info */}
-            <div className="flex gap-4 items-center justify-start">
-              <span className="text-teal-400 font-black tracking-widest text-lg uppercase">
+            <div className="flex gap-4 items-center justify-start flex-1 truncate pr-4">
+              <span className="text-white font-black tracking-widest text-lg uppercase drop-shadow-md bg-black/30 px-3 py-0.5 rounded shadow shrink-0">
                 {match.name || "Match"}
               </span>
-              <span className="opacity-40 text-sm">|</span>
-              <span className="font-bold text-xl tracking-wide text-white">
-                {match.meta?.teamA}{" "}
-                <span className="text-slate-500 font-normal mx-1">vs</span>{" "}
-                {match.meta?.teamB}
+              <span className="opacity-40 text-sm shrink-0">|</span>
+              <span className="font-bold text-xl tracking-wide text-white drop-shadow-md truncate flex-1">
+                <span style={{ color: teamAColor }}>{match.meta?.teamA}</span>
+                <span className="text-white/60 font-normal mx-2 drop-shadow-none">
+                  vs
+                </span>
+                <span style={{ color: teamBColor }}>{match.meta?.teamB}</span>
               </span>
             </div>
 
             {/* Center: 🏏 Equation / Projected Score 🏏 */}
-            <div className="flex justify-center items-center">
+            <div className="flex justify-center items-center shrink-0">
               {!isMatchFinished &&
                 (isChasing && equationStr ? (
                   <span className="text-amber-400 font-black text-base uppercase tracking-widest bg-amber-500/10 px-6 py-1 rounded border border-amber-500/30 drop-shadow-md">
@@ -183,9 +210,9 @@ export default function ScoreTicker({ match }) {
             </div>
 
             {/* Right: Toss OR Target */}
-            <div className="flex justify-end items-center">
+            <div className="flex justify-end items-center shrink-0">
               {showToss && (
-                <span className="text-amber-400/90 italic text-base font-bold tracking-wide">
+                <span className="text-white italic text-base font-bold tracking-wide drop-shadow-md">
                   {tossStr}
                 </span>
               )}
@@ -202,21 +229,25 @@ export default function ScoreTicker({ match }) {
           </div>
 
           {/* --- BOTTOM TIER: Live Stats Capsule --- */}
-          {/* 🔥 Height increased to 90px to fit larger fonts */}
-          <div className="w-full h-[90px] bg-slate-900 rounded-full border-[4px] border-slate-700 shadow-[0_15px_40px_rgba(0,0,0,0.6)] flex overflow-hidden">
+          <div
+            className="w-full h-[90px] rounded-full border-[4px] border-white/10 shadow-[0_15px_40px_rgba(0,0,0,0.6)] flex overflow-hidden"
+            // 🔥 SMOOTH LONG FADE: Color fades smoothly starting from 0% out to 35%
+            style={{
+              background: `linear-gradient(to right, ${battingColor} 0%, rgba(11, 17, 32, 0.95) 35%, rgba(11, 17, 32, 0.95) 65%, ${bowlingColor} 100%)`,
+            }}>
             {/* 1. Team & Main Score */}
-            <div className="bg-teal-600 px-8 flex items-center justify-between text-white min-w-[380px] shadow-[10px_0_20px_rgba(0,0,0,0.3)] z-30">
-              <span className="font-black text-3xl tracking-tight truncate max-w-[180px] uppercase">
+            <div className="px-8 flex items-center justify-between text-white w-[460px] shrink-0 bg-black/20 shadow-[10px_0_20px_rgba(0,0,0,0.3)] z-30 border-r border-white/10">
+              <span className="font-black text-3xl tracking-tight truncate flex-1 pr-4 uppercase drop-shadow-md">
                 {battingTeam}
               </span>
-              <div className="flex items-baseline gap-4">
-                <div className="font-mono font-black text-[4.5rem] tracking-tighter leading-none mt-2">
+              <div className="flex items-baseline gap-4 shrink-0">
+                <div className="font-mono font-black text-[4.5rem] tracking-tighter leading-none mt-2 drop-shadow-md">
                   {score}
-                  <span className="text-[2.75rem] text-teal-200 opacity-90 leading-none">
+                  <span className="text-[2.75rem] text-white/70 leading-none">
                     /{wickets}
                   </span>
                 </div>
-                <div className="text-2xl font-bold text-teal-100 bg-teal-800/40 px-3 py-1 rounded leading-none">
+                <div className="text-2xl font-bold text-white bg-black/30 px-3 py-1 rounded leading-none border border-white/10">
                   {displayOvers}
                 </div>
               </div>
@@ -225,50 +256,48 @@ export default function ScoreTicker({ match }) {
             {!isMatchFinished ? (
               <>
                 {/* 2. Batsmen */}
-                <div className="flex flex-col justify-center px-8 border-r border-slate-700 bg-slate-800 text-slate-200 min-w-[360px] z-20">
+                <div className="flex flex-col justify-center px-8 border-r border-white/10 text-slate-200 w-[420px] shrink-0 z-20">
                   <div
-                    className={`flex justify-between items-center ${striker ? "font-bold text-white" : ""}`}
-                  >
-                    <span className="truncate max-w-[200px] flex items-center gap-2 text-xl">
-                      {striker || "Striker"}{" "}
+                    className={`flex justify-between items-center ${striker ? "font-bold text-white" : ""}`}>
+                    <span className="truncate flex-1 pr-3 flex items-center gap-2 text-xl drop-shadow-md">
+                      {striker || "Striker"}
                       {striker && (
                         <Zap
                           size={14}
-                          className="text-teal-400 fill-teal-400"
+                          className="text-amber-400 fill-amber-400 drop-shadow-md shrink-0"
                         />
                       )}
                     </span>
-                    <span className="font-mono text-3xl font-black">
+                    <span className="font-mono text-3xl font-black drop-shadow-md text-white shrink-0">
                       {sStats.runs}
-                      <span className="text-base font-sans text-slate-400 font-bold ml-1.5">
+                      <span className="text-base font-sans text-slate-300 font-bold ml-1.5">
                         ({sStats.balls})
                       </span>
                     </span>
                   </div>
                   <div
-                    className={`flex justify-between items-center mt-1 ${!striker ? "font-bold text-white" : "text-slate-400"}`}
-                  >
-                    <span className="truncate max-w-[200px] text-lg">
+                    className={`flex justify-between items-center mt-1 ${!striker ? "font-bold text-white" : "text-white/70"}`}>
+                    <span className="truncate flex-1 pr-3 text-lg drop-shadow-md">
                       {nonStriker || "Non-Striker"}
                     </span>
-                    <span className="font-mono text-xl font-bold">
+                    <span className="font-mono text-xl font-bold drop-shadow-md text-white shrink-0">
                       {nsStats.runs}
-                      <span className="text-sm font-sans text-slate-500 ml-1.5">
+                      <span className="text-sm font-sans text-white/50 ml-1.5">
                         ({nsStats.balls})
                       </span>
                     </span>
                   </div>
                 </div>
 
-                {/* 3. 📈 RUN RATES ZONE 📈 */}
-                <div className="flex-1 bg-slate-900/40 relative flex items-center justify-center gap-10 overflow-hidden border-r border-slate-700/50">
+                {/* 3. 📈 RUN RATES ZONE (Center) 📈 */}
+                <div className="flex-1 relative flex items-center justify-center gap-10 overflow-hidden border-r border-white/10">
                   {/* CRR Block */}
                   {totalBalls > 0 && (
                     <div className="flex flex-col items-center justify-center">
-                      <span className="text-slate-400 font-black text-sm uppercase tracking-widest mb-0.5">
+                      <span className="text-white/60 font-black text-sm uppercase tracking-widest mb-0.5">
                         CRR
                       </span>
-                      <span className="text-white font-mono font-black text-[2.2rem] leading-none">
+                      <span className="text-white font-mono font-black text-[2.2rem] leading-none drop-shadow-md">
                         {crr}
                       </span>
                     </div>
@@ -276,16 +305,16 @@ export default function ScoreTicker({ match }) {
 
                   {/* Vertical Divider */}
                   {isChasing && rrrVal && totalBalls > 0 && (
-                    <div className="w-px h-12 bg-slate-700"></div>
+                    <div className="w-px h-12 bg-white/10"></div>
                   )}
 
                   {/* REQ Rate Block */}
                   {isChasing && rrrVal && (
                     <div className="flex flex-col items-center justify-center">
-                      <span className="text-amber-400 font-black text-sm uppercase tracking-widest mb-0.5">
+                      <span className="text-amber-400 font-black text-sm uppercase tracking-widest mb-0.5 drop-shadow-md">
                         REQ
                       </span>
-                      <span className="text-amber-400 font-mono font-black text-[2.2rem] leading-none">
+                      <span className="text-amber-400 font-mono font-black text-[2.2rem] leading-none drop-shadow-md">
                         {rrrVal}
                       </span>
                     </div>
@@ -293,17 +322,17 @@ export default function ScoreTicker({ match }) {
                 </div>
 
                 {/* 4. Bowler */}
-                <div className="flex flex-col justify-center px-8 border-l border-slate-700 bg-slate-800 min-w-[320px]">
-                  <div className="text-sm text-slate-400 uppercase tracking-widest mb-0.5 font-bold">
+                <div className="flex flex-col justify-center px-8 border-l border-white/20 w-[400px] shrink-0 text-white bg-black/20 z-20 shadow-[-10px_0_20px_rgba(0,0,0,0.3)]">
+                  <div className="text-sm uppercase tracking-widest mb-0.5 font-bold opacity-80">
                     Bowling - {bowlingTeam}
                   </div>
-                  <div className="flex justify-between items-baseline font-bold text-white">
-                    <span className="truncate max-w-[180px] text-xl">
+                  <div className="flex justify-between items-baseline font-bold text-white drop-shadow-md">
+                    <span className="truncate flex-1 pr-3 text-xl">
                       {bowler || "Bowler"}
                     </span>
-                    <span className="font-mono text-3xl text-amber-400 font-black pl-2">
+                    <span className="font-mono text-3xl text-white font-black pl-2 shrink-0">
                       {bStats.wickets}-{bStats.runs}{" "}
-                      <span className="text-base font-sans text-slate-300 font-normal ml-1">
+                      <span className="text-base font-sans text-white/70 font-normal ml-1">
                         ({bOvers} Ov)
                       </span>
                     </span>
@@ -312,41 +341,38 @@ export default function ScoreTicker({ match }) {
 
                 {/* 5. Timeline (Ball by Ball) */}
                 <div
-                  className={`flex items-center px-6 border-l border-slate-700 bg-slate-900 justify-start ${timelineGap} min-w-[280px] max-w-[360px] mr-5 overflow-hidden`}
-                >
+                  className={`flex items-center px-6 border-l border-white/10 bg-black/30 justify-start ${timelineGap} min-w-[280px] max-w-[360px] mr-5 overflow-hidden z-20`}>
                   {timeline.map((b, i) => {
                     let text = b.runs === 0 ? "•" : b.runs;
                     let bubbleClass =
-                      "bg-slate-700 border-slate-600 text-slate-300";
+                      "bg-white/10 border-white/20 text-white backdrop-blur-sm";
 
                     if (b.isWicket) {
                       text = "W";
-                      bubbleClass = "bg-rose-600 border-rose-500 text-white";
+                      bubbleClass =
+                        "bg-rose-600 border-rose-400 text-white shadow-[0_0_10px_rgba(225,29,72,0.5)]";
                     } else if (b.isWide) {
                       text = b.runs > 0 ? `${b.runs}wd` : "wd";
                       bubbleClass =
-                        "bg-indigo-600 border-indigo-500 text-white";
+                        "bg-indigo-600 border-indigo-400 text-white";
                     } else if (b.isNoBall) {
                       text = b.runs > 0 ? `${b.runs}nb` : "nb";
                       bubbleClass =
-                        "bg-indigo-600 border-indigo-500 text-white";
+                        "bg-indigo-600 border-indigo-400 text-white";
                     } else if (b.isLegBye) {
                       text = b.runs > 0 ? `${b.runs}lb` : "lb";
-                      bubbleClass = "bg-slate-600 border-slate-500 text-white";
+                      bubbleClass = "bg-white/20 border-white/30 text-white";
                     } else if (b.isBye) {
                       text = b.runs > 0 ? `${b.runs}b` : "b";
-                      bubbleClass = "bg-slate-600 border-slate-500 text-white";
+                      bubbleClass = "bg-white/20 border-white/30 text-white";
                     } else if (b.runs === 4) {
                       text = "4";
                       bubbleClass =
-                        "bg-teal-500 border-teal-400 text-slate-900 font-black";
+                        "bg-teal-400 border-teal-200 text-slate-900 font-black shadow-[0_0_10px_rgba(45,212,191,0.5)]";
                     } else if (b.runs === 6) {
                       text = "6";
                       bubbleClass =
-                        "bg-amber-500 border-amber-400 text-slate-900 font-black";
-                    } else if (b.runs > 0) {
-                      text = b.runs;
-                      bubbleClass = "bg-slate-600 border-slate-500 text-white";
+                        "bg-amber-400 border-amber-200 text-slate-900 font-black shadow-[0_0_10px_rgba(251,191,36,0.5)]";
                     }
 
                     const textStr = text.toString();
@@ -363,8 +389,7 @@ export default function ScoreTicker({ match }) {
                     return (
                       <div
                         key={i}
-                        className={`${bubbleSize} rounded-full shrink-0 flex items-center justify-center font-black shadow-sm ${bubbleClass} ${textSize} uppercase transition-all duration-300`}
-                      >
+                        className={`${bubbleSize} rounded-full shrink-0 flex items-center justify-center font-black shadow-sm ${bubbleClass} ${textSize} uppercase transition-all duration-300`}>
                         {text}
                       </div>
                     );
@@ -372,11 +397,11 @@ export default function ScoreTicker({ match }) {
                 </div>
               </>
             ) : (
-              <div className="flex-1 flex items-center justify-center bg-slate-800/80">
-                <span className="text-amber-500 font-black text-3xl uppercase tracking-[0.4em] mr-6">
+              <div className="flex-1 flex items-center justify-center bg-black/60 backdrop-blur-md z-20">
+                <span className="text-amber-500 font-black text-3xl uppercase tracking-[0.4em] mr-6 drop-shadow-lg">
                   MATCH FINISHED:
                 </span>
-                <span className="text-white font-black text-5xl uppercase tracking-wider">
+                <span className="text-white font-black text-5xl uppercase tracking-wider drop-shadow-xl">
                   {resultText}
                 </span>
               </div>
@@ -385,7 +410,9 @@ export default function ScoreTicker({ match }) {
         </div>
 
         {/* --- RIGHT TEAM LOGO --- */}
-        <div className="w-36 h-36 flex-shrink-0 rounded-full bg-slate-900 border-[5px] border-slate-700 shadow-2xl z-30 flex items-center justify-center overflow-hidden relative -ml-10 anim-entry mb-2">
+        <div
+          className="w-36 h-36 flex-shrink-0 rounded-full bg-slate-900 border-[5px] shadow-[0_0_20px_rgba(0,0,0,0.5)] z-30 flex items-center justify-center overflow-hidden relative -ml-10 anim-entry mb-2"
+          style={{ borderColor: teamBColor }}>
           <img
             src={rightLogo}
             alt="Team B"

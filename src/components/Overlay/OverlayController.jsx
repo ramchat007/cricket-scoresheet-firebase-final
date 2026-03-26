@@ -28,10 +28,10 @@ import {
   Info,
   Volume2,
   VolumeX,
+  Palette,
 } from "lucide-react";
 
-// ☁️ CLOUDINARY CONFIGURATION (Replace these with your actual details);
-
+// ☁️ CLOUDINARY CONFIGURATION
 const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 
@@ -63,6 +63,16 @@ export default function OverlayController({ tournamentId, matchId, match }) {
   const [newSponsorName, setNewSponsorName] = useState("");
   const [newSponsorPhone, setNewSponsorPhone] = useState("");
   const [processingImage, setProcessingImage] = useState(false);
+
+  // 🔥 NEW: State for Team Colors
+  const [teamAColor, setTeamAColor] = useState("#0d9488"); // Default Teal
+  const [teamBColor, setTeamBColor] = useState("#1e293b"); // Default Slate
+
+  // Sync colors if they exist in the DB
+  useEffect(() => {
+    if (match?.meta?.teamAColor) setTeamAColor(match.meta.teamAColor);
+    if (match?.meta?.teamBColor) setTeamBColor(match.meta.teamBColor);
+  }, [match?.meta?.teamAColor, match?.meta?.teamBColor]);
 
   // --- ☁️ UNIVERSAL CLOUDINARY UPLOADER ---
   const uploadToCloudinary = async (file) => {
@@ -139,6 +149,27 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     } catch (e) {
       console.error("Overlay update failed", e);
       alert("Failed to save setting to the cloud.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 🔥 NEW: Save Team Colors Handler
+  const handleSaveTeamColors = async () => {
+    setSaving(true);
+    try {
+      await updateDoc(
+        doc(db, "tournaments", tournamentId, "matches", matchId),
+        {
+          "meta.teamAColor": teamAColor,
+          "meta.teamBColor": teamBColor,
+        },
+      );
+      // ✅ Added success notification so the Admin knows it worked!
+      alert("✅ Team colors successfully updated on the live broadcast!");
+    } catch (e) {
+      console.error("Failed to save team colors", e);
+      alert("Failed to save team colors.");
     } finally {
       setSaving(false);
     }
@@ -291,12 +322,10 @@ export default function OverlayController({ tournamentId, matchId, match }) {
   }) => (
     <button
       onClick={onClick}
-      className={`w-full py-3 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-between transition-all shadow-md active:scale-95 ${active ? `${colorClass} text-white shadow-lg shadow-teal-500/20 ring-2 ring-white/20` : lightMode ? "bg-gray-100 text-gray-500 hover:bg-gray-200" : "bg-white/5 text-slate-400 hover:bg-white/10"}`}
-    >
+      className={`w-full py-3 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-between transition-all shadow-md active:scale-95 ${active ? `${colorClass} text-white shadow-lg shadow-teal-500/20 ring-2 ring-white/20` : lightMode ? "bg-gray-100 text-gray-500 hover:bg-gray-200" : "bg-white/5 text-slate-400 hover:bg-white/10"}`}>
       <div className="flex items-center gap-2">
         <div
-          className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${active ? "border-white bg-white/20" : "border-current opacity-50"}`}
-        >
+          className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${active ? "border-white bg-white/20" : "border-current opacity-50"}`}>
           {active && <Check size={12} strokeWidth={4} />}
         </div>
         <Icon
@@ -312,8 +341,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
   const TriggerButton = ({ label, onClick, colorClass }) => (
     <button
       onClick={onClick}
-      className={`w-full py-3 px-4 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 text-white ${colorClass} hover:opacity-90`}
-    >
+      className={`w-full py-3 px-4 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 text-white ${colorClass} hover:opacity-90`}>
       <Play size={14} fill="currentColor" /> {label}
     </button>
   );
@@ -322,8 +350,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     <div className="space-y-6">
       {/* HEADER */}
       <div
-        className={`flex items-start md:items-center justify-between p-5 rounded-2xl border shadow-lg flex-col md:flex-row gap-4 ${lightMode ? "bg-gradient-to-r from-indigo-50 to-white border-indigo-100 text-indigo-900" : "bg-gradient-to-r from-indigo-900/30 to-[#0F1115] border-indigo-500/20 text-indigo-100"}`}
-      >
+        className={`flex items-start md:items-center justify-between p-5 rounded-2xl border shadow-lg flex-col md:flex-row gap-4 ${lightMode ? "bg-gradient-to-r from-indigo-50 to-white border-indigo-100 text-indigo-900" : "bg-gradient-to-r from-indigo-900/30 to-[#0F1115] border-indigo-500/20 text-indigo-100"}`}>
         <div className="flex items-start gap-4">
           <div className="p-3 rounded-xl bg-indigo-500 text-white shadow-lg shadow-indigo-500/30">
             <Tv size={28} />
@@ -339,8 +366,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               href={`/overlay/${tournamentId}/broadcast/active?clean=true`}
               target="_blank"
               rel="noreferrer"
-              className={`mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${lightMode ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200" : "bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30"}`}
-            >
+              className={`mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${lightMode ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200" : "bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30"}`}>
               <ExternalLink size={12} /> Open Live Preview
             </a>
           </div>
@@ -363,8 +389,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {/* --- 1. CORE MATCH GRAPHICS --- */}
         <div
-          className={`${cardClass} border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.1)] relative overflow-hidden`}
-        >
+          className={`${cardClass} border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.1)] relative overflow-hidden`}>
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-teal-400"></div>
           <div className="flex items-center gap-2 mb-5 text-indigo-500">
             <LayoutTemplate size={20} />
@@ -373,7 +398,64 @@ export default function OverlayController({ tournamentId, matchId, match }) {
             </h4>
           </div>
           <div className="space-y-3 flex-grow">
-            <div className="mt-4 pt-4 border-t border-white/10">
+            {/* 🔥 NEW: TEAM THEME COLORS 🔥 */}
+            <div className="pt-2 pb-4">
+              <p
+                className={`text-[10px] uppercase font-bold tracking-widest mb-3 ${theme.sub}`}>
+                <Palette size={12} className="inline mr-1 mb-0.5" /> Scorebug
+                Team Colors
+              </p>
+              <div className="flex items-center gap-4 mb-3">
+                <div className="flex-1 bg-black/10 dark:bg-white/5 p-2.5 rounded-xl border border-black/5 dark:border-white/5">
+                  <label
+                    className={`text-[10px] font-bold block mb-2 truncate ${theme.text}`}>
+                    {match?.meta?.teamA || "Team A"}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={teamAColor}
+                      onChange={(e) => setTeamAColor(e.target.value)}
+                      className="w-8 h-8 rounded cursor-pointer bg-transparent border-0 p-0"
+                    />
+                    <span
+                      className={`text-xs font-mono uppercase ${theme.sub}`}>
+                      {teamAColor}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex-1 bg-black/10 dark:bg-white/5 p-2.5 rounded-xl border border-black/5 dark:border-white/5">
+                  <label
+                    className={`text-[10px] font-bold block mb-2 truncate ${theme.text}`}>
+                    {match?.meta?.teamB || "Team B"}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={teamBColor}
+                      onChange={(e) => setTeamBColor(e.target.value)}
+                      className="w-8 h-8 rounded cursor-pointer bg-transparent border-0 p-0"
+                    />
+                    <span
+                      className={`text-xs font-mono uppercase ${theme.sub}`}>
+                      {teamBColor}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={handleSaveTeamColors}
+                disabled={saving}
+                className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                  lightMode
+                    ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
+                    : "bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 border border-indigo-500/30"
+                }`}>
+                Save Colors to Broadcast
+              </button>
+            </div>
+
+            <div className="pt-4 border-t border-black/10 dark:border-white/10">
               <div className="flex justify-between items-center mb-2">
                 <label className={`${labelClass} mb-0`}>
                   App Branding Logo
@@ -391,8 +473,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
 
               {(match?.meta?.overlay?.appLogo || globalLogo) && (
                 <div
-                  className={`mb-3 p-4 rounded-xl border flex flex-col items-center justify-center ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/10"}`}
-                >
+                  className={`mb-3 p-4 rounded-xl border flex flex-col items-center justify-center ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/10"}`}>
                   <img
                     src={match?.meta?.overlay?.appLogo || globalLogo}
                     alt="Broadcast Logo"
@@ -409,8 +490,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               <div className="flex gap-2">
                 <button
                   onClick={() => fileInputAppLogoRef.current?.click()}
-                  className={`flex-1 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all border flex items-center justify-center gap-1 ${lightMode ? "bg-white border-gray-200 hover:bg-gray-50" : "bg-white/5 border-white/10 hover:bg-white/10"}`}
-                >
+                  className={`flex-1 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all border flex items-center justify-center gap-1 ${lightMode ? "bg-white border-gray-200 hover:bg-gray-50" : "bg-white/5 border-white/10 hover:bg-white/10"}`}>
                   <Upload size={12} />{" "}
                   {match?.meta?.overlay?.appLogo
                     ? "Change Custom Logo"
@@ -442,8 +522,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                       }
                     }}
                     className={`px-4 py-2.5 rounded-xl font-black transition-all border flex items-center justify-center text-red-500 ${lightMode ? "bg-red-50 border-red-200 hover:bg-red-100" : "bg-red-500/10 border-red-500/20 hover:bg-red-500/30"}`}
-                    title="Revert to Global Logo"
-                  >
+                    title="Revert to Global Logo">
                     <X size={16} strokeWidth={3} />
                   </button>
                 )}
@@ -518,8 +597,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
 
         {/* --- 2. BREAK SCREENS --- */}
         <div
-          className={`${cardClass} border-yellow-500/30 shadow-[0_0_15px_rgba(234,179,8,0.1)] relative overflow-hidden`}
-        >
+          className={`${cardClass} border-yellow-500/30 shadow-[0_0_15px_rgba(234,179,8,0.1)] relative overflow-hidden`}>
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-400 to-orange-500"></div>
           <div className="flex items-center gap-2 mb-5 text-yellow-500">
             <MonitorPlay size={20} />
@@ -533,8 +611,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                 <button
                   onClick={() => fileInputBannerRef.current?.click()}
                   disabled={processingImage}
-                  className={`w-full py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all border ${lightMode ? "bg-white hover:bg-gray-50 border-gray-200" : "bg-white/5 hover:bg-white/10 border-white/10"}`}
-                >
+                  className={`w-full py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all border ${lightMode ? "bg-white hover:bg-gray-50 border-gray-200" : "bg-white/5 hover:bg-white/10 border-white/10"}`}>
                   {processingImage ? (
                     <span className="animate-pulse">Uploading...</span>
                   ) : (
@@ -553,8 +630,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               </div>
               {config.fullScreenBanners?.length > 0 && (
                 <div
-                  className={`p-2 rounded-xl border flex gap-2 overflow-x-auto ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/5"}`}
-                >
+                  className={`p-2 rounded-xl border flex gap-2 overflow-x-auto ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/5"}`}>
                   {config.fullScreenBanners.map((b) => (
                     <div key={b.id} className="relative shrink-0">
                       <img
@@ -564,8 +640,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                       />
                       <button
                         onClick={() => removeBanner(b.id)}
-                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 shadow"
-                      >
+                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 shadow">
                         <X size={10} />
                       </button>
                     </div>
@@ -624,8 +699,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                 <button
                   onClick={() => fileInputLogoRef.current?.click()}
                   disabled={processingImage}
-                  className={`px-4 rounded-xl flex items-center justify-center transition-all border ${lightMode ? "bg-white hover:bg-gray-50 border-gray-200" : "bg-white/5 hover:bg-white/10 border-white/10"}`}
-                >
+                  className={`px-4 rounded-xl flex items-center justify-center transition-all border ${lightMode ? "bg-white hover:bg-gray-50 border-gray-200" : "bg-white/5 hover:bg-white/10 border-white/10"}`}>
                   {processingImage ? (
                     <span className="animate-pulse">...</span>
                   ) : (
@@ -642,13 +716,11 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               </div>
               {config.sponsors?.length > 0 && (
                 <div
-                  className={`p-2 rounded-xl border max-h-24 overflow-y-auto ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/5"}`}
-                >
+                  className={`p-2 rounded-xl border max-h-24 overflow-y-auto ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/5"}`}>
                   {config.sponsors.map((s) => (
                     <div
                       key={s.id}
-                      className={`flex items-center gap-3 p-1.5 border-b last:border-0 ${lightMode ? "border-gray-200" : "border-white/5"}`}
-                    >
+                      className={`flex items-center gap-3 p-1.5 border-b last:border-0 ${lightMode ? "border-gray-200" : "border-white/5"}`}>
                       <img
                         src={s.image}
                         alt=""
@@ -666,8 +738,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                       </div>
                       <button
                         onClick={() => removeSponsor(s.id)}
-                        className="text-red-500 hover:bg-red-500/10 p-1 rounded"
-                      >
+                        className="text-red-500 hover:bg-red-500/10 p-1 rounded">
                         <X size={12} />
                       </button>
                     </div>
@@ -710,8 +781,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
 
         {/* 🔥 4. MATCH EVENTS & INFO CARDS */}
         <div
-          className={`${cardClass} border-green-500/30 shadow-[0_0_15px_rgba(34,197,94,0.1)] relative overflow-hidden`}
-        >
+          className={`${cardClass} border-green-500/30 shadow-[0_0_15px_rgba(34,197,94,0.1)] relative overflow-hidden`}>
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-400 to-emerald-600"></div>
           <div className="flex items-center gap-2 mb-4 text-green-500">
             <Zap size={20} />
@@ -724,7 +794,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
             {/* 🚨 THE KILL SWITCH 🚨 */}
             <button
               onClick={() => {
-                // Trigger the clear timestamp AND untoggle all full-screen cards!
                 updateOverlay({
                   forceClearOverlay: Date.now(),
                   activeViews: (config.activeViews || []).filter(
@@ -740,15 +809,13 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                   ),
                 });
               }}
-              className="w-full py-3 px-4 rounded-xl font-black text-[13px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-lg shadow-red-500/20 active:scale-95 text-white bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 border border-red-400/50"
-            >
+              className="w-full py-3 px-4 rounded-xl font-black text-[13px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-lg shadow-red-500/20 active:scale-95 text-white bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 border border-red-400/50">
               <X size={18} strokeWidth={4} /> Clear Screen (Kill Switch)
             </button>
 
             <div>
               <p
-                className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${theme.sub}`}
-              >
+                className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${theme.sub}`}>
                 Instant Event Triggers
               </p>
               <div className="grid grid-cols-3 gap-2">
@@ -770,8 +837,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               </div>
               <div>
                 <p
-                  className={`text-[10px] uppercase font-bold tracking-widest mt-4 mb-2 ${theme.sub}`}
-                >
+                  className={`text-[10px] uppercase font-bold tracking-widest mt-4 mb-2 ${theme.sub}`}>
                   Automated Stream Audio
                 </p>
                 <ToggleButton
@@ -794,8 +860,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
             </div>
             <div className="pt-3 border-t border-black/5 dark:border-white/5">
               <p
-                className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${theme.sub}`}
-              >
+                className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${theme.sub}`}>
                 Full-Screen Info Cards
               </p>
               <div className="space-y-2.5">
@@ -865,8 +930,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                   onClick={() =>
                     updateOverlay({ showTicker: !config.showTicker })
                   }
-                  className={`px-4 rounded-xl font-bold text-xs uppercase ${config.showTicker ? "bg-slate-700 text-white" : lightMode ? "bg-gray-200 text-gray-500" : "bg-white/10 text-white"}`}
-                >
+                  className={`px-4 rounded-xl font-bold text-xs uppercase ${config.showTicker ? "bg-slate-700 text-white" : lightMode ? "bg-gray-200 text-gray-500" : "bg-white/10 text-white"}`}>
                   {config.showTicker ? "ON" : "OFF"}
                 </button>
               </div>

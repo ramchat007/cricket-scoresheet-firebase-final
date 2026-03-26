@@ -32,3 +32,7 @@
 7. Global Search
    Search for a player name or team name across all tournaments and navigate directly.
 8. Live Commentary Bot: Auto-generate textual commentary from scoring events.
+
+THEME CHANGE
+git checkout feature/theme-engine-upgrade
+git merge main
