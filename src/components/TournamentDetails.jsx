@@ -89,7 +89,17 @@ const LiveActionButton = ({
 export default function TournamentDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { theme, lightMode } = useTheme();
+
+  // 🟢 Extract theme properties natively
+  const { theme } = useTheme();
+
+  // Safe Fallbacks
+  const cardBg =
+    theme?.card ||
+    "bg-black/40 backdrop-blur-xl border border-white/10 shadow-2xl";
+  const textMain = theme?.text || "text-white";
+  const textSub = theme?.sub || "text-gray-400";
+  const accentText = theme?.accentText || "text-cyan-400";
 
   const auth = useAuth();
   const user = auth?.user || null;
@@ -321,7 +331,7 @@ export default function TournamentDetails() {
   if (loading) {
     return (
       <div
-        className={`flex justify-center items-center min-h-screen animate-pulse font-bold tracking-widest text-lg ${theme.bg} ${theme.text}`}>
+        className={`flex justify-center items-center min-h-screen animate-pulse font-bold tracking-widest text-lg bg-transparent ${textMain}`}>
         LOADING...
       </div>
     );
@@ -329,58 +339,48 @@ export default function TournamentDetails() {
 
   return (
     <div
-      className={`w-full min-h-screen pb-20 font-sans transition-colors duration-300 ${theme.bg} ${theme.text}`}>
-      {/* HERO SECTION - TIGHTER PADDING ON MOBILE */}
+      className={`w-full min-h-screen pb-20 font-sans transition-colors duration-300 bg-transparent ${textMain}`}>
+      {/* 🟢 HERO SECTION - Uses the dynamic theme card style */}
       <div
-        className={`relative border-b pt-6 pb-8 md:pt-10 md:pb-12 px-3 md:px-4 overflow-hidden shadow-2xl ${
-          lightMode ? "bg-white border-gray-200" : "bg-[#161920] border-white/5"
-        }`}>
+        className={`relative pt-6 pb-8 md:pt-10 md:pb-12 px-3 md:px-4 overflow-hidden shadow-sm border-x-0 border-t-0 rounded-none ${cardBg}`}>
         <div className="max-w-7xl mx-auto relative z-10 flex flex-col md:flex-row md:items-end md:justify-between gap-3 md:gap-6">
           {/* TITLE & INFO */}
           <div className="flex-1">
             <div className="flex items-center gap-1.5 md:gap-2 mb-1.5 md:mb-2">
               {isOwner && (
                 <span
-                  className={`text-[8px] md:text-[9px] font-black px-1.5 md:px-2 py-0.5 rounded md:rounded-md border uppercase tracking-widest ${
-                    lightMode
-                      ? "bg-red-50 text-red-600 border-red-200"
-                      : "bg-red-900/30 text-red-400 border-red-500/30"
-                  }`}>
+                  className={`text-[8px] md:text-[9px] font-black px-1.5 md:px-2 py-0.5 rounded md:rounded-md border uppercase tracking-widest bg-red-500/10 text-red-500 border-red-500/20`}>
                   Admin Access
                 </span>
               )}
               {canEdit && !isOwner && (
                 <span
-                  className={`text-[8px] md:text-[9px] font-black px-1.5 md:px-2 py-0.5 rounded md:rounded-md border uppercase tracking-widest ${
-                    lightMode
-                      ? "bg-indigo-50 text-indigo-600 border-indigo-200"
-                      : "bg-indigo-900/30 text-indigo-400 border-indigo-500/30"
-                  }`}>
+                  className={`text-[8px] md:text-[9px] font-black px-1.5 md:px-2 py-0.5 rounded md:rounded-md border uppercase tracking-widest bg-indigo-500/10 text-indigo-500 border-indigo-500/20`}>
                   Scorer Access
                 </span>
               )}
             </div>
+
             {/* TIGHTER TITLE FOR MOBILE */}
             <h1
-              className={`text-2xl sm:text-3xl md:text-5xl font-black uppercase tracking-tighter italic leading-none ${theme.text}`}>
+              className={`text-2xl sm:text-3xl md:text-5xl font-black uppercase tracking-tighter italic leading-none ${textMain}`}>
               {tournamentData?.name}
             </h1>
+
             <div
-              className={`text-xs md:text-sm font-bold mt-2 md:mt-3 flex flex-wrap items-center gap-2 md:gap-3 uppercase tracking-wide ${theme.sub}`}>
+              className={`text-xs md:text-sm font-bold mt-2 md:mt-3 flex flex-wrap items-center gap-2 md:gap-3 uppercase tracking-wide ${textSub}`}>
               <span className="flex items-center gap-1">
                 <Shield size={14} className="md:w-4 md:h-4" />{" "}
                 {tournamentTeams.length} Teams
               </span>
-              <span
-                className={`hidden sm:block w-1 md:w-1.5 h-1 md:h-1.5 rounded-full ${lightMode ? "bg-gray-300" : "bg-slate-700"}`}></span>
+              <span className="hidden sm:block w-1 md:w-1.5 h-1 md:h-1.5 rounded-full bg-current opacity-30"></span>
               <span className="flex items-center gap-1">
                 <Trophy size={14} className="md:w-4 md:h-4" /> {matches.length}{" "}
                 Matches
               </span>
-              <span
-                className={`hidden sm:block w-1 md:w-1.5 h-1 md:h-1.5 rounded-full ${lightMode ? "bg-gray-300" : "bg-slate-700"}`}></span>
+              <span className="hidden sm:block w-1 md:w-1.5 h-1 md:h-1.5 rounded-full bg-current opacity-30"></span>
 
-              {/* 🟢 DYNAMIC PLAYER BUTTON: Registration List (Pre-Auction) vs Stats (Post-Auction) */}
+              {/* 🟢 DYNAMIC PLAYER BUTTON */}
               <button
                 onClick={() => {
                   if (uniqueTeamPlayersCount === 0) {
@@ -393,7 +393,7 @@ export default function TournamentDetails() {
                 className={`flex items-center gap-1 transition-colors cursor-pointer ${
                   uniqueTeamPlayersCount === 0 && !(canEdit || isOwner)
                     ? "pointer-events-none opacity-80"
-                    : "hover:text-teal-500"
+                    : `hover:${accentText}`
                 }`}
                 title={
                   uniqueTeamPlayersCount === 0
@@ -423,7 +423,7 @@ export default function TournamentDetails() {
               {canEdit && isAuctionEnabled && auctionInitialized && (
                 <button
                   onClick={() => navigate(`/tournaments/${id}/auction`)}
-                  className="bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-white font-bold px-4 py-2 md:px-6 md:py-3 rounded-lg md:rounded-xl shadow-lg flex items-center gap-1.5 md:gap-2 transition-all active:scale-95 text-[10px] md:text-xs uppercase tracking-widest">
+                  className={`bg-gradient-to-r ${theme?.gradient || "from-teal-600 to-emerald-600"} hover:opacity-90 text-white font-bold px-4 py-2 md:px-6 md:py-3 rounded-lg md:rounded-xl shadow-lg flex items-center gap-1.5 md:gap-2 transition-all active:scale-95 text-[10px] md:text-xs uppercase tracking-widest`}>
                   <Settings size={14} className="md:w-[18px] md:h-[18px]" />
                   <span>Enter Console</span>
                 </button>
@@ -433,18 +433,10 @@ export default function TournamentDetails() {
             {/* ROW 2: ADMIN MANAGEMENT TOOLS */}
             {canEdit && (
               <div
-                className={`flex flex-wrap gap-1.5 md:gap-2 justify-start md:justify-end p-1.5 md:p-2 rounded-lg md:rounded-xl border backdrop-blur-sm ${
-                  lightMode
-                    ? "bg-gray-100 border-gray-200"
-                    : "bg-black/20 border-white/5"
-                }`}>
+                className={`flex flex-wrap gap-1.5 md:gap-2 justify-start md:justify-end p-1.5 md:p-2 rounded-lg md:rounded-xl border bg-black/10 border-current/10 backdrop-blur-sm`}>
                 <button
                   onClick={() => setShowScheduler(!showScheduler)}
-                  className={`px-2.5 py-1.5 md:px-4 md:py-2 rounded-md md:rounded-lg transition-all text-[9px] md:text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 md:gap-2 border ${
-                    lightMode
-                      ? "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
-                      : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
-                  }`}>
+                  className={`px-2.5 py-1.5 md:px-4 md:py-2 rounded-md md:rounded-lg transition-all text-[9px] md:text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 md:gap-2 border bg-current/5 border-current/10 hover:bg-current/10 text-inherit`}>
                   {showScheduler ? (
                     <X size={12} className="md:w-3.5 md:h-3.5" />
                   ) : (
@@ -452,13 +444,10 @@ export default function TournamentDetails() {
                   )}
                   {showScheduler ? "Close" : "Schedule"}
                 </button>
+
                 <button
                   onClick={() => navigate(`/tournaments/${id}/bracket`)}
-                  className={`px-2.5 py-1.5 md:px-4 md:py-2 rounded-md md:rounded-lg transition-all text-[9px] md:text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 md:gap-2 border ${
-                    lightMode
-                      ? "bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100"
-                      : "bg-purple-500/10 border-purple-500/30 text-purple-400 hover:bg-purple-500/20"
-                  }`}>
+                  className={`px-2.5 py-1.5 md:px-4 md:py-2 rounded-md md:rounded-lg transition-all text-[9px] md:text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 md:gap-2 border bg-purple-500/10 border-purple-500/20 text-purple-500 hover:bg-purple-500/20`}>
                   <Shield size={12} className="md:w-3.5 md:h-3.5" /> Bracket
                   Editor
                 </button>
@@ -468,22 +457,14 @@ export default function TournamentDetails() {
                     {!auctionInitialized && (
                       <button
                         onClick={handleInitializeAuction}
-                        className={`px-2.5 py-1.5 md:px-4 md:py-2 rounded-md md:rounded-lg transition-all text-[9px] md:text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 md:gap-2 border ${
-                          lightMode
-                            ? "bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100"
-                            : "bg-purple-600/20 text-purple-300 border-purple-500/30 hover:bg-purple-600/40"
-                        }`}>
+                        className={`px-2.5 py-1.5 md:px-4 md:py-2 rounded-md md:rounded-lg transition-all text-[9px] md:text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 md:gap-2 border bg-fuchsia-500/10 border-fuchsia-500/20 text-fuchsia-500 hover:bg-fuchsia-500/20`}>
                         <Rocket size={12} className="md:w-3.5 md:h-3.5" /> Init
                         Auction
                       </button>
                     )}
                     <button
                       onClick={toggleAuctionMode}
-                      className={`px-2.5 py-1.5 md:px-4 md:py-2 rounded-md md:rounded-lg transition-all text-[9px] md:text-[10px] font-bold uppercase tracking-widest border flex items-center gap-1 md:gap-2 ${
-                        lightMode
-                          ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
-                          : "bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20"
-                      }`}>
+                      className={`px-2.5 py-1.5 md:px-4 md:py-2 rounded-md md:rounded-lg transition-all text-[9px] md:text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 md:gap-2 border bg-red-500/10 border-red-500/20 text-red-500 hover:bg-red-500/20`}>
                       <Lock size={12} className="md:w-3.5 md:h-3.5" /> Disable
                       Auction
                     </button>
@@ -491,11 +472,7 @@ export default function TournamentDetails() {
                 ) : (
                   <button
                     onClick={toggleAuctionMode}
-                    className={`px-2.5 py-1.5 md:px-4 md:py-2 rounded-md md:rounded-lg transition-all text-[9px] md:text-[10px] font-bold uppercase tracking-widest border flex items-center gap-1 md:gap-2 ${
-                      lightMode
-                        ? "bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100"
-                        : "bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/20"
-                    }`}>
+                    className={`px-2.5 py-1.5 md:px-4 md:py-2 rounded-md md:rounded-lg transition-all text-[9px] md:text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 md:gap-2 border bg-orange-500/10 border-orange-500/20 text-orange-500 hover:bg-orange-500/20`}>
                     <Unlock size={12} className="md:w-3.5 md:h-3.5" /> Enable
                     Auction
                   </button>
@@ -506,15 +483,11 @@ export default function TournamentDetails() {
         </div>
       </div>
 
-      {/* SCHEDULER SECTION - REDUCED MARGINS FOR MOBILE */}
+      {/* 🟢 SCHEDULER SECTION */}
       <div className="max-w-7xl mx-auto px-2 md:px-4 -mt-4 md:-mt-8 relative z-30 animate-in fade-in slide-in-from-top-4 duration-500">
         {showScheduler && (
           <div
-            className={`border rounded-[1.5rem] md:rounded-[2rem] shadow-2xl p-1 md:p-2 mb-4 md:mb-8 ${
-              lightMode
-                ? "bg-white border-gray-200"
-                : "bg-[#1C2128] border-white/10"
-            }`}>
+            className={`rounded-[1.5rem] md:rounded-[2rem] shadow-2xl p-1 md:p-2 mb-4 md:mb-8 ${cardBg}`}>
             <MatchScheduler
               tournamentId={id}
               teams={tournamentTeams}

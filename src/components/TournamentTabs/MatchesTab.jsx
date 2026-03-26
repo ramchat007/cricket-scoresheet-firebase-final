@@ -12,7 +12,10 @@ export default function MatchesTab({
   canEdit,
   onOpenCorrection,
 }) {
-  const { theme, lightMode } = useTheme();
+  // 🟢 1. Extracted theme natively (removed lightMode)
+  const { theme } = useTheme();
+
+  const textSub = theme?.sub || "text-gray-400";
 
   // --- SORTING HELPER ---
   const sortMatches = (list, direction = "asc") => {
@@ -65,21 +68,18 @@ export default function MatchesTab({
           )}
           <h3
             className={`text-[10px] md:text-xs font-black uppercase tracking-[0.2em] md:tracking-[0.3em] ${
-              type === "live" ? "text-red-600" : theme.sub
+              type === "live" ? "text-red-600" : textSub
             }`}>
             {title}
           </h3>
-          <div
-            className={`h-px flex-1 ${lightMode ? "bg-gray-200" : "bg-white/5"}`}></div>
+          {/* 🟢 Divider line instantly adapts to theme text color */}
+          <div className="h-px flex-1 bg-current/10"></div>
         </div>
 
         {matches.length === 0 ? (
           <div
-            className={`border border-dashed rounded-2xl md:rounded-[2rem] p-6 md:p-12 flex flex-col items-center justify-center gap-2 md:gap-3 text-center transition-colors ${
-              lightMode
-                ? "bg-gray-50 border-gray-200 text-gray-400"
-                : "bg-[#161920]/50 border-white/5 text-slate-600"
-            }`}>
+            // 🟢 Empty state adapts to Light/Dark dynamically with bg-current/5
+            className={`border border-dashed rounded-2xl md:rounded-[2rem] p-6 md:p-12 flex flex-col items-center justify-center gap-2 md:gap-3 text-center transition-colors bg-current/5 border-current/10 text-inherit opacity-60`}>
             <CalendarX size={24} className="opacity-50 md:w-8 md:h-8" />
             <span className="text-xs md:text-sm italic font-medium">
               No matches found in this category.

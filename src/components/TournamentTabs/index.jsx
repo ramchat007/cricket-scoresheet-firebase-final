@@ -38,14 +38,24 @@ export default function TournamentTabs({
   onOpenCorrection,
 }) {
   const navigate = useNavigate();
-  const { theme, lightMode } = useTheme();
+
+  // 🟢 1. Drop lightMode and extract the dynamic theme engine properties
+  const { theme } = useTheme();
+
+  // Safely fallback to default classes if a theme isn't fully loaded yet
+  const cardBg =
+    theme?.card ||
+    "bg-[#0F1115]/60 backdrop-blur-xl border border-white/10 shadow-xl";
+  const textMain = theme?.text || "text-white";
+  const textSub = theme?.sub || "text-gray-400";
+  const accentText = theme?.accentText || "text-cyan-400";
+  const gradientBtn = theme?.gradient || "from-cyan-600 to-blue-600";
 
   // --- STATS STATE ---
   const [statsTab, setStatsTab] = useState("bat");
   const [teamFilter, setTeamFilter] = useState("all");
   const [sortStyle, setSortStyle] = useState("most_runs");
   const [expandedPlayer, setExpandedPlayer] = useState(null);
-  
 
   // --- 1. FILTER MATCHES ---
   const { liveMatches, upcomingMatches, finishedMatches } = useMemo(() => {
@@ -305,14 +315,10 @@ export default function TournamentTabs({
   // --- RENDER ---
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 min-h-screen">
-      {/* TABS NAVIGATION */}
+      {/* 🟢 TABS NAVIGATION (Upgraded Glassmorphism) */}
       <div className="sticky top-2 z-40 mb-3 md:mb-6 mx-[-16px] px-3 md:mx-0 md:px-0">
         <div
-          className={`backdrop-blur-xl border p-1 md:p-1.5 rounded-xl md:rounded-2xl flex overflow-x-auto shadow-2xl no-scrollbar snap-x snap-mandatory ${
-            lightMode
-              ? "bg-white/90 border-gray-200"
-              : "bg-[#1C2128]/90 border-white/10"
-          }`}>
+          className={`backdrop-blur-2xl border p-1 md:p-1.5 rounded-xl md:rounded-2xl flex overflow-x-auto shadow-2xl no-scrollbar snap-x snap-mandatory ${cardBg}`}>
           {[
             { id: "matches", label: "Matches", icon: LayoutList },
             { id: "bracket", label: "Bracket", icon: GitMerge },
@@ -335,8 +341,10 @@ export default function TournamentTabs({
                   }}
                   className={`flex-shrink-0 flex-1 min-w-[76px] md:min-w-[120px] px-2 py-2 md:px-3 md:py-3 rounded-lg md:rounded-xl text-[9px] md:text-xs font-black uppercase tracking-wider transition-all flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 snap-center ${
                     isActive
-                      ? "bg-teal-600 text-white shadow-lg scale-95 md:scale-100"
-                      : `text-slate-500 hover:bg-white/5 border border-transparent ${lightMode ? "hover:text-teal-600 hover:bg-gray-50" : "hover:text-slate-300"}`
+                      ? // 🟢 Active Tab matches the exact theme gradient
+                        `bg-gradient-to-r ${gradientBtn} text-white shadow-lg shadow-black/20 scale-95 md:scale-100`
+                      : // 🟢 Inactive Tab adapts cleanly to dark glass
+                        `${textSub} hover:${textMain} hover:bg-white/10 border border-transparent`
                   }`}>
                   <Icon
                     size={16}
@@ -361,14 +369,14 @@ export default function TournamentTabs({
           />
         )}
         {activeTab === "bracket" && (
-          <BracketTab 
-             tournament={tournament} 
-             liveMatches={liveMatches}
-             upcomingMatches={upcomingMatches}
-             finishedMatches={finishedMatches}
-             matches={matches} 
-             tournamentId={tournamentId}
-             teams={tournamentTeams}
+          <BracketTab
+            tournament={tournament}
+            liveMatches={liveMatches}
+            upcomingMatches={upcomingMatches}
+            finishedMatches={finishedMatches}
+            matches={matches}
+            tournamentId={tournamentId}
+            teams={tournamentTeams}
           />
         )}
         {activeTab === "teams" && (
@@ -408,33 +416,34 @@ export default function TournamentTabs({
           />
         )}
 
+        {/* 🟢 ADMIN SECTION (Upgraded Glassmorphism) */}
         {activeTab === "admin" && (canEdit || isOwner) && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 animate-in zoom-in-95">
             <div
-              className={`border rounded-xl md:rounded-2xl p-4 md:p-6 shadow-xl relative overflow-hidden group ${theme.card} ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+              className={`border rounded-xl md:rounded-2xl p-4 md:p-6 shadow-2xl relative overflow-hidden group ${cardBg}`}>
               <h3
-                className={`font-bold text-base md:text-lg mb-4 md:mb-6 flex items-center gap-2 ${theme.text}`}>
-                <Shield size={18} className="text-cyan-500 md:w-5 md:h-5" />{" "}
+                className={`font-bold text-base md:text-lg mb-4 md:mb-6 flex items-center gap-2 ${textMain}`}>
+                <Shield size={18} className={`${accentText} md:w-5 md:h-5`} />{" "}
                 Team Management
               </h3>
               {isAuctionEnabled ? (
                 <div
-                  className={`border rounded-xl p-5 md:p-8 text-center ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
+                  className={`border border-white/10 rounded-xl p-5 md:p-8 text-center bg-black/20 backdrop-blur-md`}>
                   <div className="flex justify-center mb-3 md:mb-4">
-                    <Lock size={28} className="text-gray-400 md:w-8 md:h-8" />
+                    <Lock size={28} className={`${textSub} md:w-8 md:h-8`} />
                   </div>
                   <h4
-                    className={`font-bold text-sm md:text-base mb-1.5 md:mb-2 ${theme.text}`}>
+                    className={`font-bold text-sm md:text-base mb-1.5 md:mb-2 ${textMain}`}>
                     Rosters Locked
                   </h4>
-                  <p className={`text-xs md:text-sm mb-4 md:mb-6 ${theme.sub}`}>
+                  <p className={`text-xs md:text-sm mb-4 md:mb-6 ${textSub}`}>
                     Teams are managed in the Auction Console.
                   </p>
                   <button
                     onClick={() =>
                       navigate(`/tournaments/${tournamentId}/auction`)
                     }
-                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold py-2.5 px-4 md:py-3 md:px-6 rounded-lg md:rounded-xl text-xs md:text-base shadow-lg hover:shadow-purple-500/20 transition-all">
+                    className={`w-full bg-gradient-to-r ${gradientBtn} text-white font-bold py-2.5 px-4 md:py-3 md:px-6 rounded-lg md:rounded-xl text-xs md:text-base shadow-lg hover:opacity-90 transition-all`}>
                     Go to Auction Console
                   </button>
                 </div>
@@ -442,6 +451,7 @@ export default function TournamentTabs({
                 <TeamManager tournamentId={tournamentId} />
               )}
             </div>
+
             <div className="space-y-4 md:space-y-6">
               {canEdit && (
                 <TournamentSettings

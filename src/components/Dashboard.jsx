@@ -17,7 +17,15 @@ import {
 
 export default function Dashboard() {
   const { user } = useAuth();
-  const { theme, lightMode } = useTheme();
+
+  // 🟢 Natively extract theme
+  const { theme } = useTheme();
+
+  const textMain = theme?.text || "text-white";
+  const textSub = theme?.sub || "text-gray-400";
+  const cardBg =
+    theme?.card ||
+    "bg-[#0F1115]/60 backdrop-blur-xl border border-white/10 shadow-xl";
 
   const [allTournaments, setAllTournaments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -55,7 +63,7 @@ export default function Dashboard() {
     return new Date(dateString).toLocaleDateString("en-US", options);
   };
 
-  // --- Helper: Status Badge (Corrected logic) ---
+  // --- Helper: Status Badge (Now Theme-Adaptive) ---
   const getStatusBadge = (tournament) => {
     const storedStatus = (tournament.status || "").toLowerCase();
     const tournamentDate = tournament.date
@@ -63,7 +71,6 @@ export default function Dashboard() {
       : null;
     const today = localDateString();
 
-    // New Logic: Check if matches are actually finished
     const allMatchesFinished =
       tournament.stats?.matchesPlayed >= tournament.stats?.totalMatches;
 
@@ -71,22 +78,17 @@ export default function Dashboard() {
 
     if (storedStatus === "upcoming" && tournamentDate) {
       if (tournamentDate < today) {
-        // If date is passed but matches remain, it's still "Live/Ongoing"
         actualStatus = allMatchesFinished ? "finished" : "live";
       } else if (tournamentDate === today) {
         actualStatus = "live";
       }
     }
 
-    // Render Badge UI
+    // Render Badge UI with Glassmorphism highlights
     if (["ongoing", "active", "live", "in-progress"].includes(actualStatus)) {
       return (
         <span
-          className={`flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold uppercase rounded-full border ${
-            lightMode
-              ? "bg-red-50 text-red-600 border-red-200"
-              : "bg-red-900/30 text-red-400 border-red-500/30 shadow-[0_0_8px_rgba(239,68,68,0.2)]"
-          }`}>
+          className={`flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold uppercase rounded-full border bg-red-500/10 text-red-500 border-red-500/30 shadow-[0_0_8px_rgba(239,68,68,0.2)]`}>
           <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></span>
           Live
         </span>
@@ -96,11 +98,7 @@ export default function Dashboard() {
     if (actualStatus === "upcoming") {
       return (
         <span
-          className={`px-2 py-1 text-[10px] font-bold uppercase rounded-full border ${
-            lightMode
-              ? "bg-blue-50 text-blue-600 border-blue-200"
-              : "bg-blue-900/30 text-blue-400 border-blue-500/30"
-          }`}>
+          className={`px-2 py-1 text-[10px] font-bold uppercase rounded-full border bg-blue-500/10 text-blue-500 border-blue-500/30`}>
           Upcoming
         </span>
       );
@@ -109,11 +107,7 @@ export default function Dashboard() {
     if (["completed", "finished"].includes(actualStatus)) {
       return (
         <span
-          className={`px-2 py-1 text-[10px] font-bold uppercase rounded-full border ${
-            lightMode
-              ? "bg-green-50 text-green-600 border-green-200"
-              : "bg-green-900/30 text-green-400 border-green-500/30"
-          }`}>
+          className={`px-2 py-1 text-[10px] font-bold uppercase rounded-full border bg-emerald-500/10 text-emerald-500 border-emerald-500/30`}>
           Completed
         </span>
       );
@@ -121,11 +115,7 @@ export default function Dashboard() {
 
     return (
       <span
-        className={`px-2 py-1 text-[10px] font-bold uppercase rounded-full border ${
-          lightMode
-            ? "bg-gray-100 text-gray-500 border-gray-200"
-            : "bg-gray-800 text-gray-400 border-gray-700"
-        }`}>
+        className={`px-2 py-1 text-[10px] font-bold uppercase rounded-full border bg-current/10 text-inherit opacity-70 border-current/20`}>
         {actualStatus || "Draft"}
       </span>
     );
@@ -133,26 +123,22 @@ export default function Dashboard() {
 
   return (
     <div
-      className={`w-full max-w-7xl mx-auto p-4 sm:p-6 min-h-screen transition-colors duration-300 ${theme.bg}`}>
-      {/* ... Header and Tabs stay the same ... */}
+      className={`w-full max-w-7xl mx-auto p-4 sm:p-6 min-h-screen transition-colors duration-300 bg-transparent ${textMain}`}>
       <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
         <div className="text-center md:text-left">
           <h2
-            className={`text-3xl font-black uppercase tracking-tight flex items-center justify-center md:justify-start gap-3 ${theme.text}`}>
+            className={`text-3xl font-black uppercase tracking-tight flex items-center justify-center md:justify-start gap-3 ${textMain}`}>
             <span
-              className={`p-2 rounded-xl ${
-                lightMode
-                  ? "bg-purple-100 text-purple-600"
-                  : "bg-purple-500/10 text-purple-400"
-              }`}>
+              className={`p-2 rounded-xl bg-purple-500/10 text-purple-500 border border-purple-500/20`}>
               <Trophy size={28} />
             </span>
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-cyan-500">
+            <span
+              className={`text-transparent bg-clip-text bg-gradient-to-r ${theme?.gradient || "from-purple-500 to-cyan-500"}`}>
               Tournament
             </span>{" "}
             Arena
           </h2>
-          <p className={`text-sm mt-1 font-medium ${theme.sub}`}>
+          <p className={`text-sm mt-1 font-medium ${textSub}`}>
             Discover leagues or manage your own.
           </p>
         </div>
@@ -161,7 +147,7 @@ export default function Dashboard() {
           {user && (
             <Link
               to="/create-tournament"
-              className="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white px-5 py-3 rounded-xl font-bold transition-all shadow-lg shadow-cyan-900/20 flex items-center gap-2 active:scale-95">
+              className={`bg-gradient-to-r ${theme?.gradient || "from-cyan-600 to-blue-600"} text-white px-5 py-3 rounded-xl font-bold transition-all shadow-lg hover:opacity-90 flex items-center gap-2 active:scale-95`}>
               <Plus size={18} strokeWidth={3} />
               <span className="hidden sm:inline uppercase tracking-wider text-xs">
                 Create Tournament
@@ -172,16 +158,13 @@ export default function Dashboard() {
       </div>
 
       {user && (
-        <div
-          className={`flex gap-6 mb-8 border-b ${
-            lightMode ? "border-gray-200" : "border-gray-800"
-          }`}>
+        <div className={`flex gap-6 mb-8 border-b border-current/10`}>
           <button
             onClick={() => setActiveTab("all")}
             className={`pb-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
               activeTab === "all"
                 ? "border-cyan-500 text-cyan-500"
-                : "border-transparent text-gray-500 hover:text-gray-400"
+                : "border-transparent text-inherit opacity-50 hover:opacity-100 hover:border-current/20"
             }`}>
             <LayoutGrid size={16} /> All Tournaments
           </button>
@@ -190,15 +173,11 @@ export default function Dashboard() {
             className={`pb-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
               activeTab === "mine"
                 ? "border-purple-500 text-purple-500"
-                : "border-transparent text-gray-500 hover:text-gray-400"
+                : "border-transparent text-inherit opacity-50 hover:opacity-100 hover:border-current/20"
             }`}>
             <ListFilter size={16} /> My Tournaments
             <span
-              className={`text-[10px] px-2 py-0.5 rounded-full ${
-                lightMode
-                  ? "bg-gray-100 text-gray-600"
-                  : "bg-gray-800 text-gray-300"
-              }`}>
+              className={`text-[10px] px-2 py-0.5 rounded-full bg-current/10 text-inherit`}>
               {myTournaments.length}
             </span>
           </button>
@@ -209,7 +188,7 @@ export default function Dashboard() {
         <div className="flex flex-col justify-center items-center h-64 gap-3">
           <Loader2 className="w-8 h-8 text-cyan-500 animate-spin" />
           <p
-            className={`text-xs font-black uppercase tracking-widest ${theme.sub}`}>
+            className={`text-xs font-black uppercase tracking-widest ${textSub}`}>
             Loading Arena...
           </p>
         </div>
@@ -217,18 +196,14 @@ export default function Dashboard() {
 
       {!loading && currentList.length === 0 && (
         <div
-          className={`text-center py-20 border border-dashed rounded-3xl ${
-            lightMode
-              ? "bg-gray-50 border-gray-300"
-              : "bg-gray-900/50 border-gray-800"
-          }`}>
+          className={`text-center py-20 border border-dashed rounded-3xl bg-current/5 border-current/10`}>
           <div className="text-6xl mb-4 opacity-50 grayscale">🏏</div>
-          <h3 className={`text-xl font-bold ${theme.text}`}>
+          <h3 className={`text-xl font-bold ${textMain}`}>
             {activeTab === "mine"
               ? "No Managed Tournaments"
               : "No Tournaments Found"}
           </h3>
-          <p className={`mt-2 max-w-md mx-auto text-sm ${theme.sub}`}>
+          <p className={`mt-2 max-w-md mx-auto text-sm ${textSub}`}>
             {activeTab === "mine"
               ? "You haven't created any tournaments yet. Click 'Create Tournament' to get started!"
               : "There are no active tournaments in the arena right now."}
@@ -241,11 +216,8 @@ export default function Dashboard() {
           <Link
             key={t.id}
             to={`/tournaments/${t.id}`}
-            className={`group relative block border rounded-2xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl ${
-              lightMode
-                ? "bg-white border-gray-200 hover:border-cyan-300 hover:shadow-cyan-100"
-                : "bg-[#1C2128] border-white/5 hover:border-cyan-500/30 hover:shadow-cyan-900/20"
-            }`}>
+            className={`group relative block rounded-3xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:border-cyan-500/30 ${cardBg}`}>
+            {/* Animated Top Line */}
             <div
               className={`absolute top-0 left-0 w-full h-1 transition-all duration-300 ${
                 t.ownerId === user?.uid
@@ -256,26 +228,16 @@ export default function Dashboard() {
             <div className="p-5">
               <div className="flex justify-between items-start mb-4">
                 <h5
-                  className={`text-lg font-bold line-clamp-1 pr-2 transition-colors ${
-                    lightMode
-                      ? "text-gray-900 group-hover:text-cyan-600"
-                      : "text-white group-hover:text-cyan-400"
-                  }`}>
+                  className={`text-lg font-bold line-clamp-1 pr-2 transition-colors ${textMain} group-hover:text-cyan-500`}>
                   {t.name}
                 </h5>
-                {/* 🔥 Updated Call */}
                 {getStatusBadge(t)}
               </div>
 
-              {/* ... Rest of card details remain same ... */}
               {user && t.ownerId === user.uid && (
                 <div className="mb-4">
                   <span
-                    className={`text-[10px] font-bold px-2 py-1 rounded border uppercase tracking-wider ${
-                      lightMode
-                        ? "bg-purple-50 text-purple-700 border-purple-200"
-                        : "bg-purple-900/40 text-purple-300 border-purple-500/30"
-                    }`}>
+                    className={`text-[10px] font-bold px-2 py-1 rounded border uppercase tracking-wider bg-purple-500/10 text-purple-400 border-purple-500/30`}>
                     👑 Owner
                   </span>
                 </div>
@@ -284,19 +246,15 @@ export default function Dashboard() {
               <div className="space-y-3">
                 <div className="flex items-center gap-3 text-sm">
                   <div
-                    className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                      lightMode
-                        ? "bg-purple-50 text-purple-600"
-                        : "bg-gray-800 text-purple-400"
-                    }`}>
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center bg-purple-500/10 text-purple-400 border border-purple-500/20`}>
                     <User size={14} />
                   </div>
                   <div className="overflow-hidden">
                     <div
-                      className={`text-[9px] uppercase font-bold tracking-wider ${theme.sub}`}>
+                      className={`text-[9px] uppercase font-bold tracking-wider ${textSub}`}>
                       Organizer
                     </div>
-                    <div className={`font-bold text-xs truncate ${theme.text}`}>
+                    <div className={`font-bold text-xs truncate ${textMain}`}>
                       {t.organizer || "Unknown"}
                     </div>
                   </div>
@@ -304,19 +262,15 @@ export default function Dashboard() {
 
                 <div className="flex items-center gap-3 text-sm">
                   <div
-                    className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                      lightMode
-                        ? "bg-blue-50 text-blue-600"
-                        : "bg-gray-800 text-blue-400"
-                    }`}>
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center bg-blue-500/10 text-blue-400 border border-blue-500/20`}>
                     <MapPin size={14} />
                   </div>
                   <div className="overflow-hidden">
                     <div
-                      className={`text-[9px] uppercase font-bold tracking-wider ${theme.sub}`}>
+                      className={`text-[9px] uppercase font-bold tracking-wider ${textSub}`}>
                       Location
                     </div>
-                    <div className={`font-bold text-xs truncate ${theme.text}`}>
+                    <div className={`font-bold text-xs truncate ${textMain}`}>
                       {t.location || "TBA"}
                     </div>
                   </div>
@@ -324,19 +278,15 @@ export default function Dashboard() {
 
                 <div className="flex items-center gap-3 text-sm">
                   <div
-                    className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                      lightMode
-                        ? "bg-cyan-50 text-cyan-600"
-                        : "bg-gray-800 text-cyan-400"
-                    }`}>
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center bg-cyan-500/10 text-cyan-400 border border-cyan-500/20`}>
                     <Calendar size={14} />
                   </div>
                   <div className="overflow-hidden">
                     <div
-                      className={`text-[9px] uppercase font-bold tracking-wider ${theme.sub}`}>
+                      className={`text-[9px] uppercase font-bold tracking-wider ${textSub}`}>
                       Start Date
                     </div>
-                    <div className={`font-bold text-xs truncate ${theme.text}`}>
+                    <div className={`font-bold text-xs truncate ${textMain}`}>
                       {formatDate(t.date)}
                     </div>
                   </div>
@@ -344,12 +294,8 @@ export default function Dashboard() {
               </div>
 
               <div
-                className={`mt-5 pt-4 border-t flex justify-between items-center transition-colors ${
-                  lightMode
-                    ? "border-gray-100 group-hover:border-gray-200"
-                    : "border-gray-800 group-hover:border-gray-700"
-                }`}>
-                <span className={`text-xs font-mono font-bold ${theme.sub}`}>
+                className={`mt-5 pt-4 border-t border-current/10 group-hover:border-current/20 flex justify-between items-center transition-colors`}>
+                <span className={`text-xs font-mono font-bold ${textSub}`}>
                   {t.format || "T20"} Format
                 </span>
                 <span className="text-xs font-black uppercase tracking-wider text-cyan-500 flex items-center gap-1 group-hover:gap-2 transition-all">

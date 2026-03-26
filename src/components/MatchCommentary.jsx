@@ -5,7 +5,7 @@ import { useTheme } from "../context/ThemeContext";
 import { Sparkles, Trophy, Target, MessageSquare, Mic } from "lucide-react";
 
 export default function MatchCommentary({ match }) {
-  const { theme, lightMode } = useTheme();
+  const { theme } = useTheme();
 
   if (!match) return null;
 
@@ -270,8 +270,7 @@ export default function MatchCommentary({ match }) {
       {/* 1. INNINGS TABS */}
       <div className={`sticky top-0 z-20 py-2 ${theme.bg}`}>
         <div
-          className={`flex border rounded-xl p-1 shadow-lg max-w-xs mx-auto ${lightMode ? "bg-gray-100 border-gray-200" : "bg-[#1C2128] border-white/5"}`}
-        >
+          className={`flex border rounded-xl p-1 shadow-lg max-w-xs mx-auto ${lightMode ? "bg-gray-100 border-gray-200" : "bg-[#1C2128] border-white/5"}`}>
           {inningsArray.map((_, idx) => (
             <button
               key={idx}
@@ -281,8 +280,7 @@ export default function MatchCommentary({ match }) {
                   activeInningIndex === idx
                     ? "bg-teal-600 text-white shadow-lg"
                     : `${theme.sub} hover:text-teal-500`
-                }`}
-            >
+                }`}>
               {idx === 0 ? "1st Inn" : "2nd Inn"}
             </button>
           ))}
@@ -298,8 +296,7 @@ export default function MatchCommentary({ match }) {
                 lightMode
                   ? "bg-amber-50 text-amber-700 border-amber-200"
                   : "bg-amber-500/10 text-amber-400 border-amber-500/20"
-              }`}
-            >
+              }`}>
               🏆 {matchContext.resultText}
             </div>
           ) : matchContext.chaseText ? (
@@ -308,8 +305,7 @@ export default function MatchCommentary({ match }) {
                 lightMode
                   ? "bg-indigo-50 text-indigo-700 border-indigo-200"
                   : "bg-indigo-500/10 text-indigo-300 border-indigo-500/20"
-              }`}
-            >
+              }`}>
               🎯 {matchContext.chaseText}
             </div>
           ) : null}
@@ -318,34 +314,29 @@ export default function MatchCommentary({ match }) {
 
       {/* ✅ 2. UNIFIED INSIGHT BOX */}
       <div
-        className={`group relative p-4 rounded-2xl border transition-all duration-500 overflow-visible ${displayInsight.bg} ${displayInsight.border}`}
-      >
+        className={`group relative p-4 rounded-2xl border transition-all duration-500 overflow-visible ${displayInsight.bg} ${displayInsight.border}`}>
         {displayInsight.badge && (
           <div
             className={`absolute -top-2 -right-2 text-[8px] font-black px-2 py-1 rounded-md shadow-lg animate-bounce ${
               displayInsight.color.includes("amber")
                 ? "bg-amber-600 text-white"
                 : "bg-indigo-600 text-white"
-            }`}
-          >
+            }`}>
             {displayInsight.badge}
           </div>
         )}
         <div className="flex items-start gap-3">
           <div
-            className={`w-10 h-10 rounded-full flex items-center justify-center shadow-inner ${lightMode ? "bg-white" : "bg-white/5"}`}
-          >
+            className={`w-10 h-10 rounded-full flex items-center justify-center shadow-inner ${lightMode ? "bg-white" : "bg-white/5"}`}>
             {displayInsight.icon}
           </div>
           <div className="flex-1 min-w-0">
             <h4
-              className={`text-[10px] font-black uppercase tracking-[0.2em] mb-1 ${displayInsight.color}`}
-            >
+              className={`text-[10px] font-black uppercase tracking-[0.2em] mb-1 ${displayInsight.color}`}>
               {displayInsight.title}
             </h4>
             <div
-              className={`text-sm leading-relaxed font-medium line-clamp-3 hover:line-clamp-none transition-all cursor-pointer ${theme.text}`}
-            >
+              className={`text-sm leading-relaxed font-medium line-clamp-3 hover:line-clamp-none transition-all cursor-pointer ${theme.text}`}>
               "{displayInsight.text}"
             </div>
           </div>
@@ -354,18 +345,15 @@ export default function MatchCommentary({ match }) {
 
       {/* 3. COMMENTARY FEED */}
       <div
-        className={`border rounded-3xl overflow-hidden shadow-2xl ${theme.card} ${lightMode ? "border-gray-200" : "border-white/5"}`}
-      >
+        className={`border rounded-3xl overflow-hidden shadow-2xl ${theme.card} ${lightMode ? "border-gray-200" : "border-white/5"}`}>
         <div
           className={`p-5 border-b flex justify-between items-center ${
             lightMode
               ? "bg-gray-50 border-gray-200"
               : "bg-[#161920]/90 border-white/5"
-          }`}
-        >
+          }`}>
           <span
-            className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-2 ${theme.sub}`}
-          >
+            className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-2 ${theme.sub}`}>
             <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>{" "}
             Commentary Feed
           </span>
@@ -377,8 +365,7 @@ export default function MatchCommentary({ match }) {
         </div>
 
         <div
-          className={`divide-y ${lightMode ? "divide-gray-100" : "divide-white/5"}`}
-        >
+          className={`divide-y ${lightMode ? "divide-gray-100" : "divide-white/5"}`}>
           {timelineData.length === 0 ? (
             <div className={`p-20 text-center italic text-sm ${theme.sub}`}>
               Match logic initializing...
@@ -393,8 +380,7 @@ export default function MatchCommentary({ match }) {
                       lightMode
                         ? "bg-gradient-to-r from-gray-50 to-white border-gray-200"
                         : "bg-gradient-to-r from-[#161920] to-[#1C2128] border-white/5"
-                    }`}
-                  >
+                    }`}>
                     <div>
                       <div className="text-[9px] font-black text-teal-500 uppercase tracking-widest mb-1">
                         Over {event.over} Done
@@ -405,13 +391,11 @@ export default function MatchCommentary({ match }) {
                     </div>
                     <div className="text-right">
                       <div
-                        className={`text-[9px] uppercase font-black mb-1 ${theme.sub}`}
-                      >
+                        className={`text-[9px] uppercase font-black mb-1 ${theme.sub}`}>
                         Score
                       </div>
                       <div
-                        className={`text-2xl font-mono font-black ${theme.text}`}
-                      >
+                        className={`text-2xl font-mono font-black ${theme.text}`}>
                         {event.totalScore}/{event.totalWickets}
                       </div>
                     </div>
@@ -422,8 +406,7 @@ export default function MatchCommentary({ match }) {
               return (
                 <div
                   key={event.id}
-                  className={`p-5 flex gap-5 transition-colors ${lightMode ? "hover:bg-gray-50" : "hover:bg-white/[0.01]"}`}
-                >
+                  className={`p-5 flex gap-5 transition-colors ${lightMode ? "hover:bg-gray-50" : "hover:bg-white/[0.01]"}`}>
                   <div
                     className={`w-11 h-11 shrink-0 rounded-xl flex items-center justify-center font-black text-[11px] border-2 ${
                       event.isWicket
@@ -445,8 +428,7 @@ export default function MatchCommentary({ match }) {
                               : lightMode
                                 ? "bg-gray-100 border-gray-200 text-gray-500"
                                 : "bg-black/20 border-white/5 text-gray-500"
-                    }`}
-                  >
+                    }`}>
                     {getBadgeText(
                       event.val,
                       event.extrasType,
@@ -458,8 +440,7 @@ export default function MatchCommentary({ match }) {
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-center mb-1">
                       <span
-                        className={`font-black text-[11px] uppercase tracking-wider truncate ${theme.text}`}
-                      >
+                        className={`font-black text-[11px] uppercase tracking-wider truncate ${theme.text}`}>
                         {event.bowler}{" "}
                         <span className="text-gray-400 mx-1">➜</span>{" "}
                         {event.batter}
@@ -468,8 +449,7 @@ export default function MatchCommentary({ match }) {
                     <p
                       className={`text-sm leading-snug font-medium ${
                         event.isWicket ? "text-red-500" : theme.sub
-                      }`}
-                    >
+                      }`}>
                       {event.text}
                     </p>
                   </div>

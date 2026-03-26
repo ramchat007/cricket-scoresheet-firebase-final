@@ -9,7 +9,12 @@ import { useTheme } from "../../context/ThemeContext";
 export default function OverlayControllerWrapper() {
   const { tournamentId, matchId = "active" } = useParams();
   const navigate = useNavigate();
-  const { theme, lightMode } = useTheme();
+
+  // 🟢 1. Natively extract theme (no lightMode!)
+  const { theme } = useTheme();
+
+  // Safely fallback to default classes
+  const textMain = theme?.text || "text-white";
 
   const [matchData, setMatchData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -79,7 +84,7 @@ export default function OverlayControllerWrapper() {
   if (loading) {
     return (
       <div
-        className={`min-h-screen flex items-center justify-center ${theme.bg} ${theme.text}`}>
+        className={`min-h-screen flex items-center justify-center bg-transparent ${textMain}`}>
         <Loader2 className="animate-spin text-teal-500" size={32} />
       </div>
     );
@@ -89,7 +94,7 @@ export default function OverlayControllerWrapper() {
   if (!matchData && matchId && matchId !== "active") {
     return (
       <div
-        className={`min-h-screen flex flex-col items-center justify-center ${theme.bg} ${theme.text}`}>
+        className={`min-h-screen flex flex-col items-center justify-center bg-transparent ${textMain}`}>
         <h2 className="text-2xl font-bold mb-4">Match Not Found</h2>
         <button
           onClick={() => navigate(`/tournaments/${tournamentId}`)}
@@ -113,7 +118,7 @@ export default function OverlayControllerWrapper() {
   };
 
   return (
-    <div className={`min-h-screen ${theme.bg} p-4 md:p-8`}>
+    <div className={`min-h-screen bg-transparent p-4 md:p-8 ${textMain}`}>
       <div className="max-w-6xl mx-auto">
         {/* Top Navigation & Status Bar */}
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -125,25 +130,19 @@ export default function OverlayControllerWrapper() {
                   : `/tournaments/${tournamentId}`,
               )
             }
-            className={`flex items-center gap-2 text-xs font-bold uppercase tracking-widest px-4 py-2 rounded-xl transition-all w-fit ${
-              lightMode
-                ? "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                : "bg-white/10 text-slate-300 hover:bg-white/20"
-            }`}>
+            // 🟢 Smart 'current' background that adapts to Light/Dark automatically
+            className={`flex items-center gap-2 text-xs font-bold uppercase tracking-widest px-4 py-2 rounded-xl transition-all w-fit bg-current/10 border border-current/10 hover:bg-current/20 text-inherit`}>
             <ArrowLeft size={16} />{" "}
             {matchData ? "Back to Live Scoring" : "Back to Tournament"}
           </button>
 
           {/* Dynamic Status Badge */}
           <div
+            // 🟢 Replaced binary colors with universal semi-transparent accent colors
             className={`flex items-center gap-2 px-4 py-2 rounded-xl border shadow-sm ${
               matchData
-                ? lightMode
-                  ? "bg-teal-50 border-teal-200 text-teal-700"
-                  : "bg-teal-900/20 border-teal-500/30 text-teal-400"
-                : lightMode
-                  ? "bg-purple-50 border-purple-200 text-purple-700"
-                  : "bg-purple-900/20 border-purple-500/30 text-purple-400"
+                ? "bg-teal-500/10 border-teal-500/20 text-teal-500"
+                : "bg-purple-500/10 border-purple-500/20 text-purple-500"
             }`}>
             {matchData ? <MonitorPlay size={16} /> : <Globe size={16} />}
             <span className="text-[10px] font-black uppercase tracking-widest">

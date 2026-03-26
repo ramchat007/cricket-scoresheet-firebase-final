@@ -38,7 +38,8 @@ const PlayerRow = React.memo(
     slots,
     tournamentId,
   }) => {
-    const { theme, lightMode } = useTheme();
+    // 🟢 Extracted theme natively
+    const { theme } = useTheme();
     const [tempTeam, setTempTeam] = useState("");
     const [tempPrice, setTempPrice] = useState(p.basePrice || 100);
 
@@ -56,19 +57,19 @@ const PlayerRow = React.memo(
       }
     };
 
-    const inputClass = `border rounded-lg p-2 text-[10px] outline-none font-bold ${
-      lightMode
-        ? "bg-white border-gray-300 text-gray-900 focus:border-teal-500"
-        : "bg-[#0F1115] border-teal-500/20 text-slate-300 focus:border-teal-500/50"
-    }`;
+    // 🟢 Highly responsive transparent input class
+    const inputClass = `border rounded-lg p-2 text-[10px] outline-none font-bold bg-current/5 border-current/10 focus:bg-current/10 focus:border-teal-500/50 text-inherit`;
 
     return (
       <tr
-        className={`hover:${lightMode ? "bg-gray-50" : "bg-[#0F1115]/50"} transition-colors group`}>
-        <td className={`p-5 font-bold ${theme.text} whitespace-nowrap`}>
+        // 🟢 Replaced hardcoded hover states
+        className={`hover:bg-current/10 transition-colors group`}>
+        <td
+          className={`p-5 font-bold ${theme?.text || "text-white"} whitespace-nowrap`}>
           <div>
             {p.name}
-            <div className={`text-[9px] ${theme.sub} uppercase mt-1`}>
+            <div
+              className={`text-[9px] ${theme?.sub || "text-gray-400"} uppercase mt-1`}>
               {p.role}
             </div>
           </div>
@@ -77,7 +78,7 @@ const PlayerRow = React.memo(
           {p.status !== "SOLD" ? (
             <div className="flex items-center gap-2">
               <select
-                className={`${inputClass} w-32`}
+                className={`${inputClass} w-32 cursor-pointer`}
                 value={tempTeam}
                 onChange={(e) => setTempTeam(e.target.value)}>
                 <option value="">Select Team</option>
@@ -95,12 +96,12 @@ const PlayerRow = React.memo(
               />
               <button
                 onClick={handleAssignClick}
-                className="bg-teal-600 text-white px-3 py-2 rounded-lg text-[9px] font-black uppercase hover:bg-teal-500 transition-colors shadow-sm">
+                className="bg-teal-600 text-white px-3 py-2 rounded-lg text-[9px] font-black uppercase hover:bg-teal-500 transition-colors shadow-sm active:scale-95">
                 Assign
               </button>
             </div>
           ) : (
-            <span className="text-[9px] text-teal-600 dark:text-teal-500 font-bold uppercase">
+            <span className="text-[9px] text-teal-500 font-bold uppercase">
               Sold to {teamsMap[p.teamId]}
             </span>
           )}
@@ -125,19 +126,15 @@ const PlayerRow = React.memo(
         </td>
         <td className="p-5 font-mono">
           {poolFilter === "SOLD" ? (
-            <span className="text-emerald-600 dark:text-green-400 font-bold text-sm">
+            <span className="text-green-500 font-bold text-sm">
               ₹{p.soldPrice?.toLocaleString()}
             </span>
           ) : (
             <div className="flex items-center gap-2 text-xs">
-              <span className={theme.sub}>₹</span>
+              <span className={theme?.sub || "text-gray-400"}>₹</span>
               <input
                 type="number"
-                className={`border rounded-lg px-2 py-1.5 w-24 outline-none font-bold ${
-                  lightMode
-                    ? "bg-white border-gray-300 text-gray-900"
-                    : "bg-[#0F1115] border-white/10 text-slate-200"
-                }`}
+                className={`border rounded-lg px-2 py-1.5 w-24 outline-none font-bold bg-current/5 border-current/10 focus:bg-current/10 focus:border-teal-500/50 text-inherit`}
                 value={tempPrice}
                 onChange={(e) => setTempPrice(e.target.value)}
                 onBlur={handlePriceBlur}
@@ -151,24 +148,20 @@ const PlayerRow = React.memo(
             className={`text-lg transition-all ${
               p.isIcon
                 ? "text-amber-500 scale-110"
-                : "text-gray-400 hover:text-gray-500 dark:text-slate-700 dark:hover:text-slate-500"
+                : "text-current opacity-40 hover:opacity-100"
             }`}>
             ★
           </button>
           {(poolFilter === "UNSOLD" || poolFilter === "SOLD") && (
             <button
               onClick={() => onReset(p.id)}
-              className={`border px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-colors ${
-                lightMode
-                  ? "bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100"
-                  : "bg-teal-900/20 text-teal-400 border-teal-500/20 hover:bg-teal-900/30"
-              }`}>
+              className={`border px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-colors bg-teal-500/10 text-teal-500 border-teal-500/20 hover:bg-teal-500/20`}>
               ↺ Reset
             </button>
           )}
           <button
             onClick={() => onDelete(p.id)}
-            className={`${theme.sub} hover:text-red-500 transition-colors p-2`}>
+            className={`text-current opacity-50 hover:opacity-100 hover:text-red-500 transition-colors p-2`}>
             🗑
           </button>
         </td>
@@ -185,7 +178,7 @@ const GlobalPlayerPicker = ({
   existingIds,
   tournamentId,
 }) => {
-  const { theme, lightMode } = useTheme();
+  const { theme } = useTheme();
   const [players, setPlayers] = useState([]);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState([]);
@@ -258,37 +251,27 @@ const GlobalPlayerPicker = ({
     }
   };
 
-  const borderClass = lightMode ? "border-gray-200" : "border-white/10";
-  const headerFooterBg = lightMode ? "bg-gray-50" : "bg-[#1C2128]";
-  const inputBg = lightMode
-    ? "bg-white text-gray-900 placeholder:text-gray-400"
-    : "bg-[#0F1115] text-slate-200";
-
   return (
     <div
-      className={`fixed inset-0 z-[120] flex items-center justify-center p-4 backdrop-blur-md ${lightMode ? "bg-white/80" : "bg-[#0F1115]/95"}`}>
+      className={`fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md`}>
       <div
-        className={`${theme.card} border ${borderClass} w-full max-w-lg rounded-3xl flex flex-col max-h-[80vh] shadow-2xl`}>
+        className={`${theme?.card || "bg-black/90"} border border-white/10 w-full max-w-lg rounded-3xl flex flex-col max-h-[80vh] shadow-2xl`}>
         <div
-          className={`p-6 border-b ${borderClass} flex justify-between items-center ${headerFooterBg} rounded-t-3xl`}>
+          className={`p-6 border-b border-white/5 flex justify-between items-center bg-black/20 rounded-t-3xl`}>
           <h3
-            className={`${theme.text} font-black uppercase tracking-tight text-lg italic`}>
+            className={`${theme?.text || "text-white"} font-black uppercase tracking-tight text-lg italic`}>
             Global Database
           </h3>
           <button
             onClick={onClose}
-            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
-              lightMode
-                ? "bg-gray-200 text-gray-600 hover:bg-gray-300"
-                : "bg-white/5 text-slate-400 hover:bg-white/10"
-            }`}>
+            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors bg-current/10 hover:bg-current/20 text-inherit opacity-70 hover:opacity-100`}>
             ✕
           </button>
         </div>
 
-        <div className={`p-4 border-b ${borderClass}`}>
+        <div className={`p-4 border-b border-white/5 bg-black/10`}>
           <input
-            className={`w-full border ${borderClass} rounded-xl px-4 py-3 outline-none focus:border-teal-500 font-bold ${inputBg}`}
+            className={`w-full border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-teal-500 font-bold bg-black/20 focus:bg-black/40 text-inherit placeholder:opacity-50`}
             placeholder="Search players..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -296,12 +279,12 @@ const GlobalPlayerPicker = ({
 
           <div className="flex justify-between items-center mt-3">
             <label
-              className={`flex items-center gap-2 cursor-pointer text-[10px] sm:text-xs font-bold ${theme.sub}`}>
+              className={`flex items-center gap-2 cursor-pointer text-[10px] sm:text-xs font-bold ${theme?.sub || "text-gray-400"}`}>
               <input
                 type="checkbox"
                 checked={tournamentOnly}
                 onChange={(e) => setTournamentOnly(e.target.checked)}
-                className="w-4 h-4 accent-teal-600 rounded"
+                className="w-4 h-4 accent-teal-600 rounded cursor-pointer"
               />
               Filter by Tournament
             </label>
@@ -312,22 +295,21 @@ const GlobalPlayerPicker = ({
               className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg border transition-all disabled:opacity-30 ${
                 isAllSelected
                   ? "bg-teal-500 text-white border-teal-500 shadow-md"
-                  : lightMode
-                    ? "bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200"
-                    : "bg-white/5 text-slate-300 border-white/10 hover:bg-white/10"
+                  : "bg-current/10 text-inherit border-transparent hover:bg-current/20 opacity-70 hover:opacity-100"
               }`}>
               {isAllSelected ? "Deselect All" : "Select All"}
             </button>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+        <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
           {loading ? (
             <div className="text-center py-10 text-teal-500 animate-pulse font-bold">
               Loading...
             </div>
           ) : filtered.length === 0 ? (
-            <div className={`text-center py-10 italic text-xs ${theme.sub}`}>
+            <div
+              className={`text-center py-10 italic text-xs ${theme?.sub || "text-gray-400"}`}>
               No players found.{" "}
               {tournamentOnly ? "Try unchecking the tournament filter." : ""}
             </div>
@@ -340,33 +322,25 @@ const GlobalPlayerPicker = ({
                   onClick={() => toggleSelect(p)}
                   className={`flex items-center justify-between p-3 rounded-xl cursor-pointer border transition-all ${
                     isSel
-                      ? lightMode
-                        ? "bg-teal-50 border-teal-500 shadow-sm"
-                        : "bg-teal-500/10 border-teal-500/50"
-                      : lightMode
-                        ? "bg-white border-gray-200 hover:border-teal-300"
-                        : "bg-[#0F1115] border-white/5 hover:border-white/10"
+                      ? "bg-teal-500/20 border-teal-500 shadow-sm"
+                      : "bg-current/5 border-current/10 hover:border-teal-500/50 hover:bg-current/10"
                   }`}>
                   <div className="flex items-center gap-3">
                     <div
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black ${
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black shadow-inner ${
                         isSel
-                          ? lightMode
-                            ? "bg-teal-100 text-teal-700"
-                            : "bg-teal-500 text-black"
-                          : lightMode
-                            ? "bg-gray-100 text-gray-600"
-                            : "bg-white/5 text-slate-500"
+                          ? "bg-teal-500 text-white"
+                          : "bg-current/10 text-inherit opacity-70"
                       }`}>
                       {p.name.charAt(0)}
                     </div>
                     <div>
                       <div
-                        className={`text-sm font-bold ${isSel ? (lightMode ? "text-teal-700" : "text-teal-400") : theme.text}`}>
+                        className={`text-sm font-bold ${isSel ? "text-teal-500" : theme?.text || "text-white"}`}>
                         {p.name}
                       </div>
                       <div
-                        className={`text-[10px] ${theme.sub} uppercase font-bold tracking-wider`}>
+                        className={`text-[10px] ${theme?.sub || "text-gray-400"} uppercase font-bold tracking-wider`}>
                         {p.role}
                       </div>
                     </div>
@@ -378,20 +352,16 @@ const GlobalPlayerPicker = ({
           )}
         </div>
         <div
-          className={`p-6 border-t ${borderClass} flex justify-end gap-3 rounded-b-3xl ${headerFooterBg}`}>
+          className={`p-6 border-t border-white/5 flex justify-end gap-3 rounded-b-3xl bg-black/20`}>
           <button
             onClick={onClose}
-            className={`px-6 py-3 border rounded-xl font-black uppercase text-xs transition-colors ${
-              lightMode
-                ? "text-gray-600 border-gray-300 hover:bg-gray-200"
-                : "text-slate-500 border-white/10 hover:bg-white/5"
-            }`}>
+            className={`px-6 py-3 rounded-xl font-black uppercase text-xs transition-colors bg-current/10 hover:bg-current/20 text-inherit opacity-70 hover:opacity-100`}>
             Cancel
           </button>
           <button
             onClick={() => onImport(selected)}
             disabled={selected.length === 0}
-            className="bg-teal-600 text-white px-6 py-3 rounded-xl font-black text-xs uppercase shadow-lg disabled:opacity-30 active:scale-95 transition-all">
+            className={`bg-gradient-to-r ${theme?.gradient || "from-teal-600 to-teal-500"} text-white px-6 py-3 rounded-xl font-black text-xs uppercase shadow-lg disabled:opacity-30 active:scale-95 transition-all`}>
             Import {selected.length} Players
           </button>
         </div>
@@ -403,7 +373,15 @@ const GlobalPlayerPicker = ({
 // --- 3. MAIN SETUP PANEL ---
 export default function AuctionAdminPanel({ tournamentId, onClose }) {
   const { user } = useAuth();
-  const { theme, lightMode } = useTheme();
+
+  // 🟢 Natively extract theme
+  const { theme } = useTheme();
+
+  const textMain = theme?.text || "text-white";
+  const textSub = theme?.sub || "text-gray-400";
+  const cardBg =
+    theme?.card ||
+    "bg-[#0F1115]/60 backdrop-blur-xl border border-white/10 shadow-xl";
 
   const [tab, setTab] = useState("pool");
   const [roleFilter, setRoleFilter] = useState("All");
@@ -988,29 +966,27 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
   }, [auctionPlayers, poolFilter, roleFilter, slotFilter]);
 
   // --- STYLES HELPER ---
-  const borderClass = lightMode ? "border-gray-200" : "border-white/5";
-  const inputBgClass = lightMode
-    ? "bg-white border-gray-200 text-gray-900"
-    : "bg-[#0F1115] border-white/10 text-slate-200";
+  const inputBgClass =
+    "bg-current/5 border-current/10 focus:bg-current/10 text-inherit placeholder:opacity-50";
 
   if (checkingAccess)
     return (
       <div
-        className={`fixed inset-0 ${theme.bg} flex items-center justify-center text-teal-500 font-bold z-[100]`}>
+        className={`fixed inset-0 ${theme?.bg || "bg-black"} flex items-center justify-center text-teal-500 font-bold z-[100] backdrop-blur-md`}>
         Checking Access...
       </div>
     );
   if (!hasAccess)
     return (
       <div
-        className={`fixed inset-0 ${theme.bg} flex items-center justify-center text-red-500 font-black uppercase z-[100]`}>
+        className={`fixed inset-0 ${theme?.bg || "bg-black"} flex items-center justify-center text-red-500 font-black uppercase z-[100] backdrop-blur-md`}>
         Access Denied
       </div>
     );
 
   return (
     <div
-      className={`fixed inset-0 z-[100] ${theme.bg} flex flex-col overflow-hidden`}>
+      className={`fixed inset-0 z-[100] ${theme?.bg || "bg-black"} flex flex-col overflow-hidden backdrop-blur-md`}>
       <GlobalPlayerPicker
         isOpen={showPicker}
         onClose={() => setShowPicker(false)}
@@ -1019,24 +995,26 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
         tournamentId={tournamentId}
       />
 
+      {/* HEADER */}
       <div
-        className={`p-4 border-b ${borderClass} flex justify-between items-center ${theme.card}`}>
+        className={`p-4 border-b border-current/10 flex justify-between items-center bg-black/40 backdrop-blur-xl`}>
         <h2
-          className={`${theme.text} font-black flex items-center gap-3 uppercase tracking-tighter italic text-lg`}>
-          <span className="bg-teal-600 text-white p-1.5 rounded-lg text-sm">
+          className={`${textMain} font-black flex items-center gap-3 uppercase tracking-tighter italic text-lg`}>
+          <span className="bg-teal-500/20 text-teal-500 p-1.5 rounded-lg text-sm border border-teal-500/30">
             ⚙️
           </span>{" "}
           Auction Setup
         </h2>
         <button
           onClick={onClose}
-          className={`${lightMode ? "bg-gray-200 hover:bg-gray-300 text-gray-700" : "bg-white/5 hover:bg-white/10 text-white"} px-5 py-2.5 rounded-xl text-[10px] font-black uppercase transition-colors`}>
+          className={`bg-current/10 hover:bg-current/20 text-inherit px-5 py-2.5 rounded-xl text-[10px] font-black uppercase transition-colors`}>
           Close
         </button>
       </div>
 
+      {/* TABS MENU */}
       <div
-        className={`flex border-b ${borderClass} ${lightMode ? "bg-gray-50" : "bg-[#161920]"} overflow-x-auto no-scrollbar`}>
+        className={`flex border-b border-current/10 bg-black/20 overflow-x-auto no-scrollbar`}>
         {["pool", "slots", "config", "teams", "matches"].map((t) => (
           <button
             key={t}
@@ -1044,38 +1022,39 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
             className={`flex-1 min-w-[90px] py-4 text-[10px] font-black uppercase tracking-wider transition-all border-b-2 ${
               tab === t
                 ? "text-teal-500 border-teal-500 bg-teal-500/5"
-                : `${theme.sub} border-transparent hover:${theme.text}`
+                : `${textSub} border-transparent hover:${textMain} hover:bg-current/5`
             }`}>
             {t === "config" ? "Rules" : t === "teams" ? "Teams & Owners" : t}
           </button>
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 max-w-7xl mx-auto w-full">
+      {/* MAIN CONTENT AREA */}
+      <div className="flex-1 overflow-y-auto p-4 md:p-8 max-w-7xl mx-auto w-full custom-scrollbar">
+        {/* === CONFIG / RULES TAB === */}
         {tab === "config" && (
           <div className="space-y-6 pb-20">
             <div
-              className={`border p-6 rounded-2xl flex justify-between items-center ${lightMode ? "bg-teal-50 border-teal-200" : "bg-teal-900/10 border-teal-500/20"}`}>
+              className={`border p-6 rounded-3xl flex justify-between items-center bg-teal-500/10 border-teal-500/20 shadow-md`}>
               <div>
-                <h4 className="text-teal-600 dark:text-teal-400 font-black text-xs uppercase">
+                <h4 className="text-teal-500 font-black text-xs uppercase">
                   Repair Auction Signal
                 </h4>
-                <p
-                  className={`text-[10px] ${lightMode ? "text-teal-800/60" : "text-slate-500"}`}>
+                <p className={`text-[10px] text-teal-500/70 mt-1`}>
                   Use if dashboard is stuck
                 </p>
               </div>
               <button
                 onClick={forceAuctionReady}
-                className="bg-teal-600 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-teal-700 transition-colors shadow-sm">
+                className="bg-teal-600 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-teal-500 transition-colors shadow-lg active:scale-95">
                 Repair
               </button>
             </div>
 
             <div
-              className={`${theme.card} p-6 rounded-2xl border ${borderClass} flex justify-between items-center mt-4 shadow-sm`}>
+              className={`${cardBg} p-6 rounded-3xl border border-current/10 flex justify-between items-center mt-4`}>
               <div>
-                <h4 className={`${theme.text} font-black text-xs uppercase`}>
+                <h4 className={`${textMain} font-black text-xs uppercase`}>
                   Limit: 1 Player Per Slot
                 </h4>
               </div>
@@ -1087,21 +1066,19 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   })
                 }
                 className={`w-14 h-8 rounded-full transition-all relative ${
-                  config.limitOnePlayerPerSlot
-                    ? "bg-teal-600"
-                    : "bg-gray-300 dark:bg-slate-700"
+                  config.limitOnePlayerPerSlot ? "bg-teal-500" : "bg-current/20"
                 }`}>
                 <div
-                  className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${
+                  className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all shadow-sm ${
                     config.limitOnePlayerPerSlot ? "left-7" : "left-1"
                   }`}></div>
               </button>
             </div>
 
             <div
-              className={`${theme.card} p-6 rounded-2xl border ${borderClass} flex justify-between items-center mt-4 shadow-sm`}>
+              className={`${cardBg} p-6 rounded-3xl border border-current/10 flex justify-between items-center mt-4`}>
               <div>
-                <h4 className={`${theme.text} font-black text-xs uppercase`}>
+                <h4 className={`${textMain} font-black text-xs uppercase`}>
                   Allow Direct Buy
                 </h4>
               </div>
@@ -1113,27 +1090,25 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   })
                 }
                 className={`w-14 h-8 rounded-full transition-all relative ${
-                  config.allowDirectBuy
-                    ? "bg-teal-600"
-                    : "bg-gray-300 dark:bg-slate-700"
+                  config.allowDirectBuy ? "bg-teal-500" : "bg-current/20"
                 }`}>
                 <div
-                  className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${
+                  className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all shadow-sm ${
                     config.allowDirectBuy ? "left-7" : "left-1"
                   }`}></div>
               </button>
             </div>
 
             <div
-              className={`${theme.card} border ${borderClass} p-8 rounded-[2rem] shadow-xl relative overflow-hidden`}>
+              className={`${cardBg} border border-current/10 p-8 rounded-[2rem] shadow-xl relative overflow-hidden`}>
               <div className="mb-10">
                 <div className="flex justify-between items-center mb-6">
-                  <h3 className={`${theme.text} font-black uppercase text-xs`}>
+                  <h3 className={`${textMain} font-black uppercase text-xs`}>
                     Dynamic Bidding Slabs
                   </h3>
                   <button
                     onClick={addSlab}
-                    className="bg-teal-600 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-teal-700 shadow-sm transition-colors">
+                    className={`bg-gradient-to-r ${theme?.gradient || "from-teal-600 to-teal-500"} text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:opacity-90 shadow-md transition-colors active:scale-95`}>
                     + Add Slab
                   </button>
                 </div>
@@ -1141,23 +1116,22 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   {(config.bidSlabs || []).map((slab, index) => (
                     <div
                       key={index}
-                      className={`flex gap-4 items-center p-3 rounded-xl border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
+                      className={`flex gap-4 items-center p-3 rounded-2xl border border-current/10 bg-current/5`}>
                       <div className="flex-1">
                         <label
-                          className={`text-[8px] ${theme.sub} block mb-1 uppercase font-black`}>
+                          className={`text-[8px] ${textSub} block mb-1 uppercase font-black`}>
                           Up to (₹)
                         </label>
                         <input
                           type="number"
-                          className={`bg-transparent ${theme.text} font-bold outline-none w-full`}
+                          className={`bg-transparent ${textMain} font-bold outline-none w-full`}
                           value={slab.max}
                           onChange={(e) =>
                             updateSlab(index, "max", e.target.value)
                           }
                         />
                       </div>
-                      <div
-                        className={`flex-1 border-l ${lightMode ? "border-gray-200" : "border-white/10"} pl-4`}>
+                      <div className={`flex-1 border-l border-current/10 pl-4`}>
                         <label className="text-[8px] text-teal-500 block mb-1 uppercase font-black">
                           Inc (₹)
                         </label>
@@ -1172,7 +1146,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                       </div>
                       <button
                         onClick={() => removeSlab(index)}
-                        className="text-red-500 hover:text-red-600 text-xl px-2">
+                        className="text-red-500 hover:bg-red-500/20 rounded-lg text-xl px-3 py-1 transition-colors">
                         &times;
                       </button>
                     </div>
@@ -1181,13 +1155,13 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
               </div>
 
               <h3
-                className={`${theme.text} font-black uppercase text-xs mb-8 border-b ${borderClass} pb-4`}>
+                className={`${textMain} font-black uppercase text-xs mb-8 border-b border-current/10 pb-4`}>
                 Auction Logic Configuration
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-2">
                   <label
-                    className={`text-[10px] font-black ${theme.sub} uppercase`}>
+                    className={`text-[10px] font-black ${textSub} uppercase`}>
                     Min Squad Size
                   </label>
                   <input
@@ -1201,7 +1175,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 </div>
                 <div className="space-y-2">
                   <label
-                    className={`text-[10px] font-black ${theme.sub} uppercase`}>
+                    className={`text-[10px] font-black ${textSub} uppercase`}>
                     Max Squad Size
                   </label>
                   <input
@@ -1215,7 +1189,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 </div>
                 <div className="space-y-2">
                   <label
-                    className={`text-[10px] font-black ${theme.sub} uppercase`}>
+                    className={`text-[10px] font-black ${textSub} uppercase`}>
                     Min Base Price
                   </label>
                   <input
@@ -1229,7 +1203,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 </div>
                 <div className="space-y-2">
                   <label
-                    className={`text-[10px] font-black ${theme.sub} uppercase`}>
+                    className={`text-[10px] font-black ${textSub} uppercase`}>
                     Fallback Increment
                   </label>
                   <input
@@ -1247,7 +1221,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   </label>
                   <input
                     type="number"
-                    className={`w-full rounded-xl p-4 border outline-none font-bold ${lightMode ? "bg-amber-50 border-amber-200 focus:border-amber-400 text-gray-900" : "bg-[#0F1115] border-amber-500/20 focus:border-amber-500/50 text-slate-200"}`}
+                    className={`w-full rounded-xl p-4 border outline-none font-bold bg-amber-500/10 border-amber-500/20 focus:bg-amber-500/20 text-inherit`}
                     value={config.maxBidPerPlayer}
                     onChange={(e) =>
                       setConfig({ ...config, maxBidPerPlayer: e.target.value })
@@ -1260,7 +1234,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   </label>
                   <input
                     type="number"
-                    className={`w-full rounded-xl p-4 border outline-none font-bold ${lightMode ? "bg-amber-50 border-amber-200 focus:border-amber-400 text-gray-900" : "bg-[#0F1115] border-amber-500/20 focus:border-amber-500/50 text-slate-200"}`}
+                    className={`w-full rounded-xl p-4 border outline-none font-bold bg-amber-500/10 border-amber-500/20 focus:bg-amber-500/20 text-inherit`}
                     value={config.maxIconsPerTeam}
                     onChange={(e) =>
                       setConfig({ ...config, maxIconsPerTeam: e.target.value })
@@ -1271,33 +1245,33 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
               <div className="flex gap-4 mt-12">
                 <button
                   onClick={handleResetRules}
-                  className={`flex-1 font-black py-5 rounded-xl uppercase text-xs border transition-colors ${lightMode ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100" : "bg-red-900/20 text-red-500 border-red-500/20 hover:bg-red-900/30"}`}>
+                  className={`flex-1 font-black py-4 rounded-xl uppercase text-xs border transition-colors bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20`}>
                   Reset Rules
                 </button>
                 <button
                   onClick={handleUpdateConfig}
-                  className="flex-[2] bg-teal-600 hover:bg-teal-700 text-white font-black py-5 rounded-xl uppercase text-xs shadow-lg transition-all active:scale-[0.98]">
+                  className={`flex-[2] bg-gradient-to-r ${theme?.gradient || "from-teal-600 to-teal-500"} text-white font-black py-4 rounded-xl uppercase text-xs shadow-xl transition-all active:scale-[0.98] hover:opacity-90`}>
                   Update Rules
                 </button>
               </div>
             </div>
 
-            {/* 🔥 NEW DANGER ZONE SETTINGS */}
+            {/* 🔥 DANGER ZONE SETTINGS */}
             <h3
-              className={`${theme.text} font-black uppercase text-xs mt-12 mb-6 border-b ${borderClass} pb-4 text-red-500 flex items-center gap-2`}>
+              className={`${textMain} font-black uppercase text-xs mt-12 mb-6 border-b border-current/10 pb-4 text-red-500 flex items-center gap-2`}>
               <span>⚠️</span> Advanced Settings (Danger Zone)
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Feature 1: Sync Base Prices */}
               <div
-                className={`${theme.card} p-6 rounded-2xl border ${lightMode ? "border-blue-200 bg-blue-50/50" : "border-blue-500/20 bg-blue-900/10"} shadow-sm flex flex-col`}>
+                className={`${cardBg} p-6 rounded-3xl border border-blue-500/30 bg-blue-500/10 shadow-lg flex flex-col`}>
                 <h4
-                  className={`font-black text-xs uppercase ${lightMode ? "text-blue-700" : "text-blue-500"} mb-2`}>
+                  className={`font-black text-xs uppercase text-blue-500 mb-2`}>
                   Sync Base Prices
                 </h4>
                 <p
-                  className={`text-[10px] ${theme.sub} mb-6 flex-1 leading-relaxed`}>
+                  className={`text-[10px] text-blue-500/70 mb-6 flex-1 leading-relaxed`}>
                   Updates every player currently in the auction pool to match
                   your Min Base Price (₹{config.minBasePrice}). Useful when
                   setting up.
@@ -1305,47 +1279,47 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 <button
                   onClick={handleSyncBasePrice}
                   disabled={isResetting}
-                  className={`w-full px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${lightMode ? "bg-blue-100 text-blue-700 hover:bg-blue-200" : "bg-blue-600/20 text-blue-500 hover:bg-blue-600 hover:text-white"}`}>
+                  className={`w-full px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all bg-blue-500/20 text-blue-500 hover:bg-blue-500 hover:text-white border border-blue-500/30`}>
                   {isResetting ? "Processing..." : "Sync Price To All"}
                 </button>
               </div>
 
               {/* Feature 2: Reset All Players */}
               <div
-                className={`${theme.card} p-6 rounded-2xl border ${lightMode ? "border-amber-200 bg-amber-50/50" : "border-amber-500/20 bg-amber-900/10"} shadow-sm flex flex-col`}>
+                className={`${cardBg} p-6 rounded-3xl border border-amber-500/30 bg-amber-500/10 shadow-lg flex flex-col`}>
                 <h4
-                  className={`font-black text-xs uppercase ${lightMode ? "text-amber-700" : "text-amber-500"} mb-2`}>
+                  className={`font-black text-xs uppercase text-amber-500 mb-2`}>
                   Reset Entire Pool
                 </h4>
                 <p
-                  className={`text-[10px] ${theme.sub} mb-6 flex-1 leading-relaxed`}>
+                  className={`text-[10px] text-amber-500/70 mb-6 flex-1 leading-relaxed`}>
                   Marks all SOLD and UNSOLD players back to PENDING. Removes
                   them from their assigned teams and refunds all budgets.
                 </p>
                 <button
                   onClick={handleResetAllPlayers}
                   disabled={isResetting}
-                  className={`w-full px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${lightMode ? "bg-amber-100 text-amber-700 hover:bg-amber-200" : "bg-amber-600/20 text-amber-500 hover:bg-amber-600 hover:text-white"}`}>
+                  className={`w-full px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all bg-amber-500/20 text-amber-500 hover:bg-amber-500 hover:text-white border border-amber-500/30`}>
                   {isResetting ? "Processing..." : "Reset To Pending"}
                 </button>
               </div>
 
               {/* Feature 3: Delete Auction Pool */}
               <div
-                className={`${theme.card} p-6 rounded-2xl border ${lightMode ? "border-red-200 bg-red-50/50" : "border-red-500/20 bg-red-900/10"} shadow-sm flex flex-col`}>
+                className={`${cardBg} p-6 rounded-3xl border border-red-500/30 bg-red-500/10 shadow-lg flex flex-col`}>
                 <h4
-                  className={`font-black text-xs uppercase ${lightMode ? "text-red-700" : "text-red-500"} mb-2`}>
+                  className={`font-black text-xs uppercase text-red-500 mb-2`}>
                   Delete All Data
                 </h4>
                 <p
-                  className={`text-[10px] ${theme.sub} mb-6 flex-1 leading-relaxed`}>
+                  className={`text-[10px] text-red-500/70 mb-6 flex-1 leading-relaxed`}>
                   Completely wipes the auction pool and removes all players from
                   team rosters. Use this to start a fresh auction.
                 </p>
                 <button
                   onClick={handleClearAuctionPool}
                   disabled={isResetting}
-                  className={`w-full px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${lightMode ? "bg-red-100 text-red-700 hover:bg-red-200" : "bg-red-600/20 text-red-500 hover:bg-red-600 hover:text-white"}`}>
+                  className={`w-full px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all bg-red-500/20 text-red-500 hover:bg-red-500 hover:text-white border border-red-500/30`}>
                   {isResetting ? "Processing..." : "Clear Auction Pool"}
                 </button>
               </div>
@@ -1353,6 +1327,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
           </div>
         )}
 
+        {/* === TEAMS TAB === */}
         {tab === "teams" && (
           <div className="space-y-6 pb-20">
             <div className="grid grid-cols-1 gap-6">
@@ -1361,44 +1336,44 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
           </div>
         )}
 
+        {/* === POOL TAB === */}
         {tab === "pool" && (
           <div className="space-y-6 pb-20">
             {/* Stats Overview */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div
-                className={`${theme.card} p-4 rounded-2xl border ${borderClass} shadow-sm`}>
-                <div
-                  className={`text-[10px] ${theme.sub} uppercase font-black`}>
+                className={`${cardBg} p-5 rounded-3xl border border-current/10 shadow-lg`}>
+                <div className={`text-[10px] ${textSub} uppercase font-black`}>
                   Total Pooled
                 </div>
-                <div className={`text-2xl ${theme.text} font-black`}>
+                <div className={`text-2xl ${textMain} font-black mt-1`}>
                   {stats.total}
                 </div>
               </div>
               <div
-                className={`${theme.card} p-4 rounded-2xl border ${borderClass} shadow-sm`}>
-                <div className="text-[10px] text-teal-600 dark:text-teal-500 uppercase font-black">
+                className={`${cardBg} p-5 rounded-3xl border border-teal-500/20 bg-teal-500/5 shadow-lg`}>
+                <div className="text-[10px] text-teal-500 uppercase font-black">
                   Sold
                 </div>
-                <div className="text-2xl text-teal-600 dark:text-teal-400 font-black">
+                <div className="text-2xl text-teal-500 font-black mt-1">
                   {stats.sold}
                 </div>
               </div>
               <div
-                className={`${theme.card} p-4 rounded-2xl border ${borderClass} shadow-sm`}>
-                <div className="text-[10px] text-amber-600 dark:text-orange-500 uppercase font-black">
+                className={`${cardBg} p-5 rounded-3xl border border-amber-500/20 bg-amber-500/5 shadow-lg`}>
+                <div className="text-[10px] text-amber-500 uppercase font-black">
                   Pending
                 </div>
-                <div className="text-2xl text-amber-600 dark:text-orange-400 font-black">
+                <div className="text-2xl text-amber-500 font-black mt-1">
                   {stats.pending}
                 </div>
               </div>
               <div
-                className={`${theme.card} p-4 rounded-2xl border ${borderClass} shadow-sm`}>
-                <div className="text-[10px] text-red-600 dark:text-red-500 uppercase font-black">
+                className={`${cardBg} p-5 rounded-3xl border border-red-500/20 bg-red-500/5 shadow-lg`}>
+                <div className="text-[10px] text-red-500 uppercase font-black">
                   Unsold
                 </div>
-                <div className="text-2xl text-red-600 dark:text-red-400 font-black">
+                <div className="text-2xl text-red-500 font-black mt-1">
                   {stats.unsold}
                 </div>
               </div>
@@ -1406,18 +1381,18 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
 
             {/* Toolbar */}
             <div
-              className={`flex flex-col md:flex-row justify-between items-center gap-4 ${theme.card} p-4 rounded-2xl border ${borderClass} shadow-sm`}>
+              className={`flex flex-col md:flex-row justify-between items-center gap-4 ${cardBg} p-4 rounded-3xl border border-current/10 shadow-xl`}>
               <div className="flex flex-wrap gap-3 items-center w-full md:w-auto">
                 <div
-                  className={`flex ${lightMode ? "bg-gray-100" : "bg-[#0F1115]"} rounded-xl p-1 border ${borderClass}`}>
+                  className={`flex bg-black/20 rounded-xl p-1 border border-current/10`}>
                   {["PENDING", "SOLD", "UNSOLD"].map((f) => (
                     <button
                       key={f}
                       onClick={() => setPoolFilter(f)}
                       className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${
                         poolFilter === f
-                          ? "bg-teal-600 text-white shadow-sm"
-                          : `${theme.sub} hover:${theme.text}`
+                          ? `bg-gradient-to-r ${theme?.gradient || "from-teal-600 to-teal-500"} text-white shadow-md`
+                          : `${textSub} hover:${textMain}`
                       }`}>
                       {f}{" "}
                       <span className="opacity-50 text-[9px] ml-1">
@@ -1435,26 +1410,39 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 <select
                   value={roleFilter}
                   onChange={(e) => setRoleFilter(e.target.value)}
-                  className={`${inputBgClass} text-xs font-bold px-4 py-2.5 rounded-xl border outline-none focus:border-teal-500`}>
-                  <option value="All">All Roles ({stats.total})</option>
-                  <option value="Batsman">Batsman ({stats.batsmen})</option>
-                  <option value="Bowler">Bowler ({stats.bowlers})</option>
-                  <option value="All-Rounder">
+                  className={`bg-current/5 border-current/10 text-inherit text-xs font-bold px-4 py-2.5 rounded-xl border outline-none focus:border-teal-500 cursor-pointer`}>
+                  <option value="All" className="text-black">
+                    All Roles ({stats.total})
+                  </option>
+                  <option value="Batsman" className="text-black">
+                    Batsman ({stats.batsmen})
+                  </option>
+                  <option value="Bowler" className="text-black">
+                    Bowler ({stats.bowlers})
+                  </option>
+                  <option value="All-Rounder" className="text-black">
                     All-Rounder ({stats.allRounders})
                   </option>
-                  <option value="Wicket Keeper">Wicket Keeper</option>
+                  <option value="Wicket Keeper" className="text-black">
+                    Wicket Keeper
+                  </option>
                 </select>
                 <select
                   value={slotFilter}
                   onChange={(e) => setSlotFilter(e.target.value)}
-                  className={`${inputBgClass} text-xs font-bold px-4 py-2.5 rounded-xl border outline-none focus:border-teal-500`}>
-                  <option value="All">All Slots</option>
-                  <option value="Unassigned">
+                  className={`bg-current/5 border-current/10 text-inherit text-xs font-bold px-4 py-2.5 rounded-xl border outline-none focus:border-teal-500 cursor-pointer`}>
+                  <option value="All" className="text-black">
+                    All Slots
+                  </option>
+                  <option value="Unassigned" className="text-black">
                     Unassigned ({unassignedCount})
                   </option>
                   <option disabled>──────────</option>
                   {slots.map((slot) => (
-                    <option key={slot.id} value={slot.id}>
+                    <option
+                      key={slot.id}
+                      value={slot.id}
+                      className="text-black">
                       {slot.name} ({slotCounts[slot.id] || 0})
                     </option>
                   ))}
@@ -1462,22 +1450,22 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
               </div>
               <button
                 onClick={() => setShowPicker(true)}
-                className="w-full md:w-auto bg-gradient-to-r from-teal-600 to-teal-500 text-white px-6 py-3 rounded-xl font-black text-xs uppercase shadow-lg hover:shadow-teal-500/20 active:scale-95 transition-all">
+                className={`w-full md:w-auto bg-gradient-to-r ${theme?.gradient || "from-teal-600 to-teal-500"} text-white px-6 py-3 rounded-xl font-black text-xs uppercase shadow-xl hover:opacity-90 active:scale-95 transition-all`}>
                 + Import Players
               </button>
             </div>
 
             {/* Table */}
             <div
-              className={`${theme.card} border ${borderClass} rounded-2xl overflow-hidden shadow-xl overflow-x-auto`}>
+              className={`${cardBg} border border-current/10 rounded-3xl overflow-hidden shadow-2xl overflow-x-auto`}>
               <div
-                className={`p-4 border-b ${borderClass} ${lightMode ? "bg-gray-50" : "bg-[#161920]"} text-[10px] font-bold ${theme.sub} uppercase tracking-widest`}>
+                className={`p-5 border-b border-current/10 bg-black/20 text-[10px] font-bold ${textSub} uppercase tracking-widest`}>
                 Showing {displayList.length} Players
               </div>
               <table
-                className={`w-full text-left text-sm ${theme.text} min-w-[1000px]`}>
+                className={`w-full text-left text-sm ${textMain} min-w-[1000px]`}>
                 <thead
-                  className={`${lightMode ? "bg-gray-100" : "bg-[#0F1115]"} text-[10px] font-black ${theme.sub} border-b ${borderClass} uppercase tracking-widest`}>
+                  className={`bg-black/40 text-[10px] font-black ${textSub} border-b border-current/10 uppercase tracking-widest`}>
                   <tr>
                     <th className="p-5">Name</th>
                     <th className="p-5">Force Assign</th>
@@ -1486,8 +1474,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                     <th className="p-5 text-right">Action</th>
                   </tr>
                 </thead>
-                <tbody
-                  className={`divide-y ${lightMode ? "divide-gray-200" : "divide-white/5"}`}>
+                <tbody className={`divide-y divide-current/10`}>
                   {displayList.map((p) => (
                     <PlayerRow
                       key={p.id}
@@ -1507,7 +1494,8 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 </tbody>
               </table>
               {displayList.length === 0 && (
-                <div className={`p-10 text-center ${theme.sub} italic text-xs`}>
+                <div
+                  className={`p-10 text-center ${textSub} italic text-xs bg-black/20`}>
                   No players found matching current filters.
                 </div>
               )}
@@ -1515,20 +1503,21 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
           </div>
         )}
 
+        {/* === SLOTS TAB === */}
         {tab === "slots" && (
           <div className="space-y-6 pb-20">
             <div
-              className={`${theme.card} border ${borderClass} p-6 rounded-[2rem] shadow-sm`}>
+              className={`${cardBg} border border-current/10 p-6 rounded-3xl shadow-xl`}>
               <div className="flex gap-3">
                 <input
-                  className={`flex-1 rounded-xl px-5 py-3 outline-none font-bold border ${inputBgClass}`}
-                  placeholder="Round Name"
+                  className={`flex-1 rounded-xl px-5 py-3 outline-none font-bold border focus:border-teal-500 bg-current/5 border-current/10 focus:bg-current/10 text-inherit placeholder:opacity-50`}
+                  placeholder="Round Name (e.g. Marquee Players)"
                   value={newSlotName}
                   onChange={(e) => setNewSlotName(e.target.value)}
                 />
                 <button
                   onClick={handleCreateSlot}
-                  className="bg-amber-600 hover:bg-amber-500 text-white px-8 py-2 rounded-xl font-black uppercase tracking-wider text-xs transition-colors shadow-sm">
+                  className={`bg-gradient-to-r ${theme?.gradient || "from-amber-600 to-amber-500"} text-white px-8 py-2 rounded-xl font-black uppercase tracking-wider text-xs transition-all shadow-lg active:scale-95 hover:opacity-90`}>
                   Add Round
                 </button>
               </div>
@@ -1536,17 +1525,17 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
             {slots.map((s) => (
               <div
                 key={s.id}
-                className={`${theme.card} p-4 rounded-xl flex justify-between items-center mb-2 border ${borderClass} shadow-sm`}>
+                className={`${cardBg} p-5 rounded-2xl flex justify-between items-center mb-3 border border-current/10 shadow-lg`}>
                 <div className="flex-1">
                   {editingSlotId === s.id ? (
                     <input
-                      className={`w-full rounded-lg px-4 py-2 outline-none font-bold border focus:border-teal-500 ${inputBgClass}`}
+                      className={`w-full rounded-lg px-4 py-2 outline-none font-bold border focus:border-teal-500 bg-current/10 border-current/20 text-inherit`}
                       value={editingSlotName}
                       onChange={(e) => setEditingSlotName(e.target.value)}
                       autoFocus
                     />
                   ) : (
-                    <span className={`${theme.text} font-bold`}>
+                    <span className={`${textMain} font-bold text-lg`}>
                       {s.order}. {s.name}
                     </span>
                   )}
@@ -1556,12 +1545,12 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                     <>
                       <button
                         onClick={() => handleUpdateSlot(s.id)}
-                        className="text-emerald-600 dark:text-green-500 font-bold text-xs hover:underline">
+                        className="text-teal-500 font-black text-xs hover:underline bg-teal-500/10 px-4 py-2 rounded-lg">
                         Save
                       </button>
                       <button
                         onClick={handleCancelEdit}
-                        className={`${theme.sub} hover:${theme.text} text-xs font-bold hover:underline`}>
+                        className={`${textSub} hover:${textMain} text-xs font-bold hover:underline px-4 py-2 rounded-lg bg-current/10`}>
                         Cancel
                       </button>
                     </>
@@ -1569,12 +1558,12 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                     <>
                       <button
                         onClick={() => handleEditSlot(s)}
-                        className={`${theme.sub} hover:text-teal-500 transition-colors`}>
+                        className={`${textSub} hover:text-teal-500 transition-colors bg-current/5 hover:bg-current/10 p-2 rounded-lg`}>
                         ✎
                       </button>
                       <button
                         onClick={() => handleDeleteSlot(s.id)}
-                        className={`${theme.sub} hover:text-red-500 transition-colors`}>
+                        className={`${textSub} hover:text-red-500 transition-colors bg-current/5 hover:bg-current/10 p-2 rounded-lg`}>
                         🗑
                       </button>
                     </>
@@ -1585,6 +1574,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
           </div>
         )}
 
+        {/* === MATCHES TAB === */}
         {tab === "matches" && (
           <div className="pb-20">
             <MatchScheduler tournamentId={tournamentId} teams={teams} />

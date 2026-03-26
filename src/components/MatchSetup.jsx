@@ -68,7 +68,7 @@ const PlayerPickerModal = ({ isOpen, onClose, onSelect, title }) => {
   const [selected, setSelected] = useState([]);
 
   // Consume Theme
-  const { theme, lightMode } = useTheme();
+  const { theme } = useTheme();
 
   useEffect(() => {
     if (isOpen) {
@@ -208,7 +208,7 @@ export default function MatchSetup({ allTeams = [], initialTournament }) {
   const { user } = useAuth();
 
   // ✅ CONSUME GLOBAL THEME
-  const { theme, lightMode } = useTheme();
+  const { theme } = useTheme();
 
   const [activeTab, setActiveTab] = useState("single");
   const [teams, setTeams] = useState(allTeams);

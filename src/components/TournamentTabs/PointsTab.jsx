@@ -204,7 +204,16 @@ export default function PointsTab({
   canEdit,
 }) {
   const navigate = useNavigate();
-  const { theme, lightMode } = useTheme();
+
+  // 🟢 1. Natively extract theme
+  const { theme } = useTheme();
+
+  const textMain = theme?.text || "text-white";
+  const textSub = theme?.sub || "text-gray-400";
+  const cardBg =
+    theme?.card ||
+    "bg-[#0F1115]/60 backdrop-blur-xl border border-white/10 shadow-xl";
+
   const [isSyncing, setIsSyncing] = useState(false);
   const [expandedTeamId, setExpandedTeamId] = useState(null);
 
@@ -268,11 +277,8 @@ export default function PointsTab({
           <button
             onClick={handleSync}
             disabled={isSyncing}
-            className={`flex items-center gap-1.5 md:gap-2 text-[10px] md:text-xs font-bold px-2.5 py-1.5 md:px-3 md:py-1.5 rounded-md md:rounded-lg border transition-all disabled:opacity-50 ${
-              lightMode
-                ? "bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border-indigo-200"
-                : "bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 border-indigo-500/30"
-            }`}>
+            // 🟢 Adapts perfectly to text color
+            className={`flex items-center gap-1.5 md:gap-2 text-[10px] md:text-xs font-bold px-2.5 py-1.5 md:px-3 md:py-1.5 rounded-md md:rounded-lg border transition-all disabled:opacity-50 bg-current/5 border-current/10 hover:bg-current/10 text-inherit`}>
             <RefreshCw
               size={12}
               className={`md:w-3.5 md:h-3.5 ${isSyncing ? "animate-spin" : ""}`}
@@ -287,20 +293,17 @@ export default function PointsTab({
         .map(([groupName, teamsInGroup]) => (
           <div
             key={groupName}
-            className={`border rounded-xl md:rounded-2xl overflow-hidden shadow-xl md:shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500 ${
-              lightMode
-                ? "bg-white border-gray-200"
-                : "bg-[#1C2128] border-white/5"
-            }`}>
+            // 🟢 Replaced hardcoded backgrounds with dynamic theme card
+            className={`rounded-2xl md:rounded-3xl overflow-hidden shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500 ${cardBg}`}>
             {/* Group Header */}
             <div
-              className={`px-4 py-3 md:px-6 md:py-4 border-b flex items-center gap-2 md:gap-3 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/5"}`}>
+              className={`px-4 py-3 md:px-6 md:py-4 border-b border-current/10 flex items-center gap-2 md:gap-3 bg-black/10`}>
               <Trophy
                 size={16}
                 className="md:w-[18px] md:h-[18px] text-teal-500"
               />
               <h3
-                className={`font-black uppercase tracking-widest text-xs md:text-sm ${theme.text}`}>
+                className={`font-black uppercase tracking-widest text-xs md:text-sm ${textMain}`}>
                 {groupName}
               </h3>
             </div>
@@ -309,31 +312,24 @@ export default function PointsTab({
             <div className="overflow-x-auto no-scrollbar pb-1 md:pb-2">
               <table className="w-full text-sm text-left border-collapse whitespace-nowrap min-w-max md:min-w-[600px]">
                 <thead
-                  className={`border-b ${
-                    lightMode
-                      ? "bg-gray-50 text-gray-500 border-gray-200"
-                      : "bg-[#0F1115] text-slate-500 border-white/5"
-                  }`}>
+                  className={`border-b border-white/5 bg-black/20 ${textSub}`}>
                   <tr>
                     <th className={`${thClass} w-8 md:w-10`}>#</th>
                     <th
-                      className={`${thClass} text-left sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.05)] md:shadow-[4px_0_10px_rgba(0,0,0,0.1)] ${
-                        lightMode ? "bg-gray-50" : "bg-[#0F1115]"
-                      }`}>
+                      className={`${thClass} text-left sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.05)] md:shadow-[4px_0_10px_rgba(0,0,0,0.1)] bg-black/40 backdrop-blur-sm`}>
                       Team
                     </th>
                     <th className={thClass}>P</th>
                     <th className={`${thClass} text-teal-500`}>W</th>
                     <th className={`${thClass} text-red-500`}>L</th>
-                    <th className={`${thClass} ${theme.text}`}>Pts</th>
+                    <th className={`${thClass} ${textMain}`}>Pts</th>
                     <th
                       className={`${thClass} text-right pr-3 md:pr-6 text-indigo-400`}>
                       NRR
                     </th>
                   </tr>
                 </thead>
-                <tbody
-                  className={`divide-y ${lightMode ? "divide-gray-100" : "divide-white/5"}`}>
+                <tbody className={`divide-y divide-white/5`}>
                   {teamsInGroup.length > 0 ? (
                     teamsInGroup.map((t, i) => {
                       const isQualifier = i < 4;
@@ -343,18 +339,15 @@ export default function PointsTab({
                         <React.Fragment key={t.id || i}>
                           <tr
                             onClick={() => toggleRow(t.id)}
+                            // 🟢 Replaced hardcoded hover colors with clean bg-current/10
                             className={`cursor-pointer transition-colors group border-l-2 ${
                               isExpanded
-                                ? lightMode
-                                  ? "bg-gray-50"
-                                  : "bg-white/[0.03]"
-                                : lightMode
-                                  ? "hover:bg-gray-50"
-                                  : "hover:bg-white/5"
+                                ? "bg-current/10"
+                                : "hover:bg-current/5"
                             } ${isQualifier ? "border-teal-500" : "border-transparent"}`}>
                             {/* RANK */}
                             <td
-                              className={`px-2 md:px-4 py-2 md:py-3 font-mono text-center text-[10px] md:text-xs ${theme.sub}`}>
+                              className={`px-2 md:px-4 py-2 md:py-3 font-mono text-center text-[10px] md:text-xs ${textSub}`}>
                               {i + 1}
                             </td>
 
@@ -362,29 +355,21 @@ export default function PointsTab({
                             <td
                               className={`px-2 md:px-4 py-2 md:py-3 sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.05)] md:shadow-[4px_0_10px_rgba(0,0,0,0.1)] transition-colors ${
                                 isExpanded
-                                  ? lightMode
-                                    ? "bg-gray-50"
-                                    : "bg-[#252b33]"
-                                  : lightMode
-                                    ? "bg-white group-hover:bg-gray-50"
-                                    : "bg-[#1C2128] group-hover:bg-[#252b33]"
+                                  ? "bg-black/40 backdrop-blur-md"
+                                  : "bg-black/20 group-hover:bg-black/30 backdrop-blur-sm"
                               }`}>
                               <div className="flex items-center gap-1.5 md:gap-2">
                                 <div
                                   className={`w-5 h-5 md:w-6 md:h-6 rounded flex-none flex items-center justify-center text-[8px] md:text-[10px] shadow-inner ${
                                     isQualifier
-                                      ? lightMode
-                                        ? "bg-teal-100 text-teal-700"
-                                        : "bg-teal-900/20 text-teal-400"
-                                      : lightMode
-                                        ? "bg-gray-100 text-gray-500"
-                                        : "bg-slate-800 text-slate-500"
+                                      ? "bg-teal-500/20 text-teal-500"
+                                      : "bg-current/10 text-inherit opacity-70"
                                   }`}>
                                   {t.logo ? (
                                     <img
                                       src={t.logo}
                                       alt={t.name}
-                                      className="w-full h-full object-contain p-0.5"
+                                      className="w-full h-full object-contain p-0.5 drop-shadow-md"
                                     />
                                   ) : (
                                     t.name?.charAt(0)
@@ -392,13 +377,7 @@ export default function PointsTab({
                                 </div>
                                 <span
                                   className={`text-[10px] md:text-xs font-bold truncate max-w-[80px] sm:max-w-[100px] md:max-w-[120px] ${
-                                    isQualifier
-                                      ? lightMode
-                                        ? "text-teal-900"
-                                        : "text-slate-100"
-                                      : lightMode
-                                        ? "text-gray-600"
-                                        : "text-slate-400"
+                                    isQualifier ? textMain : textSub
                                   }`}>
                                   {t.name}
                                 </span>
@@ -407,7 +386,7 @@ export default function PointsTab({
 
                             {/* P, W, L */}
                             <td
-                              className={`px-1.5 md:px-3 text-center font-medium text-[10px] md:text-xs ${theme.sub}`}>
+                              className={`px-1.5 md:px-3 text-center font-medium text-[10px] md:text-xs ${textSub}`}>
                               {t.played}
                             </td>
                             <td className="px-1.5 md:px-3 text-center font-bold text-teal-500 text-[10px] md:text-xs">
@@ -420,11 +399,7 @@ export default function PointsTab({
                             {/* POINTS */}
                             <td className="px-1.5 md:px-4 text-center">
                               <span
-                                className={`inline-block font-black px-1.5 py-0.5 md:px-2 md:py-1 rounded border min-w-[20px] md:min-w-[28px] text-[10px] md:text-xs ${
-                                  lightMode
-                                    ? "bg-gray-800 text-white border-gray-600"
-                                    : "bg-black/40 text-white border-white/10"
-                                }`}>
+                                className={`inline-block font-black px-1.5 py-0.5 md:px-2 md:py-1 rounded border min-w-[20px] md:min-w-[28px] text-[10px] md:text-xs bg-black/40 text-white border-white/10`}>
                                 {t.points}
                               </span>
                             </td>
@@ -444,10 +419,10 @@ export default function PointsTab({
                             <tr>
                               <td
                                 colSpan={7}
-                                className={`p-0 border-b ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115]/50 border-white/5"}`}>
+                                className={`p-0 border-b border-current/10 bg-black/40`}>
                                 <div className="p-2.5 md:p-4 animate-in slide-in-from-top-2 duration-300">
                                   <h4
-                                    className={`text-[9px] md:text-[10px] font-bold uppercase tracking-widest mb-2 md:mb-3 pl-1 flex items-center gap-1.5 md:gap-2 ${theme.sub}`}>
+                                    className={`text-[9px] md:text-[10px] font-bold uppercase tracking-widest mb-2 md:mb-3 pl-1 flex items-center gap-1.5 md:gap-2 ${textSub}`}>
                                     <History
                                       size={10}
                                       className="md:w-3 md:h-3"
@@ -486,35 +461,32 @@ export default function PointsTab({
                                                     `/tournaments/${tournamentId}/scorecard/${mId}`,
                                                   );
                                               }}
-                                              className={`snap-start flex-shrink-0 w-24 md:w-32 border rounded-lg md:rounded-xl p-2 md:p-3 flex flex-col items-center gap-1.5 md:gap-2 cursor-pointer transition-all group ${
-                                                lightMode
-                                                  ? "bg-white border-gray-200 hover:border-teal-300 hover:shadow-md"
-                                                  : "bg-[#1C2128] border-white/10 hover:border-teal-500/50 hover:bg-[#252b33]"
-                                              }`}>
+                                              // 🟢 Replaced hardcoded colors with transparent cards
+                                              className={`snap-start flex-shrink-0 w-24 md:w-32 border border-current/10 rounded-xl md:rounded-2xl p-2 md:p-3 flex flex-col items-center gap-1.5 md:gap-2 cursor-pointer transition-all group bg-current/5 hover:bg-current/10 hover:border-teal-500/50`}>
                                               <div
                                                 className={`w-6 h-6 md:w-8 md:h-8 rounded-full flex items-center justify-center text-[10px] md:text-xs font-black shadow-md md:shadow-lg ${
                                                   result === "W"
-                                                    ? "bg-teal-500 text-black shadow-teal-500/20"
+                                                    ? "bg-teal-500 text-white shadow-teal-500/20"
                                                     : result === "L"
                                                       ? "bg-red-500 text-white shadow-red-500/20"
-                                                      : "bg-slate-600 text-white"
+                                                      : "bg-current/20 text-inherit opacity-70"
                                                 }`}>
                                                 {result}
                                               </div>
                                               <div className="text-center">
                                                 <div
-                                                  className={`text-[8px] md:text-[9px] uppercase font-bold tracking-tight ${theme.sub}`}>
+                                                  className={`text-[8px] md:text-[9px] uppercase font-bold tracking-tight ${textSub}`}>
                                                   vs
                                                 </div>
                                                 <div
-                                                  className={`text-[9px] md:text-[10px] font-bold truncate max-w-[80px] md:max-w-[100px] ${theme.text}`}
+                                                  className={`text-[9px] md:text-[10px] font-bold truncate max-w-[80px] md:max-w-[100px] transition-colors ${textMain} group-hover/card:text-teal-500`}
                                                   title={oppName}>
                                                   {oppName || "Opponent"}
                                                 </div>
                                               </div>
                                               {dateStr && (
                                                 <div
-                                                  className={`text-[8px] md:text-[9px] font-mono mt-0.5 md:mt-1 ${theme.sub}`}>
+                                                  className={`text-[8px] md:text-[9px] font-mono mt-0.5 md:mt-1 ${textSub}`}>
                                                   {new Date(
                                                     dateStr,
                                                   ).toLocaleDateString(
@@ -531,7 +503,7 @@ export default function PointsTab({
                                         })
                                     ) : (
                                       <div
-                                        className={`text-[10px] md:text-xs italic px-2 ${theme.sub}`}>
+                                        className={`text-[10px] md:text-xs italic px-2 ${textSub}`}>
                                         No matches played yet.
                                       </div>
                                     )}
@@ -547,7 +519,7 @@ export default function PointsTab({
                     <tr>
                       <td
                         colSpan={7}
-                        className={`px-6 py-8 md:py-12 text-center italic text-xs ${theme.sub}`}>
+                        className={`px-6 py-8 md:py-12 text-center italic text-xs ${textSub}`}>
                         No standings available in this group.
                       </td>
                     </tr>

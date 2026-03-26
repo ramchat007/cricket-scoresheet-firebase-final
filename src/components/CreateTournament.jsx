@@ -2,13 +2,21 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { addTournament } from "../utils/firestore";
 import { useAuth } from "../hooks/useAuth";
-import { useTheme } from "../context/ThemeContext"; // ✅ Added Theme Hook
-import { Trophy, Plus, Calendar, MapPin, Shield } from "lucide-react"; // ✅ For UI consistency
+import { useTheme } from "../context/ThemeContext";
+import { Trophy, Plus, Calendar, MapPin, Shield } from "lucide-react";
 
 export default function CreateTournament() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { theme, lightMode } = useTheme(); // ✅ Consume global theme
+
+  // 🟢 Natively extract theme
+  const { theme } = useTheme();
+
+  const textMain = theme?.text || "text-white";
+  const textSub = theme?.sub || "text-gray-400";
+  const cardBg =
+    theme?.card ||
+    "bg-[#0F1115]/60 backdrop-blur-xl border border-white/10 shadow-2xl";
 
   const [name, setName] = useState("");
   const [organizer, setOrganizer] = useState("");
@@ -17,7 +25,7 @@ export default function CreateTournament() {
   const [loading, setLoading] = useState(false);
   const [format, setFormat] = useState("league");
 
-  // Auction Constraint States (Removed basePrice and bidIncrement)
+  // Auction Constraint States
   const [minSquadSize, setMinSquadSize] = useState(11);
   const [maxSquadSize, setMaxSquadSize] = useState(15);
   const [maxPlayers, setMaxPlayers] = useState("");
@@ -26,12 +34,12 @@ export default function CreateTournament() {
   if (!user) {
     return (
       <div
-        className={`flex flex-col items-center justify-center h-[60vh] text-center ${theme.bg}`}>
+        className={`flex flex-col items-center justify-center h-[60vh] text-center bg-transparent ${textMain}`}>
         <div className="text-4xl mb-4">🔒</div>
-        <h2 className={`text-xl font-bold ${theme.text}`}>Login Required</h2>
+        <h2 className={`text-xl font-bold`}>Login Required</h2>
         <button
           onClick={() => navigate("/login")}
-          className="mt-4 text-cyan-400 underline">
+          className="mt-4 text-cyan-400 underline hover:text-cyan-300">
           Go to Login
         </button>
       </div>
@@ -61,7 +69,6 @@ export default function CreateTournament() {
           status: "upcoming",
           minSquadSize: Number(minSquadSize),
           maxSquadSize: Number(maxSquadSize),
-          // ✅ Values now handled by global defaults or auction-specific settings later
           maxPlayers: maxPlayers ? Number(maxPlayers) : null,
           createdAt: new Date().toISOString(),
         },
@@ -77,25 +84,22 @@ export default function CreateTournament() {
     }
   };
 
-  // ✅ Themed Dynamic Classes
-  const inputClass = `w-full border rounded-xl px-4 py-3 focus:outline-none transition-all font-bold text-sm ${
-    lightMode
-      ? "bg-white border-gray-200 text-gray-900 focus:border-cyan-500"
-      : "bg-black/20 border-white/10 text-white focus:border-cyan-500"
-  }`;
-
-  const labelClass = `block text-[10px] font-black uppercase tracking-[0.2em] mb-2 ${theme.sub}`;
+  // 🟢 Themed Dynamic Classes utilizing clean glassmorphism
+  const inputClass = `w-full rounded-xl px-4 py-3 focus:outline-none transition-all font-bold text-sm bg-current/5 border border-current/10 focus:bg-current/10 focus:border-cyan-500 text-inherit placeholder:opacity-50`;
+  const labelClass = `block text-[10px] font-black uppercase tracking-[0.2em] mb-2 ${textSub}`;
 
   return (
     <div
-      className={`min-h-screen pt-10 pb-20 px-4 transition-colors duration-300 ${theme.bg}`}>
+      className={`min-h-screen pt-10 pb-20 px-4 transition-colors duration-300 bg-transparent ${textMain}`}>
       <div
-        className={`max-w-2xl mx-auto ${theme.card} border ${lightMode ? "border-gray-200" : "border-white/5"} rounded-3xl p-8 shadow-2xl relative overflow-hidden`}>
+        // 🟢 Uses universal theme card
+        className={`max-w-2xl mx-auto ${cardBg} rounded-[2rem] p-8 relative overflow-hidden`}>
         {/* Decorative Header Accent */}
-        <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-purple-500 via-cyan-500 to-blue-500"></div>
+        <div
+          className={`absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r ${theme?.gradient || "from-cyan-500 to-blue-500"}`}></div>
 
         <h2
-          className={`text-3xl font-black ${theme.text} mb-8 uppercase italic tracking-tighter flex items-center gap-3`}>
+          className={`text-3xl font-black mb-8 uppercase italic tracking-tighter flex items-center gap-3`}>
           <span className="p-2 rounded-xl bg-cyan-500 text-white shadow-lg shadow-cyan-500/20">
             <Trophy size={24} />
           </span>
@@ -108,7 +112,7 @@ export default function CreateTournament() {
             <div className="flex items-center gap-2 mb-2">
               <Plus size={14} className="text-cyan-500" />
               <h3
-                className={`text-[11px] font-black uppercase tracking-widest ${theme.sub}`}>
+                className={`text-[11px] font-black uppercase tracking-widest ${textSub}`}>
                 Basic Information
               </h3>
             </div>
@@ -137,10 +141,10 @@ export default function CreateTournament() {
               <div>
                 <label className={labelClass}>Start Date</label>
                 <div className="relative">
+                  {/* 🟢 Removed colorScheme entirely so it naturally inherits browser dark/light specs */}
                   <input
                     type="date"
                     className={inputClass}
-                    style={{ colorScheme: lightMode ? "light" : "dark" }}
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
                     required
@@ -175,12 +179,12 @@ export default function CreateTournament() {
             </div>
           </div>
 
-          {/* 🟢 NEW SECTION: TOURNAMENT FORMAT */}
-          <div className="space-y-5 pt-4">
+          {/* SECTION 2: TOURNAMENT FORMAT */}
+          <div className="space-y-5 pt-4 border-t border-current/10">
             <div className="flex items-center gap-2 mb-2">
               <Trophy size={14} className="text-cyan-500" />
               <h3
-                className={`text-[11px] font-black uppercase tracking-widest ${theme.sub}`}>
+                className={`text-[11px] font-black uppercase tracking-widest ${textSub}`}>
                 Tournament Format
               </h3>
             </div>
@@ -191,18 +195,17 @@ export default function CreateTournament() {
                   key={f}
                   type="button"
                   onClick={() => setFormat(f)}
+                  // 🟢 Button styles adapted perfectly to transparent/glass themes
                   className={`flex-1 py-4 rounded-xl font-black uppercase text-[10px] tracking-widest border transition-all ${
                     format === f
-                      ? "bg-cyan-600 border-cyan-500 text-white shadow-lg"
-                      : lightMode
-                        ? "bg-white border-gray-200 text-gray-400"
-                        : "bg-white/5 border-white/10 text-slate-500"
+                      ? `bg-gradient-to-r ${theme?.gradient || "from-cyan-600 to-cyan-500"} text-white border-transparent shadow-lg`
+                      : "bg-current/5 border-current/10 text-inherit opacity-60 hover:opacity-100 hover:bg-current/10"
                   }`}>
                   {f === "league" ? "Round Robin / League" : "Knockout Series"}
                 </button>
               ))}
             </div>
-            <p className={`text-[9px] italic font-bold ${theme.sub}`}>
+            <p className={`text-[9px] italic font-bold ${textSub}`}>
               *{" "}
               {format === "league"
                 ? "Points Table will be used. Abandoned matches share 1 point each."
@@ -210,12 +213,12 @@ export default function CreateTournament() {
             </p>
           </div>
 
-          {/* SECTION 2: SQUAD RULES */}
-          <div className="space-y-5 pt-4">
+          {/* SECTION 3: SQUAD RULES */}
+          <div className="space-y-5 pt-4 border-t border-current/10">
             <div className="flex items-center gap-2 mb-2">
               <Shield size={14} className="text-cyan-500" />
               <h3
-                className={`text-[11px] font-black uppercase tracking-widest ${theme.sub}`}>
+                className={`text-[11px] font-black uppercase tracking-widest ${textSub}`}>
                 Squad Constraints
               </h3>
             </div>
@@ -229,7 +232,7 @@ export default function CreateTournament() {
                   value={minSquadSize}
                   onChange={(e) => setMinSquadSize(e.target.value)}
                 />
-                <p className={`text-[9px] mt-2 italic font-bold ${theme.sub}`}>
+                <p className={`text-[9px] mt-2 italic font-bold ${textSub}`}>
                   Required per team.
                 </p>
               </div>
@@ -241,7 +244,7 @@ export default function CreateTournament() {
                   value={maxSquadSize}
                   onChange={(e) => setMaxSquadSize(e.target.value)}
                 />
-                <p className={`text-[9px] mt-2 italic font-bold ${theme.sub}`}>
+                <p className={`text-[9px] mt-2 italic font-bold ${textSub}`}>
                   Squad capacity limit.
                 </p>
               </div>
@@ -250,7 +253,8 @@ export default function CreateTournament() {
 
           <button
             disabled={loading}
-            className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-black py-5 rounded-2xl shadow-xl shadow-cyan-900/20 transition-all transform active:scale-[0.98] flex items-center justify-center gap-2 uppercase tracking-widest text-xs">
+            // 🟢 Uses active theme gradient for the primary CTA
+            className={`w-full bg-gradient-to-r ${theme?.gradient || "from-cyan-600 to-blue-600"} text-white font-black py-5 rounded-2xl shadow-xl transition-all transform active:scale-[0.98] flex items-center justify-center gap-2 uppercase tracking-widest text-xs hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed`}>
             {loading ? "Initializing..." : "Launch Tournament 🚀"}
           </button>
         </form>

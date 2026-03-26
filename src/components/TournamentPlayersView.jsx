@@ -224,7 +224,7 @@ export default function TournamentPlayersView() {
         Role: player.activeRole || "N/A",
         "Batting Style": tData.battingStyle || player.battingStyle || "N/A",
         "Bowling Style": tData.bowlingStyle || player.bowlingStyle || "N/A",
-        Mobile: player.mobile || "N/A"
+        Mobile: player.mobile || "N/A",
       };
     });
 
@@ -1292,10 +1292,8 @@ export default function TournamentPlayersView() {
           <div
             className="fixed inset-0 z-[600] bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
             onClick={() => setPreviewImage(null)}>
-            
             {/* 🟢 1. Set a forced container width (max-w-xl is 576px) */}
             <div className="relative w-full max-w-xl flex justify-center">
-              
               <img
                 src={previewImage}
                 alt="Preview"
@@ -1304,7 +1302,7 @@ export default function TournamentPlayersView() {
                 style={{ maxHeight: "90vh" }}
                 onClick={(e) => e.stopPropagation()}
               />
-              
+
               <button
                 className="absolute -top-10 right-0 text-white hover:text-red-400 font-bold text-sm uppercase tracking-widest transition-colors flex items-center gap-2"
                 onClick={() => setPreviewImage(null)}>
@@ -1320,7 +1318,7 @@ export default function TournamentPlayersView() {
             <div
               className={`border w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${theme.card} ${theme.text}`}>
               <div
-                className={`p-6 border-b flex justify-between items-center sticky top-0 z-10 ${lightMode ? "bg-white border-gray-200" : "bg-[#1C2128] border-white/5"}`}>
+                className={`p-6 border-b flex justify-between items-center sticky top-0 z-10 ${theme.card}`}>
                 <h3
                   className={`text-xl font-black uppercase tracking-tight italic ${theme.text}`}>
                   {isEditing ? "Edit Player" : "Register Player"}

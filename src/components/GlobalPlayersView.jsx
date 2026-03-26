@@ -34,19 +34,21 @@ const NotificationToast = ({ message, type, onClose }) => {
   const isError = type === "error";
   return (
     <div
-      className={`fixed top-6 right-6 z-[200] flex items-center gap-3 px-6 py-4 rounded-xl shadow-2xl animate-in slide-in-from-right duration-300 border backdrop-blur-md ${
+      className={`fixed top-6 right-6 z-[200] flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl animate-in slide-in-from-right duration-300 border backdrop-blur-xl ${
         isError
-          ? "bg-red-500/10 border-red-500/20 text-red-500 bg-white dark:bg-red-900/10"
-          : "bg-teal-500/10 border-teal-500/20 text-teal-600 dark:text-teal-400 bg-white dark:bg-teal-900/10"
+          ? "bg-red-500/20 border-red-500/30 text-red-500"
+          : "bg-teal-500/20 border-teal-500/30 text-teal-400"
       }`}>
       {isError ? <AlertCircle size={20} /> : <Check size={20} />}
       <div>
-        <h4 className="font-bold text-sm uppercase tracking-wider">
+        <h4 className="font-black text-sm uppercase tracking-wider">
           {isError ? "Error" : "Success"}
         </h4>
-        <p className="text-xs opacity-90">{message}</p>
+        <p className="text-xs font-bold opacity-90">{message}</p>
       </div>
-      <button onClick={onClose} className="ml-4 opacity-50 hover:opacity-100">
+      <button
+        onClick={onClose}
+        className="ml-4 opacity-50 hover:opacity-100 transition-opacity">
         <X size={16} />
       </button>
     </div>
@@ -57,8 +59,14 @@ export default function GlobalPlayersView() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // 2. Consume Theme
-  const { theme, lightMode } = useTheme();
+  // 2. Consume Theme natively (removed lightMode)
+  const { theme } = useTheme();
+
+  const textMain = theme?.text || "text-white";
+  const textSub = theme?.sub || "text-gray-400";
+  const cardBg =
+    theme?.card ||
+    "bg-[#0F1115]/60 backdrop-blur-xl border border-white/10 shadow-2xl";
 
   // Refs
   const fileInputRef = useRef(null);
@@ -138,7 +146,6 @@ export default function GlobalPlayersView() {
     // 1. Initialize Map
     const statsMap = {};
     players.forEach((p) => {
-      // 🔥 MAGIC: Find the absolute most recent profile data across Global and Tournaments
       let latest = {
         photoURL: p.photoURL,
         paymentScreenshotURL: p.paymentScreenshotURL,
@@ -167,7 +174,7 @@ export default function GlobalPlayersView() {
 
       statsMap[p.id] = {
         ...p,
-        latestProfile: latest, // Attach the freshest data to the player object
+        latestProfile: latest,
         calculatedStats: {
           matches: 0,
           runs: 0,
@@ -327,7 +334,7 @@ export default function GlobalPlayersView() {
       );
     }
     if (roleFilter !== "All") {
-      result = result.filter((p) => p.latestProfile.role === roleFilter); // Filter by newest role
+      result = result.filter((p) => p.latestProfile.role === roleFilter);
     }
 
     result.sort((a, b) => {
@@ -340,7 +347,6 @@ export default function GlobalPlayersView() {
       } else if (
         ["role", "battingStyle", "bowlingStyle"].includes(sortConfig.key)
       ) {
-        // Sort by the newest dynamic profile data
         valA = a.latestProfile[sortConfig.key];
         valB = b.latestProfile[sortConfig.key];
       } else if (sortConfig.key === "name") {
@@ -467,7 +473,6 @@ export default function GlobalPlayersView() {
   const openEditModal = (player, e) => {
     e.stopPropagation();
 
-    // 🔥 Populate the edit modal with the absolute latest data we found
     const profile = player.latestProfile || {};
 
     const sanitizeStyle = (val, defaultVal) =>
@@ -475,11 +480,11 @@ export default function GlobalPlayersView() {
 
     setFormData({
       id: player.id,
-      name: player.name, // Name is global
+      name: player.name,
       role: profile.role || "All-Rounder",
       battingStyle: sanitizeStyle(profile.battingStyle, "Right Hand Bat"),
       bowlingStyle: sanitizeStyle(profile.bowlingStyle, "Right Arm Medium"),
-      mobile: player.mobile || "", // Mobile is global
+      mobile: player.mobile || "",
       photoURL: profile.photoURL || "",
       paymentScreenshotURL: profile.paymentScreenshotURL || "",
     });
@@ -495,7 +500,6 @@ export default function GlobalPlayersView() {
 
     try {
       if (isEditing && formData.id) {
-        // Updating from Global View updates the Global timestamps, making this the new "Latest"
         await updateGlobalPlayer(formData.id, {
           name: formData.name,
           role: formData.role,
@@ -504,7 +508,7 @@ export default function GlobalPlayersView() {
           mobile: formData.mobile,
           photoURL: formData.photoURL,
           paymentScreenshotURL: formData.paymentScreenshotURL,
-          updatedAt: new Date().toISOString(), // This ensures it overrides old tournament data
+          updatedAt: new Date().toISOString(),
         });
         showToast("Player Updated Globally!");
       } else {
@@ -538,29 +542,24 @@ export default function GlobalPlayersView() {
 
   const DetailItem = ({ label, value, isMono = false }) => (
     <div
-      className={`flex flex-col p-3 rounded-xl border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#161920] border-white/5"}`}>
+      className={`flex flex-col p-3 rounded-xl border bg-current/5 border-current/10`}>
       <span
-        className={`text-[9px] uppercase font-black mb-1 tracking-wider ${theme.sub}`}>
+        className={`text-[9px] uppercase font-black mb-1 tracking-wider ${textSub}`}>
         {label}
       </span>
       <span
-        className={`text-sm break-words font-bold ${isMono ? "font-mono text-teal-500" : theme.text}`}>
+        className={`text-sm break-words font-bold ${isMono ? "font-mono text-teal-500" : textMain}`}>
         {value || "N/A"}
       </span>
     </div>
   );
 
-  // --- STYLES ---
-  const inputClass = `w-full border rounded-xl px-4 py-3 outline-none transition-all font-bold placeholder:font-normal focus:ring-2
-    ${
-      lightMode
-        ? "bg-gray-50 border-gray-200 text-gray-900 focus:bg-white focus:ring-teal-100 focus:border-teal-500"
-        : "bg-[#0F1115] border-white/10 text-slate-200 focus:bg-black focus:border-teal-500/50"
-    }`;
+  // 🟢 Clean, adaptable transparent inputs
+  const inputClass = `w-full rounded-xl px-4 py-3 outline-none font-bold border transition-colors bg-current/5 border-current/10 focus:bg-current/10 focus:border-teal-500 text-inherit placeholder:opacity-50`;
 
   return (
     <div
-      className={`min-h-screen p-2 md:p-4 pb-20 font-sans transition-colors duration-300 ${theme.bg} ${theme.text}`}>
+      className={`min-h-screen p-2 md:p-4 pb-20 font-sans transition-colors duration-300 bg-transparent ${textMain}`}>
       <NotificationToast
         message={notification?.message}
         type={notification?.type}
@@ -572,15 +571,15 @@ export default function GlobalPlayersView() {
         <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
           <div className="text-center md:text-left">
             <h1
-              className={`text-2xl font-black uppercase tracking-tighter italic flex items-center gap-2 justify-center md:justify-start ${theme.text}`}>
+              className={`text-2xl font-black uppercase tracking-tighter italic flex items-center gap-2 justify-center md:justify-start ${textMain}`}>
               <span
-                className={`p-2 rounded-xl ${lightMode ? "bg-teal-100 text-teal-600" : "bg-teal-500/10 text-teal-500"}`}>
+                className={`p-2 rounded-xl bg-teal-500/10 text-teal-500 border border-teal-500/20`}>
                 <Trophy size={20} />
               </span>
               Global Database
             </h1>
             <p
-              className={`text-xs mt-2 font-bold uppercase tracking-widest flex items-center gap-2 justify-center md:justify-start ${theme.sub}`}>
+              className={`text-xs mt-2 font-bold uppercase tracking-widest flex items-center gap-2 justify-center md:justify-start ${textSub}`}>
               {processedPlayers.length} players found
             </p>
           </div>
@@ -589,7 +588,7 @@ export default function GlobalPlayersView() {
             {/* Search Input */}
             <div className="relative w-full md:w-56">
               <Search
-                className={`absolute left-3 top-1/2 -translate-y-1/2 ${theme.sub}`}
+                className={`absolute left-3 top-1/2 -translate-y-1/2 ${textSub}`}
                 size={16}
               />
               <input
@@ -604,21 +603,31 @@ export default function GlobalPlayersView() {
             {/* Role Filter */}
             <div className="relative w-full md:w-auto">
               <Filter
-                className={`absolute left-3 top-1/2 -translate-y-1/2 ${theme.sub}`}
+                className={`absolute left-3 top-1/2 -translate-y-1/2 ${textSub}`}
                 size={16}
               />
               <select
                 value={roleFilter}
                 onChange={(e) => setRoleFilter(e.target.value)}
                 className={`${inputClass} pl-10 cursor-pointer appearance-none pr-8`}>
-                <option value="All">All Roles</option>
-                <option value="Batsman">Batsman</option>
-                <option value="Bowler">Bowler</option>
-                <option value="All-Rounder">All-Rounder</option>
-                <option value="Wicket Keeper">Wicket Keeper</option>
+                <option value="All" className="text-black">
+                  All Roles
+                </option>
+                <option value="Batsman" className="text-black">
+                  Batsman
+                </option>
+                <option value="Bowler" className="text-black">
+                  Bowler
+                </option>
+                <option value="All-Rounder" className="text-black">
+                  All-Rounder
+                </option>
+                <option value="Wicket Keeper" className="text-black">
+                  Wicket Keeper
+                </option>
               </select>
               <ChevronDown
-                className={`absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none ${theme.sub}`}
+                className={`absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none ${textSub}`}
                 size={14}
               />
             </div>
@@ -626,7 +635,7 @@ export default function GlobalPlayersView() {
             {user && (
               <button
                 onClick={openAddModal}
-                className="bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg whitespace-nowrap transition-all active:scale-95 text-white w-full md:w-auto flex items-center justify-center gap-2">
+                className={`bg-gradient-to-r ${theme?.gradient || "from-teal-600 to-emerald-600"} hover:opacity-90 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg whitespace-nowrap transition-all active:scale-95 text-white w-full md:w-auto flex items-center justify-center gap-2`}>
                 <Plus size={14} /> Add
               </button>
             )}
@@ -637,20 +646,19 @@ export default function GlobalPlayersView() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
           {orangeCap && (
             <div
-              className={`p-5 rounded-[2rem] flex items-center gap-5 shadow-xl relative overflow-hidden group border transition-all ${lightMode ? "bg-orange-50 border-orange-200" : "bg-gradient-to-br from-orange-900/30 to-[#161920] border-orange-500/20"}`}>
+              className={`p-5 rounded-[2rem] flex items-center gap-5 shadow-xl relative overflow-hidden group border transition-all bg-orange-500/10 border-orange-500/20`}>
               <div
-                className={`p-4 rounded-full text-3xl border group-hover:scale-110 transition-transform ${lightMode ? "bg-orange-100 border-orange-200 text-orange-600" : "bg-orange-500/10 border-orange-500/20 text-orange-500"}`}>
+                className={`p-4 rounded-full text-3xl border group-hover:scale-110 transition-transform bg-orange-500/20 border-orange-500/30 text-orange-500`}>
                 <Medal size={32} />
               </div>
               <div>
                 <div className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-500 mb-1">
                   Global Orange Cap
                 </div>
-                <div className={`text-xl font-black italic ${theme.text}`}>
+                <div className={`text-xl font-black italic ${textMain}`}>
                   {orangeCap.name}
                 </div>
-                <div
-                  className={`text-sm font-mono font-bold mt-1 ${theme.sub}`}>
+                <div className={`text-sm font-mono font-bold mt-1 ${textSub}`}>
                   {orangeCap.calculatedStats.runs} Runs
                 </div>
               </div>
@@ -658,20 +666,19 @@ export default function GlobalPlayersView() {
           )}
           {purpleCap && (
             <div
-              className={`p-5 rounded-[2rem] flex items-center gap-5 shadow-xl relative overflow-hidden group border transition-all ${lightMode ? "bg-purple-50 border-purple-200" : "bg-gradient-to-br from-purple-900/30 to-[#161920] border-purple-500/20"}`}>
+              className={`p-5 rounded-[2rem] flex items-center gap-5 shadow-xl relative overflow-hidden group border transition-all bg-purple-500/10 border-purple-500/20`}>
               <div
-                className={`p-4 rounded-full text-3xl border group-hover:scale-110 transition-transform ${lightMode ? "bg-purple-100 border-purple-200 text-purple-600" : "bg-purple-500/10 border-purple-500/20 text-purple-500"}`}>
+                className={`p-4 rounded-full text-3xl border group-hover:scale-110 transition-transform bg-purple-500/20 border-purple-500/30 text-purple-500`}>
                 <Medal size={32} />
               </div>
               <div>
                 <div className="text-[10px] font-black uppercase tracking-[0.2em] text-purple-500 mb-1">
                   Global Purple Cap
                 </div>
-                <div className={`text-xl font-black italic ${theme.text}`}>
+                <div className={`text-xl font-black italic ${textMain}`}>
                   {purpleCap.name}
                 </div>
-                <div
-                  className={`text-sm font-mono font-bold mt-1 ${theme.sub}`}>
+                <div className={`text-sm font-mono font-bold mt-1 ${textSub}`}>
                   {purpleCap.calculatedStats.wickets} Wickets
                 </div>
               </div>
@@ -681,7 +688,7 @@ export default function GlobalPlayersView() {
 
         {/* TABLE */}
         <div
-          className={`border rounded-[2rem] overflow-hidden shadow-2xl ${theme.card}`}>
+          className={`border border-current/10 rounded-[2rem] overflow-hidden shadow-2xl ${cardBg}`}>
           {loading ? (
             <div className="p-12 flex flex-col items-center justify-center text-teal-500 animate-pulse text-xs font-black uppercase tracking-widest gap-3">
               <Loader2 className="animate-spin" size={32} />
@@ -691,7 +698,7 @@ export default function GlobalPlayersView() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left border-collapse">
                 <thead
-                  className={`text-[10px] uppercase font-black tracking-[0.2em] border-b ${lightMode ? "bg-gray-100 text-gray-500 border-gray-200" : "bg-[#0F1115] text-slate-500 border-white/5"}`}>
+                  className={`text-[10px] uppercase font-black tracking-[0.2em] border-b border-current/10 bg-black/20 ${textSub}`}>
                   <tr>
                     <th
                       className="px-6 py-4 cursor-pointer hover:opacity-70 group w-[40%] md:w-[30%] transition-opacity"
@@ -721,25 +728,22 @@ export default function GlobalPlayersView() {
                     <th className="px-6 py-4 text-right">Action</th>
                   </tr>
                 </thead>
-                <tbody
-                  className={`divide-y ${lightMode ? "divide-gray-100" : "divide-white/5"}`}>
+                <tbody className={`divide-y divide-current/10`}>
                   {processedPlayers.length === 0 ? (
                     <tr>
                       <td
                         colSpan={8}
-                        className={`text-center py-16 italic text-sm ${theme.sub}`}>
+                        className={`text-center py-16 italic text-sm ${textSub}`}>
                         No players found.
                       </td>
                     </tr>
                   ) : (
                     processedPlayers.map((player) => {
-                      // 🔥 Extracting the dynamically calculated newest data for the UI
                       const profile = player.latestProfile;
                       const displayPhoto =
                         profile.photoURL ||
                         "https://cdn-icons-png.flaticon.com/512/847/847969.png";
                       const displayRole = profile.role;
-                      const displayPayment = profile.paymentScreenshotURL;
                       const displayBatting = profile.battingStyle;
                       const displayBowling = profile.bowlingStyle;
 
@@ -749,19 +753,15 @@ export default function GlobalPlayersView() {
                             onClick={() => toggleRowExpansion(player.id)}
                             className={`cursor-pointer group transition-colors ${
                               expandedPlayerId === player.id
-                                ? lightMode
-                                  ? "bg-teal-50"
-                                  : "bg-white/5"
-                                : lightMode
-                                  ? "hover:bg-gray-50"
-                                  : "hover:bg-white/5"
+                                ? "bg-current/10"
+                                : "hover:bg-current/5"
                             }`}>
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-4">
                                 <img
                                   src={displayPhoto}
                                   alt=""
-                                  className={`w-12 h-12 rounded-xl object-cover border flex-shrink-0 shadow-sm ${lightMode ? "bg-gray-200 border-gray-200" : "bg-[#0F1115] border-white/10"}`}
+                                  className={`w-12 h-12 rounded-xl object-cover border border-current/10 flex-shrink-0 shadow-sm bg-current/5`}
                                   onError={(e) => {
                                     e.target.src =
                                       "https://cdn-icons-png.flaticon.com/512/847/847969.png";
@@ -769,12 +769,12 @@ export default function GlobalPlayersView() {
                                 />
                                 <div className="flex flex-col overflow-hidden">
                                   <span
-                                    className={`font-bold text-sm leading-tight truncate max-w-[120px] md:max-w-none transition-colors ${theme.text}`}>
+                                    className={`font-bold text-sm leading-tight truncate max-w-[120px] md:max-w-none transition-colors ${textMain}`}>
                                     {player.name}
                                   </span>
                                   <div className="flex flex-wrap gap-1 mt-1.5">
                                     <span
-                                      className={`text-[9px] px-2 py-0.5 rounded border truncate uppercase font-bold tracking-wider ${lightMode ? "bg-white border-gray-200 text-gray-500" : "bg-[#0F1115] text-slate-500 border-white/10"}`}>
+                                      className={`text-[9px] px-2 py-0.5 rounded border border-current/10 truncate uppercase font-bold tracking-wider bg-current/5 ${textSub}`}>
                                       {displayRole}
                                     </span>
                                   </div>
@@ -782,14 +782,14 @@ export default function GlobalPlayersView() {
                               </div>
                             </td>
                             <td
-                              className={`px-4 py-4 text-center font-mono font-bold ${theme.sub}`}>
+                              className={`px-4 py-4 text-center font-mono font-bold ${textSub}`}>
                               {player.calculatedStats.matches}
                             </td>
                             <td className="px-4 py-4 text-center font-bold text-teal-500 font-mono text-base">
                               {player.calculatedStats.runs}
                             </td>
                             <td
-                              className={`px-4 py-4 text-center font-mono font-bold hidden md:table-cell ${theme.sub}`}>
+                              className={`px-4 py-4 text-center font-mono font-bold hidden md:table-cell ${textSub}`}>
                               {player.calculatedStats.highestScore}
                             </td>
                             <td className="px-4 py-4 text-center font-bold text-purple-500 font-mono text-base">
@@ -798,21 +798,21 @@ export default function GlobalPlayersView() {
                             <td className="px-6 py-4 text-right">
                               <div className="flex justify-end gap-3 items-center">
                                 <ChevronDown
-                                  className={`transition-transform duration-200 ${expandedPlayerId === player.id ? "rotate-180" : ""} ${theme.sub}`}
+                                  className={`transition-transform duration-200 ${expandedPlayerId === player.id ? "rotate-180" : ""} ${textSub}`}
                                   size={16}
                                 />
                                 {user && (
                                   <>
                                     <button
                                       onClick={(e) => openEditModal(player, e)}
-                                      className={`p-2 rounded-lg transition-all ${lightMode ? "text-gray-400 hover:bg-gray-100 hover:text-gray-900" : "text-slate-500 hover:bg-white/10 hover:text-white"}`}>
+                                      className={`p-2 rounded-lg transition-all bg-current/5 border border-transparent hover:bg-current/10 hover:border-current/10 text-inherit opacity-70 hover:opacity-100`}>
                                       <Edit3 size={16} />
                                     </button>
                                     <button
                                       onClick={(e) =>
                                         handleDelete(player.id, e)
                                       }
-                                      className="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-500/10 transition-all">
+                                      className="text-red-500/70 hover:text-red-500 p-2 rounded-lg hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all">
                                       <Trash2 size={16} />
                                     </button>
                                   </>
@@ -823,14 +823,14 @@ export default function GlobalPlayersView() {
 
                           {expandedPlayerId === player.id && (
                             <tr
-                              className={`border-t border-b animate-in slide-in-from-top-1 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
+                              className={`border-t border-b border-current/10 animate-in slide-in-from-top-1 bg-black/40 backdrop-blur-md`}>
                               <td colSpan={8} className="p-6">
                                 <div className="flex flex-col md:flex-row gap-8 items-start">
                                   <div className="flex-shrink-0">
                                     <img
                                       src={displayPhoto}
                                       alt={player.name}
-                                      className={`w-32 h-32 md:w-40 md:h-40 rounded-2xl object-cover border-2 shadow-2xl cursor-pointer ${lightMode ? "border-teal-100 bg-white shadow-teal-500/10" : "border-teal-500/30 bg-[#161920] shadow-teal-900/20"}`}
+                                      className={`w-32 h-32 md:w-40 md:h-40 rounded-2xl object-cover border-2 shadow-2xl cursor-pointer border-teal-500/30 bg-current/5 shadow-teal-500/10`}
                                       onClick={() =>
                                         displayPhoto &&
                                         setPreviewImage(displayPhoto)
@@ -876,36 +876,10 @@ export default function GlobalPlayersView() {
                                       />
                                     </div>
 
-                                    {user && displayPayment && (
-                                      <div
-                                        className={`mb-8 pt-6 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}>
-                                        <h4
-                                          className={`text-xs font-black uppercase mb-4 tracking-widest ${theme.sub}`}>
-                                          Latest Receipt / Proof
-                                        </h4>
-                                        <div
-                                          className="relative group w-full md:w-64 cursor-pointer"
-                                          onClick={() =>
-                                            setPreviewImage(displayPayment)
-                                          }>
-                                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-xl">
-                                            <span className="text-white font-bold text-xs uppercase tracking-widest">
-                                              Enlarge
-                                            </span>
-                                          </div>
-                                          <img
-                                            src={displayPayment}
-                                            alt="Payment"
-                                            className={`w-full h-32 object-cover rounded-xl border ${lightMode ? "border-gray-200" : "border-white/10"}`}
-                                          />
-                                        </div>
-                                      </div>
-                                    )}
-
                                     <div
-                                      className={`pt-6 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+                                      className={`pt-6 border-t border-current/10`}>
                                       <h4
-                                        className={`text-xs font-black uppercase mb-4 flex items-center gap-2 tracking-widest ${theme.sub}`}>
+                                        className={`text-xs font-black uppercase mb-4 flex items-center gap-2 tracking-widest ${textSub}`}>
                                         Global Match History (
                                         {player.calculatedStats.history.length})
                                       </h4>
@@ -923,17 +897,17 @@ export default function GlobalPlayersView() {
                                                     match.matchId,
                                                   )
                                                 }
-                                                className={`p-4 rounded-xl cursor-pointer transition-all flex justify-between items-center group/card border ${lightMode ? "bg-white border-gray-200 hover:border-teal-500/50 hover:shadow-md" : "bg-[#161920] border-white/5 hover:border-teal-500/40 hover:bg-[#1C2128]"}`}>
+                                                className={`p-4 rounded-xl cursor-pointer transition-all flex justify-between items-center group/card border bg-current/5 border-current/10 hover:border-teal-500/50 hover:bg-current/10`}>
                                                 <div>
                                                   <div
-                                                    className={`text-[9px] font-bold uppercase tracking-wider mb-1 ${theme.sub}`}>
+                                                    className={`text-[9px] font-bold uppercase tracking-wider mb-1 ${textSub}`}>
                                                     {new Date(
                                                       match.date,
                                                     ).toLocaleDateString() ||
                                                       "Date"}
                                                   </div>
                                                   <div
-                                                    className={`font-bold text-sm transition-colors group-hover/card:text-teal-500 ${theme.text}`}>
+                                                    className={`font-bold text-sm transition-colors group-hover/card:text-teal-500 ${textMain}`}>
                                                     vs{" "}
                                                     {match.opponent ||
                                                       "Opponent"}
@@ -954,7 +928,7 @@ export default function GlobalPlayersView() {
                                                     {match.runs === 0 &&
                                                       match.wickets === 0 && (
                                                         <span
-                                                          className={theme.sub}>
+                                                          className={textSub}>
                                                           -
                                                         </span>
                                                       )}
@@ -965,7 +939,7 @@ export default function GlobalPlayersView() {
                                         </div>
                                       ) : (
                                         <div
-                                          className={`text-xs italic p-6 border border-dashed rounded-xl text-center font-medium ${lightMode ? "text-gray-400 bg-white border-gray-200" : "text-slate-600 bg-[#161920] border-white/5"}`}>
+                                          className={`text-xs italic p-6 border border-dashed rounded-xl text-center font-medium bg-current/5 border-current/10 text-inherit opacity-60`}>
                                           No global match history recorded.
                                         </div>
                                       )}
@@ -1011,16 +985,16 @@ export default function GlobalPlayersView() {
         {showModal && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-in fade-in">
             <div
-              className={`border w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${theme.card} ${theme.text}`}>
+              className={`border border-current/10 w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${cardBg} ${textMain}`}>
               <div
-                className={`p-6 border-b flex justify-between items-center sticky top-0 z-10 ${lightMode ? "bg-white border-gray-200" : "bg-[#1C2128] border-white/5"}`}>
+                className={`p-6 border-b border-current/10 flex justify-between items-center sticky top-0 z-10 bg-black/20`}>
                 <h3
-                  className={`text-lg font-black uppercase tracking-tight italic ${theme.text}`}>
+                  className={`text-lg font-black uppercase tracking-tight italic ${textMain}`}>
                   {isEditing ? "Edit Global Profile" : "Create New Player"}
                 </h3>
                 <button
                   onClick={() => setShowModal(false)}
-                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${lightMode ? "bg-gray-100 text-gray-500 hover:bg-gray-200" : "bg-white/5 text-slate-400 hover:text-white"}`}>
+                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors bg-current/10 hover:bg-current/20 text-inherit opacity-70 hover:opacity-100`}>
                   <X size={16} />
                 </button>
               </div>
@@ -1033,7 +1007,11 @@ export default function GlobalPlayersView() {
                         className="relative group cursor-pointer"
                         onClick={() => fileInputRef.current.click()}>
                         <div
-                          className={`w-24 h-24 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl ${formData.photoURL ? "border-teal-500 shadow-teal-500/20" : lightMode ? "bg-gray-100 border-gray-200 border-dashed" : "bg-[#0F1115] border-white/10 border-dashed"}`}>
+                          className={`w-24 h-24 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl ${
+                            formData.photoURL
+                              ? "border-teal-500 shadow-teal-500/20 bg-black/40"
+                              : "bg-current/5 border-current/20 border-dashed hover:border-teal-500/50"
+                          }`}>
                           {formData.photoURL ? (
                             <img
                               src={formData.photoURL}
@@ -1041,7 +1019,7 @@ export default function GlobalPlayersView() {
                               className="w-full h-full object-cover"
                             />
                           ) : (
-                            <Camera className={`opacity-50 ${theme.sub}`} />
+                            <Camera className={`opacity-50 ${textSub}`} />
                           )}
                         </div>
                         <input
@@ -1053,38 +1031,8 @@ export default function GlobalPlayersView() {
                         />
                       </div>
                       <p
-                        className={`text-[9px] uppercase mt-2 font-black tracking-widest text-center ${theme.sub}`}>
+                        className={`text-[9px] uppercase mt-2 font-black tracking-widest text-center ${textSub}`}>
                         Profile
-                      </p>
-                    </div>
-                    {/* Payment */}
-                    <div className="flex flex-col items-center">
-                      <div
-                        className="relative group cursor-pointer"
-                        onClick={() => paymentInputRef.current.click()}>
-                        <div
-                          className={`w-24 h-24 rounded-xl border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl ${formData.paymentScreenshotURL ? "border-purple-500 shadow-purple-500/20" : lightMode ? "bg-gray-100 border-gray-200 border-dashed" : "bg-[#0F1115] border-white/10 border-dashed"}`}>
-                          {formData.paymentScreenshotURL ? (
-                            <img
-                              src={formData.paymentScreenshotURL}
-                              alt="Proof"
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <Receipt className={`opacity-50 ${theme.sub}`} />
-                          )}
-                        </div>
-                        <input
-                          type="file"
-                          ref={paymentInputRef}
-                          onChange={handlePaymentImageUpload}
-                          className="hidden"
-                          accept="image/*"
-                        />
-                      </div>
-                      <p
-                        className={`text-[9px] uppercase mt-2 font-black tracking-widest text-center ${theme.sub}`}>
-                        Payment
                       </p>
                     </div>
                   </div>
@@ -1119,7 +1067,11 @@ export default function GlobalPlayersView() {
                           key={role}
                           type="button"
                           onClick={() => setFormData({ ...formData, role })}
-                          className={`py-3 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all ${formData.role === role ? "bg-teal-500/10 border-teal-500/50 text-teal-500" : lightMode ? "bg-white border-gray-200 text-gray-500 hover:bg-gray-50" : "bg-[#0F1115] border-white/5 text-slate-500 hover:text-slate-300"}`}>
+                          className={`py-3 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all ${
+                            formData.role === role
+                              ? "bg-teal-500/20 border-teal-500 text-teal-400 shadow-lg"
+                              : "bg-current/5 border-current/10 text-inherit opacity-70 hover:opacity-100 hover:bg-current/10"
+                          }`}>
                           {role}
                         </button>
                       ))}
@@ -1127,7 +1079,7 @@ export default function GlobalPlayersView() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <select
-                        className={inputClass}
+                        className={`${inputClass} text-xs cursor-pointer`}
                         value={formData.battingStyle}
                         onChange={(e) =>
                           setFormData({
@@ -1135,11 +1087,11 @@ export default function GlobalPlayersView() {
                             battingStyle: e.target.value,
                           })
                         }>
-                        <option>Right Hand Bat</option>
-                        <option>Left Hand Bat</option>
+                        <option className="text-black">Right Hand Bat</option>
+                        <option className="text-black">Left Hand Bat</option>
                       </select>
                       <select
-                        className={inputClass}
+                        className={`${inputClass} text-xs cursor-pointer`}
                         value={formData.bowlingStyle}
                         onChange={(e) =>
                           setFormData({
@@ -1147,13 +1099,13 @@ export default function GlobalPlayersView() {
                             bowlingStyle: e.target.value,
                           })
                         }>
-                        <option>Right Arm Medium</option>
-                        <option>Right Arm Fast</option>
-                        <option>Right Arm Spin</option>
-                        <option>Left Arm Medium</option>
-                        <option>Left Arm Fast</option>
-                        <option>Left Arm Spin</option>
-                        <option>None</option>
+                        <option className="text-black">Right Arm Medium</option>
+                        <option className="text-black">Right Arm Fast</option>
+                        <option className="text-black">Right Arm Spin</option>
+                        <option className="text-black">Left Arm Medium</option>
+                        <option className="text-black">Left Arm Fast</option>
+                        <option className="text-black">Left Arm Spin</option>
+                        <option className="text-black">None</option>
                       </select>
                     </div>
                   </div>
@@ -1161,7 +1113,7 @@ export default function GlobalPlayersView() {
                   <button
                     type="submit"
                     disabled={processingImage}
-                    className="w-full bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 text-white font-black uppercase tracking-widest text-xs py-4 rounded-xl shadow-lg transition-all disabled:opacity-50 active:scale-[0.98]">
+                    className={`w-full bg-gradient-to-r ${theme?.gradient || "from-teal-600 to-teal-500"} hover:opacity-90 text-white font-black uppercase tracking-widest text-xs py-4 rounded-xl shadow-lg transition-all disabled:opacity-50 active:scale-[0.98]`}>
                     {processingImage
                       ? "Processing..."
                       : isEditing

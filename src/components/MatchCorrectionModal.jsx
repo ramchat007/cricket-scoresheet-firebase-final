@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 
 const MatchCorrectionModal = ({ match, tournamentId, onClose }) => {
-  const { theme, lightMode } = useTheme();
+  const { theme } = useTheme();
   const [mode, setMode] = useState("timeline"); // 'timeline' | 'manual' | 'meta'
   const [activeTab, setActiveTab] = useState(0);
 

@@ -44,18 +44,17 @@ const NotificationToast = ({ message, type, onClose }) => {
   const isError = type === "error";
   return (
     <div
-      className={`fixed top-6 right-6 z-[200] flex items-center gap-3 px-6 py-4 rounded-xl shadow-2xl animate-in slide-in-from-right duration-300 border backdrop-blur-md ${
+      className={`fixed top-6 right-6 z-[200] flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl animate-in slide-in-from-right duration-300 border backdrop-blur-xl ${
         isError
-          ? "bg-red-500/10 border-red-500/20 text-red-500 bg-white dark:bg-red-900/10"
-          : "bg-teal-500/10 border-teal-500/20 text-teal-600 dark:text-teal-400 bg-white dark:bg-teal-900/10"
-      }`}
-    >
+          ? "bg-red-500/20 border-red-500/30 text-red-500"
+          : "bg-teal-500/20 border-teal-500/30 text-teal-400"
+      }`}>
       {isError ? <AlertCircle size={20} /> : <Check size={20} />}
       <div>
-        <h4 className="font-bold text-sm uppercase tracking-wider">
+        <h4 className="font-black text-sm uppercase tracking-wider">
           {isError ? "Error" : "Success"}
         </h4>
-        <p className="text-xs opacity-90">{message}</p>
+        <p className="text-xs font-bold opacity-90">{message}</p>
       </div>
       <button onClick={onClose} className="ml-4 opacity-50 hover:opacity-100">
         <X size={16} />
@@ -106,7 +105,14 @@ export default function GlobalPlayerRegistration() {
   const [tournamentName, setTournamentName] = useState("");
   const { user } = useAuth();
 
-  const { theme, lightMode, toggleTheme } = useTheme();
+  // 🟢 Natively extract theme
+  const { theme, toggleTheme } = useTheme();
+
+  const textMain = theme?.text || "text-white";
+  const textSub = theme?.sub || "text-gray-400";
+  const cardBg =
+    theme?.card ||
+    "bg-[#0F1115]/60 backdrop-blur-xl border border-white/10 shadow-2xl";
 
   const [formData, setFormData] = useState({
     name: "",
@@ -124,7 +130,7 @@ export default function GlobalPlayerRegistration() {
   const [photoBase64, setPhotoBase64] = useState("");
   const [paymentBase64, setPaymentBase64] = useState("");
 
-  // 🟢 NEW: Trackers to decide whether to upload to Cloudinary or keep existing Base64
+  // Trackers to decide whether to upload to Cloudinary or keep existing Base64
   const [photoChanged, setPhotoChanged] = useState(false);
   const [paymentChanged, setPaymentChanged] = useState(false);
   const [uploadText, setUploadText] = useState(""); // Dynamic loading text
@@ -185,7 +191,7 @@ export default function GlobalPlayerRegistration() {
     fetchTournamentDetails();
   }, [tournamentId]);
 
-  // 🟢 SMART LIMIT CHECKER
+  // SMART LIMIT CHECKER
   useEffect(() => {
     const checkRegistrationLimit = async () => {
       if (!tournamentId || !maxPlayersLimit) return;
@@ -260,7 +266,7 @@ export default function GlobalPlayerRegistration() {
     try {
       const croppedImage = await getCroppedImg(imageToCrop, croppedAreaPixels);
       setPhotoBase64(croppedImage);
-      setPhotoChanged(true); // 🟢 Flag that a new photo was added
+      setPhotoChanged(true);
       setCropModalOpen(false);
       setImageToCrop(null);
     } catch (e) {
@@ -280,7 +286,7 @@ export default function GlobalPlayerRegistration() {
     if (file) {
       const compressed = await compressImage(file, 400);
       setPaymentBase64(compressed);
-      setPaymentChanged(true); // 🟢 Flag that a new payment was added
+      setPaymentChanged(true);
     }
   };
 
@@ -295,7 +301,7 @@ export default function GlobalPlayerRegistration() {
     });
     setPhotoBase64(playerData.photoURL || "");
     setPaymentBase64(playerData.paymentScreenshotURL || "");
-    setPhotoChanged(false); // Reset flags so we don't upload old DB base64s
+    setPhotoChanged(false);
     setPaymentChanged(false);
     setExistingPlayerId(docId);
     setIsEditing(true);
@@ -328,7 +334,7 @@ export default function GlobalPlayerRegistration() {
     }
 
     try {
-      // 🟢 UPLOAD NEW IMAGES TO CLOUDINARY (Skip if untouched)
+      // UPLOAD NEW IMAGES TO CLOUDINARY (Skip if untouched)
       let finalPhotoUrl = photoBase64;
       let finalPaymentUrl = paymentBase64;
 
@@ -454,12 +460,8 @@ export default function GlobalPlayerRegistration() {
     }
   };
 
-  const inputClass = `w-full border rounded-xl px-5 py-4 outline-none transition-all font-bold placeholder:font-normal focus:ring-2
-    ${
-      lightMode
-        ? "bg-gray-50 border-gray-200 text-gray-900 focus:bg-white focus:border-teal-500 focus:ring-teal-100"
-        : "bg-[#0F1115] border-white/10 text-slate-200 focus:border-teal-500/50 focus:bg-black"
-    }`;
+  // 🟢 Clean transparent inputs
+  const inputClass = `w-full rounded-2xl px-5 py-4 outline-none transition-all font-bold placeholder:font-normal bg-current/5 border border-current/10 focus:bg-current/10 focus:border-teal-500 text-inherit placeholder:opacity-50`;
 
   // --- CROP MODAL RENDER ---
   const renderCropModal = () => {
@@ -497,14 +499,12 @@ export default function GlobalPlayerRegistration() {
           <div className="flex justify-between gap-4 px-4">
             <button
               onClick={handleCancelCrop}
-              className="flex-1 py-4 rounded-xl border border-white/20 text-white font-bold uppercase tracking-widest text-xs hover:bg-white/10 transition-colors"
-            >
+              className="flex-1 py-4 rounded-xl border border-white/20 text-white font-bold uppercase tracking-widest text-xs hover:bg-white/10 transition-colors">
               Cancel
             </button>
             <button
               onClick={handleSaveCrop}
-              className="flex-1 py-4 rounded-xl bg-teal-500 text-white font-black uppercase tracking-widest text-xs shadow-lg shadow-teal-500/20 active:scale-95 transition-all"
-            >
+              className="flex-1 py-4 rounded-xl bg-teal-500 text-white font-black uppercase tracking-widest text-xs shadow-lg shadow-teal-500/20 active:scale-95 transition-all">
               Save Picture
             </button>
           </div>
@@ -517,49 +517,40 @@ export default function GlobalPlayerRegistration() {
   if (status === "success" || status === "updated") {
     return (
       <div
-        className={`min-h-screen flex items-center justify-center p-4 font-sans ${theme.bg}`}
-      >
+        className={`min-h-screen flex items-center justify-center p-4 font-sans bg-transparent ${textMain}`}>
+        {/* Toggle Theme Button Optional */}
         {toggleTheme && (
           <button
             onClick={toggleTheme}
-            className={`fixed top-4 right-4 p-3 rounded-xl border transition-all flex items-center justify-center shadow-sm z-50 ${
-              lightMode
-                ? "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
-                : "bg-[#0F1115] border-white/10 text-slate-300 hover:bg-white/5"
-            }`}
-            title="Toggle Theme"
-          >
-            {lightMode ? <Moon size={16} /> : <Sun size={16} />}
+            className={`fixed top-4 right-4 p-3 rounded-xl border transition-all flex items-center justify-center shadow-sm z-50 bg-current/5 border-current/10 hover:bg-current/10 text-inherit opacity-70 hover:opacity-100`}
+            title="Toggle Theme">
+            {theme?.mode === "light" ? <Moon size={16} /> : <Sun size={16} />}
           </button>
         )}
 
         <div
-          className={`border p-8 rounded-3xl max-w-md w-full text-center shadow-2xl animate-in zoom-in-95 ${theme.card}`}
-        >
+          className={`border border-current/10 p-8 rounded-3xl max-w-md w-full text-center shadow-2xl animate-in zoom-in-95 ${cardBg}`}>
           <div className="w-20 h-20 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center text-4xl mx-auto mb-6 border border-green-500/20 shadow-lg shadow-green-500/10">
             <Check size={40} strokeWidth={3} />
           </div>
           <h2
-            className={`text-2xl font-black mb-2 uppercase tracking-tight italic ${theme.text}`}
-          >
+            className={`text-2xl font-black mb-2 uppercase tracking-tight italic ${textMain}`}>
             {status === "updated"
               ? "Profile Updated!"
               : "Registration Complete!"}
           </h2>
-          <p className={`mb-8 text-sm font-medium ${theme.sub}`}>
+          <p className={`mb-8 text-sm font-bold ${textSub}`}>
             Your profile has been{" "}
             {status === "updated" ? "updated" : "submitted"} for review.
           </p>
           <button
             onClick={() => window.location.reload()}
-            className={`block w-full font-bold py-4 rounded-xl transition-all mb-4 text-xs uppercase tracking-widest ${theme.btnBase}`}
-          >
+            className={`block w-full font-black py-4 rounded-xl transition-all mb-4 text-xs uppercase tracking-widest bg-current/10 border border-current/10 text-inherit hover:bg-current/20 active:scale-95`}>
             Back to Form
           </button>
           <Link
             to="/"
-            className={`block text-xs font-bold uppercase tracking-widest transition-colors ${theme.sub} hover:text-teal-500`}
-          >
+            className={`block text-xs font-bold uppercase tracking-widest transition-colors ${textSub} hover:text-teal-500`}>
             Back to Home
           </Link>
         </div>
@@ -571,34 +562,29 @@ export default function GlobalPlayerRegistration() {
   if (isRegistrationClosed && !isEditing) {
     return (
       <div
-        className={`min-h-screen flex items-center justify-center p-4 font-sans ${theme.bg}`}
-      >
+        className={`min-h-screen flex items-center justify-center p-4 font-sans bg-transparent ${textMain}`}>
         <div
-          className={`border p-8 rounded-3xl max-w-md w-full text-center shadow-2xl animate-in zoom-in-95 ${theme.card}`}
-        >
+          className={`border border-current/10 p-8 rounded-3xl max-w-md w-full text-center shadow-2xl animate-in zoom-in-95 ${cardBg}`}>
           <div className="w-20 h-20 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6 border border-red-500/20">
             <X size={40} strokeWidth={3} />
           </div>
           <h2
-            className={`text-2xl font-black mb-2 uppercase tracking-tight italic ${theme.text}`}
-          >
+            className={`text-2xl font-black mb-2 uppercase tracking-tight italic ${textMain}`}>
             Registration Closed
           </h2>
-          <p className={`mb-6 text-sm font-medium ${theme.sub}`}>
+          <p className={`mb-6 text-sm font-bold ${textSub}`}>
             We have reached our maximum capacity of {maxPlayersLimit} players
             for this tournament.
           </p>
           <div
-            className={`p-4 rounded-xl mb-8 border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}
-          >
-            <p className="text-xs font-bold uppercase tracking-widest text-teal-500">
+            className={`p-4 rounded-xl mb-8 border border-current/10 bg-current/5`}>
+            <p className="text-xs font-black uppercase tracking-widest text-teal-500">
               Thank you for the overwhelming response!
             </p>
           </div>
           <Link
             to="/"
-            className={`block w-full font-bold py-4 rounded-xl transition-all mb-4 text-xs uppercase tracking-widest ${theme.btnBase}`}
-          >
+            className={`block w-full font-black py-4 rounded-xl transition-all mb-4 text-xs uppercase tracking-widest bg-current/10 border border-current/10 text-inherit hover:bg-current/20 active:scale-95`}>
             Back to Home
           </Link>
         </div>
@@ -609,8 +595,7 @@ export default function GlobalPlayerRegistration() {
   // --- FORM VIEW ---
   return (
     <div
-      className={`min-h-screen p-4 flex flex-col items-center justify-center font-sans ${theme.bg} ${theme.text}`}
-    >
+      className={`min-h-screen p-4 flex flex-col items-center justify-center font-sans bg-transparent ${textMain}`}>
       <NotificationToast
         message={notification?.message}
         type={notification?.type}
@@ -622,19 +607,15 @@ export default function GlobalPlayerRegistration() {
       {toggleTheme && (
         <button
           onClick={toggleTheme}
-          className={`fixed top-4 right-4 p-3 rounded-xl border transition-all flex items-center justify-center shadow-sm z-50 ${
-            lightMode
-              ? "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
-              : "bg-[#0F1115] border-white/10 text-slate-300 hover:bg-white/5"
-          }`}
-          title="Toggle Theme"
-        >
-          {lightMode ? <Moon size={16} /> : <Sun size={16} />}
+          className={`fixed top-4 right-4 p-3 rounded-xl border transition-all flex items-center justify-center shadow-sm z-50 bg-current/5 border-current/10 hover:bg-current/10 text-inherit opacity-70 hover:opacity-100`}
+          title="Toggle Theme">
+          {theme?.mode === "light" ? <Moon size={16} /> : <Sun size={16} />}
         </button>
       )}
 
-      <h1 className="text-4xl font-black italic tracking-tighter mb-2">
-        <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-indigo-500 uppercase px-2">
+      <h1 className="text-4xl font-black italic tracking-tighter mb-2 text-center">
+        <span
+          className={`text-transparent bg-clip-text bg-gradient-to-r ${theme?.gradient || "from-teal-400 to-indigo-500"} uppercase px-2`}>
           {tournamentName
             ? tournamentName
             : isEditing
@@ -643,11 +624,10 @@ export default function GlobalPlayerRegistration() {
         </span>
       </h1>
 
-      <div className="relative z-10 w-full max-w-lg">
+      <div className="relative z-10 w-full max-w-lg mt-4">
         <div className="text-center mb-10">
           <p
-            className={`text-xs font-bold uppercase tracking-widest ${theme.sub}`}
-          >
+            className={`text-xs font-black uppercase tracking-widest ${textSub}`}>
             {tournamentName
               ? "Join the tournament • Create your profile"
               : isEditing
@@ -657,53 +637,31 @@ export default function GlobalPlayerRegistration() {
         </div>
 
         <div
-          className={`border rounded-[2.5rem] p-8 shadow-2xl backdrop-blur-md ${theme.card}`}
-        >
+          className={`border border-current/10 rounded-[2.5rem] p-8 shadow-2xl ${cardBg}`}>
           {status === "exists" && (
             <div
-              className={`border p-6 rounded-3xl mb-8 animate-in shake ${
-                lightMode
-                  ? "bg-amber-50 border-amber-200"
-                  : "bg-amber-900/30 border-amber-500/50"
-              }`}
-            >
+              className={`border p-6 rounded-3xl mb-8 animate-in shake border-amber-500/30 bg-amber-500/10`}>
               <div className="flex items-center gap-3 mb-3">
                 <AlertCircle className="text-amber-500" />
                 <h4
-                  className={`font-black uppercase text-sm italic tracking-tight ${
-                    lightMode ? "text-amber-800" : "text-amber-200"
-                  }`}
-                >
+                  className={`font-black uppercase text-sm italic tracking-tight text-amber-500`}>
                   Profile Already Registered
                 </h4>
               </div>
               <p
-                className={`text-xs leading-relaxed mb-4 font-bold ${
-                  lightMode ? "text-amber-700" : "text-slate-200"
-                }`}
-              >
+                className={`text-xs leading-relaxed mb-4 font-bold text-amber-500/70`}>
                 This mobile number is already registered in our global
                 directory.
               </p>
               <div
-                className={`p-4 rounded-xl border text-center ${
-                  lightMode
-                    ? "bg-white border-amber-100"
-                    : "bg-[#0F1115] border-white/5"
-                }`}
-              >
+                className={`p-4 rounded-xl border text-center border-amber-500/20 bg-black/20`}>
                 <p className="text-teal-500 text-[10px] font-black uppercase tracking-widest">
                   Please contact the Admin to update your profile.
                 </p>
               </div>
               <button
                 onClick={() => setStatus("idle")}
-                className={`mt-6 w-full py-2 text-[9px] font-black uppercase transition-colors border-t pt-4 ${
-                  lightMode
-                    ? "text-amber-600 border-amber-200 hover:text-amber-800"
-                    : "text-slate-500 border-white/5 hover:text-white"
-                }`}
-              >
+                className={`mt-6 w-full py-2 text-[9px] font-black uppercase transition-colors border-t pt-4 border-amber-500/20 text-amber-500 hover:text-amber-400`}>
                 Register a different number
               </button>
             </div>
@@ -725,18 +683,14 @@ export default function GlobalPlayerRegistration() {
                 />
                 <label
                   htmlFor="profile-upload"
-                  className="cursor-pointer group relative block"
-                >
+                  className="cursor-pointer group relative block">
                   <div
                     className={`w-32 h-32 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl relative z-10 
                     ${
                       photoBase64
-                        ? "border-teal-500 shadow-teal-500/20"
-                        : lightMode
-                          ? "border-dashed border-gray-300 bg-gray-50 group-hover:bg-white"
-                          : "border-dashed border-white/10 bg-[#0F1115] group-hover:border-white/30"
-                    }`}
-                  >
+                        ? "border-teal-500 shadow-teal-500/20 bg-black/40"
+                        : "border-dashed border-current/20 bg-current/5 hover:border-teal-500"
+                    }`}>
                     {photoBase64 ? (
                       <img
                         src={photoBase64}
@@ -746,17 +700,16 @@ export default function GlobalPlayerRegistration() {
                     ) : (
                       <div className="text-center">
                         <Camera
-                          className={`w-8 h-8 mx-auto mb-2 opacity-50 ${theme.sub}`}
+                          className={`w-8 h-8 mx-auto mb-2 opacity-50 ${textSub}`}
                         />
                         <p
-                          className={`text-[9px] uppercase font-black tracking-widest ${theme.sub}`}
-                        >
+                          className={`text-[9px] uppercase font-black tracking-widest ${textSub}`}>
                           Upload
                         </p>
                       </div>
                     )}
                   </div>
-                  <div className="absolute bottom-1 right-1 z-20 bg-teal-500 text-white rounded-full p-2 shadow-lg border-2 border-white dark:border-black">
+                  <div className="absolute bottom-1 right-1 z-20 bg-teal-500 text-white rounded-full p-2 shadow-lg border-2 border-transparent group-hover:scale-110 transition-transform">
                     <Upload size={14} />
                   </div>
                 </label>
@@ -766,7 +719,7 @@ export default function GlobalPlayerRegistration() {
             <div className="space-y-5">
               <div className="relative">
                 <User
-                  className={`absolute left-4 top-1/2 -translate-y-1/2 ${theme.sub}`}
+                  className={`absolute left-4 top-1/2 -translate-y-1/2 ${textSub} opacity-70`}
                   size={18}
                 />
                 <input
@@ -783,7 +736,7 @@ export default function GlobalPlayerRegistration() {
 
               <div className="relative">
                 <Phone
-                  className={`absolute left-4 top-1/2 -translate-y-1/2 ${theme.sub}`}
+                  className={`absolute left-4 top-1/2 -translate-y-1/2 ${textSub} opacity-70`}
                   size={18}
                 />
                 <input
@@ -811,10 +764,9 @@ export default function GlobalPlayerRegistration() {
                       onClick={() => setFormData({ ...formData, role })}
                       className={`py-4 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all ${
                         formData.role === role
-                          ? "bg-teal-500/10 border-teal-500/50 text-teal-600 dark:text-teal-400 shadow-lg"
-                          : theme.btnBase
-                      }`}
-                    >
+                          ? "bg-teal-500/20 border-teal-500 text-teal-400 shadow-lg"
+                          : "bg-current/5 border-current/10 text-inherit opacity-70 hover:opacity-100 hover:bg-current/10"
+                      }`}>
                       {role}
                     </button>
                   ),
@@ -823,66 +775,68 @@ export default function GlobalPlayerRegistration() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <select
-                  className={`${inputClass} text-xs`}
+                  className={`${inputClass} text-xs cursor-pointer`}
                   value={formData.battingStyle}
                   onChange={(e) =>
                     setFormData({ ...formData, battingStyle: e.target.value })
-                  }
-                >
-                  <option>Right Hand Bat</option>
-                  <option>Left Hand Bat</option>
+                  }>
+                  <option className="text-black">Right Hand Bat</option>
+                  <option className="text-black">Left Hand Bat</option>
                 </select>
                 <select
-                  className={`${inputClass} text-xs`}
+                  className={`${inputClass} text-xs cursor-pointer`}
                   value={formData.bowlingStyle}
                   onChange={(e) =>
                     setFormData({ ...formData, bowlingStyle: e.target.value })
-                  }
-                >
-                  <option>Right Arm Medium</option>
-                  <option>Right Arm Fast</option>
-                  <option>Right Arm Spin</option>
-                  <option>Left Arm Medium</option>
-                  <option>Left Arm Fast</option>
-                  <option>Left Arm Spin</option>
-                  <option>None</option>
+                  }>
+                  <option className="text-black">Right Arm Medium</option>
+                  <option className="text-black">Right Arm Fast</option>
+                  <option className="text-black">Right Arm Spin</option>
+                  <option className="text-black">Left Arm Medium</option>
+                  <option className="text-black">Left Arm Fast</option>
+                  <option className="text-black">Left Arm Spin</option>
+                  <option className="text-black">None</option>
                 </select>
               </div>
 
               <div className="relative mt-4">
                 <span
-                  className={`absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase tracking-widest ${theme.sub}`}
-                >
+                  className={`absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase tracking-widest ${textSub} opacity-80 pointer-events-none`}>
                   Jersey Size
                 </span>
                 <select
-                  className={`${inputClass} text-xs pl-28`}
+                  className={`${inputClass} text-xs pl-28 cursor-pointer`}
                   value={formData.tshirtSize}
                   onChange={(e) =>
                     setFormData({ ...formData, tshirtSize: e.target.value })
-                  }
-                >
-                  <option value="S">S (36)</option>
-                  <option value="M">M (38)</option>
-                  <option value="L">L (40)</option>
-                  <option value="XL">XL (42)</option>
-                  <option value="XXL">XXL (44)</option>
-                  <option value="3XL">3XL (46)</option>
+                  }>
+                  <option value="S" className="text-black">
+                    S (36)
+                  </option>
+                  <option value="M" className="text-black">
+                    M (38)
+                  </option>
+                  <option value="L" className="text-black">
+                    L (40)
+                  </option>
+                  <option value="XL" className="text-black">
+                    XL (42)
+                  </option>
+                  <option value="XXL" className="text-black">
+                    XXL (44)
+                  </option>
+                  <option value="3XL" className="text-black">
+                    3XL (46)
+                  </option>
                 </select>
               </div>
             </div>
 
             {/* PAYMENT UPLOAD */}
             <div
-              className={`p-6 rounded-2xl border border-dashed transition-colors group ${
-                lightMode
-                  ? "bg-gray-50 border-gray-300 hover:bg-white"
-                  : "bg-[#0F1115] border-white/10 hover:border-white/20"
-              }`}
-            >
+              className={`p-6 rounded-2xl border border-dashed transition-colors group bg-current/5 border-current/20 hover:border-teal-500`}>
               <label
-                className={`block text-[10px] font-black uppercase mb-4 text-center tracking-[0.2em] ${theme.sub}`}
-              >
+                className={`block text-[10px] font-black uppercase mb-4 text-center tracking-[0.2em] ${textSub}`}>
                 Payment Screenshot *
               </label>
               <input
@@ -894,34 +848,29 @@ export default function GlobalPlayerRegistration() {
               />
               <label
                 htmlFor="payment-upload"
-                className="cursor-pointer block w-full"
-              >
+                className="cursor-pointer block w-full">
                 {paymentBase64 ? (
                   <div className="relative">
                     <img
                       src={paymentBase64}
                       alt="Proof"
-                      className="w-full h-48 object-cover rounded-xl border shadow-lg"
+                      className="w-full h-48 object-cover rounded-xl border border-white/10 shadow-lg"
                     />
-                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity rounded-xl">
-                      <span className="text-white font-bold text-xs uppercase">
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center opacity-0 hover:opacity-100 transition-all rounded-xl">
+                      <span className="text-white font-black tracking-widest text-xs uppercase">
                         Change Image
                       </span>
                     </div>
                   </div>
                 ) : (
                   <div
-                    className={`h-32 flex flex-col items-center justify-center rounded-xl transition-colors ${
-                      lightMode ? "bg-white border" : "bg-[#161920]"
-                    }`}
-                  >
+                    className={`h-32 flex flex-col items-center justify-center rounded-xl transition-colors bg-black/20`}>
                     <Receipt
-                      className={`mb-3 opacity-30 ${theme.text}`}
+                      className={`mb-3 opacity-40 ${textMain}`}
                       size={32}
                     />
                     <span
-                      className={`text-xs font-bold uppercase tracking-wide ${theme.sub}`}
-                    >
+                      className={`text-xs font-bold uppercase tracking-wide ${textSub}`}>
                       Click to upload proof
                     </span>
                   </div>
@@ -932,9 +881,8 @@ export default function GlobalPlayerRegistration() {
             <button
               disabled={loading}
               type="submit"
-              className="w-full bg-gradient-to-r from-teal-600 to-indigo-600 hover:from-teal-500 hover:to-indigo-500 text-white font-black uppercase tracking-widest text-xs py-5 rounded-2xl shadow-xl shadow-teal-900/20 transition-all disabled:opacity-50 active:scale-[0.98] flex items-center justify-center gap-2"
-            >
-              {loading && <Loader2 className="animate-spin" />}
+              className={`w-full bg-gradient-to-r ${theme?.gradient || "from-teal-600 to-indigo-600"} text-white font-black uppercase tracking-widest text-xs py-5 rounded-2xl shadow-xl transition-all disabled:opacity-50 active:scale-95 flex items-center justify-center gap-2 hover:opacity-90`}>
+              {loading && <Loader2 className="animate-spin" size={16} />}
               {loading
                 ? uploadText || "Processing..."
                 : isEditing
@@ -946,8 +894,7 @@ export default function GlobalPlayerRegistration() {
               <button
                 type="button"
                 onClick={() => window.location.reload()}
-                className={`w-full text-xs font-bold uppercase tracking-widest transition-colors ${theme.sub} hover:text-teal-500`}
-              >
+                className={`w-full text-xs font-black uppercase tracking-widest transition-colors ${textSub} hover:text-teal-500`}>
                 Cancel Edit
               </button>
             )}

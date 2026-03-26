@@ -14,7 +14,7 @@ import { useTheme } from "../context/ThemeContext";
 import { Users, Activity, Target } from "lucide-react";
 
 export default function ScoreSummary({ match }) {
-  const { theme, lightMode } = useTheme();
+  const { theme } = useTheme();
   const [liveViewers, setLiveViewers] = useState(1);
 
   // ✅ 3. LIVE VIEWERS (FIRESTORE VERSION)

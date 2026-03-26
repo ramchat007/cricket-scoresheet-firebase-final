@@ -4,7 +4,7 @@ import { useTheme } from "../context/ThemeContext";
 import { ChevronDown, Trophy } from "lucide-react";
 
 const ScoreTable = ({ match }) => {
-  const { theme, lightMode } = useTheme();
+  const { theme } = useTheme();
   const [openInningIndex, setOpenInningIndex] = useState(0);
 
   useEffect(() => {

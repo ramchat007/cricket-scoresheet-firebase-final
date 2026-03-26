@@ -1,22 +1,46 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { auth, db } from "../utils/firebase";
 import { doc, getDoc, onSnapshot } from "firebase/firestore";
-// 1. IMPORT THEME HOOK & ICONS
 import { useTheme } from "../context/ThemeContext";
-import { Sun, Moon } from "lucide-react";
+import { Palette, ChevronDown, Check } from "lucide-react";
 
 export default function Navigation() {
   const [isOpen, setIsOpen] = useState(false);
+  const [isThemeOpen, setIsThemeOpen] = useState(false);
+  const themeDropdownRef = useRef(null);
+
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [profileData, setProfileData] = useState(null);
   const [isAuctionEnabled, setIsAuctionEnabled] = useState(false);
 
-  // 2. CONSUME THEME
-  const { theme, toggleTheme, lightMode } = useTheme();
+  // 🟢 CONSUME DYNAMIC THEME (Removed lightMode)
+  const { theme, themes, activeThemeKey, setActiveThemeKey } = useTheme();
+
+  // Safely fallback to default classes
+  const navBg =
+    theme?.card || "bg-[#0F1115]/80 backdrop-blur-xl border border-white/10";
+  const textMain = theme?.text || "text-white";
+  const textSub = theme?.sub || "text-gray-400";
+  const accentText = theme?.accentText || "text-cyan-400";
+  const gradientBtn = theme?.gradient || "from-cyan-600 to-blue-600";
+
+  // --- Close Dropdown on outside click ---
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (
+        themeDropdownRef.current &&
+        !themeDropdownRef.current.contains(event.target)
+      ) {
+        setIsThemeOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // --- Fetch Profile Logic ---
   useEffect(() => {
@@ -43,14 +67,15 @@ export default function Navigation() {
       ? pathSegments[tournamentIndex + 1]
       : null;
 
-  // --- Auction Logic ---
+  // --- Tournament Listener (Auction Status Only) ---
   useEffect(() => {
     if (tournamentId && tournamentId !== "auction") {
       const unsub = onSnapshot(
         doc(db, "tournaments", tournamentId),
         (docSnap) => {
           if (docSnap.exists()) {
-            setIsAuctionEnabled(docSnap.data().isAuction === true);
+            const data = docSnap.data();
+            setIsAuctionEnabled(data.isAuction === true);
           } else {
             setIsAuctionEnabled(false);
           }
@@ -61,6 +86,13 @@ export default function Navigation() {
       setIsAuctionEnabled(false);
     }
   }, [tournamentId]);
+
+  // --- 🟢 NEW: Personal Theme Change Handler (Local Only) ---
+  const handleThemeChange = (themeId) => {
+    // Instantly update the UI (ThemeContext will automatically save to LocalStorage)
+    setActiveThemeKey(themeId);
+    setIsThemeOpen(false);
+  };
 
   // Block scroll on mobile menu
   useEffect(() => {
@@ -112,31 +144,12 @@ export default function Navigation() {
       to="/"
       className="group flex items-center gap-2"
       onClick={() => setIsOpen(false)}>
-      {/* <div className="bg-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.4)] w-8 h-8 rounded-lg flex items-center justify-center group-hover:rotate-12 transition-transform">
-        <span className="text-white text-lg font-bold">⚡</span>
-      </div> */}
-      {/* <div className="flex flex-col leading-none">
-        <span
-          className={`font-black text-xl tracking-tighter uppercase ${lightMode ? "text-gray-900" : "text-white"}`}>
-          CRIC
-        </span>
-        <span className="text-cyan-500 font-black text-[10px] tracking-[0.3em] uppercase ml-0.5">
-          SYNC
-        </span>
-      </div> */}
       <div className="flex flex-col logowrapper">
-        <picture>          
-          <source
-            srcSet={`
-              ${
-                lightMode
-                  ? "/cricsync-light-logo.png"
-                  : "/cricsync-dark-logo.png"
-              }`}/>
+        <picture>
           <img
             src="/cricsync-light-logo.png"
             alt="CricSync Logo"
-            className="w-20 h-auto object-contain"
+            className="w-20 h-auto object-contain drop-shadow-lg"
           />
         </picture>
       </div>
@@ -145,14 +158,8 @@ export default function Navigation() {
 
   return (
     <>
-      {/* 1. MAIN NAVBAR CONTAINER (Dynamic Colors) */}
       <nav
-        className={`sticky top-0 z-[100] backdrop-blur-xl h-16 flex items-center shadow-sm border-b transition-colors duration-300
-        ${
-          lightMode
-            ? "bg-white/90 border-gray-200 text-gray-900"
-            : "bg-black/90 border-white/5 text-white"
-        }`}>
+        className={`sticky top-0 z-[100] h-16 flex items-center shadow-md transition-colors duration-500 ${navBg} border-x-0 border-t-0`}>
         <div className="container mx-auto px-5 flex justify-between items-center">
           <Logo />
 
@@ -163,32 +170,59 @@ export default function Navigation() {
                 to={link.path}
                 className={`text-[11px] font-black uppercase tracking-widest transition-all ${
                   isActive(link.path)
-                    ? "text-cyan-500"
-                    : lightMode
-                      ? "text-gray-500 hover:text-black"
-                      : "text-gray-500 hover:text-white"
+                    ? accentText
+                    : `${textSub} hover:${textMain}`
                 }`}>
                 {link.name}
               </Link>
             ))}
 
-            {/* --- DESKTOP THEME TOGGLE --- */}
-            <button
-              onClick={toggleTheme}
-              className={`p-2 rounded-full transition-all active:scale-95 ${
-                lightMode
-                  ? "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                  : "bg-white/5 text-gray-400 hover:text-white hover:bg-white/10"
-              }`}>
-              {lightMode ? <Moon size={18} /> : <Sun size={18} />}
-            </button>
+            {/* THEME DROPDOWN (DESKTOP) */}
+            <div className="relative" ref={themeDropdownRef}>
+              <button
+                onClick={() => setIsThemeOpen(!isThemeOpen)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${
+                  isThemeOpen
+                    ? "bg-current/10 border-current/20"
+                    : "bg-transparent border-current/10 hover:bg-current/5 hover:border-current/20"
+                } ${textSub} hover:${textMain}`}>
+                <Palette size={14} className={accentText} />
+                <ChevronDown
+                  size={14}
+                  className={`transition-transform duration-200 ${isThemeOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+
+              {isThemeOpen && (
+                <div
+                  className={`absolute top-full right-0 mt-3 w-48 rounded-2xl border ${theme?.card || "bg-black/90"} border-white/10 backdrop-blur-3xl shadow-2xl overflow-hidden py-2 animate-in fade-in slide-in-from-top-2`}>
+                  {Object.values(themes || {}).map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => handleThemeChange(t.id)}
+                      className={`w-full text-left px-4 py-3 flex items-center justify-between transition-colors ${
+                        activeThemeKey === t.id
+                          ? "bg-current/10 font-bold " + textMain
+                          : `${textSub} hover:bg-current/5 hover:${textMain}`
+                      }`}>
+                      <span className="text-xs uppercase tracking-widest">
+                        {t.name}
+                      </span>
+                      {activeThemeKey === t.id && (
+                        <Check size={14} className={accentText} />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {user ? (
               <div
-                className={`flex items-center gap-5 border-l pl-5 ${lightMode ? "border-gray-300" : "border-white/10"}`}>
+                className={`flex items-center gap-5 border-l pl-5 border-current/10`}>
                 <Link
                   to="/profile"
-                  className={`w-9 h-9 rounded-full border overflow-hidden hover:border-cyan-500 transition-all shadow-lg ${lightMode ? "border-gray-200" : "border-white/10"}`}>
+                  className={`w-9 h-9 rounded-full border overflow-hidden transition-all shadow-lg border-current/20 hover:border-current/50`}>
                   {displayImage ? (
                     <img
                       src={displayImage}
@@ -196,7 +230,7 @@ export default function Navigation() {
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <div className="bg-gray-800 w-full h-full flex items-center justify-center font-bold text-cyan-500">
+                    <div className="bg-black/40 w-full h-full flex items-center justify-center font-bold text-white backdrop-blur-sm">
                       {user.email?.charAt(0).toUpperCase()}
                     </div>
                   )}
@@ -208,17 +242,15 @@ export default function Navigation() {
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 border-l pl-5 border-current/10">
                 <Link
                   to="/register-player"
-                  className={`text-[10px] font-black uppercase transition-colors ${lightMode ? "text-gray-500 hover:text-black" : "text-gray-400 hover:text-white"}`}>
-                  Register Player
+                  className={`text-[10px] font-black uppercase transition-colors ${textSub} hover:${textMain}`}>
+                  Register
                 </Link>
                 <Link
                   to="/login"
-                  className={`text-[11px] font-black uppercase px-6 py-2 rounded-full hover:bg-cyan-500 hover:text-white transition-all ${
-                    lightMode ? "bg-black text-white" : "bg-white text-black"
-                  }`}>
+                  className={`text-[11px] font-black uppercase px-6 py-2 rounded-full text-white bg-gradient-to-r ${gradientBtn} hover:shadow-lg hover:opacity-90 transition-all`}>
                   Login
                 </Link>
               </div>
@@ -227,11 +259,7 @@ export default function Navigation() {
 
           <button
             onClick={() => setIsOpen(true)}
-            className={`md:hidden w-10 h-10 rounded-xl border flex items-center justify-center active:scale-90 transition-transform ${
-              lightMode
-                ? "bg-gray-100 border-gray-200 text-black"
-                : "bg-white/5 border-white/10 text-white"
-            }`}>
+            className={`md:hidden w-10 h-10 rounded-xl border flex items-center justify-center active:scale-90 transition-transform bg-current/5 border-current/10 ${textMain}`}>
             <svg
               className="w-6 h-6"
               fill="none"
@@ -248,7 +276,6 @@ export default function Navigation() {
         </div>
       </nav>
 
-      {/* 2. FULL SCREEN DRAWER */}
       {isOpen && (
         <div className="fixed inset-0 z-[9999] isolate">
           <div
@@ -257,34 +284,14 @@ export default function Navigation() {
           />
 
           <div
-            className={`absolute inset-y-0 right-0 w-full border-l shadow-2xl flex flex-col animate-in slide-in-from-right duration-500 ${
-              lightMode
-                ? "bg-white border-gray-200 text-gray-900"
-                : "bg-black border-white/10 text-white"
-            }`}>
-            <div
-              className={`flex justify-between items-center px-6 h-20 border-b ${lightMode ? "border-gray-200" : "border-white/5 bg-black"}`}>
+            className={`absolute inset-y-0 right-0 w-full md:w-96 shadow-2xl flex flex-col animate-in slide-in-from-right duration-500 ${navBg} border-y-0 border-r-0`}>
+            <div className="flex justify-between items-center px-6 h-20 border-b border-current/10 bg-black/20">
               <Logo />
 
               <div className="flex gap-3">
-                {/* --- MOBILE THEME TOGGLE --- */}
-                <button
-                  onClick={toggleTheme}
-                  className={`w-12 h-12 rounded-2xl border flex items-center justify-center transition-all active:scale-90 ${
-                    lightMode
-                      ? "bg-gray-100 border-gray-200 text-gray-600"
-                      : "bg-white/5 border-white/10 text-white"
-                  }`}>
-                  {lightMode ? <Moon size={20} /> : <Sun size={20} />}
-                </button>
-
                 <button
                   onClick={() => setIsOpen(false)}
-                  className={`w-12 h-12 rounded-2xl border flex items-center justify-center transition-all active:scale-90 ${
-                    lightMode
-                      ? "bg-gray-100 border-gray-200 text-gray-900"
-                      : "bg-white/5 border-white/10 text-white"
-                  }`}>
+                  className={`w-12 h-12 rounded-2xl border flex items-center justify-center transition-all active:scale-90 bg-current/10 border-current/20 ${textMain}`}>
                   <svg
                     className="w-6 h-6"
                     fill="none"
@@ -302,7 +309,33 @@ export default function Navigation() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 flex flex-col">
-              <label className="text-[10px] font-black text-gray-500 uppercase tracking-[0.4em] mb-8 block">
+              {/* THEME SELECTOR (MOBILE) */}
+              <div className="mb-8">
+                <label
+                  className={`text-[10px] font-black ${textSub} uppercase tracking-[0.4em] mb-4 block flex items-center gap-2`}>
+                  <Palette size={12} /> Select Theme
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {Object.values(themes || {}).map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => handleThemeChange(t.id)}
+                      className={`px-3 py-3 rounded-xl border text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-between ${
+                        activeThemeKey === t.id
+                          ? `bg-gradient-to-r ${gradientBtn} text-white border-transparent`
+                          : `bg-current/5 border-current/10 ${textSub}`
+                      }`}>
+                      {t.name}
+                      {activeThemeKey === t.id && (
+                        <Check size={12} className="text-white" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <label
+                className={`text-[10px] font-black ${textSub} uppercase tracking-[0.4em] mb-4 block`}>
                 Navigation
               </label>
 
@@ -312,12 +345,10 @@ export default function Navigation() {
                     key={link.path}
                     to={link.path}
                     onClick={() => setIsOpen(false)}
-                    className={`flex items-center justify-between p-6 rounded-[2rem] text-xl font-black uppercase tracking-tighter transition-all active:scale-95 ${
+                    className={`flex items-center justify-between p-6 rounded-[2rem] text-xl font-black uppercase tracking-tighter transition-all active:scale-95 border ${
                       isActive(link.path)
-                        ? "bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-xl shadow-cyan-500/20"
-                        : lightMode
-                          ? "bg-gray-100 border border-gray-200 text-gray-600"
-                          : "bg-white/5 border border-white/5 text-gray-400"
+                        ? `bg-gradient-to-r ${gradientBtn} text-white border-transparent shadow-xl`
+                        : `bg-current/5 border-current/10 ${textSub}`
                     }`}>
                     {link.name}
                     {isActive(link.path) && (
@@ -333,21 +364,13 @@ export default function Navigation() {
                     <Link
                       to="/register-player"
                       onClick={() => setIsOpen(false)}
-                      className={`w-full py-5 rounded-[2rem] border text-center font-black uppercase tracking-widest text-xs ${
-                        lightMode
-                          ? "bg-gray-100 border-gray-200 text-gray-900"
-                          : "bg-white/5 border-white/10 text-white"
-                      }`}>
+                      className={`w-full py-5 rounded-[2rem] border text-center font-black uppercase tracking-widest text-xs bg-current/10 border-current/20 ${textMain}`}>
                       Register Player
                     </Link>
                     <Link
                       to="/login"
                       onClick={() => setIsOpen(false)}
-                      className={`w-full py-5 rounded-[2rem] text-center font-black uppercase tracking-widest text-sm shadow-xl ${
-                        lightMode
-                          ? "bg-black text-white"
-                          : "bg-white text-black"
-                      }`}>
+                      className={`w-full py-5 rounded-[2rem] text-center font-black uppercase tracking-widest text-sm shadow-xl text-white bg-gradient-to-r ${gradientBtn}`}>
                       Login
                     </Link>
                   </div>
@@ -356,13 +379,10 @@ export default function Navigation() {
                     <Link
                       to="/profile"
                       onClick={() => setIsOpen(false)}
-                      className={`flex flex-col items-center justify-center gap-2 p-6 rounded-[2.5rem] border transition-colors ${
-                        lightMode
-                          ? "bg-gray-100 border-gray-200 text-gray-900 active:bg-gray-200"
-                          : "bg-white/5 border-white/10 text-white active:bg-white/10"
-                      }`}>
+                      className={`flex flex-col items-center justify-center gap-2 p-6 rounded-[2.5rem] border transition-colors bg-current/5 border-current/10 ${textMain} active:bg-current/10`}>
                       <span className="text-2xl">👤</span>
-                      <span className="text-[10px] font-black text-gray-500 uppercase">
+                      <span
+                        className={`text-[10px] font-black ${textSub} uppercase`}>
                         Profile
                       </span>
                     </Link>

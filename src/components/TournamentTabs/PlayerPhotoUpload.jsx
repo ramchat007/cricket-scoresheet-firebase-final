@@ -8,6 +8,7 @@ import {
   getDoc,
 } from "firebase/firestore";
 import { db } from "../../utils/firebase";
+// 🟢 1. Import useTheme
 import { useTheme } from "../../context/ThemeContext";
 import {
   Camera,
@@ -55,7 +56,6 @@ async function getCroppedImg(imageSrc, pixelCrop) {
     TARGET_SIZE,
   );
 
-  // 🟢 MODERN APPROACH: Return a real File/Blob instead of a Base64 string
   return new Promise((resolve, reject) => {
     canvas.toBlob(
       (blob) => {
@@ -73,7 +73,16 @@ async function getCroppedImg(imageSrc, pixelCrop) {
 
 export default function PlayerPhotoUpload() {
   const { id: tournamentId } = useParams();
-  const { theme, lightMode } = useTheme();
+
+  // 🟢 2. Extract theme natively
+  const { theme } = useTheme();
+
+  // Safely fallback to default classes
+  const textMain = theme?.text || "text-white";
+  const textSub = theme?.sub || "text-gray-400";
+  const cardBg =
+    theme?.card ||
+    "bg-black/60 backdrop-blur-xl border border-white/10 shadow-2xl";
 
   const [players, setPlayers] = useState([]);
   const [search, setSearch] = useState("");
@@ -188,10 +197,7 @@ export default function PlayerPhotoUpload() {
     try {
       const croppedBlob = await getCroppedImg(imageToCrop, croppedAreaPixels);
 
-      // 🟢 Save the raw file for Cloudinary
       setFinalPhotoBlob(croppedBlob);
-
-      // 🟢 Create a temporary local URL just for the preview UI
       setPreview(URL.createObjectURL(croppedBlob));
 
       setCropModalOpen(false);
@@ -208,7 +214,7 @@ export default function PlayerPhotoUpload() {
     setImageToCrop(null);
   };
 
-  // 🟢 4. CLOUDINARY UPLOAD & FIREBASE SAVE LOGIC
+  // 4. CLOUDINARY UPLOAD & FIREBASE SAVE LOGIC
   const handleUpload = async () => {
     if (!selectedPlayer || !finalPhotoBlob)
       return alert("Please select your name and a photo.");
@@ -217,7 +223,6 @@ export default function PlayerPhotoUpload() {
     try {
       let finalPhotoUrl = null;
 
-      // 1. Upload Blob to Cloudinary
       const formData = new FormData();
       formData.append("file", finalPhotoBlob);
       formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
@@ -234,13 +239,12 @@ export default function PlayerPhotoUpload() {
       const data = await res.json();
 
       if (data.secure_url) {
-        finalPhotoUrl = data.secure_url; // 🟢 We got the Cloudinary link!
+        finalPhotoUrl = data.secure_url;
       } else {
         console.error("Cloudinary Error:", data);
         throw new Error("Photo upload failed on Cloudinary side.");
       }
 
-      // 2. Save the Cloudinary URL to Firestore
       const globalId =
         selectedPlayer.originalPlayerId ||
         selectedPlayer.originalId ||
@@ -271,7 +275,7 @@ export default function PlayerPhotoUpload() {
               p.id === selectedPlayer.localId ||
               p.name === selectedPlayer.name
             ) {
-              return { ...p, photoURL: finalPhotoUrl }; // Save URL here too
+              return { ...p, photoURL: finalPhotoUrl };
             }
             return p;
           });
@@ -281,8 +285,8 @@ export default function PlayerPhotoUpload() {
       }
 
       setSuccess(true);
-      setFinalPhotoBlob(null); // Clear blob from memory
-      setPreview(finalPhotoUrl); // Show Cloudinary image in preview
+      setFinalPhotoBlob(null);
+      setPreview(finalPhotoUrl);
     } catch (error) {
       console.error("Upload failed:", error);
       alert("Failed to upload photo. Please check your Cloudinary settings.");
@@ -347,7 +351,7 @@ export default function PlayerPhotoUpload() {
   if (loading) {
     return (
       <div
-        className={`min-h-screen flex items-center justify-center font-bold animate-pulse ${theme.bg} ${theme.text}`}>
+        className={`min-h-screen flex items-center justify-center font-bold animate-pulse bg-transparent ${textMain}`}>
         Loading Team Rosters...
       </div>
     );
@@ -355,19 +359,21 @@ export default function PlayerPhotoUpload() {
 
   return (
     <div
-      className={`min-h-screen p-4 md:p-8 flex justify-center items-center font-sans ${theme.bg} ${theme.text}`}>
+      className={`min-h-screen p-4 md:p-8 flex justify-center items-center font-sans bg-transparent ${textMain}`}>
       {renderCropModal()}
 
       <div
-        className={`w-full max-w-md rounded-3xl shadow-2xl p-6 md:p-8 border ${lightMode ? "bg-white border-gray-200" : "bg-[#1C2128] border-white/10"}`}>
+        // 🟢 Uses universal theme card
+        className={`w-full max-w-md rounded-3xl p-6 md:p-8 ${cardBg}`}>
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-teal-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-teal-500/30">
             <Camera size={32} />
           </div>
-          <h1 className="text-2xl font-black uppercase tracking-tighter italic">
+          <h1
+            className={`text-2xl font-black uppercase tracking-tighter italic ${textMain}`}>
             Update Profile Photo
           </h1>
-          <p className={`text-xs font-bold mt-2 ${theme.sub}`}>
+          <p className={`text-xs font-bold mt-2 ${textSub}`}>
             Select your name, upload a photo, and crop it for the broadcast.
           </p>
         </div>
@@ -384,7 +390,7 @@ export default function PlayerPhotoUpload() {
             <div className="flex items-center justify-center gap-2 text-green-500 font-black uppercase tracking-widest text-lg mb-2">
               <CheckCircle size={24} /> Uploaded!
             </div>
-            <p className={`text-sm font-bold ${theme.sub} mb-6`}>
+            <p className={`text-sm font-bold ${textSub} mb-6`}>
               Your photo is now live on the team page.
             </p>
             <button
@@ -403,7 +409,7 @@ export default function PlayerPhotoUpload() {
             {/* STEP 1: SELECT PLAYER */}
             <div>
               <label
-                className={`block text-[10px] font-black uppercase tracking-widest mb-2 ${theme.sub}`}>
+                className={`block text-[10px] font-black uppercase tracking-widest mb-2 ${textSub}`}>
                 1. Find Your Name
               </label>
 
@@ -412,19 +418,20 @@ export default function PlayerPhotoUpload() {
                   <div className="relative">
                     <Search
                       size={16}
-                      className={`absolute left-4 top-3.5 ${theme.sub}`}
+                      className={`absolute left-4 top-3.5 ${textSub}`}
                     />
                     <input
                       type="text"
                       placeholder="Search by name..."
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
-                      className={`w-full rounded-xl pl-10 pr-4 py-3 font-bold text-sm outline-none border focus:border-teal-500 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/10"}`}
+                      // 🟢 Input adapts cleanly to text color
+                      className={`w-full rounded-xl pl-10 pr-4 py-3 font-bold text-sm outline-none border focus:border-teal-500 bg-current/5 border-current/10 text-inherit placeholder:opacity-50`}
                     />
                   </div>
 
                   <div
-                    className={`max-h-48 overflow-y-auto rounded-xl border custom-scrollbar ${lightMode ? "border-gray-200 bg-white" : "border-white/10 bg-[#0F1115]"}`}>
+                    className={`max-h-48 overflow-y-auto rounded-xl border custom-scrollbar bg-current/5 border-current/10`}>
                     {filteredPlayers.length === 0 ? (
                       <div className="p-4 text-center text-xs font-bold opacity-50">
                         No players found in teams.
@@ -434,10 +441,13 @@ export default function PlayerPhotoUpload() {
                         <button
                           key={`${p.localId}-${p.teamId}`}
                           onClick={() => handleSelectPlayer(p)}
-                          className={`w-full text-left px-4 py-3 border-b last:border-b-0 transition-colors flex justify-between items-center ${lightMode ? "hover:bg-teal-50 border-gray-100" : "hover:bg-teal-900/20 border-white/5"}`}>
-                          <span className="font-bold text-sm">{p.name}</span>
+                          // 🟢 List items use hover:bg-current/10 for dynamic highlighting
+                          className={`w-full text-left px-4 py-3 border-b border-current/10 last:border-b-0 transition-colors flex justify-between items-center hover:bg-current/10`}>
+                          <span className={`font-bold text-sm ${textMain}`}>
+                            {p.name}
+                          </span>
                           <span
-                            className={`text-[9px] uppercase font-bold tracking-wider ${theme.sub}`}>
+                            className={`text-[9px] uppercase font-bold tracking-wider ${textSub}`}>
                             {p.teamName}
                           </span>
                         </button>
@@ -447,7 +457,7 @@ export default function PlayerPhotoUpload() {
                 </div>
               ) : (
                 <div
-                  className={`flex justify-between items-center p-4 rounded-xl border ${lightMode ? "bg-teal-50 border-teal-200 text-teal-800" : "bg-teal-900/20 border-teal-500/30 text-teal-400"}`}>
+                  className={`flex justify-between items-center p-4 rounded-xl border bg-teal-500/10 border-teal-500/30 text-teal-500`}>
                   <div>
                     <div className="flex items-center gap-2 font-bold text-sm">
                       <User size={16} /> {selectedPlayer.name}
@@ -469,7 +479,7 @@ export default function PlayerPhotoUpload() {
             <div
               className={`transition-all duration-500 ${selectedPlayer ? "opacity-100" : "opacity-30 pointer-events-none"}`}>
               <label
-                className={`block text-[10px] font-black uppercase tracking-widest mb-2 ${theme.sub}`}>
+                className={`block text-[10px] font-black uppercase tracking-widest mb-2 ${textSub}`}>
                 2. Edit or Change Photo
               </label>
 
@@ -478,14 +488,15 @@ export default function PlayerPhotoUpload() {
                   <>
                     <div
                       onClick={handleEditExistingPhoto}
-                      className={`w-32 h-32 rounded-full border-4 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all relative overflow-hidden mb-2 ${lightMode ? "border-gray-300 hover:border-teal-500 bg-gray-50" : "border-white/20 hover:border-teal-500 bg-[#0F1115]"}`}>
+                      // 🟢 Replaced hardcoded borders with current/20
+                      className={`w-32 h-32 rounded-full border-4 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all relative overflow-hidden mb-2 border-current/20 hover:border-teal-500 bg-current/5`}>
                       <img
                         src={preview}
                         alt="Preview"
                         className="w-full h-full object-cover"
                         crossOrigin="anonymous"
                       />
-                      <div className="absolute bottom-2 right-2 bg-teal-500 p-1.5 rounded-full text-white shadow-lg border-2 border-white dark:border-[#0F1115]">
+                      <div className="absolute bottom-2 right-2 bg-teal-500 p-1.5 rounded-full text-white shadow-lg border-2 border-transparent">
                         <Edit3 size={14} />
                       </div>
                     </div>
@@ -507,10 +518,10 @@ export default function PlayerPhotoUpload() {
                   <>
                     <label
                       htmlFor="new-image-upload"
-                      className={`w-32 h-32 rounded-full border-4 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all relative overflow-hidden mb-2 ${lightMode ? "border-gray-300 hover:border-teal-500 bg-gray-50" : "border-white/20 hover:border-teal-500 bg-[#0F1115]"}`}>
-                      <Camera size={24} className={theme.sub} />
+                      className={`w-32 h-32 rounded-full border-4 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all relative overflow-hidden mb-2 border-current/20 hover:border-teal-500 bg-current/5`}>
+                      <Camera size={24} className={textSub} />
                       <span
-                        className={`text-[10px] font-bold uppercase mt-2 ${theme.sub}`}>
+                        className={`text-[10px] font-bold uppercase mt-2 ${textSub}`}>
                         Tap to Select
                       </span>
                     </label>
@@ -523,7 +534,7 @@ export default function PlayerPhotoUpload() {
                     />
 
                     <span
-                      className={`text-[10px] font-bold uppercase tracking-widest mb-6 ${theme.sub}`}>
+                      className={`text-[10px] font-bold uppercase tracking-widest mb-6 ${textSub}`}>
                       Tap to Select Photo
                     </span>
                   </>
@@ -532,7 +543,11 @@ export default function PlayerPhotoUpload() {
                 <button
                   onClick={handleUpload}
                   disabled={uploading || !finalPhotoBlob}
-                  className="w-full bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-black py-4 rounded-xl shadow-lg uppercase tracking-widest text-sm disabled:opacity-50 transition-all flex justify-center items-center gap-2 active:scale-95">
+                  className={`w-full text-white font-black py-4 rounded-xl shadow-lg uppercase tracking-widest text-sm disabled:opacity-50 transition-all flex justify-center items-center gap-2 active:scale-95 ${
+                    uploading || !finalPhotoBlob
+                      ? "bg-current/20 text-inherit"
+                      : `bg-gradient-to-r ${theme?.gradient || "from-teal-600 to-emerald-600"}`
+                  }`}>
                   {uploading ? (
                     <>
                       <Loader2 size={18} className="animate-spin" /> Uploading

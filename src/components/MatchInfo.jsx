@@ -18,7 +18,7 @@ import {
 
 export default function MatchInfo({ match }) {
   const { user } = useAuth();
-  const { theme, lightMode } = useTheme();
+  const { theme } = useTheme();
 
   const [streamUrl, setStreamUrl] = useState(match.meta?.liveStreamUrl || "");
   const [saving, setSaving] = useState(false);

@@ -29,7 +29,7 @@ const getYouTubeId = (url) => {
 
 export default function MatchScorecard() {
   const { tournamentId, matchId } = useParams();
-  const { theme, lightMode } = useTheme(); // ✅ Hook into Global Theme
+  const { theme } = useTheme(); // ✅ Hook into Global Theme
 
   const [match, setMatch] = useState(null);
   const [tournament, setTournament] = useState(null);

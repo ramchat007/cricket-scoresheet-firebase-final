@@ -13,7 +13,9 @@ import {
 } from "lucide-react";
 
 const GlobalTeamSelector = ({ isOpen, onClose, onImport, existingTeamIds }) => {
-  const { theme, lightMode } = useTheme();
+  // 🟢 Removed lightMode, using pure theme object
+  const { theme } = useTheme();
+
   const [globalTeams, setGlobalTeams] = useState([]);
   const [selectedTeams, setSelectedTeams] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -63,43 +65,43 @@ const GlobalTeamSelector = ({ isOpen, onClose, onImport, existingTeamIds }) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
       <div
-        className={`w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh] transition-colors ${theme.card} ${lightMode ? "border border-gray-200" : "border border-white/10"}`}>
+        // 🟢 Pure theme card styling
+        className={`w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh] transition-colors ${theme?.card || "bg-black/80 border border-white/10"}`}>
         {/* HEADER */}
-        <div
-          className={`p-6 border-b flex justify-between items-center ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#1C2128] border-white/5"}`}>
-          <div>
-            <h3
-              className={`text-xl font-black uppercase tracking-tight italic flex items-center gap-2 ${theme.text}`}>
-              <Globe size={20} className="text-teal-500" /> Import Global Teams
-            </h3>
-            <p
-              className={`text-[10px] font-bold uppercase tracking-widest ${theme.sub}`}>
-              Select from database
-            </p>
+        <div className={`p-6 border-b border-current/10 bg-current/5`}>
+          <div className="flex justify-between items-center">
+            <div>
+              <h3
+                className={`text-xl font-black uppercase tracking-tight italic flex items-center gap-2 ${theme?.text || "text-white"}`}>
+                <Globe size={20} className="text-teal-500" /> Import Global
+                Teams
+              </h3>
+              <p
+                className={`text-[10px] font-bold uppercase tracking-widest ${theme?.sub || "text-gray-400"}`}>
+                Select from database
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              // 🟢 Adapts perfectly to text color
+              className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors bg-current/10 text-inherit opacity-70 hover:opacity-100 hover:bg-current/20`}>
+              <X size={16} />
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${lightMode ? "bg-gray-200 text-gray-500 hover:bg-gray-300" : "bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"}`}>
-            <X size={16} />
-          </button>
         </div>
 
         {/* SEARCH */}
-        <div
-          className={`p-4 border-b ${lightMode ? "bg-white border-gray-200" : "bg-[#161920] border-white/5"}`}>
+        <div className={`p-4 border-b border-current/10 bg-current/5`}>
           <div className="relative">
             <Search
-              className={`absolute left-4 top-3.5 ${theme.sub}`}
+              className={`absolute left-4 top-3.5 ${theme?.sub || "text-gray-400"}`}
               size={16}
             />
             <input
               type="text"
               placeholder="Search global teams..."
-              className={`w-full rounded-xl px-4 py-3 pl-11 outline-none transition-all font-bold text-sm border focus:border-teal-500 ${
-                lightMode
-                  ? "bg-gray-50 border-gray-200 text-gray-900 placeholder:text-gray-400 focus:bg-white"
-                  : "bg-[#0F1115] border-white/10 text-slate-200 placeholder:text-slate-600 focus:border-teal-500/50"
-              }`}
+              // 🟢 Input inherits text color and uses transparency for backgrounds
+              className={`w-full rounded-xl px-4 py-3 pl-11 outline-none transition-all font-bold text-sm border focus:border-teal-500 bg-current/5 border-current/10 text-inherit placeholder:opacity-50 focus:bg-current/10`}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               autoFocus
@@ -117,7 +119,8 @@ const GlobalTeamSelector = ({ isOpen, onClose, onImport, existingTeamIds }) => {
               </div>
             </div>
           ) : filteredTeams.length === 0 ? (
-            <div className={`text-center mt-10 italic text-sm ${theme.sub}`}>
+            <div
+              className={`text-center mt-10 italic text-sm ${theme?.sub || "text-gray-400"}`}>
               No available teams found.
             </div>
           ) : (
@@ -130,32 +133,25 @@ const GlobalTeamSelector = ({ isOpen, onClose, onImport, existingTeamIds }) => {
                   <div
                     key={team.id}
                     onClick={() => toggleSelection(team)}
+                    // 🟢 Replaced hardcoded selections with vibrant accents and transparent borders
                     className={`cursor-pointer p-3 rounded-xl border flex items-center justify-between transition-all duration-200 active:scale-95 group ${
                       isSelected
-                        ? lightMode
-                          ? "bg-teal-50 border-teal-500 shadow-md"
-                          : "bg-teal-500/10 border-teal-500/50 shadow-lg shadow-teal-900/20"
-                        : lightMode
-                          ? "bg-white border-gray-200 hover:border-teal-300 hover:shadow-sm"
-                          : "bg-[#0F1115] border-white/5 hover:border-white/20 hover:bg-white/5"
+                        ? "bg-teal-500/20 border-teal-500 shadow-lg shadow-teal-500/20"
+                        : "bg-current/5 border-current/10 hover:border-teal-500/50 hover:bg-current/10"
                     }`}>
                     <div className="flex items-center gap-3">
                       {team.logo ? (
                         <img
                           src={team.logo}
                           alt={team.name}
-                          className={`w-10 h-10 rounded-xl object-cover shadow-sm border ${lightMode ? "bg-white border-gray-200" : "bg-black border-white/10"}`}
+                          className={`w-10 h-10 rounded-xl object-cover shadow-sm border bg-current/5 border-current/10`}
                         />
                       ) : (
                         <div
                           className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg shadow-sm border ${
                             isSelected
-                              ? lightMode
-                                ? "bg-teal-100 text-teal-700 border-teal-200"
-                                : "bg-teal-500 text-black border-teal-400"
-                              : lightMode
-                                ? "bg-gray-100 text-gray-400 border-gray-200"
-                                : "bg-[#161920] text-slate-500 border-white/5"
+                              ? "bg-teal-500 text-white border-teal-400"
+                              : "bg-current/5 text-inherit opacity-70 border-current/10"
                           }`}>
                           <Shield size={18} />
                         </div>
@@ -164,22 +160,20 @@ const GlobalTeamSelector = ({ isOpen, onClose, onImport, existingTeamIds }) => {
                         <div
                           className={`font-bold text-sm ${
                             isSelected
-                              ? lightMode
-                                ? "text-teal-700"
-                                : "text-teal-400"
-                              : theme.text
+                              ? "text-teal-500"
+                              : theme?.text || "text-white"
                           }`}>
                           {team.name}
                         </div>
                         <div
-                          className={`text-[10px] font-bold uppercase tracking-wider ${theme.sub}`}>
+                          className={`text-[10px] font-bold uppercase tracking-wider ${theme?.sub || "text-gray-400"}`}>
                           {team.players ? team.players.length : 0} Players
                         </div>
                       </div>
                     </div>
                     {isSelected && (
                       <div
-                        className={`p-1 rounded-full ${lightMode ? "bg-teal-100 text-teal-600" : "bg-teal-500/20 text-teal-400"}`}>
+                        className={`p-1 rounded-full bg-teal-500/20 text-teal-500`}>
                         <Check size={16} strokeWidth={4} />
                       </div>
                     )}
@@ -192,23 +186,20 @@ const GlobalTeamSelector = ({ isOpen, onClose, onImport, existingTeamIds }) => {
 
         {/* FOOTER */}
         <div
-          className={`p-6 border-t flex justify-end gap-3 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#161920] border-white/5"}`}>
+          className={`p-6 border-t flex justify-end gap-3 bg-current/5 border-current/10`}>
           <button
             onClick={onClose}
-            className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest border transition-colors ${
-              lightMode
-                ? "text-gray-500 hover:bg-gray-200 border-transparent hover:text-gray-700"
-                : "text-slate-500 hover:text-slate-300 hover:bg-white/5 border-transparent hover:border-white/10"
-            }`}>
+            className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest border transition-colors text-inherit opacity-70 hover:opacity-100 hover:bg-current/10 border-transparent`}>
             Cancel
           </button>
           <button
             disabled={selectedTeams.length === 0}
             onClick={handleImport}
+            // 🟢 Uses the actual theme gradient if available, falls back to a clean teal!
             className={`px-6 py-3 rounded-xl text-white font-black text-xs uppercase tracking-widest transition-all shadow-lg flex items-center gap-2 ${
               selectedTeams.length > 0
-                ? "bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 shadow-teal-900/20 transform active:scale-95"
-                : `cursor-not-allowed ${lightMode ? "bg-gray-300 text-gray-500" : "bg-[#0F1115] border border-white/5 text-slate-600"}`
+                ? `bg-gradient-to-r ${theme?.gradient || "from-teal-500 to-emerald-600"} transform active:scale-95`
+                : `cursor-not-allowed bg-current/10 text-inherit opacity-50`
             }`}>
             <Download size={16} /> Import {selectedTeams.length} Teams
           </button>

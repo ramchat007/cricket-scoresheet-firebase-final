@@ -14,7 +14,7 @@ export default function TournamentAccessManager({
   tournamentId,
   tournamentData,
 }) {
-  const { theme, lightMode } = useTheme(); // 🟢 Initialized Theme
+  const { theme } = useTheme(); // 🟢 Initialized Theme
 
   const [data, setData] = useState(tournamentData || null);
   const [email, setEmail] = useState("");
@@ -43,8 +43,10 @@ export default function TournamentAccessManager({
 
   if (!data) {
     return (
-      <div className={`p-6 rounded-2xl flex flex-col items-center justify-center animate-pulse border transition-colors ${lightMode ? "bg-white border-gray-200" : "bg-[#1C2128] border-white/5"}`}>
-        <span className={`text-xs font-bold uppercase tracking-widest ${theme.sub}`}>
+      <div
+        className={`p-6 rounded-2xl flex flex-col items-center justify-center animate-pulse border transition-colors ${theme.card}`}>
+        <span
+          className={`text-xs font-bold uppercase tracking-widest ${theme.sub}`}>
           Loading Access Control...
         </span>
       </div>
@@ -116,20 +118,31 @@ export default function TournamentAccessManager({
 
   // 🟢 Helper for dynamic message styling based on theme
   const getMessageStyle = () => {
-    if (msg.includes("❌")) return lightMode ? "bg-red-50 text-red-600 border-red-200" : "bg-red-900/20 text-red-400 border-red-500/30";
-    if (msg.includes("⚠️")) return lightMode ? "bg-amber-50 text-amber-600 border-amber-200" : "bg-amber-900/20 text-amber-400 border-amber-500/30";
-    return lightMode ? "bg-teal-50 text-teal-600 border-teal-200" : "bg-teal-900/20 text-teal-400 border-teal-500/30";
+    if (msg.includes("❌"))
+      return lightMode
+        ? "bg-red-50 text-red-600 border-red-200"
+        : "bg-red-900/20 text-red-400 border-red-500/30";
+    if (msg.includes("⚠️"))
+      return lightMode
+        ? "bg-amber-50 text-amber-600 border-amber-200"
+        : "bg-amber-900/20 text-amber-400 border-amber-500/30";
+    return lightMode
+      ? "bg-teal-50 text-teal-600 border-teal-200"
+      : "bg-teal-900/20 text-teal-400 border-teal-500/30";
   };
 
   return (
-    <div className={`rounded-2xl p-6 shadow-xl relative overflow-hidden border transition-colors ${lightMode ? "bg-white border-gray-200" : "bg-[#1C2128] border-white/5"}`}>
-      
+    <div
+      className={`rounded-2xl p-6 shadow-xl relative overflow-hidden border transition-colors ${theme.card}`}>
       {/* Header */}
-      <div className={`flex justify-between items-center mb-6 border-b pb-4 ${lightMode ? "border-gray-200" : "border-white/5"}`}>
-        <h3 className={`text-lg font-bold flex items-center gap-2 ${theme.text}`}>
+      <div
+        className={`flex justify-between items-center mb-6 border-b pb-4 ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+        <h3
+          className={`text-lg font-bold flex items-center gap-2 ${theme.text}`}>
           <span className="text-cyan-500">🔑</span> Access Control
         </h3>
-        <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded border ${lightMode ? "bg-gray-100 text-gray-500 border-gray-200" : "bg-[#0F1115] text-slate-500 border-white/5"}`}>
+        <span
+          className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded border ${lightMode ? "bg-gray-100 text-gray-500 border-gray-200" : "bg-[#0F1115] text-slate-500 border-white/5"}`}>
           Owner Only
         </span>
       </div>
@@ -162,19 +175,22 @@ export default function TournamentAccessManager({
 
       {/* Status Message */}
       {msg && (
-        <div className={`text-xs font-bold p-3 rounded-lg border mb-6 flex items-center gap-2 transition-colors ${getMessageStyle()}`}>
+        <div
+          className={`text-xs font-bold p-3 rounded-lg border mb-6 flex items-center gap-2 transition-colors ${getMessageStyle()}`}>
           {msg}
         </div>
       )}
 
       {/* User Lists Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        
         {/* SCORERS */}
-        <div className={`p-4 rounded-xl border transition-colors ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
-          <h4 className={`text-[10px] font-black uppercase tracking-widest mb-3 border-b pb-2 flex justify-between ${theme.sub} ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+        <div
+          className={`p-4 rounded-xl border transition-colors ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
+          <h4
+            className={`text-[10px] font-black uppercase tracking-widest mb-3 border-b pb-2 flex justify-between ${theme.sub} ${lightMode ? "border-gray-200" : "border-white/5"}`}>
             <span>Scorers (Edit Access)</span>
-            <span className={`px-1.5 rounded ${lightMode ? "bg-gray-200 text-gray-700" : "bg-white/10 text-white"}`}>
+            <span
+              className={`px-1.5 rounded ${lightMode ? "bg-gray-200 text-gray-700" : "bg-white/10 text-white"}`}>
               {scorersList.length}
             </span>
           </h4>
@@ -183,7 +199,8 @@ export default function TournamentAccessManager({
               <div
                 key={uid}
                 className={`flex justify-between items-center p-2.5 rounded-lg border transition-colors group ${lightMode ? "bg-white border-gray-200 hover:border-teal-300 shadow-sm" : "bg-[#161920] border-white/5 hover:border-white/10"}`}>
-                <span className={`font-mono text-xs ${lightMode ? "text-gray-600" : "text-slate-300"}`}>
+                <span
+                  className={`font-mono text-xs ${lightMode ? "text-gray-600" : "text-slate-300"}`}>
                   {uid === ownerId ? (
                     <span className="text-teal-500">👑 Owner</span>
                   ) : (
@@ -200,7 +217,8 @@ export default function TournamentAccessManager({
               </div>
             ))}
             {scorersList.length === 0 && (
-              <span className={`text-xs italic block text-center py-2 ${lightMode ? "text-gray-400" : "text-slate-600"}`}>
+              <span
+                className={`text-xs italic block text-center py-2 ${lightMode ? "text-gray-400" : "text-slate-600"}`}>
                 No scorers added
               </span>
             )}
@@ -208,10 +226,13 @@ export default function TournamentAccessManager({
         </div>
 
         {/* VIEWERS */}
-        <div className={`p-4 rounded-xl border transition-colors ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
-          <h4 className={`text-[10px] font-black uppercase tracking-widest mb-3 border-b pb-2 flex justify-between ${theme.sub} ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+        <div
+          className={`p-4 rounded-xl border transition-colors ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
+          <h4
+            className={`text-[10px] font-black uppercase tracking-widest mb-3 border-b pb-2 flex justify-between ${theme.sub} ${lightMode ? "border-gray-200" : "border-white/5"}`}>
             <span>Viewers (Read Only)</span>
-            <span className={`px-1.5 rounded ${lightMode ? "bg-gray-200 text-gray-700" : "bg-white/10 text-white"}`}>
+            <span
+              className={`px-1.5 rounded ${lightMode ? "bg-gray-200 text-gray-700" : "bg-white/10 text-white"}`}>
               {viewersList.length}
             </span>
           </h4>
@@ -220,7 +241,8 @@ export default function TournamentAccessManager({
               <div
                 key={uid}
                 className={`flex justify-between items-center p-2.5 rounded-lg border transition-colors group ${lightMode ? "bg-white border-gray-200 hover:border-teal-300 shadow-sm" : "bg-[#161920] border-white/5 hover:border-white/10"}`}>
-                <span className={`font-mono text-xs ${lightMode ? "text-gray-600" : "text-slate-300"}`}>
+                <span
+                  className={`font-mono text-xs ${lightMode ? "text-gray-600" : "text-slate-300"}`}>
                   {uid.slice(0, 18) + "..."}
                 </span>
                 <button
@@ -231,13 +253,13 @@ export default function TournamentAccessManager({
               </div>
             ))}
             {viewersList.length === 0 && (
-              <span className={`text-xs italic block text-center py-2 ${lightMode ? "text-gray-400" : "text-slate-600"}`}>
+              <span
+                className={`text-xs italic block text-center py-2 ${lightMode ? "text-gray-400" : "text-slate-600"}`}>
                 No viewers added
               </span>
             )}
           </div>
         </div>
-
       </div>
     </div>
   );

@@ -19,7 +19,9 @@ export default function BracketTab({
   tournamentId,
 }) {
   const navigate = useNavigate();
-  const { theme, lightMode } = useTheme();
+
+  // 🟢 Extract theme natively
+  const { theme } = useTheme();
 
   const containerRef = useRef(null);
   const matchRefs = useRef({});
@@ -32,7 +34,6 @@ export default function BracketTab({
 
   // --- 1. MERGE BLUEPRINT WITH LIVE DATA ---
   const treeData = useMemo(() => {
-    // 🟢 CHECK: Handle deleted/null bracket instantly
     if (
       !tournament?.bracketLayout ||
       !tournament?.bracketLayout?.rounds ||
@@ -105,13 +106,11 @@ export default function BracketTab({
           return found?.logoUrl || found?.logo || found?.image || null;
         };
 
-        // 🟢 IMPROVED: Robust Time Parsing
         const rawTime = liveMatch?.time || bm.settings?.time || "";
         let displayTime = "";
 
         if (rawTime && rawTime !== "TBA") {
           try {
-            // If it's a simple HH:mm string (like "14:30")
             if (rawTime.includes(":")) {
               const [h, m] = rawTime.split(":");
               const tObj = new Date();
@@ -122,12 +121,11 @@ export default function BracketTab({
                 hour12: true,
               });
             } else {
-              // Fallback for other string formats
               displayTime = rawTime;
             }
           } catch (e) {
             console.error("Time Parse Error:", e);
-            displayTime = rawTime; // Just show the raw string if parsing fails
+            displayTime = rawTime;
           }
         }
 
@@ -144,7 +142,7 @@ export default function BracketTab({
           winner: liveMatch?.winner,
           status: liveMatch?.status || "upcoming",
           liveMatchId: liveMatch?.id,
-          displayTime: displayTime || "TBA", // 🟢 Fallback to TBA if empty
+          displayTime: displayTime || "TBA",
           rawSlotA: bm.slotA,
           rawSlotB: bm.slotB,
         };
@@ -218,9 +216,12 @@ export default function BracketTab({
       setIsCapturing(true);
       const dataUrl = await toPng(captureArea, {
         pixelRatio: 2,
-        backgroundColor: lightMode ? "#f8fafc" : "#0F1115",
+        backgroundColor: "#0a0d14", // 🟢 Locked to solid dark for perfect exports
         width: captureArea.scrollWidth,
         height: captureArea.scrollHeight,
+        style: {
+          transform: "scale(1)",
+        },
       });
       const link = document.createElement("a");
       link.download = `${(tournament?.name || "Tournament").replace(/\s+/g, "_")}_Bracket.png`;
@@ -235,7 +236,8 @@ export default function BracketTab({
 
   if (treeData.length === 0) {
     return (
-      <div className={`p-12 text-center italic text-sm ${theme.sub}`}>
+      <div
+        className={`p-12 text-center italic text-sm ${theme?.sub || "text-gray-400"}`}>
         The bracket has not been set up yet.
       </div>
     );
@@ -247,40 +249,39 @@ export default function BracketTab({
         <button
           onClick={handleDownloadBracket}
           disabled={isCapturing}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
-            lightMode
-              ? "bg-indigo-600 text-white"
-              : "bg-indigo-500/20 text-indigo-400 border border-indigo-500/30"
-          }`}
-        >
+          // 🟢 Uses dynamic theme gradient
+          className={`flex items-center gap-2 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all bg-gradient-to-r ${theme?.gradient || "from-teal-600 to-emerald-600"} text-white shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90`}>
           <Download size={14} />{" "}
-          {isCapturing ? "Capturing..." : "Download Image"}
+          {isCapturing ? "Capturing..." : "Download Bracket"}
         </button>
       </div>
 
       <div
-        className={`w-full overflow-x-auto custom-scrollbar border rounded-2xl shadow-xl relative ${lightMode ? "bg-slate-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}
-      >
+        // 🟢 Outer container uses standard glassmorphism
+        className={`w-full overflow-x-auto custom-scrollbar border rounded-[2rem] shadow-2xl relative ${theme?.card || "bg-black/60"} border-current/10`}>
         <div
           id="bracket-capture-area"
-          className={`relative inline-block w-max p-8 md:p-12 pr-12 md:pr-24 ${lightMode ? "bg-slate-50" : "bg-[#0F1115]"}`}
-        >
+          // 🟢 Inner container forced to Dark Mode for consistent legibility in exported PNGs
+          className={`relative inline-block w-max p-8 md:p-12 pr-12 md:pr-24 bg-[#0a0d14] text-white`}>
+          {/* Background Glows for visual appeal in export */}
+          <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-teal-500/10 blur-[100px] rounded-full pointer-events-none"></div>
+          <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-indigo-500/10 blur-[100px] rounded-full pointer-events-none"></div>
+
           {/* Header */}
-          <div className="mb-10 text-center">
+          <div className="mb-12 text-center relative z-10">
             <Trophy
-              size={32}
-              className={`mx-auto mb-3 ${lightMode ? "text-indigo-600" : "text-amber-500"}`}
+              size={36}
+              className={`mx-auto mb-4 text-teal-400 drop-shadow-md`}
             />
             <h2
-              className={`text-2xl font-black uppercase tracking-tight ${theme.text}`}
-            >
+              className={`text-3xl font-black uppercase tracking-tight text-white drop-shadow-md`}>
               {tournament?.name ||
                 tournament?.tournamentName ||
                 "Tournament Bracket"}
             </h2>
           </div>
 
-          <div ref={containerRef} className="flex gap-12 relative">
+          <div ref={containerRef} className="flex gap-16 relative z-10">
             <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
               {lines.map((line) => (
                 <path
@@ -288,15 +289,8 @@ export default function BracketTab({
                   d={`M ${line.x1} ${line.y1} C ${line.x1 + 40} ${line.y1}, ${line.x2 - 40} ${line.y2}, ${line.x2} ${line.y2}`}
                   fill="none"
                   strokeWidth={line.isFinished ? "3" : "2"}
-                  stroke={
-                    line.isFinished
-                      ? lightMode
-                        ? "#0d9488"
-                        : "#06b6d4"
-                      : lightMode
-                        ? "#cbd5e1"
-                        : "#374151"
-                  }
+                  // 🟢 Locked stroke colors tailored for dark backgrounds
+                  stroke={line.isFinished ? "#2dd4bf" : "#334155"}
                   strokeDasharray={line.isFinished ? "0" : "4"}
                 />
               ))}
@@ -305,11 +299,9 @@ export default function BracketTab({
             {treeData.map((round, roundIndex) => (
               <div
                 key={roundIndex}
-                className="flex flex-col w-64 shrink-0 z-10"
-              >
+                className="flex flex-col w-64 shrink-0 z-10">
                 <h3
-                  className={`h-8 text-center font-black uppercase text-xs ${lightMode ? "text-indigo-600" : "text-indigo-400"}`}
-                >
+                  className={`h-8 text-center font-black uppercase tracking-widest text-xs text-teal-400 mb-4`}>
                   {round.title}
                 </h3>
                 <div className="flex flex-col justify-around flex-1">
@@ -319,8 +311,7 @@ export default function BracketTab({
                     return (
                       <div
                         key={match.id}
-                        className="flex flex-col justify-center px-2 py-4"
-                      >
+                        className="flex flex-col justify-center px-2 py-4">
                         <div
                           ref={(el) => (matchRefs.current[match.id] = el)}
                           onClick={() =>
@@ -329,20 +320,19 @@ export default function BracketTab({
                               `/tournaments/${tournamentId}/scorecard/${match.liveMatchId}`,
                             )
                           }
-                          className={`relative border rounded-lg overflow-hidden shadow-md ${lightMode ? "bg-white border-gray-200" : "bg-[#1C2128] border-white/10"}`}
-                        >
+                          // 🟢 Standardized Match Card Dark Theme
+                          className={`relative border rounded-xl overflow-hidden shadow-xl bg-[#161920]/90 backdrop-blur-sm border-white/10 cursor-pointer hover:border-teal-500/50 hover:shadow-teal-500/10 transition-all`}>
                           {/* Match Header */}
                           <div
-                            className={`px-2 py-1.5 text-[9px] font-black uppercase border-b flex justify-between items-center ${lightMode ? "bg-gray-50" : "bg-black/20 text-gray-400"}`}
-                          >
-                            <div className="flex items-center gap-1.5 truncate">
-                              <span className="bg-cyan-500 text-white px-1 py-0.5 rounded text-[8px]">
+                            className={`px-3 py-2 text-[9px] font-black uppercase border-b flex justify-between items-center bg-black/40 border-white/5 text-gray-400`}>
+                            <div className="flex items-center gap-2 truncate">
+                              <span className="bg-teal-500/20 border border-teal-500/30 text-teal-400 px-1.5 py-0.5 rounded text-[8px] tracking-widest">
                                 {match.id}
                               </span>
                               <span className="truncate">{match.title}</span>
                             </div>
                             {isLive && (
-                              <span className="text-red-500 animate-pulse ml-1">
+                              <span className="text-red-500 animate-pulse ml-1 tracking-widest">
                                 Live
                               </span>
                             )}
@@ -363,45 +353,42 @@ export default function BracketTab({
                           ].map((t, i) => (
                             <div
                               key={i}
-                              className={`px-2 py-2 flex justify-between items-center ${i === 0 ? "border-b border-dashed border-gray-100 dark:border-white/5" : ""} ${match.winner === t.name && isFinished ? (lightMode ? "bg-teal-50" : "bg-teal-900/20") : ""}`}
-                            >
-                              <div className="flex items-center gap-2 min-w-0 pr-1">
+                              className={`px-3 py-2.5 flex justify-between items-center ${i === 0 ? "border-b border-dashed border-white/10" : ""} ${match.winner === t.name && isFinished ? "bg-teal-500/10" : ""}`}>
+                              <div className="flex items-center gap-2 min-w-0 pr-2">
                                 {t.logo ? (
                                   <img
                                     src={t.logo}
-                                    className="w-4 h-4 object-contain"
+                                    className="w-5 h-5 object-contain"
                                     alt=""
+                                    crossOrigin="anonymous"
                                   />
                                 ) : (
-                                  <Shield size={10} className="opacity-20" />
+                                  <Shield size={12} className="opacity-30" />
                                 )}
                                 <span
-                                  className={`text-[10px] truncate font-bold ${match.winner === t.name ? "text-teal-500" : theme.text}`}
-                                >
+                                  className={`text-[11px] truncate font-bold ${match.winner === t.name ? "text-teal-400" : "text-white"}`}>
                                   {t.name}
                                 </span>
                               </div>
                               <span
-                                className={`text-[10px] font-mono font-black ${theme.text}`}
-                              >
+                                className={`text-[10px] font-mono font-black ${match.winner === t.name ? "text-teal-400" : "text-gray-400"}`}>
                                 {t.score}
                               </span>
                             </div>
                           ))}
 
-                          {/* 🟢 NEW: Match Venue/Time Footer */}
+                          {/* Match Venue/Time Footer */}
                           <div
-                            className={`px-2 py-1 flex items-center justify-between gap-2 text-[8px] font-bold ${lightMode ? "bg-gray-50/50" : "bg-black/20"}`}
-                          >
-                            <div className="flex items-center gap-1 min-w-0 opacity-60">
+                            className={`px-3 py-1.5 flex items-center justify-between gap-2 text-[8px] font-bold tracking-wider bg-black/40 text-gray-500`}>
+                            <div className="flex items-center gap-1.5 min-w-0">
                               <MapPin
-                                size={8}
-                                className="text-cyan-500 shrink-0"
+                                size={10}
+                                className="text-teal-500 shrink-0"
                               />
                               <span className="truncate">{match.venue}</span>
                             </div>
-                            <div className="flex items-center gap-1 shrink-0 opacity-60">
-                              <Clock size={8} className="text-cyan-500" />
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <Clock size={10} className="text-teal-500" />
                               <span>{match.displayTime || "TBA"}</span>
                             </div>
                           </div>
