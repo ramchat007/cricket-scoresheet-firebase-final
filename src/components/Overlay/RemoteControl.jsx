@@ -19,7 +19,8 @@ import {
   Wifi,
   Activity,
   Zap,
-  RefreshCw, // <-- The icon for our Swap button
+  RefreshCw,
+  Info,
 } from "lucide-react";
 
 export default function RemoteControl() {
@@ -35,7 +36,6 @@ export default function RemoteControl() {
   const [remoteOled, setRemoteOled] = useState(false);
   const [isLive, setIsLive] = useState(false);
 
-  // Throttle Reference for Smooth Zooming
   const lastZoomTime = useRef(0);
 
   useEffect(() => {
@@ -52,7 +52,6 @@ export default function RemoteControl() {
         if (data.health) setDeviceHealth(data.health);
 
         if (data.currentState) {
-          // Only update UI from Firebase if we aren't actively zooming
           if (Date.now() - lastZoomTime.current > 1000) {
             setRemoteZoom(data.currentState.zoom || 1);
           }
@@ -76,16 +75,12 @@ export default function RemoteControl() {
       await updateDoc(doc(db, "streams", streamId), {
         remoteCommand: { type, value, timestamp: Date.now() },
       });
-    } catch (err) {
-      console.error("Failed to send command", err);
-    }
+    } catch (err) {}
   };
 
-  // 🟢 SMOOTH ZOOM LOGIC
   const handleRemoteZoom = (e) => {
     const val = Number(e.target.value);
     setRemoteZoom(val);
-
     const now = Date.now();
     if (now - lastZoomTime.current > 150) {
       sendCommand("zoom", val);
@@ -93,23 +88,17 @@ export default function RemoteControl() {
     }
   };
 
-  const handleZoomRelease = () => {
-    sendCommand("zoom", remoteZoom);
-  };
+  const handleZoomRelease = () => sendCommand("zoom", remoteZoom);
 
-  // 🟢 NEW: SINGLE BUTTON LENS SWAP
   const handleSwapLens = () => {
     if (!camCapabilities?.cameras || camCapabilities.cameras.length <= 1)
       return;
-
-    // Find current index and calculate the next one in the array
     const currentIndex = camCapabilities.cameras.findIndex(
       (c) => c.deviceId === remoteLens,
     );
     const nextIndex = (currentIndex + 1) % camCapabilities.cameras.length;
     const nextCamId = camCapabilities.cameras[nextIndex].deviceId;
 
-    // Update local UI immediately for a snappy feel, then beam to phone
     setRemoteLens(nextCamId);
     sendCommand("lens", nextCamId);
   };
@@ -135,7 +124,7 @@ export default function RemoteControl() {
   const handleKillStream = () => {
     if (
       window.confirm(
-        "🚨 WARNING: This will instantly kill the live broadcast from the phone. Are you sure?",
+        "🚨 WARNING: This instantly kills the broadcast from the phone. Are you sure?",
       )
     ) {
       sendCommand("stop", true);
@@ -157,10 +146,38 @@ export default function RemoteControl() {
     );
   }
 
-  // Find current lens name to display
   const currentLensName =
     camCapabilities?.cameras?.find((c) => c.deviceId === remoteLens)?.label ||
     "Default Camera";
+
+  // 🟢 NETWORK DIAGNOSTIC LOGIC
+  let networkStatus = "GOOD";
+  let networkColor = "text-emerald-500";
+  let networkTip =
+    "Connection is stable. Phone and Laptop are communicating perfectly.";
+
+  if (deviceHealth) {
+    if (deviceHealth.fps < 20) {
+      networkStatus = "THERMAL THROTTLING";
+      networkColor = "text-red-500";
+      networkTip =
+        "Phone is overheating! Frame rate has dropped. Turn on 'Screen Off' mode or shade the device.";
+    } else if (deviceHealth.latency > 300) {
+      networkStatus = "HIGH LATENCY";
+      networkColor = "text-red-500";
+      networkTip = `Delay is ${deviceHealth.latency}ms. Phone is too far from Laptop hotspot, or there is heavy WiFi interference.`;
+    } else if (deviceHealth.latency > 150) {
+      networkStatus = "FAIR";
+      networkColor = "text-amber-500";
+      networkTip =
+        "Latency is rising. Ensure clear line-of-sight between laptop and phone. Use 5GHz hotspot if possible.";
+    } else if (deviceHealth.bitrate < 1000 && deviceHealth.bitrate > 0) {
+      networkStatus = "LOW BANDWIDTH";
+      networkColor = "text-amber-500";
+      networkTip =
+        "Video quality is dropping. Move the phone closer to the laptop hotspot.";
+    }
+  }
 
   return (
     <div className="min-h-screen w-screen bg-gray-950 flex items-center justify-center p-4 font-sans">
@@ -185,59 +202,90 @@ export default function RemoteControl() {
 
         {/* TELEMETRY STRIP */}
         {deviceHealth ? (
-          <div className="flex justify-between bg-gray-950 rounded-xl border border-gray-800 p-3 mb-6">
-            <div className="flex items-center gap-2 px-4 border-r border-gray-800 last:border-0">
-              {deviceHealth.isCharging ? (
-                <BatteryCharging size={16} className="text-emerald-500" />
-              ) : (
-                <Battery
+          <>
+            <div className="flex justify-between bg-gray-950 rounded-xl border border-gray-800 p-3 mb-2">
+              <div
+                className="flex items-center gap-2 px-4 border-r border-gray-800 last:border-0"
+                title="Phone Battery"
+              >
+                {deviceHealth.isCharging ? (
+                  <BatteryCharging size={16} className="text-emerald-500" />
+                ) : (
+                  <Battery
+                    size={16}
+                    className={
+                      deviceHealth.batteryLevel <= 20
+                        ? "text-red-500"
+                        : "text-gray-400"
+                    }
+                  />
+                )}
+                <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">
+                  {deviceHealth.batteryLevel !== undefined
+                    ? `${deviceHealth.batteryLevel}%`
+                    : "N/A"}
+                </span>
+              </div>
+              <div
+                className="flex items-center gap-2 px-4 border-r border-gray-800 last:border-0"
+                title="Cam -> Laptop Delay"
+              >
+                <Wifi
                   size={16}
                   className={
-                    deviceHealth.batteryLevel <= 20
-                      ? "text-red-500"
-                      : "text-gray-400"
+                    deviceHealth.latency > 150
+                      ? "text-amber-500"
+                      : "text-cyan-500"
                   }
                 />
-              )}
-              <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">
-                {deviceHealth.batteryLevel !== undefined
-                  ? `${deviceHealth.batteryLevel}%`
-                  : "N/A"}
-              </span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">
+                  {deviceHealth.latency !== undefined
+                    ? `${deviceHealth.latency}ms`
+                    : "N/A"}
+                </span>
+              </div>
+              <div
+                className="flex items-center gap-2 px-4 border-r border-gray-800 last:border-0"
+                title="Frames Per Second"
+              >
+                <Activity
+                  size={16}
+                  className={
+                    deviceHealth.fps < 20 ? "text-red-500" : "text-emerald-500"
+                  }
+                />
+                <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">
+                  {deviceHealth.fps || 0} FPS
+                </span>
+              </div>
+              <div
+                className="flex items-center gap-2 px-4"
+                title="Video Quality (kbps)"
+              >
+                <Zap size={16} className="text-amber-500" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">
+                  {deviceHealth.bitrate
+                    ? `${deviceHealth.bitrate} kbps`
+                    : "N/A"}
+                </span>
+              </div>
             </div>
-            <div className="flex items-center gap-2 px-4 border-r border-gray-800 last:border-0">
-              <Wifi
-                size={16}
-                className={
-                  deviceHealth.latency > 150
-                    ? "text-amber-500"
-                    : "text-cyan-500"
-                }
-              />
-              <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">
-                {deviceHealth.latency !== undefined
-                  ? `${deviceHealth.latency}ms`
-                  : "N/A"}
-              </span>
+
+            {/* 🟢 NEW: NETWORK DIAGNOSTICS & TIPS */}
+            <div className="bg-black/30 border border-gray-800 rounded-lg p-3 mb-6 flex items-start gap-3">
+              <Info size={16} className={`mt-0.5 shrink-0 ${networkColor}`} />
+              <div>
+                <p
+                  className={`text-xs font-black tracking-widest uppercase mb-1 ${networkColor}`}
+                >
+                  {networkStatus}
+                </p>
+                <p className="text-[10px] text-gray-400 leading-relaxed">
+                  {networkTip}
+                </p>
+              </div>
             </div>
-            <div className="flex items-center gap-2 px-4 border-r border-gray-800 last:border-0">
-              <Activity
-                size={16}
-                className={
-                  deviceHealth.fps < 20 ? "text-red-500" : "text-emerald-500"
-                }
-              />
-              <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">
-                {deviceHealth.fps || 0} FPS
-              </span>
-            </div>
-            <div className="flex items-center gap-2 px-4">
-              <Zap size={16} className="text-amber-500" />
-              <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">
-                {deviceHealth.bitrate ? `${deviceHealth.bitrate} kbps` : "N/A"}
-              </span>
-            </div>
-          </div>
+          </>
         ) : (
           <div className="text-center py-2 mb-6 text-gray-600 text-[10px] font-bold uppercase tracking-widest bg-gray-950 rounded-xl border border-gray-800">
             Awaiting Telemetry Data...
@@ -252,7 +300,6 @@ export default function RemoteControl() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* LEFT COLUMN: System Controls */}
             <div className="space-y-4">
-              {/* 🟢 NEW: SWAP CAMERA BUTTON UI */}
               {camCapabilities.cameras &&
                 camCapabilities.cameras.length > 0 && (
                   <div className="bg-gray-950 p-3.5 rounded-xl border border-gray-800 flex justify-between items-center">
@@ -261,7 +308,7 @@ export default function RemoteControl() {
                         <Video size={14} className="text-cyan-500" /> Active
                         Lens
                       </label>
-                      <span className="text-xs text-white font-bold truncate">
+                      <span className="text-xs text-white font-bold truncate max-w-[160px]">
                         {currentLensName}
                       </span>
                     </div>
@@ -311,7 +358,6 @@ export default function RemoteControl() {
 
             {/* RIGHT COLUMN: Camera Hardware Controls */}
             <div className="space-y-4 flex flex-col">
-              {/* SMOOTH ZOOM SLIDER */}
               {camCapabilities.zoom && (
                 <div className="bg-gray-950 p-4 rounded-xl border border-gray-800 flex-1 flex flex-col justify-center">
                   <div className="flex justify-between items-center mb-3">
@@ -337,7 +383,6 @@ export default function RemoteControl() {
                 </div>
               )}
 
-              {/* TORCH CONTROL */}
               {camCapabilities.torch && (
                 <div className="bg-gray-950 p-3.5 rounded-xl border border-gray-800 flex justify-between items-center">
                   <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
