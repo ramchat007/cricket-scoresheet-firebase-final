@@ -83,6 +83,7 @@ export default function Navigation() {
   const links = [
     { name: "Home", path: "/" },
     { name: "Global Stats", path: "/players" },
+    { name: "Dashboard", path: "/dashboard" }
   ];
 
   if (tournamentId && tournamentId !== "auction") {
@@ -95,9 +96,9 @@ export default function Navigation() {
     }
   }
 
-  if (user) {
-    links.push({ name: "Dashboard", path: "/dashboard" });
-  }
+  // if (user) {
+  //   links.push({ name: "Dashboard", path: "/dashboard" });
+  // }
 
   const isActive = (path) => location.pathname === path;
 
@@ -172,17 +173,6 @@ export default function Navigation() {
               </Link>
             ))}
 
-            {/* --- DESKTOP THEME TOGGLE --- */}
-            <button
-              onClick={toggleTheme}
-              className={`p-2 rounded-full transition-all active:scale-95 ${
-                lightMode
-                  ? "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                  : "bg-white/5 text-gray-400 hover:text-white hover:bg-white/10"
-              }`}>
-              {lightMode ? <Moon size={18} /> : <Sun size={18} />}
-            </button>
-
             {user ? (
               <div
                 className={`flex items-center gap-5 border-l pl-5 ${lightMode ? "border-gray-300" : "border-white/10"}`}>
@@ -223,6 +213,17 @@ export default function Navigation() {
                 </Link>
               </div>
             )}
+
+            {/* --- DESKTOP THEME TOGGLE --- */}
+            <button
+              onClick={toggleTheme}
+              className={`p-2 rounded-full transition-all active:scale-95 ${
+                lightMode
+                  ? "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  : "bg-white/5 text-gray-400 hover:text-white hover:bg-white/10"
+              }`}>
+              {lightMode ? <Moon size={18} /> : <Sun size={18} />}
+            </button>
           </div>
 
           <button
