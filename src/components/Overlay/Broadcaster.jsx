@@ -39,7 +39,7 @@ export default function Broadcaster() {
 
   const [isMuted, setIsMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isOledSleep, setIsOledSleep] = useState(false); // 🟢 OLED Sleep
+  const [isOledSleep, setIsOledSleep] = useState(false);
 
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
@@ -113,6 +113,7 @@ export default function Broadcaster() {
         activeStreamRef.current.getTracks().forEach((t) => t.stop());
       handleStopStream(savedId);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -142,7 +143,7 @@ export default function Broadcaster() {
     streamId,
   ]);
 
-  // 🟢 LISTEN FOR REMOTE COMMANDS
+  // 🟢 LISTEN FOR REMOTE COMMANDS (Removed Remote Lens Swap)
   useEffect(() => {
     if (!isStreaming || !streamId) return;
 
@@ -168,8 +169,6 @@ export default function Broadcaster() {
               .getAudioTracks()
               .forEach((t) => (t.enabled = !cmd.value));
           }
-        } else if (cmd.type === "lens") {
-          switchLiveCamera(cmd.value);
         } else if (cmd.type === "oled") {
           setIsOledSleep(cmd.value);
         } else if (cmd.type === "stop") {
@@ -179,9 +178,10 @@ export default function Broadcaster() {
     });
 
     return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isStreaming, streamId]);
 
-  // 🟢 TELEMETRY ENGINE (BATTERY, LATENCY, FPS)
+  // 🟢 TELEMETRY ENGINE
   useEffect(() => {
     if (!isStreaming || !streamId || !peerConnectionRef.current) return;
 
@@ -258,6 +258,22 @@ export default function Broadcaster() {
     const val = Number(e.target.value);
     setZoomLevel(val);
     await applyVideoConstraint({ zoom: val });
+  };
+
+  // 🟢 UNIFIED LENS SWAP LOGIC (Works for both Setup & Live modes)
+  const handleCycleCamera = () => {
+    if (cameras.length <= 1) return;
+    const currentIndex = cameras.findIndex(
+      (c) => c.deviceId === selectedCamera,
+    );
+    const nextIndex = (currentIndex + 1) % cameras.length;
+    const nextCamId = cameras[nextIndex].deviceId;
+
+    if (isStreaming) {
+      switchLiveCamera(nextCamId);
+    } else {
+      setSelectedCamera(nextCamId);
+    }
   };
 
   const handleStartStream = async () => {
@@ -490,6 +506,11 @@ export default function Broadcaster() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Helper to display current active lens name nicely
+  const currentCameraLabel =
+    cameras.find((c) => c.deviceId === selectedCamera)?.label ||
+    "Default Camera";
+
   return (
     <div className="h-[100dvh] flex flex-col font-sans overflow-hidden bg-gray-50 text-gray-900">
       {!isFullscreen && (
@@ -521,7 +542,8 @@ export default function Broadcaster() {
       {isOledSleep && (
         <div
           onClick={() => setIsOledSleep(false)}
-          className="fixed inset-0 z-[9999] bg-black flex items-center justify-center cursor-pointer">
+          className="fixed inset-0 z-[9999] bg-black flex items-center justify-center cursor-pointer"
+        >
           <div className="flex flex-col items-center opacity-30">
             <Moon size={48} className="text-indigo-500 mb-4" />
             <p className="text-white text-xs font-black uppercase tracking-widest">
@@ -556,7 +578,8 @@ export default function Broadcaster() {
                 </span>
                 <button
                   onClick={copyToClipboard}
-                  className="p-2 rounded-lg transition-colors bg-gray-200 hover:bg-gray-300 text-gray-700">
+                  className="p-2 rounded-lg transition-colors bg-gray-200 hover:bg-gray-300 text-gray-700"
+                >
                   {copied ? (
                     <Check size={16} className="text-green-600" />
                   ) : (
@@ -567,20 +590,25 @@ export default function Broadcaster() {
             </div>
 
             <div className="space-y-4 mb-8">
+              {/* 🟢 SETUP SCREEN LENS SWAP BUTTON */}
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest mb-2 text-gray-500">
-                  Select Lens
+                  Active Lens
                 </label>
-                <select
-                  className="w-full border rounded-xl px-4 py-3 bg-gray-50 text-xs font-bold text-gray-700 outline-none focus:border-teal-500"
-                  value={selectedCamera}
-                  onChange={(e) => setSelectedCamera(e.target.value)}>
-                  {cameras.map((cam) => (
-                    <option key={cam.deviceId} value={cam.deviceId}>
-                      {cam.label || `Camera ${cam.deviceId.substring(0, 5)}`}
-                    </option>
-                  ))}
-                </select>
+                <button
+                  onClick={handleCycleCamera}
+                  disabled={cameras.length <= 1}
+                  className={`w-full flex items-center justify-between border rounded-xl px-4 py-3 text-xs font-bold outline-none transition-all ${
+                    cameras.length > 1
+                      ? "bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-200 active:scale-95 cursor-pointer"
+                      : "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                  }`}
+                >
+                  <span className="truncate pr-2">{currentCameraLabel}</span>
+                  {cameras.length > 1 && (
+                    <RefreshCw size={16} className="text-teal-500 shrink-0" />
+                  )}
+                </button>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -591,7 +619,8 @@ export default function Broadcaster() {
                   <select
                     className="w-full border rounded-xl px-4 py-3 bg-gray-50 text-xs font-bold text-gray-700 outline-none focus:border-teal-500"
                     value={resolution}
-                    onChange={(e) => setResolution(e.target.value)}>
+                    onChange={(e) => setResolution(e.target.value)}
+                  >
                     <option value="720p">720p (Smooth)</option>
                     <option value="1080p">1080p (FHD)</option>
                   </select>
@@ -602,7 +631,8 @@ export default function Broadcaster() {
                   </label>
                   <button
                     onClick={toggleMute}
-                    className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 text-xs font-black uppercase tracking-wider transition-all ${isMuted ? "border-red-500 text-red-500 bg-red-50" : "border-gray-200 text-gray-700 bg-gray-50 hover:bg-gray-100"}`}>
+                    className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 text-xs font-black uppercase tracking-wider transition-all ${isMuted ? "border-red-500 text-red-500 bg-red-50" : "border-gray-200 text-gray-700 bg-gray-50 hover:bg-gray-100"}`}
+                  >
                     {isMuted ? (
                       <>
                         <MicOff size={16} /> Muted
@@ -619,14 +649,16 @@ export default function Broadcaster() {
 
             <button
               onClick={handleStartStream}
-              className="w-full bg-gradient-to-r from-teal-500 to-emerald-600 text-white font-black py-4 rounded-xl uppercase tracking-widest text-sm shadow-[0_0_20px_rgba(20,184,166,0.3)] active:scale-95 transition-all flex items-center justify-center gap-2">
+              className="w-full bg-gradient-to-r from-teal-500 to-emerald-600 text-white font-black py-4 rounded-xl uppercase tracking-widest text-sm shadow-[0_0_20px_rgba(20,184,166,0.3)] active:scale-95 transition-all flex items-center justify-center gap-2"
+            >
               <Play size={18} fill="currentColor" /> Go Live
             </button>
 
             <button
               onClick={handleClearDatabase}
               disabled={isClearing}
-              className="w-full mt-4 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest flex justify-center gap-2 text-gray-500 hover:bg-gray-100">
+              className="w-full mt-4 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest flex justify-center gap-2 text-gray-500 hover:bg-gray-100"
+            >
               <RefreshCw
                 size={14}
                 className={isClearing ? "animate-spin" : ""}
@@ -662,34 +694,43 @@ export default function Broadcaster() {
             )}
 
             <div className="flex justify-between items-center gap-2 overflow-x-auto pb-2">
-              <div className="flex items-center gap-2 bg-black/50 border border-white/20 rounded-full px-3 py-2 backdrop-blur-md">
-                <Video size={16} className="text-white" />
-                <select
-                  className="bg-transparent text-white text-xs font-bold uppercase outline-none max-w-[100px] truncate"
-                  value={selectedCamera}
-                  onChange={(e) => switchLiveCamera(e.target.value)}>
-                  {cameras.map((cam) => (
-                    <option
-                      key={cam.deviceId}
-                      value={cam.deviceId}
-                      className="text-black">
-                      {cam.label || "Camera"}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* 🟢 LIVE OVERLAY LENS SWAP BUTTON */}
+              <button
+                onClick={handleCycleCamera}
+                disabled={cameras.length <= 1}
+                className={`flex items-center gap-2 border rounded-full px-4 py-2 backdrop-blur-md transition-all ${
+                  cameras.length > 1
+                    ? "bg-black/50 border-white/20 active:scale-95 cursor-pointer hover:bg-black/70"
+                    : "bg-black/30 border-white/10 opacity-50 cursor-not-allowed"
+                }`}
+              >
+                <Video
+                  size={16}
+                  className={
+                    cameras.length > 1 ? "text-cyan-400" : "text-gray-500"
+                  }
+                />
+                <span className="text-white text-[10px] font-bold uppercase truncate max-w-[100px]">
+                  {currentCameraLabel}
+                </span>
+                {cameras.length > 1 && (
+                  <RefreshCw size={14} className="text-white/70 ml-1" />
+                )}
+              </button>
 
               <div className="flex items-center gap-2 shrink-0">
                 {torchSupported && (
                   <button
                     onClick={toggleTorch}
-                    className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center shadow-lg active:scale-95 border ${torchOn ? "bg-amber-500 border-amber-400 text-black" : "bg-black/50 border-white/20 text-white backdrop-blur-md"}`}>
+                    className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center shadow-lg active:scale-95 border ${torchOn ? "bg-amber-500 border-amber-400 text-black" : "bg-black/50 border-white/20 text-white backdrop-blur-md"}`}
+                  >
                     {torchOn ? <Flashlight size={18} /> : <ZapOff size={18} />}
                   </button>
                 )}
                 <button
                   onClick={toggleFullscreen}
-                  className="w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center shadow-lg active:scale-95 border border-white/20 bg-black/50 text-white backdrop-blur-md">
+                  className="w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center shadow-lg active:scale-95 border border-white/20 bg-black/50 text-white backdrop-blur-md"
+                >
                   {isFullscreen ? (
                     <Minimize size={18} />
                   ) : (
@@ -698,12 +739,14 @@ export default function Broadcaster() {
                 </button>
                 <button
                   onClick={toggleMute}
-                  className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center shadow-lg active:scale-95 border border-white/20 ${isMuted ? "bg-red-500 text-white" : "bg-black/50 text-white backdrop-blur-md"}`}>
+                  className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center shadow-lg active:scale-95 border border-white/20 ${isMuted ? "bg-red-500 text-white" : "bg-black/50 text-white backdrop-blur-md"}`}
+                >
                   {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
                 </button>
                 <button
                   onClick={() => handleStopStream(streamId)}
-                  className="h-10 md:h-12 px-5 rounded-full bg-red-600 hover:bg-red-500 text-white font-black uppercase tracking-widest shadow-[0_0_20px_rgba(220,38,38,0.4)] flex items-center justify-center gap-2 active:scale-95 text-[10px] md:text-sm">
+                  className="h-10 md:h-12 px-5 rounded-full bg-red-600 hover:bg-red-500 text-white font-black uppercase tracking-widest shadow-[0_0_20px_rgba(220,38,38,0.4)] flex items-center justify-center gap-2 active:scale-95 text-[10px] md:text-sm"
+                >
                   <Square size={14} fill="currentColor" /> Stop
                 </button>
               </div>

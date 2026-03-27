@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { db } from "../../utils/firebase";
@@ -19,6 +19,7 @@ import {
   Wifi,
   Activity,
   Zap,
+  RefreshCw, // <-- The icon for our Swap button
 } from "lucide-react";
 
 export default function RemoteControl() {
@@ -34,6 +35,9 @@ export default function RemoteControl() {
   const [remoteOled, setRemoteOled] = useState(false);
   const [isLive, setIsLive] = useState(false);
 
+  // Throttle Reference for Smooth Zooming
+  const lastZoomTime = useRef(0);
+
   useEffect(() => {
     if (!streamId) return;
 
@@ -48,7 +52,10 @@ export default function RemoteControl() {
         if (data.health) setDeviceHealth(data.health);
 
         if (data.currentState) {
-          setRemoteZoom(data.currentState.zoom || 1);
+          // Only update UI from Firebase if we aren't actively zooming
+          if (Date.now() - lastZoomTime.current > 1000) {
+            setRemoteZoom(data.currentState.zoom || 1);
+          }
           setRemoteTorch(data.currentState.torch || false);
           setRemoteMuted(data.currentState.isMuted || false);
           setRemoteLens(data.currentState.selectedCamera || "");
@@ -74,10 +81,37 @@ export default function RemoteControl() {
     }
   };
 
+  // 🟢 SMOOTH ZOOM LOGIC
   const handleRemoteZoom = (e) => {
     const val = Number(e.target.value);
     setRemoteZoom(val);
-    sendCommand("zoom", val);
+
+    const now = Date.now();
+    if (now - lastZoomTime.current > 150) {
+      sendCommand("zoom", val);
+      lastZoomTime.current = now;
+    }
+  };
+
+  const handleZoomRelease = () => {
+    sendCommand("zoom", remoteZoom);
+  };
+
+  // 🟢 NEW: SINGLE BUTTON LENS SWAP
+  const handleSwapLens = () => {
+    if (!camCapabilities?.cameras || camCapabilities.cameras.length <= 1)
+      return;
+
+    // Find current index and calculate the next one in the array
+    const currentIndex = camCapabilities.cameras.findIndex(
+      (c) => c.deviceId === remoteLens,
+    );
+    const nextIndex = (currentIndex + 1) % camCapabilities.cameras.length;
+    const nextCamId = camCapabilities.cameras[nextIndex].deviceId;
+
+    // Update local UI immediately for a snappy feel, then beam to phone
+    setRemoteLens(nextCamId);
+    sendCommand("lens", nextCamId);
   };
 
   const toggleRemoteTorch = () => {
@@ -90,12 +124,6 @@ export default function RemoteControl() {
     const newVal = !remoteMuted;
     setRemoteMuted(newVal);
     sendCommand("mute", newVal);
-  };
-
-  const handleLensChange = (e) => {
-    const val = e.target.value;
-    setRemoteLens(val);
-    sendCommand("lens", val);
   };
 
   const toggleOledSleep = () => {
@@ -129,9 +157,13 @@ export default function RemoteControl() {
     );
   }
 
+  // Find current lens name to display
+  const currentLensName =
+    camCapabilities?.cameras?.find((c) => c.deviceId === remoteLens)?.label ||
+    "Default Camera";
+
   return (
     <div className="min-h-screen w-screen bg-gray-950 flex items-center justify-center p-4 font-sans">
-      {/* 🟢 COMPACT WIDE CONTAINER */}
       <div className="w-full max-w-3xl bg-gray-900 border border-gray-800 rounded-3xl p-6 shadow-2xl">
         {/* HEADER */}
         <div className="flex justify-between items-center mb-4 border-b border-gray-800 pb-4">
@@ -151,7 +183,7 @@ export default function RemoteControl() {
           </div>
         </div>
 
-        {/* 🟢 SLEEK TELEMETRY STRIP */}
+        {/* TELEMETRY STRIP */}
         {deviceHealth ? (
           <div className="flex justify-between bg-gray-950 rounded-xl border border-gray-800 p-3 mb-6">
             <div className="flex items-center gap-2 px-4 border-r border-gray-800 last:border-0">
@@ -217,26 +249,34 @@ export default function RemoteControl() {
             Waiting for lens data...
           </div>
         ) : (
-          /* 🟢 2-COLUMN COMPACT GRID */
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* LEFT COLUMN: System Controls */}
             <div className="space-y-4">
+              {/* 🟢 NEW: SWAP CAMERA BUTTON UI */}
               {camCapabilities.cameras &&
                 camCapabilities.cameras.length > 0 && (
-                  <div className="bg-gray-950 p-3.5 rounded-xl border border-gray-800">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-1.5 mb-2">
-                      <Video size={14} className="text-cyan-500" /> Active Lens
-                    </label>
-                    <select
-                      value={remoteLens}
-                      onChange={handleLensChange}
-                      className="w-full bg-gray-800 border border-gray-700 text-white font-bold text-xs rounded-lg px-3 py-2 outline-none focus:border-cyan-500">
-                      {camCapabilities.cameras.map((cam) => (
-                        <option key={cam.deviceId} value={cam.deviceId}>
-                          {cam.label || `Lens ${cam.deviceId.substring(0, 5)}`}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="bg-gray-950 p-3.5 rounded-xl border border-gray-800 flex justify-between items-center">
+                    <div className="flex flex-col overflow-hidden pr-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-1.5 mb-1">
+                        <Video size={14} className="text-cyan-500" /> Active
+                        Lens
+                      </label>
+                      <span className="text-xs text-white font-bold truncate">
+                        {currentLensName}
+                      </span>
+                    </div>
+                    <button
+                      onClick={handleSwapLens}
+                      disabled={camCapabilities.cameras.length <= 1}
+                      className={`p-3 rounded-xl transition-all shadow-md flex items-center justify-center ${
+                        camCapabilities.cameras.length > 1
+                          ? "bg-gray-800 text-white hover:bg-gray-700 hover:text-cyan-400 active:scale-90 cursor-pointer border border-gray-700"
+                          : "bg-gray-900 text-gray-600 border border-gray-800 cursor-not-allowed"
+                      }`}
+                      title="Swap Camera"
+                    >
+                      <RefreshCw size={18} />
+                    </button>
                   </div>
                 )}
 
@@ -248,7 +288,8 @@ export default function RemoteControl() {
                     remoteMuted
                       ? "bg-red-500/20 text-red-500 border-red-500/50"
                       : "bg-gray-950 text-emerald-500 border-gray-800"
-                  }`}>
+                  }`}
+                >
                   {remoteMuted ? <MicOff size={18} /> : <Mic size={18} />}
                   {remoteMuted ? "Muted" : "Mic Active"}
                 </button>
@@ -258,9 +299,10 @@ export default function RemoteControl() {
                   onClick={toggleOledSleep}
                   className={`p-3 rounded-xl flex flex-col items-center justify-center gap-1.5 font-bold text-[10px] uppercase tracking-widest transition-all border ${
                     remoteOled
-                      ? "bg-indigo-600 text-white border-indigo-500"
+                      ? "bg-indigo-600 text-white border-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.4)]"
                       : "bg-gray-950 text-indigo-400 border-gray-800"
-                  }`}>
+                  }`}
+                >
                   {remoteOled ? <Moon size={18} /> : <Sun size={18} />}
                   {remoteOled ? "Screen Off" : "Screen On"}
                 </button>
@@ -269,6 +311,7 @@ export default function RemoteControl() {
 
             {/* RIGHT COLUMN: Camera Hardware Controls */}
             <div className="space-y-4 flex flex-col">
+              {/* SMOOTH ZOOM SLIDER */}
               {camCapabilities.zoom && (
                 <div className="bg-gray-950 p-4 rounded-xl border border-gray-800 flex-1 flex flex-col justify-center">
                   <div className="flex justify-between items-center mb-3">
@@ -287,11 +330,14 @@ export default function RemoteControl() {
                     step={camCapabilities.zoom.step}
                     value={remoteZoom}
                     onChange={handleRemoteZoom}
+                    onPointerUp={handleZoomRelease}
+                    onTouchEnd={handleZoomRelease}
                     className="w-full accent-cyan-500 h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer"
                   />
                 </div>
               )}
 
+              {/* TORCH CONTROL */}
               {camCapabilities.torch && (
                 <div className="bg-gray-950 p-3.5 rounded-xl border border-gray-800 flex justify-between items-center">
                   <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
@@ -300,11 +346,12 @@ export default function RemoteControl() {
                   </label>
                   <button
                     onClick={toggleRemoteTorch}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-95 ${
                       remoteTorch
                         ? "bg-amber-500 text-black shadow-[0_0_15px_rgba(245,158,11,0.4)]"
                         : "bg-gray-800 text-gray-400 border border-gray-700"
-                    }`}>
+                    }`}
+                  >
                     {remoteTorch ? (
                       <Flashlight size={16} />
                     ) : (
@@ -317,10 +364,11 @@ export default function RemoteControl() {
           </div>
         )}
 
-        {/* COMPACT MASTER KILL SWITCH */}
+        {/* MASTER KILL SWITCH */}
         <button
           onClick={handleKillStream}
-          className="w-full mt-6 py-3 bg-red-600/10 hover:bg-red-600/20 text-red-500 border border-red-500/30 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-2">
+          className="w-full mt-6 py-3 bg-red-600/10 hover:bg-red-600/20 text-red-500 border border-red-500/30 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-2 active:scale-95"
+        >
           <Power size={14} /> Emergency Kill Stream
         </button>
       </div>
