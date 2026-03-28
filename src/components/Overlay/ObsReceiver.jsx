@@ -10,6 +10,7 @@ export default function ObsReceiver() {
   const location = useLocation();
 
   const videoRef = useRef(null);
+  const audioRef = useRef(null); // 🟢 NEW: Dedicated Audio Player for OBS
   const peerConnectionRef = useRef(null);
 
   const [error, setError] = useState("Waiting for broadcaster...");
@@ -44,9 +45,17 @@ export default function ObsReceiver() {
         const peerConnection = new RTCPeerConnection(rtcConfig);
         peerConnectionRef.current = peerConnection;
 
+        // 🟢 THE SPLIT STREAM TRICK
         peerConnection.ontrack = (event) => {
-          if (videoRef.current && event.streams && event.streams.length > 0) {
-            videoRef.current.srcObject = event.streams[0];
+          if (event.streams && event.streams.length > 0) {
+            // Send to Video Player (Muted for Autoplay)
+            if (videoRef.current) {
+              videoRef.current.srcObject = event.streams[0];
+            }
+            // Send to Audio Player (Unmuted for OBS Mixer)
+            if (audioRef.current) {
+              audioRef.current.srcObject = event.streams[0];
+            }
           }
         };
 
@@ -54,10 +63,14 @@ export default function ObsReceiver() {
           if (peerConnection.connectionState === "connected") {
             setConnected(true);
             setError("");
+
+            // Try to autoplay video
             if (videoRef.current) {
-              videoRef.current.play().catch((err) => {
-                setNeedsInteraction(true);
-              });
+              videoRef.current.play().catch(() => setNeedsInteraction(true));
+            }
+            // Try to autoplay audio
+            if (audioRef.current) {
+              audioRef.current.play().catch(() => setNeedsInteraction(true));
             }
           } else if (
             peerConnection.connectionState === "disconnected" ||
@@ -90,7 +103,7 @@ export default function ObsReceiver() {
       if (snapshot.exists()) {
         const data = snapshot.data();
 
-        // 🟢 Listen for Camera Capabilities from Broadcaster
+        // Listen for Camera Capabilities from Broadcaster
         if (data.capabilities) {
           setCamCapabilities(data.capabilities);
         }
@@ -117,6 +130,9 @@ export default function ObsReceiver() {
         if (videoRef.current) {
           videoRef.current.srcObject = null;
         }
+        if (audioRef.current) {
+          audioRef.current.srcObject = null;
+        }
       }
     });
 
@@ -127,13 +143,14 @@ export default function ObsReceiver() {
   }, [streamId]);
 
   const handleManualPlay = () => {
-    if (videoRef.current) {
-      videoRef.current.play();
+    if (videoRef.current) videoRef.current.play();
+    if (audioRef.current) {
+      audioRef.current.play();
       setNeedsInteraction(false);
     }
   };
 
-  // 🟢 SEND COMMANDS TO FIREBASE
+  // 🟢 SEND COMMANDS TO FIREBASE (Only used if ?control=true)
   const sendCommand = async (type, value) => {
     try {
       await updateDoc(doc(db, "streams", streamId), {
@@ -146,8 +163,8 @@ export default function ObsReceiver() {
 
   const handleRemoteZoom = (e) => {
     const val = Number(e.target.value);
-    setRemoteZoom(val); // Update UI instantly
-    sendCommand("zoom", val); // Tell broadcaster
+    setRemoteZoom(val);
+    sendCommand("zoom", val);
   };
 
   const toggleRemoteTorch = () => {
@@ -210,6 +227,9 @@ export default function ObsReceiver() {
           <h2 style={{ fontSize: "24px", fontWeight: "bold" }}>
             Click to Unmute & Play
           </h2>
+          <p style={{ opacity: 0.7, marginTop: "10px", fontSize: "14px" }}>
+            Right-click in OBS -&gt; Interact -&gt; Click here
+          </p>
         </div>
       )}
 
@@ -294,10 +314,15 @@ export default function ObsReceiver() {
         </div>
       )}
 
+      {/* 🟢 THE INVISIBLE AUDIO ELEMENT */}
+      <audio ref={audioRef} autoPlay playsInline />
+
+      {/* 🟢 THE MUTED VIDEO ELEMENT */}
       <video
         ref={videoRef}
         autoPlay
         playsInline
+        muted
         style={{
           width: "100%",
           height: "100%",

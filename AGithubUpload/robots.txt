@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+
+# Block overlay paths from appearing in Google searches (they are for OBS, not users)
+Disallow: /overlay/
+Disallow: /admin/
+
+Sitemap: https:/cricsynclive.in/sitemap.xml
