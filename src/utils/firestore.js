@@ -403,16 +403,41 @@ export const undoLast = async (tournamentId, matchId) => {
   }
 };
 
-export const finishMatch = async (tournamentId, matchId, winner, reason) => {
+// export const finishMatch = async (tournamentId, matchId, winner, reason) => {
+//   const ref = doc(db, "tournaments", tournamentId, "matches", matchId);
+//   await updateDoc(ref, {
+//     "meta.matchStatus": "finished",
+//     "meta.status": "finished", // Legacy support
+//     "meta.result": `${winner} won (${reason})`,
+//     "meta.winner": winner,
+//     status: "finished", // Root level support
+//     winner: winner,
+//   });
+// };
+
+export const finishMatch = async (tournamentId, matchId, winner, reason, mom = null) => {
   const ref = doc(db, "tournaments", tournamentId, "matches", matchId);
-  await updateDoc(ref, {
+  
+  // 1. Setup the base updates
+  const updateData = {
     "meta.matchStatus": "finished",
     "meta.status": "finished", // Legacy support
     "meta.result": `${winner} won (${reason})`,
     "meta.winner": winner,
     status: "finished", // Root level support
     winner: winner,
-  });
+  };
+
+  // 2. Safely append the MOM data if it exists
+  if (mom) {
+    updateData["meta.momName"] = mom.name;
+    updateData["meta.momId"] = mom.id || null;
+    updateData["meta.momScore"] = mom.momScore || 0;
+    updateData["meta.momTeam"] = mom.team || "Unknown";
+  }
+
+  // 3. Push everything to Firestore at once
+  await updateDoc(ref, updateData);
 };
 
 export const deleteMatch = async (tournamentId, matchId) => {

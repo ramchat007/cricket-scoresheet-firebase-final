@@ -1,7 +1,9 @@
 /**
- * ✅ statsHelper.js
- * Centralized logic for Points Table and Player Stats calculation.
- * Fixes: Strict separation of Batting/Bowling runs & Robust NRR logic.
+ * ✅ statsHelper.js (ADVANCED VERSION)
+ * Includes:
+ * - Robust Points Table (NRR safe)
+ * - Player Stats (strict separation)
+ * - MVP + Advanced MOM logic (impact-based)
  */
 
 // --- 1. POINTS TABLE CALCULATOR ---
@@ -10,20 +12,16 @@ export const calculatePointsTable = (matches = []) => {
   const safeMatches = Array.isArray(matches) ? matches : [];
 
   safeMatches.forEach((match) => {
-    // Only process finished matches
     if (
       !match ||
       (match.status !== "finished" && match.meta?.matchStatus !== "finished")
     )
       return;
 
-    // 1. Normalize Team Names (Trim whitespace)
     const teamA = match.meta?.teamA?.trim();
     const teamB = match.meta?.teamB?.trim();
-
     if (!teamA || !teamB) return;
 
-    // 2. Initialize Table Entries
     [teamA, teamB].forEach((t) => {
       if (!table[t]) {
         table[t] = {
@@ -41,85 +39,72 @@ export const calculatePointsTable = (matches = []) => {
       }
     });
 
-    // 3. Determine Winner Mathematically
     const inn1 = match.innings?.[0];
     const inn2 = match.innings?.[1];
-    let calculatedWinner = null;
+    let winner = null;
 
     if (inn1 && inn2) {
-      if (inn1.score > inn2.score) {
-        calculatedWinner = inn1.battingTeam?.trim();
-      } else if (inn2.score > inn1.score) {
-        calculatedWinner = inn2.battingTeam?.trim();
-      } else {
-        calculatedWinner = "TIE";
-      }
+      if (inn1.score > inn2.score) winner = inn1.battingTeam?.trim();
+      else if (inn2.score > inn1.score) winner = inn2.battingTeam?.trim();
+      else winner = "TIE";
     } else {
-      calculatedWinner = match.winner || match.meta?.result?.winner;
+      winner = match.winner || match.meta?.result?.winner;
     }
 
-    // 4. Update Win/Loss/Tie Stats
     table[teamA].played++;
     table[teamB].played++;
 
-    if (calculatedWinner === teamA) {
+    if (winner === teamA) {
       table[teamA].won++;
       table[teamA].points += 2;
       table[teamB].lost++;
-    } else if (calculatedWinner === teamB) {
+    } else if (winner === teamB) {
       table[teamB].won++;
       table[teamB].points += 2;
       table[teamA].lost++;
     } else {
-      // Tie or No Result
       table[teamA].points += 1;
       table[teamB].points += 1;
     }
 
-    // 5. Update NRR Stats (Runs & Overs)
     const innings = Array.isArray(match.innings) ? match.innings : [];
     innings.forEach((inn) => {
       if (!inn) return;
-      const battingTeam = inn.battingTeam?.trim();
 
-      // Determine opponent (bowling team)
+      const battingTeam = inn.battingTeam?.trim();
       const bowlingTeam = battingTeam === teamA ? teamB : teamA;
+
+      const balls = (inn.over || 0) * 6 + (inn.overBallCount || 0);
+      const matchOvers = parseInt(match.meta?.overs || 20);
+      const fullBalls = matchOvers * 6;
+
+      const effectiveBalls =
+        inn.wickets >= 10 || inn.isAllOut ? fullBalls : balls;
 
       if (table[battingTeam]) {
         table[battingTeam].runsScored += inn.score || 0;
-
-        const balls = (inn.over || 0) * 6 + (inn.overBallCount || 0);
-        // NRR Rule: If All Out, use full quota (e.g., 20 overs)
-        const matchOvers = parseInt(match.meta?.overs || 20);
-        const effectiveBalls =
-          inn.wickets >= 10 || inn.isAllOut ? matchOvers * 6 : balls;
-
         table[battingTeam].oversFaced += effectiveBalls;
       }
 
       if (table[bowlingTeam]) {
         table[bowlingTeam].runsConceded += inn.score || 0;
-
-        const balls = (inn.over || 0) * 6 + (inn.overBallCount || 0);
-        // Same logic for bowling team (runs conceded against full quota if they bowled them out)
-        const matchOvers = parseInt(match.meta?.overs || 20);
-        const effectiveBalls =
-          inn.wickets >= 10 || inn.isAllOut ? matchOvers * 6 : balls;
-
         table[bowlingTeam].oversBowled += effectiveBalls;
       }
     });
   });
 
-  // 6. Final Calculation
   return Object.values(table)
     .map((t) => {
-      const ballsFaced = t.oversFaced || 1;
-      const ballsBowled = t.oversBowled || 1;
-      // Standard NRR Formula: (Runs/Overs For) - (Runs/Overs Against)
-      const runRateFor = (t.runsScored / ballsFaced) * 6;
-      const runRateAgainst = (t.runsConceded / ballsBowled) * 6;
-      return { ...t, nrr: (runRateFor - runRateAgainst).toFixed(3) };
+      const faced = t.oversFaced || 1;
+      const bowled = t.oversBowled || 1;
+
+      const runRateFor = (t.runsScored / faced) * 6;
+      const runRateAgainst = (t.runsConceded / bowled) * 6;
+
+      return {
+        ...t,
+        nrr: Number(runRateFor - runRateAgainst).toFixed(3),
+      };
     })
     .sort((a, b) => b.points - a.points || b.nrr - a.nrr);
 };
@@ -138,50 +123,35 @@ export const calculatePlayerStats = (input) => {
 
       const battingTeam = inn.battingTeam?.trim();
 
-      // Determine bowling team strictly
       let bowlingTeam = "Unknown";
       if (match.meta?.teamA && match.meta?.teamB) {
         bowlingTeam =
           battingTeam === match.meta.teamA.trim()
             ? match.meta.teamB.trim()
             : match.meta.teamA.trim();
-      } else {
-        bowlingTeam = inn.bowlingTeam?.trim() || "Unknown";
       }
 
-      // 🏏 BATTING STATS (Only contributes to Batting Runs)
+      // 🏏 BATTING
       if (inn.batsmenStats) {
         Object.entries(inn.batsmenStats).forEach(([name, s]) => {
-          const pName = name.trim();
-          if (!players[pName]) {
-            players[pName] = initPlayerObject(pName, battingTeam);
-          }
+          const p = getPlayer(players, name, battingTeam);
 
-          const batRuns = parseInt(s.runs || 0);
-          players[pName].runs += batRuns; // ✅ ONLY Batting Runs
-          players[pName].balls += parseInt(s.balls || 0);
-          players[pName].fours += parseInt(s.fours || 0);
-          players[pName].sixes += parseInt(s.sixes || 0);
+          p.runs += num(s.runs);
+          p.balls += num(s.balls);
+          p.fours += num(s.fours);
+          p.sixes += num(s.sixes);
         });
       }
 
-      // 🥎 BOWLING STATS (Contributes to Wickets & Runs Conceded)
+      // 🥎 BOWLING
       if (inn.bowlerStats) {
         Object.entries(inn.bowlerStats).forEach(([name, s]) => {
-          const pName = name.trim();
-          if (!players[pName]) {
-            players[pName] = initPlayerObject(pName, bowlingTeam);
-          }
-          // If player exists but team was unknown, update it
-          if (players[pName].team === "Unknown")
-            players[pName].team = bowlingTeam;
+          const p = getPlayer(players, name, bowlingTeam);
 
-          const wickets = parseInt(s.wickets || 0);
-          const runsGiven = parseInt(s.runs || 0); // ✅ Runs Conceded
-
-          players[pName].wickets += wickets;
-          players[pName].runsConceded += runsGiven;
-          players[pName].ballsBowled += parseInt(s.balls || 0);
+          p.wickets += num(s.wickets);
+          p.runsConceded += num(s.runs);
+          p.ballsBowled += num(s.balls);
+          p.dotBalls += num(s.dotBalls); // ✅ NEW
         });
       }
     });
@@ -192,71 +162,119 @@ export const calculatePlayerStats = (input) => {
       p.ballsBowled > 0
         ? (p.runsConceded / (p.ballsBowled / 6)).toFixed(2)
         : "0.00";
+
     const strikeRate =
       p.balls > 0 ? ((p.runs / p.balls) * 100).toFixed(2) : "0.00";
 
-    // MVP Formula: 1pt/run + 20pts/wicket + boundary bonuses
-    const mvpScore = p.runs * 1 + p.wickets * 20 + p.fours * 1 + p.sixes * 2;
+    const mvpScore =
+      p.runs + p.wickets * 20 + p.fours * 1 + p.sixes * 2 + p.dotBalls * 1;
 
     return { ...p, economy, strikeRate, mvpScore };
   });
 };
 
-// Helper to init player object
+// --- 3. ADVANCED MOM LOGIC ---
+// ✅ ADDED: mustBeFromWinningTeam parameter (defaults to true)
+export const getManOfTheMatch = (match, mustBeFromWinningTeam = true) => {
+  if (!match) return null;
+
+  const stats = calculatePlayerStats(match);
+  if (!stats.length) return null;
+
+  const context = buildMatchContext(match);
+  let eligiblePlayers = stats;
+
+  // ✅ FILTER: If true, remove all players from the losing team
+  if (mustBeFromWinningTeam && context.winner && context.winner !== "TIE") {
+    eligiblePlayers = stats.filter((p) => p.team === context.winner);
+  }
+
+  // If for some reason filtering left us with nobody (e.g. data mismatch), fallback to all players
+  if (!eligiblePlayers.length) eligiblePlayers = stats;
+
+  const scored = eligiblePlayers.map((p) => {
+    let score = p.mvpScore;
+
+    // 🔥 Impact Bonus
+    if (context.winner === p.team) score += 5;
+    if (p.runs >= context.targetRuns * 0.3 && context.targetRuns > 0)
+      score += 10; // big contribution
+    if (p.strikeRate >= 150 && p.runs > 20) score += 5;
+    if (p.wickets >= 2) score += 10;
+    if (Number(p.economy) <= 6 && p.ballsBowled >= 12) score += 5;
+
+    return { ...p, momScore: score };
+  });
+
+  return scored.sort((a, b) => b.momScore - a.momScore)[0];
+};
+
+// --- HELPERS ---
+const getPlayer = (players, name, team) => {
+  const pName = name.trim();
+  if (!players[pName]) {
+    players[pName] = initPlayerObject(pName, team);
+  }
+  // Update team if it was previously unknown
+  if (players[pName].team === "Unknown" && team !== "Unknown") {
+    players[pName].team = team;
+  }
+  return players[pName];
+};
+
+const num = (v) => parseInt(v || 0);
+
 const initPlayerObject = (name, team) => ({
   name,
   team,
-  runs: 0, // Batting Runs Only
-  balls: 0, // Balls Faced
+  runs: 0,
+  balls: 0,
   fours: 0,
   sixes: 0,
   wickets: 0,
-  runsConceded: 0, // Bowling Runs Only
+  runsConceded: 0,
   ballsBowled: 0,
+  dotBalls: 0,
 });
 
-export const getManOfTheMatch = (match) => {
-  if (!match) return null;
-  const stats = calculatePlayerStats(match);
-  if (stats.length === 0) return null;
-  const sorted = stats.sort((a, b) => b.mvpScore - a.mvpScore);
-  return sorted[0];
-};
+const buildMatchContext = (match) => {
+  const inn1 = match.innings?.[0];
+  const inn2 = match.innings?.[1];
 
-/**
- * Aggregates a Global Player's history array into total stats.
- */
-export const aggregateCareerStats = (player) => {
-  const baseStats = player.stats || {};
-  const history = baseStats.history || [];
+  let winner = match.winner || match.meta?.result?.winner || null;
 
-  if (!Array.isArray(history) || history.length === 0) {
-    return {
-      matches: Number(baseStats.matches) || 0,
-      runs: Number(baseStats.runs) || 0,
-      wickets: Number(baseStats.wickets) || 0,
-      highestScore: Number(baseStats.highestScore) || 0,
-      history: [],
-    };
+  // ✅ FIX: Accurately calculate the winner if it isn't explicitly saved yet
+  if (!winner && inn1 && inn2) {
+    if (inn1.score > inn2.score) winner = inn1.battingTeam?.trim();
+    else if (inn2.score > inn1.score) winner = inn2.battingTeam?.trim();
+    else winner = "TIE";
   }
 
-  let totalRuns = 0;
-  let totalWickets = 0;
-  let maxScore = Number(baseStats.highestScore) || 0;
+  return {
+    targetRuns: inn1?.score || 0,
+    winner: winner,
+  };
+};
 
-  history.forEach((log) => {
-    const r = Number(log.runs) || 0;
-    const w = Number(log.wickets) || 0;
-    totalRuns += r;
-    totalWickets += w;
-    if (r > maxScore) maxScore = r;
+// --- CAREER STATS ---
+export const aggregateCareerStats = (player) => {
+  const history = player?.stats?.history || [];
+
+  let runs = 0;
+  let wickets = 0;
+  let high = 0;
+
+  history.forEach((h) => {
+    runs += num(h.runs);
+    wickets += num(h.wickets);
+    if (h.runs > high) high = h.runs;
   });
 
   return {
     matches: history.length,
-    runs: totalRuns,
-    wickets: totalWickets,
-    highestScore: maxScore,
-    history: history,
+    runs,
+    wickets,
+    highestScore: high,
+    history,
   };
 };

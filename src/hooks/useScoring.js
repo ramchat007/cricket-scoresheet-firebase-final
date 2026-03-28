@@ -11,6 +11,7 @@ import {
   isActionProcessed,
   markActionProcessed,
 } from "../utils/offlineQueue";
+import { getManOfTheMatch } from "../utils/statsHelper"; // Adjust path if needed
 
 // Helper: Normalize keys
 const norm = (k) =>
@@ -640,8 +641,11 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
         });
     },
 
-    handleFinishMatch: async (r) => {
-      await finishMatch(tournamentId, matchId, match.meta?.teamA, r);
+    handleFinishMatch: async (r, mustBeFromWinningTeam = true) => {
+      const mom = getManOfTheMatch(match, mustBeFromWinningTeam);
+      await finishMatch(tournamentId, matchId, match.meta?.teamA, r, mom);
+      
+      // 3. Sync player stats
       await syncMatchStatsToGlobalPlayers(tournamentId, matchId, match);
     },
 

@@ -38,6 +38,7 @@ const KeyButton = React.memo(
 export default function ScoreInput({
   match,
   onBall,
+  tournament,
   onNewBatsman,
   onChangeBowler,
   onUndo,
@@ -993,8 +994,14 @@ export default function ScoreInput({
                     window.confirm(
                       "🏆 Are you sure you want to FINISH this match?",
                     )
-                  )
-                    onFinishMatch("Finished");
+                  ) {
+                    // 🟢 READ THE TOURNAMENT RULE (Default to true if missing)
+                    const mustBeFromWinningTeam =
+                      tournament?.settings?.momWinningTeamOnly ?? true;
+
+                    // Pass the rule up to the parent controller so it can calculate the MOM
+                    onFinishMatch("Finished", mustBeFromWinningTeam);
+                  }
                 } else {
                   if (
                     window.confirm(
@@ -1213,7 +1220,12 @@ export default function ScoreInput({
               </p>
               {isMatchOver ? (
                 <button
-                  onClick={() => onFinishMatch("Finished")}
+                  onClick={() => {
+                    // 🟢 READ THE TOURNAMENT RULE
+                    const mustBeFromWinningTeam =
+                      tournament?.settings?.momWinningTeamOnly ?? true;
+                    onFinishMatch("Finished", mustBeFromWinningTeam);
+                  }}
                   className="w-full py-4 bg-amber-600 text-white font-black uppercase rounded-xl"
                 >
                   Confirm Result 🏆
