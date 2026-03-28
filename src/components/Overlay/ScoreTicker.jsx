@@ -178,7 +178,7 @@ export default function ScoreTicker({ match }) {
             className="rounded-t-xl px-10 py-2 flex items-center justify-between relative text-slate-300 w-[96%] shadow-lg border-t border-x border-white/20"
             // 🔥 REDUCED TOP BAR GRADIENT
             style={{
-              background: `linear-gradient(to right, ${teamAColor} 0%, ${teamAColor} 15%, rgba(15, 23, 42, 0.95) 25%, rgba(15, 23, 42, 0.95) 75%, ${teamBColor} 85%, ${teamBColor} 100%)`
+              background: `linear-gradient(to right, ${teamAColor} 0%, ${teamAColor} 5%, rgba(15, 23, 42, 0.95) 25%, rgba(15, 23, 42, 0.95) 75%, ${teamBColor} 95%, ${teamBColor} 100%)`
             }}
           >
             {/* Left: Match Info (🟢 Now has 45% of the screen to expand) */}
@@ -186,16 +186,16 @@ export default function ScoreTicker({ match }) {
               <span className="text-white font-black tracking-widest text-lg uppercase drop-shadow-md bg-black/30 px-3 py-0.5 rounded shadow shrink-0 max-w-[50%] truncate">
                 {match.meta?.matchTitle || "Match"}
               </span>
-              <span className="opacity-40 text-sm shrink-0">|</span>
-              <span className="font-bold text-xl tracking-wide text-white drop-shadow-md flex items-center truncate">
-                <span className="truncate" style={{ color: teamAColor }}>{match.meta?.teamA}</span>
+              <span className="opacity-80 text-sm shrink-0">|</span>
+              <span className="font-bold text-xl tracking-wide text-white drop-shadow-md flex items-center shrink-0">
+                <span className="truncate">{match.meta?.teamA}</span>
                 <span className="text-white/60 font-normal mx-2 drop-shadow-none shrink-0">vs</span>
-                <span className="truncate" style={{ color: teamBColor }}>{match.meta?.teamB}</span>
+                <span className="truncate shrink-0">{match.meta?.teamB}</span>
               </span>
             </div>
 
             {/* Center: 🏏 Equation / Projected Score (🟢 Absolutely centered) */}
-            <div className="absolute left-1/2 -translate-x-1/2 flex justify-center items-center z-10">
+            <div className="lex justify-center items-center z-10">
               {!isMatchFinished &&
                 (isChasing && equationStr ? (
                   <span className="text-amber-400 font-black text-base uppercase tracking-widest bg-amber-500/10 px-6 py-1 rounded border border-amber-500/30 drop-shadow-md whitespace-nowrap">
