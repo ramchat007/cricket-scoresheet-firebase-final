@@ -36,3 +36,35 @@
 THEME CHANGE
 git checkout feature/theme-engine-upgrade
 git merge main
+
+## Supabase connection (gradual live-scoring migration)
+
+You can enable Supabase scoring mirroring with environment variables.
+
+1. Create a local env file:
+
+```bash
+cp .env.example .env
+```
+
+2. Set these values:
+
+- `VITE_USE_SUPABASE_SCORING=false` (default)
+  - keep `false` until your Supabase migration SQL + RPCs are deployed.
+- `VITE_SUPABASE_URL=https://<project-ref>.supabase.co`
+- `VITE_SUPABASE_ANON_KEY=<your-anon-key>`
+
+3. When ready for mirrored writes, set:
+
+```env
+VITE_USE_SUPABASE_SCORING=true
+```
+
+With this setup, Firebase remains the primary write path and Supabase receives mirrored scoring events for gradual validation/cutover.
+
+### Troubleshooting
+
+- If you see `404` for `scoring_append_ball_event` or `scoring_undo_last_event`,
+  your Supabase project does not yet have the RPC SQL deployed.
+- The app will auto-disable Supabase mirror writes after the first RPC 404 and continue using Firebase.
+- Deploy `supabase/migrations/20260330_live_scoring_schema_and_rpcs.sql` (or set `VITE_USE_SUPABASE_SCORING=false`).
