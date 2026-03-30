@@ -28,6 +28,7 @@ import BracketBuilder from "./components/BracketBuilder.jsx";
 import Broadcaster from "./components/Overlay/Broadcaster.jsx";
 import ObsReceiver from "./components/Overlay/ObsReceiver.jsx";
 import RemoteControl from "./components/Overlay/RemoteControl.jsx";
+import YouTubeViewers from "./components/Overlay/YouTubeViewers.jsx";
 
 // --- LAZY IMPORTS ---
 const LiveScoring = lazy(() => import("./components/LiveScoring.jsx"));
@@ -175,6 +176,7 @@ function AppContent() {
           <Routes>
             <Route path="/broadcast" element={<Broadcaster />} />
             <Route path="/obs/:streamId" element={<ObsReceiver />} />
+            <Route path="/obs/viewers" element={<YouTubeViewers />} />
             <Route path="/remote/:streamId" element={<RemoteControl />} />
           </Routes>
         </Suspense>
