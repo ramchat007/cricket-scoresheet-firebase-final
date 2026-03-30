@@ -36,3 +36,28 @@
 THEME CHANGE
 git checkout feature/theme-engine-upgrade
 git merge main
+
+## Supabase connection (gradual live-scoring migration)
+
+You can enable Supabase scoring mirroring with environment variables.
+
+1. Create a local env file:
+
+```bash
+cp .env.example .env
+```
+
+2. Set these values:
+
+- `VITE_USE_SUPABASE_SCORING=false` (default)
+  - keep `false` until your Supabase migration SQL + RPCs are deployed.
+- `VITE_SUPABASE_URL=https://<project-ref>.supabase.co`
+- `VITE_SUPABASE_ANON_KEY=<your-anon-key>`
+
+3. When ready for mirrored writes, set:
+
+```env
+VITE_USE_SUPABASE_SCORING=true
+```
+
+With this setup, Firebase remains the primary write path and Supabase receives mirrored scoring events for gradual validation/cutover.
