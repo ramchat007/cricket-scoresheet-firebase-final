@@ -9,9 +9,34 @@ export function createSupabaseAdapter(supabaseClient) {
   if (!supabaseClient) {
     throw new Error("createSupabaseAdapter requires a Supabase client instance");
   }
+  let rpcUnavailable = false;
+  let warnedUnavailable = false;
+
+  const shouldDisableRpcMirror = (error) => {
+    const msg = String(error?.message || "");
+    return msg.includes("(404)") || msg.includes("404");
+  };
+
+  const handleRpcError = (error, rpcName) => {
+    if (shouldDisableRpcMirror(error)) {
+      rpcUnavailable = true;
+      if (!warnedUnavailable) {
+        warnedUnavailable = true;
+        console.warn(
+          `[Supabase Mirror Disabled] ${rpcName} is not available (404). ` +
+            "Deploy SQL RPCs or set VITE_USE_SUPABASE_SCORING=false.",
+        );
+      }
+      return { skipped: true, reason: "rpc_missing" };
+    }
+    throw error;
+  };
 
   return {
     async ballTransaction(tournamentId, matchId, payload) {
+      if (rpcUnavailable) {
+        return { skipped: true, reason: "rpc_missing" };
+      }
       const actionId =
         payload?.actionId ||
         `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -31,11 +56,14 @@ export function createSupabaseAdapter(supabaseClient) {
         },
       );
 
-      if (error) throw error;
+      if (error) return handleRpcError(error, "scoring_append_ball_event");
       return data;
     },
 
     async undoLast(tournamentId, matchId, actionId = null, actorUserId = null) {
+      if (rpcUnavailable) {
+        return { skipped: true, reason: "rpc_missing" };
+      }
       const undoActionId =
         actionId || `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
       const { data, error } = await supabaseClient.rpc(
@@ -48,7 +76,7 @@ export function createSupabaseAdapter(supabaseClient) {
         },
       );
 
-      if (error) throw error;
+      if (error) return handleRpcError(error, "scoring_undo_last_event");
       return data;
     },
 

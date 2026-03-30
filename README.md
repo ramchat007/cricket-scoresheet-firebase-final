@@ -61,3 +61,10 @@ VITE_USE_SUPABASE_SCORING=true
 ```
 
 With this setup, Firebase remains the primary write path and Supabase receives mirrored scoring events for gradual validation/cutover.
+
+### Troubleshooting
+
+- If you see `404` for `scoring_append_ball_event` or `scoring_undo_last_event`,
+  your Supabase project does not yet have the RPC SQL deployed.
+- The app will auto-disable Supabase mirror writes after the first RPC 404 and continue using Firebase.
+- Deploy `supabase/migrations/20260330_live_scoring_schema_and_rpcs.sql` (or set `VITE_USE_SUPABASE_SCORING=false`).
