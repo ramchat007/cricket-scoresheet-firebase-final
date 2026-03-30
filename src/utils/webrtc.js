@@ -11,18 +11,18 @@ import {
   getDocs,
 } from "firebase/firestore";
 
-// 🌐 1. STUN SERVERS (Added fallback server for strict hotspots)
+// 🌐 1. RTC CONFIGURATION
 export const rtcConfig = {
   iceServers: [
     {
       urls: ["stun:stun1.l.google.com:19302", "stun:stun2.l.google.com:19302"],
     },
-    { urls: ["stun:global.stun.twilio.com:3478"] }, // Backup
+    { urls: ["stun:global.stun.twilio.com:3478"] },
   ],
-  // Removed iceCandidatePoolSize to prevent early generation race conditions
+  iceCandidatePoolSize: 2,
 };
 
-// 📱 2. CREATE STREAM (Broadcaster)
+// 📱 2. CREATE STREAM (Broadcaster / Mobile Camera)
 export const createStreamOffer = async (streamId, peerConnection) => {
   const streamDocRef = doc(db, "streams", streamId);
   const callerCandidatesCollection = collection(
@@ -33,8 +33,21 @@ export const createStreamOffer = async (streamId, peerConnection) => {
     streamDocRef,
     "calleeCandidates",
   );
-
   const candidateQueue = [];
+
+  // Monitor Connection State
+  peerConnection.oniceconnectionstatechange = () => {
+    console.log(
+      "📡 Broadcaster Connection State:",
+      peerConnection.iceConnectionState,
+    );
+    if (
+      peerConnection.iceConnectionState === "disconnected" ||
+      peerConnection.iceConnectionState === "failed"
+    ) {
+      console.error("🚨 CAMERA DROPPED! Connection lost to OBS.");
+    }
+  };
 
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
@@ -52,7 +65,8 @@ export const createStreamOffer = async (streamId, peerConnection) => {
     createdAt: new Date().toISOString(),
   });
 
-  onSnapshot(streamDocRef, async (snapshot) => {
+  // Save unsubscribe functions to prevent memory leaks
+  const unsubStream = onSnapshot(streamDocRef, async (snapshot) => {
     const data = snapshot.data();
     if (!peerConnection.currentRemoteDescription && data?.answer) {
       console.log(
@@ -61,7 +75,6 @@ export const createStreamOffer = async (streamId, peerConnection) => {
       const rtcSessionDescription = new RTCSessionDescription(data.answer);
       await peerConnection.setRemoteDescription(rtcSessionDescription);
 
-      // Process any queued candidates now that we are ready
       while (candidateQueue.length > 0) {
         const candidate = candidateQueue.shift();
         peerConnection
@@ -71,13 +84,11 @@ export const createStreamOffer = async (streamId, peerConnection) => {
     }
   });
 
-  onSnapshot(calleeCandidatesCollection, (snapshot) => {
+  const unsubCallee = onSnapshot(calleeCandidatesCollection, (snapshot) => {
     snapshot.docChanges().forEach((change) => {
       if (change.type === "added") {
         const data = change.doc.data();
-        // 🔥 Strict validation to prevent silent crash
         if (data && data.candidate) {
-          console.log("Broadcaster: Received remote ICE candidate");
           const candidate = new RTCIceCandidate(data);
           if (!peerConnection.currentRemoteDescription) {
             candidateQueue.push(candidate);
@@ -90,9 +101,12 @@ export const createStreamOffer = async (streamId, peerConnection) => {
       }
     });
   });
+
+  // Return unsubs for React cleanup
+  return { unsubStream, unsubCallee };
 };
 
-// 💻 3. JOIN STREAM (OBS Receiver)
+// 💻 3. JOIN STREAM (OBS Receiver / Laptop)
 export const joinStreamAnswer = async (streamId, peerConnection) => {
   const streamDocRef = doc(db, "streams", streamId);
   const callerCandidatesCollection = collection(
@@ -103,8 +117,20 @@ export const joinStreamAnswer = async (streamId, peerConnection) => {
     streamDocRef,
     "calleeCandidates",
   );
-
   const candidateQueue = [];
+
+  peerConnection.oniceconnectionstatechange = () => {
+    console.log(
+      "🖥️ Receiver Connection State:",
+      peerConnection.iceConnectionState,
+    );
+    if (
+      peerConnection.iceConnectionState === "disconnected" ||
+      peerConnection.iceConnectionState === "failed"
+    ) {
+      console.error("🚨 STREAM FROZEN! Lost connection to Camera.");
+    }
+  };
 
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
@@ -139,13 +165,11 @@ export const joinStreamAnswer = async (streamId, peerConnection) => {
     }
   }
 
-  onSnapshot(callerCandidatesCollection, (snapshot) => {
+  const unsubCaller = onSnapshot(callerCandidatesCollection, (snapshot) => {
     snapshot.docChanges().forEach((change) => {
       if (change.type === "added") {
         const data = change.doc.data();
-        // 🔥 Strict validation to prevent silent crash
         if (data && data.candidate) {
-          console.log("Receiver: Received remote ICE candidate");
           const candidate = new RTCIceCandidate(data);
           if (!peerConnection.currentRemoteDescription) {
             candidateQueue.push(candidate);
@@ -158,6 +182,8 @@ export const joinStreamAnswer = async (streamId, peerConnection) => {
       }
     });
   });
+
+  return { unsubCaller };
 };
 
 // 🛑 4. STOP STREAM (Cleanup)
@@ -176,10 +202,12 @@ export const clearStreamDatabase = async (streamId) => {
       collection(streamDocRef, "callerCandidates"),
     );
     callerSnap.forEach((d) => deleteDoc(d.ref).catch(() => {}));
+
     const calleeSnap = await getDocs(
       collection(streamDocRef, "calleeCandidates"),
     );
     calleeSnap.forEach((d) => deleteDoc(d.ref).catch(() => {}));
+
     await deleteDoc(streamDocRef);
     console.log("🧹 Stream database forcefully wiped.");
   } catch (error) {

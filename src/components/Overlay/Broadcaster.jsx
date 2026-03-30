@@ -32,6 +32,7 @@ export default function Broadcaster() {
   const peerConnectionRef = useRef(null);
   const activeStreamRef = useRef(null);
   const wakeLockRef = useRef(null);
+  const listenersRef = useRef(null); // 🔥 Holding the unsubs safely
 
   const [streamId, setStreamId] = useState("");
   const [localStream, setLocalStream] = useState(null);
@@ -143,7 +144,7 @@ export default function Broadcaster() {
     streamId,
   ]);
 
-  // 🟢 LISTEN FOR REMOTE COMMANDS (Removed Remote Lens Swap)
+  // 🟢 LISTEN FOR REMOTE COMMANDS
   useEffect(() => {
     if (!isStreaming || !streamId) return;
 
@@ -260,7 +261,6 @@ export default function Broadcaster() {
     await applyVideoConstraint({ zoom: val });
   };
 
-  // 🟢 UNIFIED LENS SWAP LOGIC (Works for both Setup & Live modes)
   const handleCycleCamera = () => {
     if (cameras.length <= 1) return;
     const currentIndex = cameras.findIndex(
@@ -352,7 +352,8 @@ export default function Broadcaster() {
         peerConnection.addTrack(track, stream);
       });
 
-      await createStreamOffer(streamId, peerConnection);
+      // 🔥 Saving the Listeners to the Ref here
+      listenersRef.current = await createStreamOffer(streamId, peerConnection);
 
       const serializedCameras = cameras.map((c) => ({
         deviceId: c.deviceId,
@@ -448,6 +449,13 @@ export default function Broadcaster() {
     setIsOledSleep(false);
     releaseWakeLock();
 
+    // 🔥 Memory Leak Cleanup!
+    if (listenersRef.current) {
+      if (listenersRef.current.unsubStream) listenersRef.current.unsubStream();
+      if (listenersRef.current.unsubCallee) listenersRef.current.unsubCallee();
+      listenersRef.current = null;
+    }
+
     if (document.fullscreenElement && document.exitFullscreen)
       document.exitFullscreen().catch(() => {});
     setIsFullscreen(false);
@@ -506,7 +514,6 @@ export default function Broadcaster() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Helper to display current active lens name nicely
   const currentCameraLabel =
     cameras.find((c) => c.deviceId === selectedCamera)?.label ||
     "Default Camera";
@@ -538,7 +545,6 @@ export default function Broadcaster() {
         </div>
       )}
 
-      {/* 🟢 OLED SLEEP OVERLAY */}
       {isOledSleep && (
         <div
           onClick={() => setIsOledSleep(false)}
@@ -590,7 +596,6 @@ export default function Broadcaster() {
             </div>
 
             <div className="space-y-4 mb-8">
-              {/* 🟢 SETUP SCREEN LENS SWAP BUTTON */}
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest mb-2 text-gray-500">
                   Active Lens
@@ -694,7 +699,6 @@ export default function Broadcaster() {
             )}
 
             <div className="flex justify-between items-center gap-2 overflow-x-auto pb-2">
-              {/* 🟢 LIVE OVERLAY LENS SWAP BUTTON */}
               <button
                 onClick={handleCycleCamera}
                 disabled={cameras.length <= 1}
