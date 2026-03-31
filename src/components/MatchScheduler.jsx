@@ -11,6 +11,15 @@ import {
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { useTheme } from "../context/ThemeContext";
+import { Lock } from "lucide-react";
+
+// 🟢 HELPER: Gets the current local time in "HH:MM" format
+const getCurrentTime = () => {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+};
 
 export default function MatchScheduler({
   tournamentId,
@@ -23,6 +32,7 @@ export default function MatchScheduler({
   const [mode, setMode] = useState("single");
   const [creating, setCreating] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [isLocked, setIsLocked] = useState(false);
 
   // Local Teams State
   const [fetchedTeams, setFetchedTeams] = useState([]);
@@ -31,7 +41,7 @@ export default function MatchScheduler({
   const [teamAId, setTeamAId] = useState("");
   const [teamBId, setTeamBId] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [time, setTime] = useState("09:00");
+  const [time, setTime] = useState(getCurrentTime()); // 🟢 Defaults to current time
   const [venue, setVenue] = useState("");
   const [overs, setOvers] = useState(5);
   const [matchLabel, setMatchLabel] = useState("");
@@ -40,7 +50,7 @@ export default function MatchScheduler({
   const [startDate, setStartDate] = useState(
     new Date().toISOString().slice(0, 10),
   );
-  const [startTime, setStartTime] = useState("09:00");
+  const [startTime, setStartTime] = useState(getCurrentTime()); // 🟢 Defaults to current time
   const [defaultVenue, setDefaultVenue] = useState("");
   const [matchDuration, setMatchDuration] = useState(30);
   const [matchGap, setMatchGap] = useState(0);
@@ -48,6 +58,36 @@ export default function MatchScheduler({
   const [autoOvers, setAutoOvers] = useState(5);
   const [leagueStageName, setLeagueStageName] = useState("League Match");
   const [selectedTeamIds, setSelectedTeamIds] = useState([]);
+
+  // --- 0. CHECK TOURNAMENT LOCK STATUS ---
+  useEffect(() => {
+    if (!tournamentId) return;
+
+    const unsub = onSnapshot(
+      doc(db, "tournaments", tournamentId),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const t = docSnap.data();
+          const totalMatches = t.stats?.totalMatches || 0;
+          const playedMatches = t.stats?.matchesPlayed || 0;
+          const allFinished = totalMatches > 0 && playedMatches >= totalMatches;
+
+          // If explicitly finished OR math says it's finished, lock the scheduler
+          if (
+            t.status === "completed" ||
+            t.status === "finished" ||
+            allFinished
+          ) {
+            setIsLocked(true);
+          } else {
+            setIsLocked(false);
+          }
+        }
+      },
+    );
+
+    return () => unsub();
+  }, [tournamentId]);
 
   // --- 1. SMART TEAM LOADING ---
   useEffect(() => {
@@ -168,7 +208,6 @@ export default function MatchScheduler({
           teamBId: teamB.id,
           teamALogo: teamA.logoUrl || teamA.logo || "",
           teamBLogo: teamB.logoUrl || teamB.logo || "",
-          // 🔥 NEW: Save exact team colors as a snapshot
           teamAColor: teamA.color || "#0d9488",
           teamBColor: teamB.color || "#1e293b",
           overs: Number(overs),
@@ -357,7 +396,6 @@ export default function MatchScheduler({
           teamBId: teamB.id,
           teamALogo: teamA.logoUrl || teamA.logo || "",
           teamBLogo: teamB.logoUrl || teamB.logo || "",
-          // 🔥 NEW: Save exact team colors as a snapshot
           teamAColor: teamA.color || "#0d9488",
           teamBColor: teamB.color || "#1e293b",
           overs: Number(autoOvers),
@@ -412,7 +450,6 @@ export default function MatchScheduler({
           teamBId: "TBD",
           teamALogo: "",
           teamBLogo: "",
-          // 🔥 NEW: Generic placeholders
           teamAColor: "#0d9488",
           teamBColor: "#1e293b",
           date: "",
@@ -437,7 +474,6 @@ export default function MatchScheduler({
           teamBId: "TBD",
           teamALogo: "",
           teamBLogo: "",
-          // 🔥 NEW: Generic placeholders
           teamAColor: "#0d9488",
           teamBColor: "#1e293b",
           date: "",
@@ -462,7 +498,6 @@ export default function MatchScheduler({
           teamBId: "TBD",
           teamALogo: "",
           teamBLogo: "",
-          // 🔥 NEW: Generic placeholders
           teamAColor: "#0d9488",
           teamBColor: "#1e293b",
           date: "",
@@ -501,15 +536,46 @@ export default function MatchScheduler({
   const labelClass = `block text-[10px] font-black uppercase tracking-[0.2em] mb-2 ml-1 ${lightMode ? "text-gray-500" : "text-slate-500"}`;
   const inputClass = `w-full rounded-xl px-4 py-3 focus:outline-none focus:border-teal-500/50 transition-all font-bold border ${lightMode ? "bg-white text-gray-900 border-gray-200 placeholder:text-gray-400" : "bg-[#303643] text-slate-200 border-white/10 placeholder:text-slate-600"}`;
 
+  // 🟢 IF TOURNAMENT IS LOCKED, REPLACE THE ENTIRE UI
+  if (isLocked) {
+    return (
+      <div
+        className={`border rounded-[2rem] p-10 text-center shadow-2xl relative animate-in slide-in-from-top-5 mt-6 mb-8 backdrop-blur-md flex flex-col items-center justify-center ${theme.card} ${lightMode ? "border-red-200 shadow-red-500/5" : "border-red-500/20"}`}>
+        <div className="bg-red-500/10 p-5 rounded-full text-red-500 mb-6">
+          <Lock size={48} />
+        </div>
+        <h2
+          className={`text-2xl font-black uppercase tracking-widest mb-3 ${theme.text}`}>
+          Scheduler Locked
+        </h2>
+        <p className={`text-sm mb-8 max-w-md mx-auto ${theme.sub}`}>
+          This tournament has been marked as <strong>Completed</strong>. You
+          cannot create, auto-schedule, or delete matches in a finalized
+          tournament.
+        </p>
+        {onCancel && (
+          <button
+            onClick={onCancel}
+            className={`px-8 py-3 rounded-xl font-bold uppercase tracking-widest transition-all ${
+              lightMode
+                ? "bg-gray-200 hover:bg-gray-300 text-gray-800"
+                : "bg-slate-800 hover:bg-slate-700 text-white border border-slate-700"
+            }`}>
+            Close Scheduler
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // --- NORMAL SCHEDULER UI ---
   return (
     <div
-      className={`border rounded-[2rem] p-6 shadow-2xl relative animate-in slide-in-from-top-5 mt-6 mb-8 backdrop-blur-md ${theme.card} ${lightMode ? "border-purple-100 shadow-purple-500/5" : "border-white/5"}`}
-    >
+      className={`border rounded-[2rem] p-6 shadow-2xl relative animate-in slide-in-from-top-5 mt-6 mb-8 backdrop-blur-md ${theme.card} ${lightMode ? "border-purple-100 shadow-purple-500/5" : "border-white/5"}`}>
       {/* --- MODE TABS --- */}
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-8">
         <div
-          className={`flex rounded-xl p-1.5 shadow-inner border ${lightMode ? "bg-gray-100 border-gray-200" : "bg-[#161920] border-white/5"}`}
-        >
+          className={`flex rounded-xl p-1.5 shadow-inner border ${lightMode ? "bg-gray-100 border-gray-200" : "bg-[#161920] border-white/5"}`}>
           {[
             { id: "single", label: "Single Match" },
             { id: "auto", label: "⚡ Auto Scheduler" },
@@ -525,8 +591,7 @@ export default function MatchScheduler({
                   : lightMode
                     ? "text-gray-500 hover:text-gray-700"
                     : "text-slate-500 hover:text-slate-300"
-              }`}
-            >
+              }`}>
               {tab.label}
             </button>
           ))}
@@ -535,14 +600,12 @@ export default function MatchScheduler({
         <div className="flex gap-3 mb-6">
           <button
             onClick={handleAutoScheduleGroups}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest shadow-md"
-          >
+            className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest shadow-md">
             Auto-Schedule Groups
           </button>
           <button
             onClick={handleGenerateKnockouts}
-            className="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest shadow-md"
-          >
+            className="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest shadow-md">
             Add Knockout Stages
           </button>
         </div>
@@ -551,15 +614,13 @@ export default function MatchScheduler({
           <button
             onClick={handleResetSchedule}
             disabled={resetting}
-            className={`text-xs font-black uppercase tracking-wider px-4 py-2 border rounded-lg ${lightMode ? "text-red-600 bg-red-50 border-red-200" : "text-red-500 bg-red-900/10 border-red-500/20"}`}
-          >
+            className={`text-xs font-black uppercase tracking-wider px-4 py-2 border rounded-lg ${lightMode ? "text-red-600 bg-red-50 border-red-200" : "text-red-500 bg-red-900/10 border-red-500/20"}`}>
             {resetting ? "Deleting..." : "🗑 Reset Upcoming"}
           </button>
           {onCancel && (
             <button
               onClick={onCancel}
-              className={`text-xs font-bold uppercase tracking-wider px-4 py-2 border border-transparent rounded-lg ${lightMode ? "text-gray-500 hover:bg-gray-100" : "text-slate-500 hover:text-white hover:border-white/10"}`}
-            >
+              className={`text-xs font-bold uppercase tracking-wider px-4 py-2 border border-transparent rounded-lg ${lightMode ? "text-gray-500 hover:bg-gray-100" : "text-slate-500 hover:text-white hover:border-white/10"}`}>
               Cancel
             </button>
           )}
@@ -579,8 +640,7 @@ export default function MatchScheduler({
                   className={`${inputClass} appearance-none cursor-pointer`}
                   value={teamAId}
                   onChange={(e) => setTeamAId(e.target.value)}
-                  disabled={activeTeams.length === 0}
-                >
+                  disabled={activeTeams.length === 0}>
                   <option value="">
                     {activeTeams.length === 0
                       ? "⚠️ No Teams Found"
@@ -593,8 +653,7 @@ export default function MatchScheduler({
                   ))}
                 </select>
                 <div
-                  className={`absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none ${lightMode ? "text-gray-400" : "text-slate-500"}`}
-                >
+                  className={`absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none ${lightMode ? "text-gray-400" : "text-slate-500"}`}>
                   ▼
                 </div>
               </div>
@@ -609,8 +668,7 @@ export default function MatchScheduler({
                   className={`${inputClass} appearance-none cursor-pointer`}
                   value={teamBId}
                   onChange={(e) => setTeamBId(e.target.value)}
-                  disabled={activeTeams.length === 0}
-                >
+                  disabled={activeTeams.length === 0}>
                   <option value="">-- Select Team B --</option>
                   {activeTeams.map((t) => (
                     <option key={t.id} value={t.id}>
@@ -619,8 +677,7 @@ export default function MatchScheduler({
                   ))}
                 </select>
                 <div
-                  className={`absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none ${lightMode ? "text-gray-400" : "text-slate-500"}`}
-                >
+                  className={`absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none ${lightMode ? "text-gray-400" : "text-slate-500"}`}>
                   ▼
                 </div>
               </div>
@@ -679,8 +736,7 @@ export default function MatchScheduler({
           <button
             onClick={handleCreateMatch}
             disabled={creating || !teamAId || !teamBId}
-            className="w-full bg-gradient-to-r from-teal-600 to-teal-800 text-white font-black text-sm uppercase tracking-[0.15em] py-4 rounded-xl shadow-xl hover:shadow-teal-900/30 transition-all disabled:opacity-50 active:scale-[0.98]"
-          >
+            className="w-full bg-gradient-to-r from-teal-600 to-teal-800 text-white font-black text-sm uppercase tracking-[0.15em] py-4 rounded-xl shadow-xl hover:shadow-teal-900/30 transition-all disabled:opacity-50 active:scale-[0.98]">
             {creating ? "Scheduling..." : "Create Match"}
           </button>
         </div>
@@ -688,20 +744,17 @@ export default function MatchScheduler({
         /* --- AUTO SCHEDULE FORM --- */
         <div className="space-y-6">
           <div
-            className={`flex items-center gap-3 p-4 rounded-xl border ${lightMode ? "bg-indigo-50 border-indigo-100" : "bg-indigo-900/20 border-indigo-500/20"}`}
-          >
+            className={`flex items-center gap-3 p-4 rounded-xl border ${lightMode ? "bg-indigo-50 border-indigo-100" : "bg-indigo-900/20 border-indigo-500/20"}`}>
             <span className="text-xl">🤖</span>
             <p
-              className={`text-xs font-medium ${lightMode ? "text-indigo-700" : "text-slate-300"}`}
-            >
+              className={`text-xs font-medium ${lightMode ? "text-indigo-700" : "text-slate-300"}`}>
               Generates a <strong>Round Robin</strong> schedule for{" "}
               {selectedTeamIds.length} selected teams.
             </p>
           </div>
 
           <div
-            className={`p-4 rounded-xl border ${lightMode ? "bg-white border-gray-200" : "bg-black/20 border-white/5"}`}
-          >
+            className={`p-4 rounded-xl border ${lightMode ? "bg-white border-gray-200" : "bg-black/20 border-white/5"}`}>
             <div className="flex justify-between items-center mb-3">
               <label className={labelClass}>
                 Select Teams for this Group/Stage
@@ -714,8 +767,7 @@ export default function MatchScheduler({
                       : activeTeams.map((t) => t.id),
                   )
                 }
-                className={`text-[10px] font-bold uppercase hover:underline ${theme.sub}`}
-              >
+                className={`text-[10px] font-bold uppercase hover:underline ${theme.sub}`}>
                 {selectedTeamIds.length === activeTeams.length
                   ? "Deselect All"
                   : "Select All"}
@@ -729,11 +781,9 @@ export default function MatchScheduler({
                   <button
                     key={team.id}
                     onClick={() => toggleTeamSelection(team.id)}
-                    className={`p-2 rounded-lg border text-xs font-bold truncate transition-all text-left flex items-center gap-2 ${isSelected ? "bg-teal-500/10 border-teal-500 text-teal-600 dark:text-teal-400 shadow-sm" : lightMode ? "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100" : "bg-white/5 border-white/5 text-slate-500 hover:bg-white/10"}`}
-                  >
+                    className={`p-2 rounded-lg border text-xs font-bold truncate transition-all text-left flex items-center gap-2 ${isSelected ? "bg-teal-500/10 border-teal-500 text-teal-600 dark:text-teal-400 shadow-sm" : lightMode ? "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100" : "bg-white/5 border-white/5 text-slate-500 hover:bg-white/10"}`}>
                     <div
-                      className={`w-3 h-3 rounded-sm border flex items-center justify-center shrink-0 ${isSelected ? "border-teal-500 bg-teal-500" : "border-gray-400"}`}
-                    >
+                      className={`w-3 h-3 rounded-sm border flex items-center justify-center shrink-0 ${isSelected ? "border-teal-500 bg-teal-500" : "border-gray-400"}`}>
                       {isSelected && (
                         <span className="text-white text-[8px]">✓</span>
                       )}
@@ -824,8 +874,7 @@ export default function MatchScheduler({
           <button
             onClick={handleAutoSchedule}
             disabled={creating || selectedTeamIds.length < 2}
-            className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-black text-sm uppercase tracking-[0.15em] py-4 rounded-xl shadow-xl hover:shadow-indigo-900/30 transition-all disabled:opacity-50 active:scale-[0.98]"
-          >
+            className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-black text-sm uppercase tracking-[0.15em] py-4 rounded-xl shadow-xl hover:shadow-indigo-900/30 transition-all disabled:opacity-50 active:scale-[0.98]">
             {creating
               ? "Generating..."
               : `Generate Schedule (${selectedTeamIds.length} Teams)`}

@@ -28,8 +28,7 @@ const KeyButton = React.memo(
     <button
       onClick={onClick}
       disabled={disabled || loading}
-      className={`${color} h-14 text-lg font-bold flex items-center justify-center rounded-xl active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed touch-manipulation border shadow-sm select-none relative`}
-    >
+      className={`${color} h-14 text-lg font-bold flex items-center justify-center rounded-xl active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed touch-manipulation border shadow-sm select-none relative`}>
       {val}
     </button>
   ),
@@ -280,11 +279,9 @@ export default function ScoreInput({
   if (match && !match.meta?.toss?.winner) {
     return (
       <div
-        className={`flex flex-col h-full overflow-hidden ${theme.bg} ${theme.text} p-4`}
-      >
+        className={`flex flex-col h-full overflow-hidden ${theme.bg} ${theme.text} p-4`}>
         <div
-          className={`border p-8 rounded-3xl text-center max-w-md w-full shadow-2xl mx-auto my-auto ${theme.card} border ${lightMode ? "border-gray-200" : "border-white/10"}`}
-        >
+          className={`border p-8 rounded-3xl text-center max-w-md w-full shadow-2xl mx-auto my-auto ${theme.card} border ${lightMode ? "border-gray-200" : "border-white/10"}`}>
           <h3 className={`text-xl font-bold mb-8 uppercase ${theme.text}`}>
             Start Match
           </h3>
@@ -292,8 +289,7 @@ export default function ScoreInput({
             <select
               className={`w-full border p-4 rounded-xl font-bold outline-none ${lightMode ? "bg-gray-100 border-gray-200" : "bg-slate-900 border-slate-700"}`}
               value={tossWinner}
-              onChange={(e) => setTossWinner(e.target.value)}
-            >
+              onChange={(e) => setTossWinner(e.target.value)}>
               <option value="">-- Select Toss Winner --</option>
               <option value={match?.meta?.teamA}>{match?.meta?.teamA}</option>
               <option value={match?.meta?.teamB}>{match?.meta?.teamB}</option>
@@ -306,8 +302,7 @@ export default function ScoreInput({
                     triggerFeedback("click");
                     setTossDecision(c);
                   }}
-                  className={`flex-1 py-4 rounded-xl font-bold transition-all ${tossDecision === c ? "bg-teal-600 text-white shadow-lg" : theme.btnBase}`}
-                >
+                  className={`flex-1 py-4 rounded-xl font-bold transition-all ${tossDecision === c ? "bg-teal-600 text-white shadow-lg" : theme.btnBase}`}>
                   {c}
                 </button>
               ))}
@@ -373,6 +368,7 @@ export default function ScoreInput({
                         decision: tossDecision,
                       },
                       status: "ongoing",
+                      actualStartTime: new Date().toISOString(),
                       teamASquad: rosterA, // Clean, lightweight array
                       teamBSquad: rosterB, // Clean, lightweight array
                       innings: [
@@ -404,8 +400,7 @@ export default function ScoreInput({
                 }
               }}
               disabled={!tossWinner || startLoading}
-              className="w-full py-4 bg-teal-700 text-white font-bold rounded-xl shadow-xl active:scale-95 transition-all"
-            >
+              className="w-full py-4 bg-teal-700 text-white font-bold rounded-xl shadow-xl active:scale-95 transition-all">
               {startLoading ? "Syncing Rosters..." : "Start Match 🚀"}
             </button>
           </div>
@@ -441,25 +436,21 @@ export default function ScoreInput({
 
   return (
     <div
-      className={`flex flex-col h-full overflow-hidden ${theme.bg} ${theme.text} transition-colors duration-300 font-sans`}
-    >
+      className={`flex flex-col h-full overflow-hidden ${theme.bg} ${theme.text} transition-colors duration-300 font-sans`}>
       {/* SCROLLABLE AREA */}
       <div className="flex-1 overflow-y-auto no-scrollbar relative flex flex-col">
         {/* HERO CARD */}
-        <div className="py-4 px-4">
+        <div className="py-4 px-4 lg:hidden">
           <div
-            className={`rounded-2xl p-3 ${theme.card} relative overflow-hidden shadow-sm border ${lightMode ? "border-gray-200" : "border-white/5"}`}
-          >
+            className={`rounded-2xl p-3 ${theme.card} relative overflow-hidden shadow-sm border ${lightMode ? "border-gray-200" : "border-white/5"}`}>
             <div className="flex justify-between items-end">
               <div>
                 <div
-                  className={`text-[10px] font-black uppercase tracking-widest ${theme.sub}`}
-                >
+                  className={`text-[10px] font-black uppercase tracking-widest ${theme.sub}`}>
                   {m.battingTeam}
                 </div>
                 <div
-                  className={`text-6xl font-black leading-none mt-1 tracking-tighter ${theme.text}`}
-                >
+                  className={`text-6xl font-black leading-none mt-1 tracking-tighter ${theme.text}`}>
                   {m.score || 0}
                   <span className={`text-3xl ${theme.sub}`}>
                     /{m.wickets || 0}
@@ -468,8 +459,7 @@ export default function ScoreInput({
               </div>
               <div className="text-right">
                 <div
-                  className={`text-[10px] font-black uppercase tracking-widest ${theme.sub}`}
-                >
+                  className={`text-[10px] font-black uppercase tracking-widest ${theme.sub}`}>
                   Overs
                 </div>
                 <div className="text-3xl font-mono font-bold">
@@ -477,8 +467,7 @@ export default function ScoreInput({
                   <span className="text-lg opacity-50">/ {maxOvers}</span>
                 </div>
                 <div
-                  className={`text-[10px] font-bold uppercase mt-1 ${theme.sub}`}
-                >
+                  className={`text-[10px] font-bold uppercase mt-1 ${theme.sub}`}>
                   CRR: {matchContext.crr1}
                 </div>
               </div>
@@ -486,8 +475,7 @@ export default function ScoreInput({
             {isInning2 && (
               <div className="mt-3 pt-3 border-t border-dashed border-gray-500/20 text-center">
                 <span
-                  className={`text-xs font-bold uppercase ${lightMode ? "text-teal-700" : "text-teal-400"}`}
-                >
+                  className={`text-xs font-bold uppercase ${lightMode ? "text-teal-700" : "text-teal-400"}`}>
                   Target: {matchContext.target} • Need {matchContext.runsNeeded}{" "}
                   off {matchContext.remainingBalls} balls
                 </span>
@@ -497,7 +485,8 @@ export default function ScoreInput({
         </div>
 
         {/* PLAYERS */}
-        <div className="px-4 grid grid-cols-2 md:grid-cols-3 gap-2 mb-2">
+        <div className="px-4 lg:pt-4 grid grid-cols-2 md:grid-cols-2 gap-2 mb-2">
+          {" "}
           {/* Striker */}
           <div
             onClick={(e) => {
@@ -505,8 +494,7 @@ export default function ScoreInput({
               triggerFeedback("click");
               onStrikeChange && onStrikeChange(nonStrikerName, strikerName);
             }}
-            className={`p-3 rounded-xl border-l-4 border-l-green-500 ${theme.card} shadow-sm border ${lightMode ? "border-gray-200" : "border-white/5"} relative`}
-          >
+            className={`p-3 rounded-xl border-l-4 border-l-green-500 ${theme.card} shadow-sm border ${lightMode ? "border-gray-200" : "border-white/5"} relative`}>
             <div className="flex justify-between mb-1">
               <span className="bg-green-500 text-black text-[9px] font-black px-1.5 py-0.5 rounded">
                 STR
@@ -517,8 +505,7 @@ export default function ScoreInput({
                   triggerFeedback("click");
                   setEditStriker(true);
                 }}
-                className="opacity-50 p-1"
-              >
+                className="opacity-50 p-1">
                 <Menu size={15} />
               </button>
             </div>
@@ -541,8 +528,7 @@ export default function ScoreInput({
                       setInlineNewName("");
                       setEditStriker(false);
                     }}
-                    className="text-[9px] bg-red-500/20 text-red-500 px-2 py-1 rounded w-full"
-                  >
+                    className="text-[9px] bg-red-500/20 text-red-500 px-2 py-1 rounded w-full">
                     Cancel
                   </button>
                   <button
@@ -580,8 +566,7 @@ export default function ScoreInput({
                         setIsSyncing(false);
                       }
                     }}
-                    className="text-[9px] bg-teal-500 text-white px-2 py-1 rounded w-full font-bold"
-                  >
+                    className="text-[9px] bg-teal-500 text-white px-2 py-1 rounded w-full font-bold">
                     Save
                   </button>
                 </div>
@@ -604,8 +589,7 @@ export default function ScoreInput({
                     onStrikeChange(e.target.value, nonStrikerName);
                     setEditStriker(false);
                   }
-                }}
-              >
+                }}>
                 <option>Select</option>
                 {battingOptions.map((n) => (
                   <option key={n} value={n}>
@@ -624,11 +608,9 @@ export default function ScoreInput({
               </div>
             )}
           </div>
-
           {/* Non Striker */}
           <div
-            className={`p-3 rounded-xl border-l-4 border-transparent ${theme.card} shadow-sm border ${lightMode ? "border-gray-200" : "border-white/5"}`}
-          >
+            className={`p-3 rounded-xl border-l-4 border-transparent ${theme.card} shadow-sm border ${lightMode ? "border-gray-200" : "border-white/5"}`}>
             <div className="flex justify-between mb-1">
               <span className={`text-[9px] font-bold ${theme.sub}`}>
                 NON-STR
@@ -639,8 +621,7 @@ export default function ScoreInput({
                   triggerFeedback("click");
                   setEditNonStriker(true);
                 }}
-                className="opacity-50 p-1"
-              >
+                className="opacity-50 p-1">
                 <Menu size={15} />
               </button>
             </div>
@@ -663,8 +644,7 @@ export default function ScoreInput({
                       setInlineNewName("");
                       setEditNonStriker(false);
                     }}
-                    className="text-[9px] bg-red-500/20 text-red-500 px-2 py-1 rounded w-full"
-                  >
+                    className="text-[9px] bg-red-500/20 text-red-500 px-2 py-1 rounded w-full">
                     Cancel
                   </button>
                   <button
@@ -701,8 +681,7 @@ export default function ScoreInput({
                         setIsSyncing(false);
                       }
                     }}
-                    className="text-[9px] bg-teal-500 text-white px-2 py-1 rounded w-full font-bold"
-                  >
+                    className="text-[9px] bg-teal-500 text-white px-2 py-1 rounded w-full font-bold">
                     Save
                   </button>
                 </div>
@@ -724,8 +703,7 @@ export default function ScoreInput({
                     onStrikeChange(strikerName, e.target.value);
                     setEditNonStriker(false);
                   }
-                }}
-              >
+                }}>
                 <option>Select</option>
                 {battingOptions.map((n) => (
                   <option key={n} value={n}>
@@ -744,11 +722,9 @@ export default function ScoreInput({
               </div>
             )}
           </div>
-
           {/* Bowler */}
           <div
-            className={`col-span-2 md:col-span-1 p-3 rounded-xl border-l-4 border-l-blue-500 ${theme.card} shadow-sm border ${lightMode ? "border-gray-200" : "border-white/5"}`}
-          >
+            className={`col-span-2 md:col-span-1 md:col-span-3 p-3 rounded-xl border-l-4 border-l-blue-500 ${theme.card} shadow-sm border ${lightMode ? "border-gray-200" : "border-white/5"}`}>
             <div className="flex justify-between mb-1">
               <span className={`text-[9px] font-black uppercase ${theme.sub}`}>
                 BOWLER
@@ -758,8 +734,7 @@ export default function ScoreInput({
                   e.stopPropagation();
                   setEditBowler(true);
                 }}
-                className="opacity-50 p-1"
-              >
+                className="opacity-50 p-1">
                 <Menu size={15} />
               </button>
             </div>
@@ -781,8 +756,7 @@ export default function ScoreInput({
                       setInlineNewName("");
                       setEditBowler(false);
                     }}
-                    className="text-[9px] bg-red-500/20 text-red-500 px-2 py-1 rounded w-full"
-                  >
+                    className="text-[9px] bg-red-500/20 text-red-500 px-2 py-1 rounded w-full">
                     Cancel
                   </button>
                   <button
@@ -799,7 +773,6 @@ export default function ScoreInput({
                           batTeamStr = match.innings[0].bowlingTeam;
                         const isTeamABatting =
                           batTeamStr?.trim() === match?.meta?.teamA?.trim();
-                        // BOWLER logic is opposite
                         const teamId = isTeamABatting
                           ? match.meta.teamBId
                           : match.meta.teamAId;
@@ -820,8 +793,7 @@ export default function ScoreInput({
                         setIsSyncing(false);
                       }
                     }}
-                    className="text-[9px] bg-teal-500 text-white px-2 py-1 rounded w-full font-bold"
-                  >
+                    className="text-[9px] bg-teal-500 text-white px-2 py-1 rounded w-full font-bold">
                     Save
                   </button>
                 </div>
@@ -843,8 +815,7 @@ export default function ScoreInput({
                     onChangeBowler(e.target.value);
                     setEditBowler(false);
                   }
-                }}
-              >
+                }}>
                 <option>Select</option>
                 {fieldingTeamPlayers.map((n) => (
                   <option key={n} value={n}>
@@ -856,76 +827,71 @@ export default function ScoreInput({
                 </option>
               </select>
             )}
+
+            {/* 🟢 STATS & TIMELINE ROW 🟢 */}
             {!inlineAddingRole && (
-              <div className={`text-xs ${theme.sub}`}>
-                {m.bowlerStats?.[currentBowlerName]?.wickets || 0}-
-                {m.bowlerStats?.[currentBowlerName]?.runs || 0}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mt-2">
+                <div className={`text-xs font-bold ${theme.sub}`}>
+                  {m.bowlerStats?.[currentBowlerName]?.wickets || 0}-
+                  {m.bowlerStats?.[currentBowlerName]?.runs || 0} (
+                  {Math.floor(
+                    (m.bowlerStats?.[currentBowlerName]?.balls || 0) / 6,
+                  )}
+                  .{(m.bowlerStats?.[currentBowlerName]?.balls || 0) % 6} Ov)
+                </div>
+
+                {/* 🟢 THE NEW INLINE TIMELINE */}
+                {currentBowlerName && (
+                  <div className="flex items-center gap-1 overflow-x-auto no-scrollbar pb-1">
+                    {(m.timeline || [])
+                      .filter((b) => b.bowler === currentBowlerName) // Only this bowler's balls
+                      .slice(-6) // Last 6 balls only
+                      .map((b, i) => {
+                        let label = b.runs;
+                        let bubble = lightMode
+                          ? "bg-white border-gray-300 text-black"
+                          : "bg-slate-700 text-white border-slate-600";
+
+                        if (b.isWicket) {
+                          if (b.isNoBall) label = `W+${b.runs}NB`;
+                          else if (b.isWide) label = `W+${b.runs}WD`;
+                          else
+                            label =
+                              b.physicalRuns > 0 ? `W+${b.physicalRuns}` : "W";
+                          bubble = "bg-red-500 text-white border-red-600";
+                        } else if (b.isWide) {
+                          label = b.runs - 1 + "+WD";
+                          bubble = "bg-red-500 text-white border-red-600";
+                        } else if (b.isNoBall) {
+                          label = b.runs - 1 + "+NB";
+                          bubble = "bg-red-500 text-white border-red-600";
+                        } else if (b.runs === 4) {
+                          bubble = "bg-blue-500 text-white border-blue-600";
+                        } else if (b.runs === 6) {
+                          bubble = "bg-red-500 text-black border-red-600";
+                        }
+
+                        return (
+                          <div
+                            key={i}
+                            className={`w-8 h-8 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${bubble} shadow-sm border`}>
+                            {label}
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
               </div>
             )}
           </div>
         </div>
 
-        {/* TIMELINE */}
-        <div
-          className={`h-12 flex items-center px-4 gap-2 overflow-x-auto no-scrollbar border-t ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#161920] border-white/5"} shrink-0 mb-auto`}
-        >
-          <span
-            className={`text-[10px] font-bold uppercase ${theme.sub} shrink-0`}
-          >
-            Last 12:
-          </span>
-          {(m.timeline || [])
-            .slice(-12)
-            .reverse()
-            .map((b, i) => {
-              // 🟢 NEW SMART LABEL LOGIC
-              let label = b.runs;
-              let bubble = lightMode
-                ? "bg-white border-gray-300 text-black"
-                : "bg-slate-700 text-white border-slate-600";
-
-              if (b.isWicket) {
-                // If it's a wicket, check if it also has extras
-                if (b.isNoBall) {
-                  label = `W+${b.runs}NB`; // Displays W+1NB, W+2NB, etc.
-                } else if (b.isWide) {
-                  label = `W+${b.runs}WD`;
-                } else {
-                  // Standard wicket
-                  label = b.physicalRuns > 0 ? `W+${b.physicalRuns}` : "W";
-                }
-                bubble = "bg-red-500 text-white border-red-600";
-              } else if (b.isWide) {
-                label = b.runs - 1 + "+WD";
-                bubble = "bg-orange-500 text-white border-orange-600";
-              } else if (b.isNoBall) {
-                label = b.runs - 1 + "+NB";
-                bubble = "bg-orange-500 text-white border-orange-600";
-              } else if (b.runs === 4) {
-                bubble = "bg-blue-500 text-white border-blue-600";
-              } else if (b.runs === 6) {
-                bubble = "bg-yellow-500 text-black border-yellow-600";
-              }
-
-              return (
-                <div
-                  key={i}
-                  className={`w-12 h-9 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${bubble} shadow-sm border px-1`}
-                >
-                  {label}
-                </div>
-              );
-            })}
-        </div>
-
         {/* KEYPAD */}
         <div
-          className={`rounded-t-3xl shadow-[0_-5px_30px_rgba(0,0,0,0.1)] pb-8 pt-4 z-20 ${theme.card} border-t ${lightMode ? "border-gray-200" : "border-white/5"} shrink-0`}
-        >
+          className={`rounded-t-3xl shadow-[0_-5px_30px_rgba(0,0,0,0.1)] pb-8 pt-4 z-20 ${theme.card} border-t ${lightMode ? "border-gray-200" : "border-white/5"} shrink-0`}>
           <div className="px-6 mb-4 flex justify-between items-center">
             <span
-              className={`text-[10px] font-black uppercase tracking-widest ${extraType ? theme.accent : theme.sub}`}
-            >
+              className={`text-[10px] font-black uppercase tracking-widest ${extraType ? theme.accent : theme.sub}`}>
               {extraType ? `${extraType} SELECTED` : "SELECT RUNS"}
             </span>
             {isSyncing && (
@@ -959,7 +925,7 @@ export default function ScoreInput({
                 }}
                 disabled={disableBallEntry}
                 loading={isSyncing}
-                color={`${theme.btnBase} ${run === 4 ? "text-blue-500" : ""} ${run === 6 ? "text-yellow-500" : ""}`}
+                color={`${theme.btnBase} ${run === 4 ? "text-blue-500" : ""} ${run === 6 ? "text-red-500" : ""}`}
               />
             ))}
             <KeyButton
@@ -977,14 +943,12 @@ export default function ScoreInput({
           <div className="flex justify-between items-center px-6 mt-6 opacity-60">
             <button
               onClick={() => onUndo()}
-              className="text-xs font-bold flex items-center gap-1 hover:opacity-100"
-            >
+              className="text-xs font-bold flex items-center gap-1 hover:opacity-100">
               <RotateCcw size={14} /> UNDO
             </button>
             <button
               onClick={() => setShowCorrectionModal(true)}
-              className="text-xs font-bold flex items-center gap-1 hover:opacity-100 transition-opacity"
-            >
+              className="text-xs font-bold flex items-center gap-1 hover:opacity-100 transition-opacity">
               <Settings size={14} /> SETTINGS
             </button>
             <button
@@ -1011,8 +975,7 @@ export default function ScoreInput({
                     await onEndInnings();
                 }
               }}
-              className="text-xs font-bold flex items-center gap-1 text-orange-500 hover:opacity-100 uppercase"
-            >
+              className="text-xs font-bold flex items-center gap-1 text-red-500 hover:opacity-100 uppercase">
               {isInning2 ? "Finish Match" : "End Innings"}{" "}
               {isInning2 ? (
                 <Trophy size={14} />
@@ -1030,8 +993,7 @@ export default function ScoreInput({
           <div className={modalContainerClass}>
             <div className={modalContentClass}>
               <h3
-                className={`text-lg font-bold mb-4 ${lightMode ? "text-teal-700" : "text-teal-400"}`}
-              >
+                className={`text-lg font-bold mb-4 ${lightMode ? "text-teal-700" : "text-teal-400"}`}>
                 Select Opening Batsmen
               </h3>
 
@@ -1050,22 +1012,19 @@ export default function ScoreInput({
                       if (e.target.value === "ADD_NEW")
                         setAddingOpenerRole("striker");
                       else setOpenerStriker(e.target.value);
-                    }}
-                  >
+                    }}>
                     <option value="">Select Striker</option>
                     {battingOptions.map((n) => (
                       <option
                         key={n}
                         value={n}
-                        disabled={n === openerNonStriker}
-                      >
+                        disabled={n === openerNonStriker}>
                         {n}
                       </option>
                     ))}
                     <option
                       value="ADD_NEW"
-                      className={`font-black ${lightMode ? "text-teal-600" : "text-teal-400"}`}
-                    >
+                      className={`font-black ${lightMode ? "text-teal-600" : "text-teal-400"}`}>
                       + Add New Player
                     </option>
                   </select>
@@ -1079,8 +1038,7 @@ export default function ScoreInput({
                       if (e.target.value === "ADD_NEW")
                         setAddingOpenerRole("nonStriker");
                       else setOpenerNonStriker(e.target.value);
-                    }}
-                  >
+                    }}>
                     <option value="">Select Non-Striker</option>
                     {battingOptions.map((n) => (
                       <option key={n} value={n} disabled={n === openerStriker}>
@@ -1089,8 +1047,7 @@ export default function ScoreInput({
                     ))}
                     <option
                       value="ADD_NEW"
-                      className={`font-black ${lightMode ? "text-teal-600" : "text-teal-400"}`}
-                    >
+                      className={`font-black ${lightMode ? "text-teal-600" : "text-teal-400"}`}>
                       + Add New Player
                     </option>
                   </select>
@@ -1103,8 +1060,7 @@ export default function ScoreInput({
                         onStrikeChange(openerStriker, openerNonStriker);
                     }}
                     disabled={!openerStriker || !openerNonStriker}
-                    className="w-full py-4 bg-teal-600 text-white font-bold rounded-xl uppercase tracking-widest disabled:opacity-50"
-                  >
+                    className="w-full py-4 bg-teal-600 text-white font-bold rounded-xl uppercase tracking-widest disabled:opacity-50">
                     Start Innings 🚀
                   </button>
                 </>
@@ -1133,8 +1089,7 @@ export default function ScoreInput({
                         setAddingOpenerRole(null);
                         setNewOpenerName("");
                       }}
-                      className={`flex-1 py-4 font-bold rounded-xl ${lightMode ? "bg-gray-200 text-gray-700" : "bg-slate-700 text-slate-300"}`}
-                    >
+                      className={`flex-1 py-4 font-bold rounded-xl ${lightMode ? "bg-gray-200 text-gray-700" : "bg-slate-700 text-slate-300"}`}>
                       Cancel
                     </button>
                     <button
@@ -1182,8 +1137,7 @@ export default function ScoreInput({
                           setIsSyncing(false);
                         }
                       }}
-                      className="flex-1 py-4 bg-teal-600 text-white font-bold rounded-xl uppercase"
-                    >
+                      className="flex-1 py-4 bg-teal-600 text-white font-bold rounded-xl uppercase">
                       Add & Select
                     </button>
                   </div>
@@ -1197,11 +1151,9 @@ export default function ScoreInput({
         {isInningsComplete && (
           <div className="absolute inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center p-6 animate-in fade-in">
             <div
-              className={`max-w-sm w-full p-8 rounded-3xl text-center shadow-2xl ${theme.card} border ${lightMode ? "border-gray-200" : "border-white/10"}`}
-            >
+              className={`max-w-sm w-full p-8 rounded-3xl text-center shadow-2xl ${theme.card} border ${lightMode ? "border-gray-200" : "border-white/10"}`}>
               <div
-                className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 border ${lightMode ? "bg-gray-100 border-gray-200" : "bg-white/5 border-white/10"}`}
-              >
+                className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 border ${lightMode ? "bg-gray-100 border-gray-200" : "bg-white/5 border-white/10"}`}>
                 {isMatchOver ? (
                   <Trophy size={40} className="text-amber-500" />
                 ) : (
@@ -1209,8 +1161,7 @@ export default function ScoreInput({
                 )}
               </div>
               <h2
-                className={`text-2xl font-black uppercase tracking-tight mb-2 ${theme.text}`}
-              >
+                className={`text-2xl font-black uppercase tracking-tight mb-2 ${theme.text}`}>
                 {isMatchOver ? "Match Finished!" : "Innings Complete!"}
               </h2>
               <p className={`text-sm mb-8 ${theme.sub}`}>
@@ -1226,15 +1177,13 @@ export default function ScoreInput({
                       tournament?.settings?.momWinningTeamOnly ?? true;
                     onFinishMatch("Finished", mustBeFromWinningTeam);
                   }}
-                  className="w-full py-4 bg-amber-600 text-white font-black uppercase rounded-xl"
-                >
+                  className="w-full py-4 bg-amber-600 text-white font-black uppercase rounded-xl">
                   Confirm Result 🏆
                 </button>
               ) : (
                 <button
                   onClick={onEndInnings}
-                  className="w-full py-4 bg-teal-600 text-white font-black uppercase rounded-xl"
-                >
+                  className="w-full py-4 bg-teal-600 text-white font-black uppercase rounded-xl">
                   Start 2nd Innings 🏏
                 </button>
               )}
@@ -1243,14 +1192,12 @@ export default function ScoreInput({
               <div className="mt-6 flex justify-between items-center px-2 opacity-60">
                 <button
                   onClick={() => onUndo()}
-                  className={`text-xs font-bold flex items-center gap-1 hover:opacity-100 transition-opacity ${theme.text}`}
-                >
+                  className={`text-xs font-bold flex items-center gap-1 hover:opacity-100 transition-opacity ${theme.text}`}>
                   <RotateCcw size={14} /> UNDO LAST BALL
                 </button>
                 <button
                   onClick={() => setShowCorrectionModal(true)}
-                  className={`text-xs font-bold flex items-center gap-1 hover:opacity-100 transition-opacity ${theme.text}`}
-                >
+                  className={`text-xs font-bold flex items-center gap-1 hover:opacity-100 transition-opacity ${theme.text}`}>
                   <Settings size={14} /> CONSOLE
                 </button>
               </div>
@@ -1283,8 +1230,7 @@ export default function ScoreInput({
                           ? setIncoming(e.target.value)
                           : setNewBowler(e.target.value);
                       }
-                    }}
-                  >
+                    }}>
                     <option value="">Select Player</option>
                     {needBatsman
                       ? battingOptions.map((n) => (
@@ -1298,8 +1244,7 @@ export default function ScoreInput({
                             }
                             className={
                               m.batsmenStats?.[n]?.out ? "text-gray-500" : ""
-                            }
-                          >
+                            }>
                             {n} {m.batsmenStats?.[n]?.out ? "(Out)" : ""}
                           </option>
                         ))
@@ -1307,15 +1252,13 @@ export default function ScoreInput({
                           <option
                             key={n}
                             value={n}
-                            disabled={n === currentBowlerName}
-                          >
+                            disabled={n === currentBowlerName}>
                             {n}
                           </option>
                         ))}
                     <option
                       value="ADD_NEW"
-                      className={`font-black ${lightMode ? "text-teal-600" : "text-teal-400"}`}
-                    >
+                      className={`font-black ${lightMode ? "text-teal-600" : "text-teal-400"}`}>
                       + Add New Player
                     </option>
                   </select>
@@ -1332,8 +1275,7 @@ export default function ScoreInput({
                           setNewBowler("");
                         }
                       }}
-                      className="w-full py-4 bg-teal-600 text-white font-bold rounded-xl uppercase tracking-widest active:scale-95 transition-transform"
-                    >
+                      className="w-full py-4 bg-teal-600 text-white font-bold rounded-xl uppercase tracking-widest active:scale-95 transition-transform">
                       Confirm {needBatsman ? "Batsman" : "Bowler"}
                     </button>
 
@@ -1341,8 +1283,7 @@ export default function ScoreInput({
                     {needBatsman && (
                       <button
                         onClick={() => setForceInningsComplete(true)}
-                        className={`w-full py-3.5 border-2 border-red-500 text-red-500 font-bold rounded-xl uppercase tracking-widest active:scale-95 transition-all ${lightMode ? "bg-red-50 hover:bg-red-100" : "bg-red-500/10 hover:bg-red-500/20"}`}
-                      >
+                        className={`w-full py-3.5 border-2 border-red-500 text-red-500 font-bold rounded-xl uppercase tracking-widest active:scale-95 transition-all ${lightMode ? "bg-red-50 hover:bg-red-100" : "bg-red-500/10 hover:bg-red-500/20"}`}>
                         All Out (End Innings)
                       </button>
                     )}
@@ -1371,8 +1312,7 @@ export default function ScoreInput({
                         setIsAddingNew(false);
                         setNewPlayerName("");
                       }}
-                      className={`flex-1 py-4 font-bold rounded-xl ${lightMode ? "bg-gray-200 text-gray-700" : "bg-slate-700 text-slate-300"}`}
-                    >
+                      className={`flex-1 py-4 font-bold rounded-xl ${lightMode ? "bg-gray-200 text-gray-700" : "bg-slate-700 text-slate-300"}`}>
                       Cancel
                     </button>
                     <button
@@ -1430,8 +1370,7 @@ export default function ScoreInput({
                           setIsSyncing(false);
                         }
                       }}
-                      className="flex-1 py-4 bg-teal-600 text-white font-bold rounded-xl uppercase"
-                    >
+                      className="flex-1 py-4 bg-teal-600 text-white font-bold rounded-xl uppercase">
                       Add & Select
                     </button>
                   </div>
@@ -1445,8 +1384,7 @@ export default function ScoreInput({
         {isWicketMenuOpen && (
           <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/90">
             <div
-              className={`w-full rounded-t-3xl p-6 pb-10 animate-in slide-in-from-bottom ${theme.card}`}
-            >
+              className={`w-full rounded-t-3xl p-6 pb-10 animate-in slide-in-from-bottom ${theme.card}`}>
               <h3 className="text-xl font-bold mb-4 text-red-500">
                 Confirm Wicket
               </h3>
@@ -1462,8 +1400,7 @@ export default function ScoreInput({
                   if (newType !== "runout") {
                     setWhoOut("striker");
                   }
-                }}
-              >
+                }}>
                 {[
                   "bowled",
                   "caught",
@@ -1500,8 +1437,7 @@ export default function ScoreInput({
                               : lightMode
                                 ? "bg-white text-teal-700 border-gray-200"
                                 : "bg-black/20 text-teal-400 border-white/10"
-                          }`}
-                        >
+                          }`}>
                           {r}
                         </button>
                       ))}
@@ -1521,8 +1457,7 @@ export default function ScoreInput({
                           : lightMode
                             ? "bg-gray-100 text-gray-500 border-gray-200"
                             : "bg-white/5 text-slate-400 border-white/10"
-                      }`}
-                    >
+                      }`}>
                       Striker Out
                       <span className="block text-[10px] font-normal opacity-80 truncate px-2">
                         {strikerName}
@@ -1539,8 +1474,7 @@ export default function ScoreInput({
                           : lightMode
                             ? "bg-gray-100 text-gray-500 border-gray-200"
                             : "bg-white/5 text-slate-400 border-white/10"
-                      }`}
-                    >
+                      }`}>
                       Non-Striker Out
                       <span className="block text-[10px] font-normal opacity-80 truncate px-2">
                         {nonStrikerName}
@@ -1551,8 +1485,7 @@ export default function ScoreInput({
                   {/* 3. NB LOCAL RULE TOGGLE (Only shows if extraType is NB) */}
                   {extraType === "NB" && (
                     <div
-                      className={`p-3 rounded-xl border flex items-center gap-3 ${lightMode ? "bg-amber-50 border-amber-200" : "bg-amber-900/10 border-amber-500/20"}`}
-                    >
+                      className={`p-3 rounded-xl border flex items-center gap-3 ${lightMode ? "bg-amber-50 border-amber-200" : "bg-amber-900/10 border-amber-500/20"}`}>
                       <div className="relative flex items-center shrink-0">
                         <input
                           type="checkbox"
@@ -1571,8 +1504,7 @@ export default function ScoreInput({
                       <div>
                         <label
                           htmlFor="validBallCheck"
-                          className="text-xs font-black text-amber-700 cursor-pointer uppercase tracking-widest"
-                        >
+                          className="text-xs font-black text-amber-700 cursor-pointer uppercase tracking-widest">
                           Count as Valid Ball?
                         </label>
                       </div>
@@ -1595,8 +1527,7 @@ export default function ScoreInput({
                       } else {
                         setFielderName(e.target.value);
                       }
-                    }}
-                  >
+                    }}>
                     <option value="">Select Fielder (Optional)</option>
                     {fieldingTeamPlayers.map((p) => (
                       <option key={p} value={p}>
@@ -1605,8 +1536,7 @@ export default function ScoreInput({
                     ))}
                     <option
                       value="ADD_NEW"
-                      className={`font-black ${lightMode ? "text-teal-600" : "text-teal-400"}`}
-                    >
+                      className={`font-black ${lightMode ? "text-teal-600" : "text-teal-400"}`}>
                       + Add New Player
                     </option>
                   </select>
@@ -1623,8 +1553,7 @@ export default function ScoreInput({
                     <div className="flex gap-3">
                       <button
                         onClick={() => setIsAddingNew(false)}
-                        className={`flex-1 py-3 font-bold rounded-xl ${lightMode ? "bg-gray-200 text-gray-700" : "bg-slate-700 text-slate-300"}`}
-                      >
+                        className={`flex-1 py-3 font-bold rounded-xl ${lightMode ? "bg-gray-200 text-gray-700" : "bg-slate-700 text-slate-300"}`}>
                         Cancel
                       </button>
                       <button
@@ -1669,8 +1598,7 @@ export default function ScoreInput({
                             setIsSyncing(false);
                           }
                         }}
-                        className="flex-1 py-3 bg-teal-600 text-white font-bold rounded-xl uppercase"
-                      >
+                        className="flex-1 py-3 bg-teal-600 text-white font-bold rounded-xl uppercase">
                         {isSyncing ? "Saving..." : "Save Fielder"}
                       </button>
                     </div>
@@ -1718,8 +1646,7 @@ export default function ScoreInput({
                         setEditNonStriker(false);
                       }
                     }}
-                    className="w-full py-4 bg-red-600 text-white font-bold rounded-xl text-lg mb-3 shadow-lg active:scale-95 transition-transform flex items-center justify-center"
-                  >
+                    className="w-full py-4 bg-red-600 text-white font-bold rounded-xl text-lg mb-3 shadow-lg active:scale-95 transition-transform flex items-center justify-center">
                     {isSyncing ? "SAVING WICKET..." : "CONFIRM OUT"}
                   </button>
                   <button
@@ -1731,8 +1658,7 @@ export default function ScoreInput({
                       setWicketRuns(0); // 🟢 Add this
                       setCountAsValidBall(false); // 🟢 Add this
                     }}
-                    className="w-full py-4 font-bold opacity-50 active:opacity-100 transition-opacity"
-                  >
+                    className="w-full py-4 font-bold opacity-50 active:opacity-100 transition-opacity">
                     Cancel
                   </button>
                 </>

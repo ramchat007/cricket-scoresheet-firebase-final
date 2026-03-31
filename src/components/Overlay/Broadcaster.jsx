@@ -191,71 +191,105 @@ export default function Broadcaster() {
     return () => unsub();
   }, [isStreaming, streamId]);
 
-  // 🔥 FIXED TELEMETRY ENGINE: Removed blocking await on battery
+  // 🔥 100% REWRITTEN ROBUST TELEMETRY ENGINE 🔥
   useEffect(() => {
     if (!isStreaming || !streamId || !peerConnectionRef.current) return;
 
     let lastBytesSent = 0;
     let lastTime = Date.now();
 
-    const telemetryInterval = setInterval(async () => {
-      let healthData = {
-        timestamp: Date.now(),
-        batteryLevel: 100,
-        isCharging: false,
-        latency: 0,
-        fps: 0,
-        bitrate: 0,
-        networkType: "wifi",
-      };
+    // Using a cache ensures that if iOS/Android misses a stat for 1 tick, it doesn't drop to 0
+    let cachedStats = {
+      fps: 0,
+      bitrate: 0,
+      latency: 0,
+      batteryLevel: 100,
+      isCharging: false,
+    };
 
-      // Non-blocking battery fetch prevents UI hanging
+    const telemetryInterval = setInterval(async () => {
+      // 1. Fetch Battery (Non-blocking)
       try {
         if (navigator.getBattery) {
           navigator
             .getBattery()
             .then((battery) => {
-              healthData.batteryLevel = Math.round(battery.level * 100);
-              healthData.isCharging = battery.charging;
+              cachedStats.batteryLevel = Math.round(battery.level * 100);
+              cachedStats.isCharging = battery.charging;
             })
             .catch(() => {});
         }
       } catch (e) {}
 
-      if (navigator.connection) {
-        healthData.networkType = navigator.connection.effectiveType || "wifi";
-        healthData.downlink = navigator.connection.downlink || 0;
-      }
-
+      // 2. Fetch Deep WebRTC Stats (Cross-Browser Compatible)
       try {
-        const stats = await peerConnectionRef.current.getStats();
-        stats.forEach((report) => {
-          if (report.type === "outbound-rtp" && report.kind === "video") {
-            healthData.fps = report.framesPerSecond || 0;
-            const bytesSent = report.bytesSent;
-            const now = Date.now();
-            if (lastBytesSent > 0) {
-              const bitrate =
-                (8 * (bytesSent - lastBytesSent)) / (now - lastTime);
-              healthData.bitrate = Math.round(bitrate);
+        if (peerConnectionRef.current) {
+          const stats = await peerConnectionRef.current.getStats();
+          let foundActivePair = false;
+
+          stats.forEach((report) => {
+            // -- A. Extract FPS and Bitrate --
+            // Checks for 'video' in both kind and mediaType (fixes iOS Safari bug)
+            if (
+              report.type === "outbound-rtp" &&
+              (report.kind === "video" || report.mediaType === "video")
+            ) {
+              if (report.framesPerSecond !== undefined) {
+                cachedStats.fps = Math.round(report.framesPerSecond);
+              }
+
+              const bytes = report.bytesSent;
+              const now = Date.now();
+              if (lastBytesSent > 0 && bytes > lastBytesSent) {
+                // Calculate Kbps
+                const bitrateKbps =
+                  (8 * (bytes - lastBytesSent)) / (now - lastTime);
+                cachedStats.bitrate = Math.round(bitrateKbps);
+              }
+              lastBytesSent = bytes || lastBytesSent;
+              lastTime = now;
             }
-            lastBytesSent = bytesSent;
-            lastTime = now;
-          }
-          if (
-            report.type === "candidate-pair" &&
-            report.state === "succeeded"
-          ) {
-            healthData.latency = report.currentRoundTripTime
-              ? Math.round(report.currentRoundTripTime * 1000)
-              : 0;
-          }
-        });
+
+            // -- B. Extract Latency (Primary check) --
+            if (
+              report.type === "candidate-pair" &&
+              report.state === "succeeded" &&
+              report.nominated
+            ) {
+              foundActivePair = true;
+              if (report.currentRoundTripTime !== undefined) {
+                cachedStats.latency = Math.round(
+                  report.currentRoundTripTime * 1000,
+                );
+              }
+            }
+
+            // -- C. Extract Latency (Fallback for Chrome Android) --
+            if (
+              !foundActivePair &&
+              report.type === "remote-inbound-rtp" &&
+              (report.kind === "video" || report.mediaType === "video")
+            ) {
+              if (report.roundTripTime !== undefined) {
+                cachedStats.latency = Math.round(report.roundTripTime * 1000);
+              }
+            }
+          });
+        }
       } catch (e) {}
 
-      updateDoc(doc(db, "streams", streamId), { health: healthData }).catch(
-        () => {},
-      );
+      // 3. Send final payload to Firebase
+      updateDoc(doc(db, "streams", streamId), {
+        health: {
+          timestamp: Date.now(),
+          batteryLevel: cachedStats.batteryLevel,
+          isCharging: cachedStats.isCharging,
+          fps: cachedStats.fps,
+          bitrate: cachedStats.bitrate,
+          latency: cachedStats.latency,
+          networkType: navigator.connection?.effectiveType || "wifi",
+        },
+      }).catch(() => {});
     }, 3000);
 
     return () => clearInterval(telemetryInterval);
@@ -267,13 +301,10 @@ export default function Broadcaster() {
     if (track && track.applyConstraints) {
       try {
         await track.applyConstraints({ advanced: [constraint] });
-      } catch (err) {
-        console.error("Constraint failed to apply:", err);
-      }
+      } catch (err) {}
     }
   };
 
-  // 🔥 FIXED ROCKER: Prevents floating point math rejections
   const startSmoothZoom = (direction) => {
     if (!activeStreamRef.current || !zoomCap) return;
     const track = activeStreamRef.current.getVideoTracks()[0];
@@ -285,7 +316,6 @@ export default function Broadcaster() {
         if (newZoom >= zoomCap.max) newZoom = zoomCap.max;
         if (newZoom <= zoomCap.min) newZoom = zoomCap.min;
 
-        // Force exactly 1 decimal place to prevent camera rejection
         newZoom = Number(newZoom.toFixed(1));
 
         if (track.applyConstraints) {
@@ -302,14 +332,11 @@ export default function Broadcaster() {
     if (zoomIntervalRef.current) clearInterval(zoomIntervalRef.current);
   };
 
-  // 🔥 FIXED PRESETS: Forces float rounding so mobile accepts it
   const snapZoom = async (targetVal) => {
     if (!zoomCap) return;
     let clamped = targetVal;
     if (clamped > zoomCap.max) clamped = zoomCap.max;
     if (clamped < zoomCap.min) clamped = zoomCap.min;
-
-    // Force exactly 1 decimal place
     clamped = Number(clamped.toFixed(1));
 
     setZoomLevel(clamped);
@@ -317,7 +344,6 @@ export default function Broadcaster() {
   };
 
   const handleExposureChange = async (e) => {
-    // Round to 1 decimal place to ensure matching data
     const val = Number(Number(e.target.value).toFixed(1));
     setExposureLevel(val);
     await applyVideoConstraint({ exposureCompensation: val });

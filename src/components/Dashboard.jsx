@@ -57,28 +57,43 @@ export default function Dashboard() {
 
   // --- Helper: Status Badge (Corrected logic) ---
   const getStatusBadge = (tournament) => {
-    const storedStatus = (tournament.status || "").toLowerCase();
-    const tournamentDate = tournament.date
-      ? tournament.date.slice(0, 10)
-      : null;
+    let actualStatus = (tournament.status || "").toLowerCase();
+
+    // 🟢 Fetch the correct date field (checking both just in case of old data)
+    const tournamentDate = (
+      tournament.startDate ||
+      tournament.date ||
+      ""
+    ).slice(0, 10);
     const today = localDateString();
 
-    // New Logic: Check if matches are actually finished
+    const totalMatches = tournament.stats?.totalMatches || 0;
+    const playedMatches = tournament.stats?.matchesPlayed || 0;
     const allMatchesFinished =
-      tournament.stats?.matchesPlayed >= tournament.stats?.totalMatches;
+      totalMatches > 0 && playedMatches >= totalMatches;
 
-    let actualStatus = storedStatus;
-
-    if (storedStatus === "upcoming" && tournamentDate) {
-      if (tournamentDate < today) {
-        // If date is passed but matches remain, it's still "Live/Ongoing"
-        actualStatus = allMatchesFinished ? "finished" : "live";
-      } else if (tournamentDate === today) {
+    // 1. Highest Priority: Is it completely finished?
+    if (
+      ["completed", "finished"].includes(actualStatus) ||
+      allMatchesFinished
+    ) {
+      actualStatus = "completed";
+    }
+    // 2. Second Priority: Resolve Live vs Upcoming
+    else {
+      if (playedMatches > 0) {
+        // If a match has actually been scored, it's Live (even if they started a day early)
+        actualStatus = "live";
+      } else if (tournamentDate && tournamentDate > today) {
+        // 🟢 STRICT CHECK: If NO matches are played AND the date is in the future, it is Upcoming
+        actualStatus = "upcoming";
+      } else if (tournamentDate && tournamentDate <= today) {
+        // If the start date is today or in the past, it's Live
         actualStatus = "live";
       }
     }
 
-    // Render Badge UI
+    // --- Render Badge UI ---
     if (["ongoing", "active", "live", "in-progress"].includes(actualStatus)) {
       return (
         <span
@@ -106,7 +121,7 @@ export default function Dashboard() {
       );
     }
 
-    if (["completed", "finished"].includes(actualStatus)) {
+    if (actualStatus === "completed") {
       return (
         <span
           className={`px-2 py-1 text-[10px] font-bold uppercase rounded-full border ${
@@ -316,6 +331,7 @@ export default function Dashboard() {
                       className={`text-[9px] uppercase font-bold tracking-wider ${theme.sub}`}>
                       Location
                     </div>
+                    {/* 🟢 Ensures it catches updates from the Settings page */}
                     <div className={`font-bold text-xs truncate ${theme.text}`}>
                       {t.location || "TBA"}
                     </div>
@@ -336,8 +352,9 @@ export default function Dashboard() {
                       className={`text-[9px] uppercase font-bold tracking-wider ${theme.sub}`}>
                       Start Date
                     </div>
+                    {/* 🟢 Safely checks both the old "date" and the new "startDate" */}
                     <div className={`font-bold text-xs truncate ${theme.text}`}>
-                      {formatDate(t.date)}
+                      {formatDate(t.startDate || t.date)}
                     </div>
                   </div>
                 </div>

@@ -178,7 +178,7 @@ function recalculateInningsState(inn) {
       }
     }
 
-    // 5. Wicket Logic (Remains the same)
+    // 5. Wicket Logic
     if (isWicket && ball.wicketType !== "retiredhurt") {
       const victim = ball.whoOut || batter;
       inn.wickets += 1;
@@ -191,6 +191,12 @@ function recalculateInningsState(inn) {
       if (inn.batsmenStats[victim]) {
         inn.batsmenStats[victim].out = "out";
         inn.batsmenStats[victim].wicketType = ball.wicketType;
+
+        // 🟢 ADD THESE TWO LINES SO THE UI CAN SEE THEM:
+        inn.batsmenStats[victim].fielderName =
+          ball.fielderName || ball.fielder || "";
+        inn.batsmenStats[victim].bowler = bowler || "";
+
         if (["bowled", "caught", "lbw", "stumped"].includes(ball.wicketType)) {
           if (inn.bowlerStats[bowler]) inn.bowlerStats[bowler].wickets += 1;
         }
@@ -407,8 +413,13 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
     });
   }
 
-  const buildSupabaseEventPayload = (actionType, payload = {}, currentMatch) => {
-    const inn = currentMatch?.innings?.[currentMatch?.currentInnings || 0] || {};
+  const buildSupabaseEventPayload = (
+    actionType,
+    payload = {},
+    currentMatch,
+  ) => {
+    const inn =
+      currentMatch?.innings?.[currentMatch?.currentInnings || 0] || {};
     const lastBall =
       Array.isArray(inn.timeline) && inn.timeline.length > 0
         ? inn.timeline[inn.timeline.length - 1]
@@ -431,7 +442,10 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
       eventType: actionType,
       payload: {
         ...payload,
-        newBall: actionType === "BALL" || actionType === "EXTRA_BALL_RUNS" ? lastBall : undefined,
+        newBall:
+          actionType === "BALL" || actionType === "EXTRA_BALL_RUNS"
+            ? lastBall
+            : undefined,
         recalculated,
       },
     };
@@ -576,7 +590,11 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
       return;
     }
 
-    await scoringAdapter.ballTransaction(action.tournamentId, action.matchId, handler);
+    await scoringAdapter.ballTransaction(
+      action.tournamentId,
+      action.matchId,
+      handler,
+    );
 
     if (supabaseAdapter) {
       const localDraft = match ? JSON.parse(JSON.stringify(match)) : null;
@@ -586,11 +604,15 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
         payload,
         optimisticState,
       );
-      await supabaseAdapter.ballTransaction(action.tournamentId, action.matchId, {
-        actionId: action.actionId,
-        eventType: supabasePayload.eventType,
-        payload: supabasePayload.payload,
-      });
+      await supabaseAdapter.ballTransaction(
+        action.tournamentId,
+        action.matchId,
+        {
+          actionId: action.actionId,
+          eventType: supabasePayload.eventType,
+          payload: supabasePayload.payload,
+        },
+      );
     }
 
     markActionProcessed(action.actionId);
@@ -725,7 +747,13 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
 
     handleFinishMatch: async (r, mustBeFromWinningTeam = true) => {
       const mom = getManOfTheMatch(match, mustBeFromWinningTeam);
-      await scoringAdapter.finishMatch(tournamentId, matchId, match.meta?.teamA, r, mom);
+      await scoringAdapter.finishMatch(
+        tournamentId,
+        matchId,
+        match.meta?.teamA,
+        r,
+        mom,
+      );
 
       if (supabaseAdapter) {
         await supabaseAdapter.finishMatch(

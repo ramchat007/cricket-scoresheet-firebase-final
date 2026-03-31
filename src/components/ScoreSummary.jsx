@@ -416,16 +416,18 @@ export default function ScoreSummary({ match }) {
             )}
           </div>
 
-          {/* RECENT BALLS */}
           {recentTimeline.length > 0 && (
             <div className="mb-5">
               <div
                 className={`text-[10px] uppercase font-bold mb-2 pl-1 ${theme.sub}`}>
-                Recent Balls
+                Recent (Last 6)
               </div>
-              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2 h-12">
-                {recentTimeline.map((ball, i, arr) => {
+              {/* Removed overflow/scrollbar, added flex-wrap for safety, set exact height */}
+              <div className="flex items-center gap-2 flex-wrap h-auto min-h-[40px]">
+                {/* 🟢 Slice(-6) ensures we ONLY show the last 6 events */}
+                {recentTimeline.slice(-6).map((ball, i, arr) => {
                   if (!ball || typeof ball !== "object") return null;
+
                   const showDivider =
                     i > 0 &&
                     ball.over !== undefined &&
@@ -433,38 +435,52 @@ export default function ScoreSummary({ match }) {
                     ball.over !== arr[i - 1].over;
 
                   let val = ball.runs;
-                  // Default colors (Dot ball)
                   let colorClass = lightMode
                     ? "bg-gray-100 text-gray-500 border-gray-200"
                     : "bg-slate-800 text-slate-400 border-white/5";
 
                   if (ball.isWicket) {
-                    val = "W";
+                    val =
+                      ball.physicalRuns > 0 ? `W+${ball.physicalRuns}` : "W";
                     colorClass = lightMode
                       ? "bg-red-100 text-red-600 border-red-200 font-black"
                       : "bg-red-900/40 text-red-400 border-red-500/30 font-black";
-                  } else if (ball.runs === 4) {
-                    colorClass = lightMode
-                      ? "bg-teal-100 text-teal-700 border-teal-200 font-black"
-                      : "bg-teal-900/40 text-teal-400 border-teal-500/30 font-black";
-                  } else if (ball.runs === 6) {
-                    colorClass = lightMode
-                      ? "bg-indigo-100 text-indigo-700 border-indigo-200 font-black"
-                      : "bg-indigo-900/40 text-indigo-400 border-indigo-500/30 font-black";
                   } else if (ball.isWide) {
-                    val = "WD";
+                    val = `${ball.runs}WD`;
                     colorClass = lightMode
                       ? "bg-amber-100 text-amber-700 border-amber-200"
                       : "bg-amber-900/40 text-amber-400 border-amber-500/30";
                   } else if (ball.isNoBall) {
-                    val = "NB";
+                    val = `${ball.runs}NB`;
                     colorClass = lightMode
                       ? "bg-amber-100 text-amber-700 border-amber-200"
                       : "bg-amber-900/40 text-amber-400 border-amber-500/30";
+                  } else if (ball.isLegBye) {
+                    val = `${ball.runs}LB`;
+                    colorClass = lightMode
+                      ? "bg-gray-200 text-gray-700 border-gray-300"
+                      : "bg-slate-700 text-slate-300 border-slate-600";
+                  } else if (ball.isBye) {
+                    val = `${ball.runs}B`;
+                    colorClass = lightMode
+                      ? "bg-gray-200 text-gray-700 border-gray-300"
+                      : "bg-slate-700 text-slate-300 border-slate-600";
+                  } else if (ball.runs === 4) {
+                    val = "4";
+                    colorClass = lightMode
+                      ? "bg-teal-100 text-teal-700 border-teal-200 font-black"
+                      : "bg-teal-900/40 text-teal-400 border-teal-500/30 font-black";
+                  } else if (ball.runs === 6) {
+                    val = "6";
+                    colorClass = lightMode
+                      ? "bg-indigo-100 text-indigo-700 border-indigo-200 font-black"
+                      : "bg-indigo-900/40 text-indigo-400 border-indigo-500/30 font-black";
                   } else if (ball.runs > 0) {
                     colorClass = lightMode
-                      ? "bg-white text-gray-900 border-gray-300"
-                      : "bg-slate-700 text-slate-200 border-white/10";
+                      ? "bg-white text-gray-900 border-gray-300 shadow-sm"
+                      : "bg-slate-700 text-slate-200 border-white/10 shadow-sm";
+                  } else {
+                    val = "0";
                   }
 
                   return (

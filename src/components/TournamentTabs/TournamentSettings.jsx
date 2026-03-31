@@ -14,6 +14,7 @@ import {
   Copy,
   Layers,
   Monitor,
+  Activity, // 🟢 Added Activity icon for status
 } from "lucide-react";
 
 export default function TournamentSettings({
@@ -33,6 +34,8 @@ export default function TournamentSettings({
     liveStreamUrl: "",
     startDate: "",
     endDate: "",
+    maxPlayers: "",
+    status: "upcoming", // 🟢 ADDED STATUS STATE
   });
 
   const [status, setStatus] = useState("loading");
@@ -78,6 +81,20 @@ export default function TournamentSettings({
       return;
     }
 
+    // 🟢 SMART STATUS DETECTION
+    const totalMatches = tournament.stats?.totalMatches || 0;
+    const playedMatches = tournament.stats?.matchesPlayed || 0;
+    const allMatchesFinished =
+      totalMatches > 0 && playedMatches >= totalMatches;
+
+    let derivedStatus = tournament.status || "upcoming";
+    if (
+      ["completed", "finished"].includes(derivedStatus.toLowerCase()) ||
+      allMatchesFinished
+    ) {
+      derivedStatus = "completed";
+    }
+
     setFormData({
       name: tournament.name || "",
       location: tournament.location || "",
@@ -85,6 +102,7 @@ export default function TournamentSettings({
       startDate: tournament.startDate || "",
       endDate: tournament.endDate || "",
       maxPlayers: tournament.maxPlayers || "",
+      status: derivedStatus, // 🟢 Uses the smart auto-checked status
     });
 
     const isOwner = tournament.ownerId === user.uid;
@@ -111,6 +129,7 @@ export default function TournamentSettings({
         liveStreamUrl: formData.liveStreamUrl,
         startDate: formData.startDate,
         endDate: formData.endDate,
+        status: formData.status, // 🟢 SAVE STATUS OVERRIDE TO DATABASE
         maxPlayers: formData.maxPlayers ? Number(formData.maxPlayers) : null,
         lastUpdated: new Date().toISOString(),
       });
@@ -136,12 +155,10 @@ export default function TournamentSettings({
       <div
         className={`p-8 text-center rounded-2xl border animate-pulse flex flex-col items-center gap-2 ${
           lightMode ? "bg-white border-gray-200" : "bg-[#1C2128] border-white/5"
-        }`}
-      >
+        }`}>
         <Loader2 className={`animate-spin ${theme.sub}`} size={24} />
         <span
-          className={`text-xs font-bold uppercase tracking-widest ${theme.sub}`}
-        >
+          className={`text-xs font-bold uppercase tracking-widest ${theme.sub}`}>
           {loadingMessage}
         </span>
       </div>
@@ -155,8 +172,7 @@ export default function TournamentSettings({
           lightMode
             ? "bg-white border-gray-200 text-gray-500"
             : "bg-[#161920] border-white/5 text-slate-500"
-        }`}
-      >
+        }`}>
         <div className="flex justify-center mb-2">
           <Lock size={32} />
         </div>
@@ -173,7 +189,6 @@ export default function TournamentSettings({
   const handleMomRuleChange = async (e) => {
     const isWinningTeamOnly = e.target.checked;
 
-    // Update the tournament document in Firestore
     await updateDoc(doc(db, "tournaments", tournamentId), {
       "settings.momWinningTeamOnly": isWinningTeamOnly,
     });
@@ -187,29 +202,25 @@ export default function TournamentSettings({
           lightMode
             ? "bg-white border-purple-100 shadow-sm"
             : "bg-[#1C2128] border-white/5"
-        }`}
-      >
+        }`}>
         {/* Header */}
         <div
-          className={`px-6 py-4 border-b flex items-center gap-3 ${lightMode ? "bg-purple-50/50 border-purple-100" : "bg-[#13161a] border-white/5"}`}
-        >
+          className={`px-6 py-4 border-b flex items-center gap-3 ${lightMode ? "bg-purple-50/50 border-purple-100" : "bg-[#13161a] border-white/5"}`}>
           <Monitor
             size={20}
             className={lightMode ? "text-purple-600" : "text-purple-400"}
           />
           <h3
-            className={`text-sm font-black uppercase tracking-widest ${theme.text}`}
-          >
+            className={`text-sm font-black uppercase tracking-widest ${theme.text}`}>
             Broadcast Studio
           </h3>
         </div>
 
         <div className="p-6 space-y-8">
-          {/* 1. OBS OUTPUT (The New Common URL) */}
+          {/* 1. OBS OUTPUT */}
           <div>
             <label
-              className={`flex items-center justify-between text-[10px] font-black uppercase tracking-widest mb-2 ${theme.sub}`}
-            >
+              className={`flex items-center justify-between text-[10px] font-black uppercase tracking-widest mb-2 ${theme.sub}`}>
               <span className="flex items-center gap-1.5">
                 <Layers size={14} className="text-teal-500" /> Global Overlay
                 Source (OBS)
@@ -221,11 +232,9 @@ export default function TournamentSettings({
                 lightMode
                   ? "bg-gray-50 border-gray-200"
                   : "bg-black/40 border-white/10"
-              }`}
-            >
+              }`}>
               <div
-                className={`flex-1 px-3 text-xs font-mono truncate select-all ${theme.text}`}
-              >
+                className={`flex-1 px-3 text-xs font-mono truncate select-all ${theme.text}`}>
                 {origin}/overlay/{tournamentId}/broadcast/active?clean=true
               </div>
               <button
@@ -235,8 +244,7 @@ export default function TournamentSettings({
                     ? "bg-white border border-gray-200 text-gray-600 hover:text-teal-600 hover:border-teal-200"
                     : "bg-white/5 hover:bg-teal-500/20 text-slate-400 hover:text-teal-400"
                 }`}
-                title="Copy to Clipboard"
-              >
+                title="Copy to Clipboard">
                 <Copy size={14} />
               </button>
             </div>
@@ -247,16 +255,13 @@ export default function TournamentSettings({
             </p>
           </div>
 
-          {/* Divider */}
           <div
-            className={`h-px w-full ${lightMode ? "bg-purple-100" : "bg-white/5"}`}
-          ></div>
+            className={`h-px w-full ${lightMode ? "bg-purple-100" : "bg-white/5"}`}></div>
 
-          {/* 2. YOUTUBE INPUT (Existing Logic) */}
+          {/* 2. YOUTUBE INPUT */}
           <div>
             <label
-              className={`flex items-center justify-between text-[10px] font-black uppercase tracking-widest mb-2 ${theme.sub}`}
-            >
+              className={`flex items-center justify-between text-[10px] font-black uppercase tracking-widest mb-2 ${theme.sub}`}>
               <span className="flex items-center gap-1.5">
                 <Radio size={14} className="text-red-500" /> Live Stream Source
               </span>
@@ -276,10 +281,8 @@ export default function TournamentSettings({
                     : "bg-black/40 border-white/10 text-white placeholder:text-slate-600"
                 }`}
               />
-              {/* Status Dot inside input */}
               <div
-                className={`absolute right-3 top-3.5 w-2 h-2 rounded-full ${formData.liveStreamUrl ? "bg-red-500 animate-pulse" : "bg-gray-500"}`}
-              ></div>
+                className={`absolute right-3 top-3.5 w-2 h-2 rounded-full ${formData.liveStreamUrl ? "bg-red-500 animate-pulse" : "bg-gray-500"}`}></div>
             </div>
             <p className={`text-[10px] mt-2 opacity-70 ${theme.sub}`}>
               This video will be embedded on the public tournament page.
@@ -295,30 +298,62 @@ export default function TournamentSettings({
           lightMode
             ? "bg-white border-gray-200 shadow-sm"
             : "bg-[#1C2128] border-white/5"
-        }`}
-      >
+        }`}>
         <h3
-          className={`text-xs font-black uppercase tracking-widest mb-2 flex items-center gap-2 ${theme.text}`}
-        >
+          className={`text-xs font-black uppercase tracking-widest mb-2 flex items-center gap-2 ${theme.text}`}>
           <Globe size={14} /> General Information
         </h3>
-        <div>
-          <label
-            className={`block text-[10px] font-bold uppercase mb-1 ${theme.sub}`}
-          >
-            Tournament Name
-          </label>
-          <input
-            type="text"
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className={`w-full text-sm p-3 rounded-xl outline-none transition-colors border focus:border-teal-500 ${
-              lightMode
-                ? "bg-gray-50 border-gray-200 text-gray-900 focus:bg-white"
-                : "bg-black/40 border-white/10 text-white"
-            }`}
-          />
+
+        {/* 🟢 ADDED TOURNAMENT STATUS OVERRIDE 🟢 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label
+              className={`block text-[10px] font-bold uppercase mb-1 ${theme.sub}`}>
+              Tournament Name
+            </label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) =>
+                setFormData({ ...formData, name: e.target.value })
+              }
+              className={`w-full text-sm p-3 rounded-xl outline-none transition-colors border focus:border-teal-500 ${
+                lightMode
+                  ? "bg-gray-50 border-gray-200 text-gray-900 focus:bg-white"
+                  : "bg-black/40 border-white/10 text-white"
+              }`}
+            />
+          </div>
+          <div>
+            <label
+              className={`flex items-center gap-1.5 text-[10px] font-bold uppercase mb-1 ${theme.sub}`}>
+              <Activity
+                size={12}
+                className={
+                  formData.status === "completed"
+                    ? "text-green-500"
+                    : "text-amber-500"
+                }
+              />
+              Manual Status Override
+            </label>
+            <select
+              value={formData.status}
+              onChange={(e) =>
+                setFormData({ ...formData, status: e.target.value })
+              }
+              className={`w-full text-sm p-3 rounded-xl outline-none transition-colors border focus:border-teal-500 ${
+                lightMode
+                  ? "bg-gray-50 border-gray-200 text-gray-900 focus:bg-white"
+                  : "bg-black/40 border-white/10 text-white"
+              }`}>
+              <option value="upcoming">Upcoming</option>
+              <option value="ongoing">Ongoing / Live</option>
+              <option value="completed">Completed (Closes Tournament)</option>
+            </select>
+          </div>
         </div>
+
         <div className="p-4 border rounded-xl bg-slate-900">
           <h3 className="text-white font-bold mb-2">Award Rules</h3>
           <label className="flex items-center gap-3 cursor-pointer">
@@ -339,10 +374,10 @@ export default function TournamentSettings({
             </div>
           </label>
         </div>
+
         <div>
           <label
-            className={`block text-[10px] font-bold uppercase mb-1 ${theme.sub}`}
-          >
+            className={`block text-[10px] font-bold uppercase mb-1 ${theme.sub}`}>
             Location / Venue
           </label>
           <div className="relative">
@@ -366,8 +401,7 @@ export default function TournamentSettings({
         </div>
         <div>
           <label
-            className={`block text-[10px] font-bold uppercase mb-1 text-teal-500`}
-          >
+            className={`block text-[10px] font-bold uppercase mb-1 text-teal-500`}>
             Max Registrations (Limit)
           </label>
           <input
@@ -387,8 +421,7 @@ export default function TournamentSettings({
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label
-              className={`block text-[10px] font-bold uppercase mb-1 ${theme.sub}`}
-            >
+              className={`block text-[10px] font-bold uppercase mb-1 ${theme.sub}`}>
               Start Date
             </label>
             <div className="relative">
@@ -412,8 +445,7 @@ export default function TournamentSettings({
           </div>
           <div>
             <label
-              className={`block text-[10px] font-bold uppercase mb-1 ${theme.sub}`}
-            >
+              className={`block text-[10px] font-bold uppercase mb-1 ${theme.sub}`}>
               End Date
             </label>
             <div className="relative">
@@ -437,13 +469,11 @@ export default function TournamentSettings({
           </div>
         </div>
         <div
-          className={`pt-4 border-t flex justify-end ${lightMode ? "border-gray-100" : "border-white/5"}`}
-        >
+          className={`pt-4 border-t flex justify-end ${lightMode ? "border-gray-100" : "border-white/5"}`}>
           <button
             type="submit"
             disabled={saving}
-            className="bg-teal-600 hover:bg-teal-500 text-white text-xs font-black uppercase px-6 py-3 rounded-xl transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-teal-900/20"
-          >
+            className="bg-teal-600 hover:bg-teal-500 text-white text-xs font-black uppercase px-6 py-3 rounded-xl transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-teal-900/20">
             {saving ? (
               <Loader2 className="animate-spin" size={16} />
             ) : (
