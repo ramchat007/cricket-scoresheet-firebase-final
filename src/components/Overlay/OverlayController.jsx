@@ -37,6 +37,24 @@ import {
 const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 
+// 🔥 NEW: DEFAULT BROADCAST CONFIGURATION
+const DEFAULT_CONFIG = {
+  activeViews: [],
+  showTicker: false,
+  hideBottomScoreTicker: false,
+  sponsors: [],
+  fullScreenBanners: [],
+  organizerName: "",
+  customMessageTitle: "",
+  customMessageBody: "",
+  tickerText: "",
+  spotlightPlayerId: "",
+  autoSpotlightEnabled: true, // ✅ Forced ON by default
+  appLogo: "",
+  showAppLogo: true, // ✅ Forced ON by default
+  broadcastAudioEnabled: true,
+};
+
 export default function OverlayController({ tournamentId, matchId, match }) {
   const { theme, lightMode } = useTheme();
 
@@ -44,22 +62,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
   const fileInputBannerRef = useRef(null);
   const fileInputAppLogoRef = useRef(null);
 
-  const [config, setConfig] = useState({
-    activeViews: [],
-    showTicker: false,
-    hideBottomScoreTicker: false,
-    sponsors: [],
-    fullScreenBanners: [],
-    organizerName: "",
-    customMessageTitle: "",
-    customMessageBody: "",
-    tickerText: "",
-    spotlightPlayerId: "",
-    autoSpotlightEnabled: false,
-    appLogo: "",
-    showAppLogo: false,
-    broadcastAudioEnabled: true,
-  });
+  const [config, setConfig] = useState(DEFAULT_CONFIG);
 
   const [globalLogo, setGlobalLogo] = useState("");
   const [saving, setSaving] = useState(false);
@@ -67,55 +70,65 @@ export default function OverlayController({ tournamentId, matchId, match }) {
   const [newSponsorPhone, setNewSponsorPhone] = useState("");
   const [processingImage, setProcessingImage] = useState(false);
 
-  // State for Team Colors
-  const [teamAColor, setTeamAColor] = useState("#0d9488");
-  const [teamBColor, setTeamBColor] = useState("#1e293b");
+  const [teamAColor, setTeamAColor] = useState("#0284c7");
+  const [teamBColor, setTeamBColor] = useState("#e11d48");
 
-  // 🔥 NEW: LIVE SYNC COLORS DIRECTLY FROM TEAMS DATABASE 🔥
+  // 🔥 NEW: LIVE SYNC & AUTO-SAVE COLORS FROM DATABASE
   useEffect(() => {
     const fetchLiveTeamColors = async () => {
       if (!tournamentId || !match?.meta) return;
 
-      // Start with what is currently in the match (if anything)
-      let fetchedAColor = match.meta.teamAColor || "#0d9488";
-      let fetchedBColor = match.meta.teamBColor || "#1e293b";
+      let fetchedAColor = match.meta.teamAColor;
+      let fetchedBColor = match.meta.teamBColor;
+      let needsAutoSave = false;
 
       try {
-        // Look up Team A in the DB
-        if (match.meta.teamAId) {
+        if (!fetchedAColor && match.meta.teamAId) {
           const teamASnap = await getDoc(
             doc(db, "tournaments", tournamentId, "teams", match.meta.teamAId),
           );
           if (teamASnap.exists() && teamASnap.data().color) {
             fetchedAColor = teamASnap.data().color;
+            needsAutoSave = true;
           }
         }
-        // Look up Team B in the DB
-        if (match.meta.teamBId) {
+        if (!fetchedBColor && match.meta.teamBId) {
           const teamBSnap = await getDoc(
             doc(db, "tournaments", tournamentId, "teams", match.meta.teamBId),
           );
           if (teamBSnap.exists() && teamBSnap.data().color) {
             fetchedBColor = teamBSnap.data().color;
+            needsAutoSave = true;
           }
         }
 
-        // Apply them to the color picker automatically!
-        setTeamAColor(fetchedAColor);
-        setTeamBColor(fetchedBColor);
+        // Apply fallbacks if teams don't have colors set
+        const finalAColor = fetchedAColor || "#0284c7";
+        const finalBColor = fetchedBColor || "#e11d48";
+
+        setTeamAColor(finalAColor);
+        setTeamBColor(finalBColor);
+
+        // If the match doc was missing colors, force save them so the ticker picks them up immediately!
+        if (needsAutoSave || !match.meta.teamAColor || !match.meta.teamBColor) {
+          await updateDoc(
+            doc(db, "tournaments", tournamentId, "matches", matchId),
+            {
+              "meta.teamAColor": finalAColor,
+              "meta.teamBColor": finalBColor,
+            },
+          );
+        }
       } catch (error) {
         console.error("Error fetching live team colors:", error);
       }
     };
 
     fetchLiveTeamColors();
-  }, [tournamentId, match?.meta?.teamAId, match?.meta?.teamBId]);
+  }, [tournamentId, matchId, match?.meta?.teamAId, match?.meta?.teamBId]);
 
-  // Squad data for the Spotlight dropdown
   const teamASquad = match?.teamASquad || [];
   const teamBSquad = match?.teamBSquad || [];
-
-  // CURRENT PLAYERS ON FIELD (For quick buttons)
   const currentInn = match?.innings?.[match?.currentInnings || 0];
   const liveStriker = currentInn?.striker;
   const liveBowler = currentInn?.currentBowler;
@@ -129,7 +142,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     return p?.id;
   };
 
-  // --- ☁️ UNIVERSAL CLOUDINARY UPLOADER ---
   const uploadToCloudinary = async (file) => {
     const formData = new FormData();
     formData.append("file", file);
@@ -158,7 +170,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
             data.activeViews = [data.activeView];
           if (!data.sponsors) data.sponsors = [];
           if (!data.fullScreenBanners) data.fullScreenBanners = [];
-          setConfig((prev) => ({ ...prev, ...data }));
+          setConfig((prev) => ({ ...DEFAULT_CONFIG, ...prev, ...data }));
         }
       }
     });
@@ -178,17 +190,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     };
     fetchGlobalBranding();
   }, []);
-
-  useEffect(() => {
-    if (match?.meta?.overlay) {
-      const data = match.meta.overlay;
-      if (data.activeView && !data.activeViews)
-        data.activeViews = [data.activeView];
-      if (!data.sponsors) data.sponsors = [];
-      if (!data.fullScreenBanners) data.fullScreenBanners = [];
-      setConfig((prev) => ({ ...prev, ...data }));
-    }
-  }, [match?.meta?.overlay]);
 
   const updateOverlay = async (updates) => {
     setSaving(true);
@@ -256,7 +257,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     });
   };
 
-  // 🔥 TRIGGER LIVE SPOTLIGHT
   const triggerLiveSpotlight = (playerName) => {
     const pId = getPlayerIdByName(playerName);
     if (!pId) return alert("Player not found in team squads!");
@@ -269,7 +269,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     updateOverlay({ spotlightPlayerId: pId, activeViews: newViews });
   };
 
-  // CLOUDINARY UPLOADS
   const handleAppLogoUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -293,22 +292,18 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     }
   };
 
+  // 🔥 UPDATED: Sponsor name is no longer required for image uploads
   const handleLogoUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    if (!newSponsorName.trim()) {
-      alert("Please type a Sponsor Name before uploading the logo.");
-      e.target.value = null;
-      return;
-    }
 
     setProcessingImage(true);
     try {
       const secureUrl = await uploadToCloudinary(file);
       const newSponsor = {
         id: Date.now().toString(),
-        name: newSponsorName,
-        phone: newSponsorPhone,
+        name: newSponsorName.trim(), // Will save as empty string if left blank
+        phone: newSponsorPhone.trim(),
         image: secureUrl,
       };
 
@@ -326,7 +321,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
 
   const handleTextSponsorAdd = () => {
     if (!newSponsorName.trim()) {
-      alert("Please type a Sponsor Name.");
+      alert("Please type a Sponsor Name for text-only partners.");
       return;
     }
     const newSponsor = {
@@ -527,11 +522,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               <button
                 onClick={handleSaveTeamColors}
                 disabled={saving}
-                className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                  lightMode
-                    ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
-                    : "bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 border border-indigo-500/30"
-                }`}
+                className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${lightMode ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200" : "bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 border border-indigo-500/30"}`}
               >
                 Save Colors to Broadcast
               </button>
@@ -575,7 +566,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                     ? "Change Custom"
                     : "Upload Custom"}
                 </button>
-
                 {match?.meta?.overlay?.appLogo && (
                   <button
                     onClick={async () => {
@@ -689,7 +679,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
           </div>
         </div>
 
-        {/* --- 2. PLAYER SPOTLIGHT (Profile Card) --- */}
+        {/* --- 2. PLAYER SPOTLIGHT --- */}
         <div
           className={`${cardClass} border-teal-500/30 shadow-[0_0_15px_rgba(20,184,166,0.1)] relative overflow-hidden`}
         >
@@ -702,7 +692,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
           </div>
 
           <div className="space-y-4 flex-grow flex flex-col">
-            {/* 🟢 Live Crease Controls (1-Click Buttons) */}
             <div className="pb-4 border-b border-black/10 dark:border-white/10">
               <p
                 className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${theme.sub}`}
@@ -733,7 +722,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               </div>
             </div>
 
-            {/* Manual Selection Dropdown */}
             <div>
               <label className={labelClass}>Manual Player Selection</label>
               <div className="relative">
@@ -776,7 +764,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
 
             <div className="mt-auto space-y-3 pt-2">
               <ToggleButton
-                label="Auto-Show Incoming Batter (12s)"
+                label="Auto-Show Incoming Batter & Bowler (12s)"
                 active={config.autoSpotlightEnabled}
                 onClick={() =>
                   updateOverlay({
@@ -790,9 +778,8 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                 label="Show Selected Profile"
                 active={isActive("SPOTLIGHT")}
                 onClick={() => {
-                  if (!config.spotlightPlayerId) {
+                  if (!config.spotlightPlayerId)
                     return alert("Please select a player first!");
-                  }
                   toggleView("SPOTLIGHT");
                 }}
                 icon={Eye}
@@ -897,7 +884,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               <div className="flex gap-2 mb-2">
                 <input
                   className={`${inputClass} mb-0 flex-[2]`}
-                  placeholder="Sponsor Name"
+                  placeholder="Sponsor Name (Opt)"
                   value={newSponsorName}
                   onChange={(e) => setNewSponsorName(e.target.value)}
                 />
@@ -956,12 +943,19 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                         </div>
                       )}
                       <div className="flex flex-col flex-1 truncate">
-                        <span className="text-[10px] font-bold uppercase">
-                          {s.name}
-                        </span>
+                        {s.name && (
+                          <span className="text-[10px] font-bold uppercase">
+                            {s.name}
+                          </span>
+                        )}
                         {s.phone && (
                           <span className="text-[9px] text-slate-500 font-mono tracking-widest">
                             {s.phone}
+                          </span>
+                        )}
+                        {!s.name && !s.phone && (
+                          <span className="text-[10px] text-slate-500 italic">
+                            Logo Only
                           </span>
                         )}
                       </div>
@@ -1009,7 +1003,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
           </div>
         </div>
 
-        {/* 🔥 5. MATCH EVENTS & INFO CARDS */}
+        {/* --- 5. MATCH EVENTS & AUDIO --- */}
         <div
           className={`${cardClass} border-green-500/30 shadow-[0_0_15px_rgba(34,197,94,0.1)] relative overflow-hidden`}
         >
@@ -1020,9 +1014,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               Events & Audio
             </h4>
           </div>
-
           <div className="space-y-4 flex-grow flex flex-col">
-            {/* 🚨 THE KILL SWITCH 🚨 */}
             <button
               onClick={() => {
                 updateOverlay({
