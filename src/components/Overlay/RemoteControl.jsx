@@ -10,7 +10,6 @@ import {
   AlertCircle,
   Mic,
   MicOff,
-  Video,
   Power,
   Moon,
   Sun,
@@ -19,7 +18,6 @@ import {
   Wifi,
   Activity,
   Zap,
-  RefreshCw,
   Info,
   Plus,
   Minus,
@@ -34,17 +32,22 @@ export default function RemoteControl() {
   const [remoteZoom, setRemoteZoom] = useState(1);
   const [remoteTorch, setRemoteTorch] = useState(false);
   const [remoteMuted, setRemoteMuted] = useState(false);
-  const [remoteLens, setRemoteLens] = useState("");
   const [remoteOled, setRemoteOled] = useState(false);
   const [remoteExposure, setRemoteExposure] = useState(0);
   const [isLive, setIsLive] = useState(false);
 
+  // 🔥 Strict Refs to prevent Rubber-Banding and Firebase lag
+  const remoteZoomRef = useRef(1);
   const lastZoomTime = useRef(0);
-  const zoomIntervalRef = useRef(null); // 🔥 For Smooth Remote Rocker
+  const lastExposureTime = useRef(0);
+  const zoomIntervalRef = useRef(null);
+
+  useEffect(() => {
+    remoteZoomRef.current = remoteZoom;
+  }, [remoteZoom]);
 
   useEffect(() => {
     if (!streamId) return;
-
     const streamDocRef = doc(db, "streams", streamId);
 
     const unsubscribe = onSnapshot(streamDocRef, (snapshot) => {
@@ -53,17 +56,29 @@ export default function RemoteControl() {
         setIsLive(true);
 
         if (data.capabilities) setCamCapabilities(data.capabilities);
-        if (data.health) setDeviceHealth(data.health);
+
+        // 🔥 FIX: Safety fallback. If health fails but currentState exists, fake the health so UI unblocks
+        if (data.health) {
+          setDeviceHealth(data.health);
+        } else if (data.currentState) {
+          setDeviceHealth({
+            batteryLevel: "--",
+            latency: "--",
+            fps: "--",
+            bitrate: "--",
+          });
+        }
 
         if (data.currentState) {
           if (Date.now() - lastZoomTime.current > 1000) {
             setRemoteZoom(data.currentState.zoom || 1);
           }
+          if (Date.now() - lastExposureTime.current > 1000) {
+            setRemoteExposure(data.currentState.exposure || 0);
+          }
           setRemoteTorch(data.currentState.torch || false);
           setRemoteMuted(data.currentState.isMuted || false);
-          setRemoteLens(data.currentState.selectedCamera || "");
           setRemoteOled(data.currentState.oled || false);
-          setRemoteExposure(data.currentState.exposure || 0);
         }
       } else {
         setIsLive(false);
@@ -78,9 +93,11 @@ export default function RemoteControl() {
   const sendCommand = async (type, value) => {
     try {
       await updateDoc(doc(db, "streams", streamId), {
-        remoteCommand: { type, value, timestamp: Date.now() },
+        remoteCommand: { type, value, timestamp: Date.now() + Math.random() },
       });
-    } catch (err) {}
+    } catch (err) {
+      console.error("Command failed", err);
+    }
   };
 
   // --- ZOOM CONTROLS ---
@@ -96,61 +113,44 @@ export default function RemoteControl() {
 
   const handleZoomRelease = () => sendCommand("zoom", remoteZoom);
 
-  // 🔥 NEW: Remote Smooth Rocker
+  // 🔥 FIX: Strict NaN mathematical safeguards
   const startSmoothZoom = (direction) => {
-    if (!camCapabilities?.zoom) return;
-    const stepSpeed =
-      (camCapabilities.zoom.max - camCapabilities.zoom.min) * 0.015;
+    const min = camCapabilities?.zoom?.min || 1;
+    const max = camCapabilities?.zoom?.max || 10;
+    const stepSpeed = (max - min) * 0.05; // 5% speed per tick
 
     zoomIntervalRef.current = setInterval(() => {
-      setRemoteZoom((prevZoom) => {
-        let newZoom = prevZoom + stepSpeed * direction;
-        if (newZoom >= camCapabilities.zoom.max)
-          newZoom = camCapabilities.zoom.max;
-        if (newZoom <= camCapabilities.zoom.min)
-          newZoom = camCapabilities.zoom.min;
+      let currentZ = Number(remoteZoomRef.current) || 1;
+      let newZoom = currentZ + stepSpeed * direction;
+      newZoom = Math.min(Math.max(newZoom, min), max); // Clamp strictly
 
-        sendCommand("zoom", newZoom);
-        lastZoomTime.current = Date.now();
-        return newZoom;
-      });
-    }, 50); // Send command every 50ms for smooth glide
+      setRemoteZoom(newZoom);
+      sendCommand("zoom", newZoom);
+      lastZoomTime.current = Date.now();
+    }, 150);
   };
 
   const stopSmoothZoom = () => {
     if (zoomIntervalRef.current) clearInterval(zoomIntervalRef.current);
   };
 
-  // 🔥 NEW: Remote Presets
+  // 🔥 FIX: Mathematical safeguards for presets
   const snapZoom = (targetVal) => {
-    if (!camCapabilities?.zoom) return;
-    let clamped = targetVal;
-    if (clamped > camCapabilities.zoom.max) clamped = camCapabilities.zoom.max;
-    if (clamped < camCapabilities.zoom.min) clamped = camCapabilities.zoom.min;
+    const min = camCapabilities?.zoom?.min || 1;
+    const max = camCapabilities?.zoom?.max || 10;
 
+    let clamped = Math.min(Math.max(Number(targetVal), min), max);
     setRemoteZoom(clamped);
     sendCommand("zoom", clamped);
+    lastZoomTime.current = Date.now();
   };
 
-  // --- EXPOSURE CONTROLS ---
+  // --- EXPOSURE & TOGGLES ---
   const handleExposureChange = (e) => {
     const val = Number(e.target.value);
     setRemoteExposure(val);
     sendCommand("exposure", val);
-  };
-
-  // --- OTHER CONTROLS ---
-  const handleSwapLens = () => {
-    if (!camCapabilities?.cameras || camCapabilities.cameras.length <= 1)
-      return;
-    const currentIndex = camCapabilities.cameras.findIndex(
-      (c) => c.deviceId === remoteLens,
-    );
-    const nextIndex = (currentIndex + 1) % camCapabilities.cameras.length;
-    const nextCamId = camCapabilities.cameras[nextIndex].deviceId;
-
-    setRemoteLens(nextCamId);
-    sendCommand("switch_camera", nextCamId); // 🔥 Fixed command name!
+    lastExposureTime.current = Date.now(); // 🔥 Prevents rubber-banding
   };
 
   const toggleRemoteTorch = () => {
@@ -196,9 +196,16 @@ export default function RemoteControl() {
     );
   }
 
-  const currentLensName =
-    camCapabilities?.cameras?.find((c) => c.deviceId === remoteLens)?.label ||
-    "Default Camera";
+  // Safe Math Fallbacks
+  const rawMin = camCapabilities?.zoom?.min || 1;
+  const rawMax = camCapabilities?.zoom?.max || 10;
+  const rawExpMin = camCapabilities?.exposure?.min || -4;
+  const rawExpMax = camCapabilities?.exposure?.max || 4;
+
+  const mappedDisplayZoom = (
+    ((Number(remoteZoom) - rawMin) / (rawMax - rawMin)) * 9 +
+    1
+  ).toFixed(1);
 
   let networkStatus = "GOOD";
   let networkColor = "text-emerald-500";
@@ -206,25 +213,20 @@ export default function RemoteControl() {
     "Connection is stable. Phone and Laptop are communicating perfectly.";
 
   if (deviceHealth) {
-    if (deviceHealth.fps < 20) {
+    if (deviceHealth.fps < 20 && deviceHealth.fps > 0) {
       networkStatus = "THERMAL THROTTLING";
       networkColor = "text-red-500";
       networkTip =
-        "Phone is overheating! Frame rate has dropped. Turn on 'Screen Off' mode or shade the device.";
+        "Phone is overheating! Frame rate has dropped. Turn on 'Screen Off' mode.";
     } else if (deviceHealth.latency > 300) {
       networkStatus = "HIGH LATENCY";
       networkColor = "text-red-500";
-      networkTip = `Delay is ${deviceHealth.latency}ms. Phone is too far from Laptop hotspot, or there is heavy WiFi interference.`;
+      networkTip = `Delay is ${deviceHealth.latency}ms. Phone is too far from Laptop hotspot.`;
     } else if (deviceHealth.latency > 150) {
       networkStatus = "FAIR";
       networkColor = "text-amber-500";
       networkTip =
-        "Latency is rising. Ensure clear line-of-sight between laptop and phone. Use 5GHz hotspot if possible.";
-    } else if (deviceHealth.bitrate < 1000 && deviceHealth.bitrate > 0) {
-      networkStatus = "LOW BANDWIDTH";
-      networkColor = "text-amber-500";
-      networkTip =
-        "Video quality is dropping. Move the phone closer to the laptop hotspot.";
+        "Latency is rising. Ensure clear line-of-sight between laptop and phone.";
     }
   }
 
@@ -253,9 +255,7 @@ export default function RemoteControl() {
         {deviceHealth ? (
           <>
             <div className="flex justify-between bg-gray-950 rounded-xl border border-gray-800 p-3 mb-2">
-              <div
-                className="flex items-center gap-2 px-4 border-r border-gray-800 last:border-0"
-                title="Phone Battery">
+              <div className="flex items-center gap-2 px-4 border-r border-gray-800 last:border-0">
                 {deviceHealth.isCharging ? (
                   <BatteryCharging size={16} className="text-emerald-500" />
                 ) : (
@@ -269,14 +269,10 @@ export default function RemoteControl() {
                   />
                 )}
                 <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">
-                  {deviceHealth.batteryLevel !== undefined
-                    ? `${deviceHealth.batteryLevel}%`
-                    : "N/A"}
+                  {deviceHealth.batteryLevel}%
                 </span>
               </div>
-              <div
-                className="flex items-center gap-2 px-4 border-r border-gray-800 last:border-0"
-                title="Cam -> Laptop Delay">
+              <div className="flex items-center gap-2 px-4 border-r border-gray-800 last:border-0">
                 <Wifi
                   size={16}
                   className={
@@ -286,37 +282,30 @@ export default function RemoteControl() {
                   }
                 />
                 <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">
-                  {deviceHealth.latency !== undefined
-                    ? `${deviceHealth.latency}ms`
-                    : "N/A"}
+                  {deviceHealth.latency}ms
                 </span>
               </div>
-              <div
-                className="flex items-center gap-2 px-4 border-r border-gray-800 last:border-0"
-                title="Frames Per Second">
+              <div className="flex items-center gap-2 px-4 border-r border-gray-800 last:border-0">
                 <Activity
                   size={16}
                   className={
-                    deviceHealth.fps < 20 ? "text-red-500" : "text-emerald-500"
+                    deviceHealth.fps < 20 && deviceHealth.fps > 0
+                      ? "text-red-500"
+                      : "text-emerald-500"
                   }
                 />
                 <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">
-                  {deviceHealth.fps || 0} FPS
+                  {deviceHealth.fps} FPS
                 </span>
               </div>
-              <div
-                className="flex items-center gap-2 px-4"
-                title="Video Quality (kbps)">
+              <div className="flex items-center gap-2 px-4">
                 <Zap size={16} className="text-amber-500" />
                 <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">
-                  {deviceHealth.bitrate
-                    ? `${deviceHealth.bitrate} kbps`
-                    : "N/A"}
+                  {deviceHealth.bitrate} kbps
                 </span>
               </div>
             </div>
 
-            {/* NETWORK DIAGNOSTICS */}
             <div className="bg-black/30 border border-gray-800 rounded-lg p-3 mb-6 flex items-start gap-3">
               <Info size={16} className={`mt-0.5 shrink-0 ${networkColor}`} />
               <div>
@@ -336,183 +325,154 @@ export default function RemoteControl() {
           </div>
         )}
 
-        {!camCapabilities ? (
-          <div className="text-center py-10 text-gray-500 text-sm font-bold uppercase tracking-widest">
-            Waiting for lens data...
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+          {/* LEFT COLUMN: System Controls */}
+          <div className="md:col-span-4 space-y-4 flex flex-col">
+            <button
+              onClick={toggleRemoteMute}
+              className={`p-4 rounded-xl flex flex-col items-center justify-center gap-2 font-bold text-xs uppercase tracking-widest transition-all border shadow-lg ${
+                remoteMuted
+                  ? "bg-red-500/20 text-red-500 border-red-500/50"
+                  : "bg-gray-950 text-emerald-500 border-gray-800 hover:bg-gray-900"
+              }`}>
+              {remoteMuted ? <MicOff size={24} /> : <Mic size={24} />}
+              {remoteMuted ? "Muted" : "Mic Active"}
+            </button>
+
+            <button
+              onClick={toggleOledSleep}
+              className={`p-4 rounded-xl flex flex-col items-center justify-center gap-2 font-bold text-xs uppercase tracking-widest transition-all border shadow-lg ${
+                remoteOled
+                  ? "bg-indigo-600 text-white border-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.4)]"
+                  : "bg-gray-950 text-indigo-400 border-gray-800 hover:bg-gray-900"
+              }`}>
+              {remoteOled ? <Moon size={24} /> : <Sun size={24} />}
+              {remoteOled ? "Screen Off" : "Screen On"}
+            </button>
+
+            {camCapabilities?.torch !== undefined && (
+              <button
+                onClick={toggleRemoteTorch}
+                className={`w-full flex-1 p-4 rounded-xl flex flex-col items-center justify-center gap-2 font-bold text-xs uppercase tracking-widest transition-all border shadow-lg ${
+                  remoteTorch
+                    ? "bg-amber-500 text-black border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.4)]"
+                    : "bg-gray-950 text-amber-500 border-gray-800 hover:bg-gray-900"
+                }`}>
+                {remoteTorch ? <Flashlight size={24} /> : <ZapOff size={24} />}
+                {remoteTorch ? "Torch ON" : "Torch OFF"}
+              </button>
+            )}
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-            {/* LEFT COLUMN: System Controls (Takes up 5 cols) */}
-            <div className="md:col-span-5 space-y-4">
-              {camCapabilities.cameras &&
-                camCapabilities.cameras.length > 0 && (
-                  <div className="bg-gray-950 p-3.5 rounded-xl border border-gray-800 flex justify-between items-center shadow-lg">
-                    <div className="flex flex-col overflow-hidden pr-2">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-1.5 mb-1">
-                        <Video size={14} className="text-cyan-500" /> Active
-                        Lens
-                      </label>
-                      <span className="text-xs text-white font-bold truncate max-w-[120px]">
-                        {currentLensName}
-                      </span>
-                    </div>
-                    <button
-                      onClick={handleSwapLens}
-                      disabled={camCapabilities.cameras.length <= 1}
-                      className={`p-3 rounded-xl transition-all shadow-md flex items-center justify-center ${camCapabilities.cameras.length > 1 ? "bg-gray-800 text-white hover:bg-gray-700 hover:text-cyan-400 active:scale-90 border border-gray-700" : "bg-gray-900 text-gray-600 border border-gray-800 cursor-not-allowed"}`}
-                      title="Swap Camera">
-                      <RefreshCw size={18} />
-                    </button>
-                  </div>
-                )}
 
-              <div className="grid grid-cols-2 gap-4">
+          {/* RIGHT COLUMN: Hardware Controls */}
+          <div className="md:col-span-8 space-y-4 flex flex-col">
+            <div className="bg-gray-950 p-5 rounded-xl border border-gray-800 flex-1 flex flex-col shadow-lg relative overflow-hidden">
+              {/* Framing Presets */}
+              <div className="flex justify-between gap-2 mb-6">
                 <button
-                  onClick={toggleRemoteMute}
-                  className={`p-3 rounded-xl flex flex-col items-center justify-center gap-1.5 font-bold text-[10px] uppercase tracking-widest transition-all border shadow-lg ${remoteMuted ? "bg-red-500/20 text-red-500 border-red-500/50" : "bg-gray-950 text-emerald-500 border-gray-800 hover:bg-gray-900"}`}>
-                  {remoteMuted ? <MicOff size={18} /> : <Mic size={18} />}
-                  {remoteMuted ? "Muted" : "Mic Active"}
+                  onClick={() => snapZoom(rawMin)}
+                  className="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-black text-xs py-3 rounded-lg border border-gray-700 shadow active:scale-95 uppercase tracking-widest transition-all">
+                  Wide
                 </button>
-
                 <button
-                  onClick={toggleOledSleep}
-                  className={`p-3 rounded-xl flex flex-col items-center justify-center gap-1.5 font-bold text-[10px] uppercase tracking-widest transition-all border shadow-lg ${remoteOled ? "bg-indigo-600 text-white border-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.4)]" : "bg-gray-950 text-indigo-400 border-gray-800 hover:bg-gray-900"}`}>
-                  {remoteOled ? <Moon size={18} /> : <Sun size={18} />}
-                  {remoteOled ? "Screen Off" : "Screen On"}
+                  onClick={() => snapZoom(rawMin + (rawMax - rawMin) * 0.3)}
+                  className="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-black text-xs py-3 rounded-lg border border-gray-700 shadow active:scale-95 uppercase tracking-widest transition-all">
+                  Pitch
+                </button>
+                <button
+                  onClick={() => snapZoom(rawMax)}
+                  className="flex-1 bg-gray-800 hover:bg-cyan-900/50 text-cyan-400 border border-gray-700 hover:border-cyan-500/50 font-black text-xs py-3 rounded-lg shadow active:scale-95 uppercase tracking-widest transition-all">
+                  Tight
                 </button>
               </div>
 
-              {camCapabilities.torch && (
-                <button
-                  onClick={toggleRemoteTorch}
-                  className={`w-full p-4 rounded-xl flex items-center justify-center gap-3 font-bold text-[10px] uppercase tracking-widest transition-all border shadow-lg ${remoteTorch ? "bg-amber-500 text-black border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.4)]" : "bg-gray-950 text-amber-500 border-gray-800 hover:bg-gray-900"}`}>
-                  {remoteTorch ? (
-                    <Flashlight size={16} />
-                  ) : (
-                    <ZapOff size={16} />
-                  )}
-                  {remoteTorch ? "Torch is ON" : "Turn On Torch"}
-                </button>
-              )}
+              <div className="flex items-center gap-6 mt-auto">
+                <div className="flex flex-col gap-1 shrink-0 bg-gray-900 p-1 rounded-xl border border-gray-800">
+                  {/* 🔥 Added touch-none select-none to block text highlighting on mobile */}
+                  <button
+                    onMouseDown={() => startSmoothZoom(1)}
+                    onMouseUp={stopSmoothZoom}
+                    onMouseLeave={stopSmoothZoom}
+                    onTouchStart={(e) => {
+                      e.preventDefault();
+                      startSmoothZoom(1);
+                    }}
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      stopSmoothZoom();
+                    }}
+                    className="w-16 h-14 bg-gray-800 hover:bg-gray-700 active:bg-cyan-600 rounded-t-lg flex items-center justify-center text-white transition-colors touch-none select-none">
+                    <Plus size={24} strokeWidth={3} />
+                  </button>
+                  <button
+                    onMouseDown={() => startSmoothZoom(-1)}
+                    onMouseUp={stopSmoothZoom}
+                    onMouseLeave={stopSmoothZoom}
+                    onTouchStart={(e) => {
+                      e.preventDefault();
+                      startSmoothZoom(-1);
+                    }}
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      stopSmoothZoom();
+                    }}
+                    className="w-16 h-14 bg-gray-800 hover:bg-gray-700 active:bg-cyan-600 rounded-b-lg flex items-center justify-center text-white transition-colors touch-none select-none">
+                    <Minus size={24} strokeWidth={3} />
+                  </button>
+                </div>
+
+                <div className="flex-1 flex flex-col gap-4">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-black uppercase tracking-widest text-gray-500 flex items-center gap-1.5">
+                      <ZoomIn size={16} className="text-cyan-500" /> Zoom Level
+                    </label>
+                    <span className="text-cyan-500 font-mono font-black text-base bg-cyan-500/10 px-3 py-1 rounded">
+                      {mappedDisplayZoom}x
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={rawMin}
+                    max={rawMax}
+                    step={camCapabilities?.zoom?.step || 0.1}
+                    value={Number(remoteZoom) || rawMin}
+                    onChange={handleRemoteZoom}
+                    onPointerUp={handleZoomRelease}
+                    onTouchEnd={handleZoomRelease}
+                    className="w-full accent-cyan-500 h-3 bg-gray-800 rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+              </div>
             </div>
 
-            {/* RIGHT COLUMN: Camera Hardware Controls (Takes up 7 cols) */}
-            <div className="md:col-span-7 space-y-4 flex flex-col">
-              {camCapabilities.zoom && (
-                <div className="bg-gray-950 p-5 rounded-xl border border-gray-800 flex-1 flex flex-col shadow-lg relative overflow-hidden">
-                  {/* Framing Presets (Top) */}
-                  <div className="flex justify-between gap-2 mb-6">
-                    <button
-                      onClick={() => snapZoom(camCapabilities.zoom.min)}
-                      className="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-black text-[10px] py-2.5 rounded-lg border border-gray-700 shadow active:scale-95 uppercase tracking-widest transition-all">
-                      Wide
-                    </button>
-                    <button
-                      onClick={() =>
-                        snapZoom(
-                          camCapabilities.zoom.min +
-                            (camCapabilities.zoom.max -
-                              camCapabilities.zoom.min) *
-                              0.3,
-                        )
-                      }
-                      className="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-black text-[10px] py-2.5 rounded-lg border border-gray-700 shadow active:scale-95 uppercase tracking-widest transition-all">
-                      Pitch
-                    </button>
-                    <button
-                      onClick={() => snapZoom(camCapabilities.zoom.max)}
-                      className="flex-1 bg-gray-800 hover:bg-cyan-900/50 text-cyan-400 border border-gray-700 hover:border-cyan-500/50 font-black text-[10px] py-2.5 rounded-lg shadow active:scale-95 uppercase tracking-widest transition-all">
-                      Tight
-                    </button>
-                  </div>
-
-                  {/* Main Zoom Slider & Rocker */}
-                  <div className="flex items-center gap-6 mt-auto">
-                    {/* Rocker Buttons */}
-                    <div className="flex flex-col gap-1 shrink-0 bg-gray-900 p-1 rounded-xl border border-gray-800">
-                      <button
-                        onMouseDown={() => startSmoothZoom(1)}
-                        onMouseUp={stopSmoothZoom}
-                        onMouseLeave={stopSmoothZoom}
-                        onTouchStart={() => startSmoothZoom(1)}
-                        onTouchEnd={stopSmoothZoom}
-                        className="w-14 h-12 bg-gray-800 hover:bg-gray-700 active:bg-cyan-600 rounded-t-lg flex items-center justify-center text-white transition-colors">
-                        <Plus size={20} strokeWidth={3} />
-                      </button>
-                      <button
-                        onMouseDown={() => startSmoothZoom(-1)}
-                        onMouseUp={stopSmoothZoom}
-                        onMouseLeave={stopSmoothZoom}
-                        onTouchStart={() => startSmoothZoom(-1)}
-                        onTouchEnd={stopSmoothZoom}
-                        className="w-14 h-12 bg-gray-800 hover:bg-gray-700 active:bg-cyan-600 rounded-b-lg flex items-center justify-center text-white transition-colors">
-                        <Minus size={20} strokeWidth={3} />
-                      </button>
-                    </div>
-
-                    {/* Slider */}
-                    <div className="flex-1 flex flex-col gap-3">
-                      <div className="flex justify-between items-center">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 flex items-center gap-1.5">
-                          <ZoomIn size={14} className="text-cyan-500" /> Zoom
-                          Level
-                        </label>
-                        <span className="text-cyan-500 font-mono font-black text-sm bg-cyan-500/10 px-2 py-0.5 rounded">
-                          {remoteZoom.toFixed(1)}x
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min={camCapabilities.zoom.min}
-                        max={camCapabilities.zoom.max}
-                        step={camCapabilities.zoom.step}
-                        value={remoteZoom}
-                        onChange={handleRemoteZoom}
-                        onPointerUp={handleZoomRelease}
-                        onTouchEnd={handleZoomRelease}
-                        className="w-full accent-cyan-500 h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Exposure Slider */}
-              {camCapabilities.exposure && (
-                <div className="bg-gray-950 p-5 rounded-xl border border-gray-800 shadow-lg">
-                  <div className="flex justify-between items-center mb-3">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 flex items-center gap-1.5">
-                      <Sun size={14} className="text-amber-500" /> Exposure (EV)
-                    </label>
-                    <span className="text-amber-500 font-mono font-black text-xs">
-                      {remoteExposure > 0 ? "+" : ""}
-                      {remoteExposure}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-[10px] font-black text-gray-600">
-                      -
-                    </span>
-                    <input
-                      type="range"
-                      min={camCapabilities.exposure.min}
-                      max={camCapabilities.exposure.max}
-                      step={camCapabilities.exposure.step}
-                      value={remoteExposure}
-                      onChange={handleExposureChange}
-                      className="flex-1 accent-amber-500 h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer"
-                    />
-                    <span className="text-[10px] font-black text-gray-600">
-                      +
-                    </span>
-                  </div>
-                </div>
-              )}
+            {/* Exposure Slider */}
+            <div className="bg-gray-950 p-5 rounded-xl border border-gray-800 shadow-lg">
+              <div className="flex justify-between items-center mb-4">
+                <label className="text-xs font-black uppercase tracking-widest text-gray-500 flex items-center gap-1.5">
+                  <Sun size={16} className="text-amber-500" /> Exposure (EV)
+                </label>
+                <span className="text-amber-500 font-mono font-black text-base bg-amber-500/10 px-3 py-1 rounded">
+                  {Number(remoteExposure) > 0 ? "+" : ""}
+                  {Number(remoteExposure).toFixed(1)}
+                </span>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="text-sm font-black text-gray-600">-</span>
+                <input
+                  type="range"
+                  min={rawExpMin}
+                  max={rawExpMax}
+                  step={camCapabilities?.exposure?.step || 0.1}
+                  value={Number(remoteExposure) || 0}
+                  onChange={handleExposureChange}
+                  className="flex-1 accent-amber-500 h-3 bg-gray-800 rounded-lg appearance-none cursor-pointer"
+                />
+                <span className="text-sm font-black text-gray-600">+</span>
+              </div>
             </div>
           </div>
-        )}
+        </div>
 
-        {/* MASTER KILL SWITCH */}
         <button
           onClick={handleKillStream}
           className="w-full mt-6 py-4 bg-red-600/10 hover:bg-red-600/20 text-red-500 border border-red-500/30 rounded-xl font-black uppercase tracking-widest text-xs transition-all flex items-center justify-center gap-2 active:scale-95 shadow-lg">

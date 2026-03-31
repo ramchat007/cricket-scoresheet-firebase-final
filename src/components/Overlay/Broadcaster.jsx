@@ -21,7 +21,6 @@ import {
   Sun,
   Plus,
   Minus,
-  Target,
 } from "lucide-react";
 import {
   rtcConfig,
@@ -37,7 +36,8 @@ export default function Broadcaster() {
   const activeStreamRef = useRef(null);
   const wakeLockRef = useRef(null);
   const listenersRef = useRef(null);
-  const zoomIntervalRef = useRef(null); // 🔥 For Smooth Zoom Rocker
+  const zoomIntervalRef = useRef(null);
+  const lastCommandTimeRef = useRef(0);
 
   const [streamId, setStreamId] = useState("");
   const [localStream, setLocalStream] = useState(null);
@@ -58,7 +58,6 @@ export default function Broadcaster() {
   const [torchSupported, setTorchSupported] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
 
-  // Hardware Capabilities State
   const [zoomCap, setZoomCap] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [exposureCap, setExposureCap] = useState(null);
@@ -130,7 +129,6 @@ export default function Broadcaster() {
     }
   }, [isStreaming, localStream]);
 
-  // 🟢 AUTO-SYNC STATE TO FIREBASE (Added Exposure)
   useEffect(() => {
     if (isStreaming && streamId) {
       updateDoc(doc(db, "streams", streamId), {
@@ -153,7 +151,6 @@ export default function Broadcaster() {
     streamId,
   ]);
 
-  // 🟢 LISTEN FOR REMOTE COMMANDS (🔥 FIX: Added Camera Switch Listener!)
   useEffect(() => {
     if (!isStreaming || !streamId) return;
 
@@ -162,9 +159,8 @@ export default function Broadcaster() {
       if (data?.remoteCommand) {
         const cmd = data.remoteCommand;
 
-        if (cmd.timestamp <= (activeStreamRef.current?.lastRemoteCommand || 0))
-          return;
-        activeStreamRef.current.lastRemoteCommand = cmd.timestamp;
+        if (cmd.timestamp <= lastCommandTimeRef.current) return;
+        lastCommandTimeRef.current = cmd.timestamp;
 
         if (cmd.type === "zoom") {
           setZoomLevel(cmd.value);
@@ -183,9 +179,7 @@ export default function Broadcaster() {
           setIsOledSleep(cmd.value);
         } else if (cmd.type === "stop") {
           handleStopStream();
-        }
-        // 🔥 CRITICAL BUG FIX: Added listener for the remote camera swap
-        else if (cmd.type === "switch_camera") {
+        } else if (cmd.type === "switch_camera") {
           switchLiveCamera(cmd.value);
         } else if (cmd.type === "exposure") {
           setExposureLevel(cmd.value);
@@ -197,27 +191,102 @@ export default function Broadcaster() {
     return () => unsub();
   }, [isStreaming, streamId]);
 
+  // 🔥 FIXED TELEMETRY ENGINE: Removed blocking await on battery
+  useEffect(() => {
+    if (!isStreaming || !streamId || !peerConnectionRef.current) return;
+
+    let lastBytesSent = 0;
+    let lastTime = Date.now();
+
+    const telemetryInterval = setInterval(async () => {
+      let healthData = {
+        timestamp: Date.now(),
+        batteryLevel: 100,
+        isCharging: false,
+        latency: 0,
+        fps: 0,
+        bitrate: 0,
+        networkType: "wifi",
+      };
+
+      // Non-blocking battery fetch prevents UI hanging
+      try {
+        if (navigator.getBattery) {
+          navigator
+            .getBattery()
+            .then((battery) => {
+              healthData.batteryLevel = Math.round(battery.level * 100);
+              healthData.isCharging = battery.charging;
+            })
+            .catch(() => {});
+        }
+      } catch (e) {}
+
+      if (navigator.connection) {
+        healthData.networkType = navigator.connection.effectiveType || "wifi";
+        healthData.downlink = navigator.connection.downlink || 0;
+      }
+
+      try {
+        const stats = await peerConnectionRef.current.getStats();
+        stats.forEach((report) => {
+          if (report.type === "outbound-rtp" && report.kind === "video") {
+            healthData.fps = report.framesPerSecond || 0;
+            const bytesSent = report.bytesSent;
+            const now = Date.now();
+            if (lastBytesSent > 0) {
+              const bitrate =
+                (8 * (bytesSent - lastBytesSent)) / (now - lastTime);
+              healthData.bitrate = Math.round(bitrate);
+            }
+            lastBytesSent = bytesSent;
+            lastTime = now;
+          }
+          if (
+            report.type === "candidate-pair" &&
+            report.state === "succeeded"
+          ) {
+            healthData.latency = report.currentRoundTripTime
+              ? Math.round(report.currentRoundTripTime * 1000)
+              : 0;
+          }
+        });
+      } catch (e) {}
+
+      updateDoc(doc(db, "streams", streamId), { health: healthData }).catch(
+        () => {},
+      );
+    }, 3000);
+
+    return () => clearInterval(telemetryInterval);
+  }, [isStreaming, streamId]);
+
   const applyVideoConstraint = async (constraint) => {
     if (!activeStreamRef.current) return;
     const track = activeStreamRef.current.getVideoTracks()[0];
     if (track && track.applyConstraints) {
       try {
         await track.applyConstraints({ advanced: [constraint] });
-      } catch (err) {}
+      } catch (err) {
+        console.error("Constraint failed to apply:", err);
+      }
     }
   };
 
-  // 🔥 NEW: Smooth Zoom Rocker Logic
+  // 🔥 FIXED ROCKER: Prevents floating point math rejections
   const startSmoothZoom = (direction) => {
     if (!activeStreamRef.current || !zoomCap) return;
     const track = activeStreamRef.current.getVideoTracks()[0];
-    const stepSpeed = (zoomCap.max - zoomCap.min) * 0.015; // Fluid ramping speed
+    const stepSpeed = (zoomCap.max - zoomCap.min) * 0.015;
 
     zoomIntervalRef.current = setInterval(() => {
       setZoomLevel((prevZoom) => {
         let newZoom = prevZoom + stepSpeed * direction;
         if (newZoom >= zoomCap.max) newZoom = zoomCap.max;
         if (newZoom <= zoomCap.min) newZoom = zoomCap.min;
+
+        // Force exactly 1 decimal place to prevent camera rejection
+        newZoom = Number(newZoom.toFixed(1));
 
         if (track.applyConstraints) {
           track
@@ -226,26 +295,30 @@ export default function Broadcaster() {
         }
         return newZoom;
       });
-    }, 40); // 25 fps updates
+    }, 40);
   };
 
   const stopSmoothZoom = () => {
     if (zoomIntervalRef.current) clearInterval(zoomIntervalRef.current);
   };
 
-  // 🔥 NEW: 1-Click Preset Snap Logic
+  // 🔥 FIXED PRESETS: Forces float rounding so mobile accepts it
   const snapZoom = async (targetVal) => {
     if (!zoomCap) return;
     let clamped = targetVal;
     if (clamped > zoomCap.max) clamped = zoomCap.max;
     if (clamped < zoomCap.min) clamped = zoomCap.min;
 
+    // Force exactly 1 decimal place
+    clamped = Number(clamped.toFixed(1));
+
     setZoomLevel(clamped);
     await applyVideoConstraint({ zoom: clamped });
   };
 
   const handleExposureChange = async (e) => {
-    const val = Number(e.target.value);
+    // Round to 1 decimal place to ensure matching data
+    const val = Number(Number(e.target.value).toFixed(1));
     setExposureLevel(val);
     await applyVideoConstraint({ exposureCompensation: val });
   };
@@ -268,32 +341,37 @@ export default function Broadcaster() {
     else setSelectedCamera(nextCamId);
   };
 
-  // Maps capabilities on load and on camera switch
   const mapHardwareCapabilities = (videoTrack) => {
+    let zCap = null;
+    let eCap = null;
+    let tCap = false;
+
     if (videoTrack.getCapabilities) {
       const caps = videoTrack.getCapabilities();
-      setTorchSupported(!!caps.torch);
+      tCap = !!caps.torch;
+      setTorchSupported(tCap);
 
-      // Map Zoom
       if (caps.zoom) {
-        setZoomCap({
+        zCap = {
           min: caps.zoom.min,
           max: caps.zoom.max,
-          step: caps.zoom.step,
-        });
-        setZoomLevel(videoTrack.getSettings().zoom || caps.zoom.min);
+          step: caps.zoom.step || 0.1,
+        };
+        setZoomCap(zCap);
+        setZoomLevel(videoTrack.getSettings().zoom || caps.zoom.min || 1);
       } else setZoomCap(null);
 
-      // Map EV Lock (Exposure)
       if (caps.exposureCompensation) {
-        setExposureCap({
+        eCap = {
           min: caps.exposureCompensation.min,
           max: caps.exposureCompensation.max,
-          step: caps.exposureCompensation.step,
-        });
+          step: caps.exposureCompensation.step || 0.1,
+        };
+        setExposureCap(eCap);
         setExposureLevel(videoTrack.getSettings().exposureCompensation || 0);
       } else setExposureCap(null);
     }
+    return { zCap, eCap, tCap };
   };
 
   const handleStartStream = async () => {
@@ -330,7 +408,7 @@ export default function Broadcaster() {
       });
 
       const videoTrack = stream.getVideoTracks()[0];
-      mapHardwareCapabilities(videoTrack);
+      const { zCap, eCap, tCap } = mapHardwareCapabilities(videoTrack);
 
       setLocalStream(stream);
       activeStreamRef.current = stream;
@@ -364,25 +442,27 @@ export default function Broadcaster() {
 
       await updateDoc(doc(db, "streams", streamId), {
         capabilities: {
-          torch: !!(
-            videoTrack.getCapabilities && videoTrack.getCapabilities().torch
-          ),
-          zoom: !!(
-            videoTrack.getCapabilities && videoTrack.getCapabilities().zoom
-          ),
-          exposure: !!(
-            videoTrack.getCapabilities &&
-            videoTrack.getCapabilities().exposureCompensation
-          ),
+          torch: tCap,
+          zoom: zCap,
+          exposure: eCap,
           cameras: serializedCameras,
         },
         currentState: {
-          zoom: zoomLevel,
-          exposure: exposureLevel,
+          zoom: videoTrack.getSettings()?.zoom || zCap?.min || 1,
+          exposure: videoTrack.getSettings()?.exposureCompensation || 0,
           torch: false,
           isMuted: isMuted,
           selectedCamera: selectedCamera,
           oled: false,
+        },
+        health: {
+          timestamp: Date.now(),
+          batteryLevel: 100,
+          isCharging: false,
+          latency: 0,
+          fps: 0,
+          bitrate: 0,
+          status: "Starting...",
         },
       });
 
@@ -413,7 +493,7 @@ export default function Broadcaster() {
       });
       const videoTrack = newStream.getVideoTracks()[0];
 
-      mapHardwareCapabilities(videoTrack);
+      const { zCap, eCap, tCap } = mapHardwareCapabilities(videoTrack);
       setTorchOn(false);
 
       const senders = peerConnectionRef.current.getSenders();
@@ -433,6 +513,15 @@ export default function Broadcaster() {
 
       setLocalStream(newStream);
       activeStreamRef.current = newStream;
+
+      await updateDoc(doc(db, "streams", streamId), {
+        "capabilities.zoom": zCap,
+        "capabilities.exposure": eCap,
+        "capabilities.torch": tCap,
+        "currentState.zoom": videoTrack.getSettings()?.zoom || zCap?.min || 1,
+        "currentState.exposure":
+          videoTrack.getSettings()?.exposureCompensation || 0,
+      });
     } catch (err) {
       console.error("Lens switch failed:", err);
     }
@@ -665,9 +754,7 @@ export default function Broadcaster() {
           />
 
           <div className="relative z-10 w-full p-4 flex flex-col gap-4">
-            {/* 🔥 NEW: BROADCAST CONTROL DOCK (Right Side) 🔥 */}
             <div className="absolute right-4 bottom-24 flex flex-col gap-2">
-              {/* Presets */}
               {zoomCap && (
                 <div className="bg-black/60 backdrop-blur-md rounded-xl p-1.5 border border-white/20 flex flex-col gap-1 mb-4 shadow-xl">
                   <span className="text-[8px] text-white/50 text-center font-black uppercase tracking-widest mb-1 mt-1">
@@ -693,31 +780,44 @@ export default function Broadcaster() {
                 </div>
               )}
 
-              {/* Rocker */}
               {zoomCap && (
                 <div className="bg-black/60 backdrop-blur-md rounded-full p-1 border border-white/20 flex flex-col items-center gap-2 shadow-2xl">
                   <button
                     onMouseDown={() => startSmoothZoom(1)}
                     onMouseUp={stopSmoothZoom}
                     onMouseLeave={stopSmoothZoom}
-                    onTouchStart={() => startSmoothZoom(1)}
-                    onTouchEnd={stopSmoothZoom}
-                    className="w-12 h-16 bg-white/10 hover:bg-white/20 active:bg-teal-500 rounded-t-full flex flex-col items-center justify-center text-white">
+                    onTouchStart={(e) => {
+                      e.preventDefault();
+                      startSmoothZoom(1);
+                    }}
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      stopSmoothZoom();
+                    }}
+                    className="w-12 h-16 bg-white/10 hover:bg-white/20 active:bg-teal-500 rounded-t-full flex flex-col items-center justify-center text-white select-none touch-none">
                     <Plus size={20} strokeWidth={3} />
                     <span className="text-[8px] font-black uppercase mt-1 opacity-50">
                       In
                     </span>
                   </button>
+
                   <span className="text-[10px] font-black text-white/50 font-mono">
-                    {zoomLevel.toFixed(1)}x
+                    {Number(zoomLevel || 1).toFixed(1)}x
                   </span>
+
                   <button
                     onMouseDown={() => startSmoothZoom(-1)}
                     onMouseUp={stopSmoothZoom}
                     onMouseLeave={stopSmoothZoom}
-                    onTouchStart={() => startSmoothZoom(-1)}
-                    onTouchEnd={stopSmoothZoom}
-                    className="w-12 h-16 bg-white/10 hover:bg-white/20 active:bg-teal-500 rounded-b-full flex flex-col items-center justify-center text-white">
+                    onTouchStart={(e) => {
+                      e.preventDefault();
+                      startSmoothZoom(-1);
+                    }}
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      stopSmoothZoom();
+                    }}
+                    className="w-12 h-16 bg-white/10 hover:bg-white/20 active:bg-teal-500 rounded-b-full flex flex-col items-center justify-center text-white select-none touch-none">
                     <span className="text-[8px] font-black uppercase mb-1 opacity-50">
                       Out
                     </span>
@@ -727,7 +827,6 @@ export default function Broadcaster() {
               )}
             </div>
 
-            {/* 🔥 NEW: EXPOSURE SLIDER (Left Side) 🔥 */}
             {exposureCap && (
               <div className="absolute left-4 bottom-[100px] bg-black/60 backdrop-blur-md p-3 rounded-full border border-white/20 shadow-xl h-48 flex flex-col items-center justify-between">
                 <Sun size={14} className="text-amber-400 drop-shadow-md" />
@@ -735,8 +834,8 @@ export default function Broadcaster() {
                   type="range"
                   min={exposureCap.min}
                   max={exposureCap.max}
-                  step={exposureCap.step}
-                  value={exposureLevel}
+                  step={exposureCap.step || 0.1}
+                  value={Number(exposureLevel || 0)}
                   onChange={handleExposureChange}
                   className="w-2 h-24 appearance-none bg-white/20 rounded-full accent-amber-400 outline-none flex-1 my-2"
                   style={{
@@ -745,13 +844,12 @@ export default function Broadcaster() {
                   }}
                 />
                 <span className="text-[8px] font-mono text-white/80 font-black">
-                  {exposureLevel > 0 ? "+" : ""}
-                  {exposureLevel}
+                  {Number(exposureLevel) > 0 ? "+" : ""}
+                  {Number(exposureLevel || 0).toFixed(1)}
                 </span>
               </div>
             )}
 
-            {/* Bottom Bar: Action Toggles */}
             <div className="flex justify-between items-center gap-2 overflow-x-auto pb-2 mt-auto bg-gradient-to-t from-black/80 to-transparent p-4 -mx-4 -mb-4">
               <button
                 onClick={handleCycleCamera}
