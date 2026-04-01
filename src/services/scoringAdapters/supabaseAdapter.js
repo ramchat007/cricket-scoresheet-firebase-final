@@ -7,7 +7,9 @@
  */
 export function createSupabaseAdapter(supabaseClient) {
   if (!supabaseClient) {
-    throw new Error("createSupabaseAdapter requires a Supabase client instance");
+    throw new Error(
+      "createSupabaseAdapter requires a Supabase client instance",
+    );
   }
   let rpcUnavailable = false;
   let warnedUnavailable = false;
@@ -52,7 +54,7 @@ export function createSupabaseAdapter(supabaseClient) {
           p_event_type: eventType,
           p_payload: eventPayload,
           p_expected_version: payload?.expectedVersion ?? null,
-          p_actor_user_id: payload?.actorUserId ?? null,
+          p_actor_user_id: payload?.actorUserId || null,
         },
       );
 
@@ -113,35 +115,36 @@ export function createSupabaseAdapter(supabaseClient) {
     },
 
     subscribeMatchLite(tournamentId, matchId, cb) {
+      console.log(`🔌 Opening WebSocket for match: ${matchId}`);
+
       const channel = supabaseClient
-        .channel(`score:${tournamentId}:${matchId}`)
+        .channel(`score:${tournamentId}:${matchId}`) // Put the normal channel name back
         .on(
           "postgres_changes",
           {
             event: "*",
             schema: "public",
             table: "match_score_state",
-            filter: `match_id=eq.${matchId}`,
+            filter: `match_id=eq.${matchId}`, // 🟢 ADD THIS BACK (No quotes!)
           },
           (payload) => {
-            const state = payload?.new?.state;
-            if (!state) return cb(null);
-            cb({
-              battingTeam: state.battingTeam || "",
-              score: state.score || 0,
-              wickets: state.wickets || 0,
-              over: state.over || 0,
-              overBallCount: state.overBallCount || 0,
-              striker: state.striker,
-              nonStriker: state.nonStriker,
-              currentBowler: state.currentBowler,
-              status: state.status,
-            });
+            // console.log("🔥 SUPABASE PAYLOAD ARRIVED:", payload);
+
+            // We still only want to update the UI if it's the right match
+            if (payload?.new?.match_id === matchId) {
+              const state = payload?.new?.state;
+              if (!state) return cb(null);
+              cb(state);
+            }
           },
         )
-        .subscribe();
+        .subscribe((status, err) => {
+          // console.log("📡 WebSocket Status:", status);
+          if (err) console.error("WebSocket Error:", err);
+        });
 
       return () => {
+        // console.log("🛑 Closing Supabase WebSocket");
         supabaseClient.removeChannel(channel);
       };
     },

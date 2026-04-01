@@ -39,24 +39,33 @@ const ScoreTable = ({ match }) => {
 
   // --- 🛠️ 1. DISMISSAL TEXT (Theme Aware) ---
   const getDismissalText = (stats, isStriker, isNonStriker) => {
-    if (isStriker || isNonStriker)
+    if (isStriker || isNonStriker) {
       return (
         <span
           className={`font-bold uppercase text-[9px] ${lightMode ? "text-teal-600" : "text-teal-400"}`}>
           not out
         </span>
       );
+    }
+
+    // Relaxed check: just make sure they are actually marked as out
     if (!stats || !stats.out) return null;
 
-    const b = stats.bowler || "";
-    const f = stats.fielderName || stats.fielder || "";
-    const type = stats.wicketType || "out";
+    // Aggressively check all possible keys your input might be sending
+    const b = stats.bowler || stats.bowlerName || "";
+    const f = stats.fielderName || stats.fielder || stats.catchBy || "";
+
+    // Normalize the type (removes spaces so "run out" becomes "runout" to match your cases)
+    const type = String(stats.wicketType || "out")
+      .toLowerCase()
+      .replace(/\s+/g, "");
     const style = `font-medium lowercase ${lightMode ? "text-gray-500" : "text-slate-400"}`;
 
     switch (type) {
       case "bowled":
         return <span className={style}>b {b}</span>;
       case "caught":
+      case "caughtbehind":
         return (
           <span className={style}>
             c {f} b {b}
@@ -81,7 +90,11 @@ const ScoreTable = ({ match }) => {
       case "retiredout":
         return <span className={style}>retired out</span>;
       default:
-        return <span className={`${theme.sub} capitalize`}>{type}</span>;
+        return (
+          <span className={`${theme.sub} capitalize`}>
+            {stats.wicketType || "out"}
+          </span>
+        );
     }
   };
 
