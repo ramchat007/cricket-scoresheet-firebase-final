@@ -5,7 +5,7 @@ import {
   isActionProcessed,
   markActionProcessed,
 } from "../utils/offlineQueue";
-import { getManOfTheMatch } from "../utils/statsHelper"; // Adjust path if needed
+import { getManOfTheMatch } from "../utils/statsHelper";
 import { getScoringAdapter } from "../services/scoringAdapters";
 import { supabase } from "../utils/supabase";
 
@@ -20,7 +20,6 @@ const sanitizeSquadImages = (squad) => {
   if (!Array.isArray(squad)) return [];
   return squad.map((p) => {
     const cleanPlayer = { ...p };
-    // Completely delete the image data so it doesn't bloat the match
     delete cleanPlayer.photoURL;
     delete cleanPlayer.image;
     return cleanPlayer;
@@ -88,8 +87,19 @@ function recalculateInningsState(inn) {
     b.wickets = 0;
   });
 
-  // C. Replay History
-  const history = inn.timeline || [];
+  // 🔥 C. THE SELF-HEALING PURGE
+  // Physically destroys any "Ghost Data" left behind by failed Firebase deletes
+  inn.timeline = (inn.timeline || []).filter(
+    (ball) =>
+      !ball.isUndo &&
+      !ball.undo &&
+      !ball.isUndone &&
+      !ball.revoked &&
+      ball.isValid !== false &&
+      !ball.deleted,
+  );
+
+  const history = inn.timeline;
 
   history.forEach((ball, index) => {
     const {
@@ -126,12 +136,9 @@ function recalculateInningsState(inn) {
       if (isBye) {
         inn.extras.byes += pRuns;
       } else if (isLegBye) {
-        // 🟢 LEG BYE ON NB:
-        // Batter gets 0 runs, but team gets the physical runs as LB extras.
         inn.extras.legByes += pRuns;
         ballRunsForBatter = 0;
       } else {
-        // Runs off bat
         ballRunsForBatter = pRuns;
       }
     } else {
@@ -149,7 +156,6 @@ function recalculateInningsState(inn) {
     if (batter && inn.batsmenStats[batter]) {
       const p = inn.batsmenStats[batter];
       p.runs += ballRunsForBatter;
-      // Batter faces a ball if it's NOT a Wide
       if (!isWide) p.balls += 1;
       if (ballRunsForBatter === 4) p.fours += 1;
       if (ballRunsForBatter === 6) p.sixes += 1;
@@ -158,7 +164,7 @@ function recalculateInningsState(inn) {
     // 3. Update Bowler Stats
     if (bowler && inn.bowlerStats[bowler]) {
       const b = inn.bowlerStats[bowler];
-      b.runs += ballRunsForTeam; // Local rules usually charge all runs to bowler
+      b.runs += ballRunsForTeam;
 
       const countsAsLegal =
         (!isWide && !isNoBall) || isLegalOverride || isValidBall;
@@ -188,11 +194,10 @@ function recalculateInningsState(inn) {
         over: `${inn.over}.${inn.overBallCount}`,
         batsman: victim,
       });
+
       if (inn.batsmenStats[victim]) {
         inn.batsmenStats[victim].out = "out";
         inn.batsmenStats[victim].wicketType = ball.wicketType;
-
-        // 🟢 ADD THESE TWO LINES SO THE UI CAN SEE THEM:
         inn.batsmenStats[victim].fielderName =
           ball.fielderName || ball.fielder || "";
         inn.batsmenStats[victim].bowler = bowler || "";
@@ -221,12 +226,11 @@ function recalculateInningsState(inn) {
   return inn;
 }
 
-// --- LOGIC: Apply New Ball (With Smart Survivor Logic) ---
+// --- LOGIC: Apply New Ball ---
 function applyBallLogic(s, code, extraData = {}, physicalRuns = 0) {
   const inn = s.innings?.[s.currentInnings || 0];
   if (!inn || inn.completed) return s;
 
-  // 🟢 The mid-match bouncer protecting the document size
   if (s.teamASquad) s.teamASquad = sanitizeSquadImages(s.teamASquad);
   if (s.teamBSquad) s.teamBSquad = sanitizeSquadImages(s.teamBSquad);
   if (s.meta?.teamASquad)
@@ -241,12 +245,10 @@ function applyBallLogic(s, code, extraData = {}, physicalRuns = 0) {
   const isWD = code === "WD" || extraData.isWide;
   const isNB = code === "NB" || extraData.isNoBall;
 
-  // Calculate Total Runs (Penalty + Physical)
   let totalRuns = 0;
   if (isNB || isWD) {
-    totalRuns = 1 + Number(physicalRuns || 0); // 1 Penalty + whatever they ran
+    totalRuns = 1 + Number(physicalRuns || 0);
   } else {
-    // If just a wicket with no extras, totalRuns is just the physical runs completed
     totalRuns = code === "W" ? Number(physicalRuns || 0) : parseInt(code) || 0;
   }
 
@@ -254,7 +256,7 @@ function applyBallLogic(s, code, extraData = {}, physicalRuns = 0) {
     id: Date.now(),
     code,
     runs: totalRuns,
-    physicalRuns,
+    physicalRuns: Number(physicalRuns || 0),
     isWicket: code === "W" || extraData.isWicket,
     isWide: isWD,
     isNoBall: isNB,
@@ -263,55 +265,42 @@ function applyBallLogic(s, code, extraData = {}, physicalRuns = 0) {
     batter: inn.striker,
     bowler: inn.currentBowler,
     isLegalOverride: extraData.isLegalOverride || false,
-    whoOut: extraData.whoOut, // Critical for survivor logic
+    whoOut: extraData.whoOut,
     ...extraData,
-    physicalRuns: Number(physicalRuns || 0),
   };
 
-  // 1. Determine positions AFTER running (crossing)
   let tempStriker = inn.striker;
   let tempNonStriker = inn.nonStriker;
-
   let runsForSwap = physicalRuns;
+
   if (!isWD && !isNB && !isNaN(parseInt(code))) {
     runsForSwap = parseInt(code);
   }
 
-  // Swap ends if odd runs
   if (runsForSwap % 2 !== 0) {
     [tempStriker, tempNonStriker] = [tempNonStriker, tempStriker];
   }
 
-  // 2. Identify Survivor (If Wicket)
   let nextS = tempStriker;
   let nextNS = tempNonStriker;
 
   if (newBall.isWicket) {
-    const victim = newBall.whoOut || tempStriker; // Fallback to current striker if undefined
-
-    // If the person currently at Striker end got out:
+    const victim = newBall.whoOut || tempStriker;
     if (victim === tempStriker) {
-      nextS = null; // Striker slot empty (for new bat)
-      nextNS = tempNonStriker; // Non-striker survives
-    }
-    // If the person currently at Non-Striker end got out:
-    else {
-      nextS = tempStriker; // Striker survives
-      nextNS = null; // Non-striker slot empty (for new bat)
+      nextS = null;
+      nextNS = tempNonStriker;
+    } else {
+      nextS = tempStriker;
+      nextNS = null;
     }
   }
 
-  // 3. Handle Over End Logic
-  // Check legal or override
   const isLegal = (!isWD && !isNB) || newBall.isLegalOverride;
   const overEnding = inn.overBallCount + (isLegal ? 1 : 0) === 6;
-
   const maxOvers = parseInt(s.meta?.overs || 20);
   const isInningsFinishedByOvers = overEnding && inn.over + 1 >= maxOvers;
 
   if (overEnding) {
-    // End of over: Swap ends.
-    // If wicket fell, we simply swap the calculated survivor slots
     [nextS, nextNS] = [nextNS, nextS];
   }
 
@@ -366,7 +355,6 @@ function initializeSecondInnings(s) {
   const nextBat = prev.bowlingTeam;
   const nextBowl = prev.battingTeam;
 
-  // 🔥 IMPORTANT: Ensure we keep references to the squads
   const teamASquad = s.teamASquad || [];
   const teamBSquad = s.teamBSquad || [];
 
@@ -390,10 +378,8 @@ function initializeSecondInnings(s) {
   }
 
   s.currentInnings = 1;
-  // 🔥 Force the match to retain the squads during the transition
   s.teamASquad = teamASquad;
   s.teamBSquad = teamBSquad;
-
   s.innings[1].awaitingNewBowler = false;
   return s;
 }
@@ -402,10 +388,11 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
   const useSupabaseScoring =
     import.meta.env.VITE_USE_SUPABASE_SCORING === "true";
   const scoringAdapter = getScoringAdapter({
-    useSupabase: false, // Keep Firebase as primary write path.
+    useSupabase: false,
     supabaseClient: supabase,
   });
   let supabaseAdapter = null;
+
   if (useSupabaseScoring && supabase) {
     supabaseAdapter = getScoringAdapter({
       useSupabase: true,
@@ -463,9 +450,7 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
   };
 
   const runScoringAction = (actionFn, queuePayload = null) => {
-    const optimisticState = performOptimisticUpdate((s) => {
-      return actionFn(s);
-    });
+    const optimisticState = performOptimisticUpdate((s) => actionFn(s));
 
     try {
       scoringAdapter.ballTransaction(tournamentId, matchId, actionFn);
@@ -482,17 +467,12 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
             eventType: supabasePayload.eventType,
             payload: supabasePayload.payload,
           })
-          .catch((err) => {
-            console.error("Supabase mirror write failed:", err);
-          });
+          .catch((err) => console.error("Supabase mirror write failed:", err));
       }
 
-      if (queuePayload?.actionId) {
-        markActionProcessed(queuePayload.actionId);
-      }
+      if (queuePayload?.actionId) markActionProcessed(queuePayload.actionId);
     } catch (e) {
       console.error("Sync Failed", e);
-
       if (queuePayload && !isActionProcessed(queuePayload.actionId)) {
         addPendingAction(queuePayload);
       }
@@ -527,24 +507,15 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
         ),
       NEW_BATSMAN: (s) => {
         const inn = s.innings[s.currentInnings];
-
-        // 🟢 FIX: Smart Slot Filling using falsy check
-        if (!inn.nonStriker) {
-          inn.nonStriker = payload.player;
-        } else {
-          inn.striker = payload.player;
-        }
-
+        if (!inn.nonStriker) inn.nonStriker = payload.player;
+        else inn.striker = payload.player;
         inn.awaitingNewBatsman = false;
 
         if (inn.timeline && inn.timeline.length > 0) {
           const lastBall = inn.timeline[inn.timeline.length - 1];
-          // Update the exact slot in the timeline
-          if (!lastBall.nextNonStriker) {
+          if (!lastBall.nextNonStriker)
             lastBall.nextNonStriker = payload.player;
-          } else {
-            lastBall.nextStriker = payload.player;
-          }
+          else lastBall.nextStriker = payload.player;
         }
         return s;
       },
@@ -576,20 +547,27 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
         checkFinishAndSetResult(s, s.currentInnings);
         return s;
       },
-      UNDO: async () => {
-        await scoringAdapter.undoLast(action.tournamentId, action.matchId);
+      // 🔥 FIX: Undo is now treated as a total state replacement, rather than calling the buggy undoLast adapter
+      UNDO: (s) => {
+        const inn = s.innings?.[s.currentInnings || 0];
+        if (!inn) return s;
+
+        if (s.undoStack && s.undoStack.length > 0) {
+          const snapshot = s.undoStack.pop();
+          s.innings[s.currentInnings] = { ...inn, ...snapshot };
+        } else if (inn.timeline && inn.timeline.length > 0) {
+          inn.timeline.pop();
+          recalculateInningsState(inn);
+        }
+        return s;
       },
     };
 
     const handler = actionMap[actionType];
     if (!handler) return;
 
-    if (actionType === "UNDO") {
-      await handler();
-      markActionProcessed(action.actionId);
-      return;
-    }
-
+    // 🔥 FIX: We removed the early return for UNDO.
+    // Now, UNDO successfully flows through `ballTransaction` and completely overwrites Firebase with the clean, recalculated state!
     await scoringAdapter.ballTransaction(
       action.tournamentId,
       action.matchId,
@@ -604,6 +582,7 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
         payload,
         optimisticState,
       );
+
       await supabaseAdapter.ballTransaction(
         action.tournamentId,
         action.matchId,
@@ -650,28 +629,20 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
       runScoringAction(
         (s) => {
           const inn = s.innings[s.currentInnings];
-
-          // 🟢 FIX: Smart Slot Filling using falsy check
-          if (!inn.nonStriker) {
-            inn.nonStriker = p;
-          } else {
-            inn.striker = p;
-          }
-
+          if (!inn.nonStriker) inn.nonStriker = p;
+          else inn.striker = p;
           inn.awaitingNewBatsman = false;
 
           if (inn.timeline && inn.timeline.length > 0) {
             const lastBall = inn.timeline[inn.timeline.length - 1];
-            if (!lastBall.nextNonStriker) {
-              lastBall.nextNonStriker = p;
-            } else {
-              lastBall.nextStriker = p;
-            }
+            if (!lastBall.nextNonStriker) lastBall.nextNonStriker = p;
+            else lastBall.nextStriker = p;
           }
           return s;
         },
         createQueuePayload("NEW_BATSMAN", { player: p }),
       ),
+
     handleConfirmBowler: (p) =>
       runScoringAction(
         (s) => {
@@ -716,10 +687,12 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
         return s;
       }, createQueuePayload("END_INNINGS")),
 
-    handleUndo: () => {
-      performOptimisticUpdate((s) => {
+    // 🔥 FIX: We now use runScoringAction to push the perfect local state directly to Firebase
+    handleUndo: () =>
+      runScoringAction((s) => {
         const inn = s.innings?.[s.currentInnings || 0];
         if (!inn) return s;
+
         if (s.undoStack && s.undoStack.length > 0) {
           const snapshot = s.undoStack.pop();
           s.innings[s.currentInnings] = { ...inn, ...snapshot };
@@ -728,25 +701,10 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
           recalculateInningsState(inn);
         }
         return s;
-      });
-      const queuePayload = createQueuePayload("UNDO");
-      scoringAdapter
-        .undoLast(tournamentId, matchId)
-        .then(() => markActionProcessed(queuePayload.actionId))
-        .catch((e) => {
-          console.error("Undo sync failed", e);
-          addPendingAction(queuePayload);
-        });
+      }, createQueuePayload("UNDO")),
 
-      if (supabaseAdapter) {
-        supabaseAdapter
-          .undoLast(tournamentId, matchId, queuePayload.actionId)
-          .catch((err) => console.error("Supabase undo mirror failed:", err));
-      }
-    },
-
-    handleFinishMatch: async (r, mustBeFromWinningTeam = true) => {
-      const mom = getManOfTheMatch(match, mustBeFromWinningTeam);
+    handleFinishMatch: async (r, momWinningTeamOnly = true) => {
+      const mom = getManOfTheMatch(match, momWinningTeamOnly);
       await scoringAdapter.finishMatch(
         tournamentId,
         matchId,
@@ -754,8 +712,7 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
         r,
         mom,
       );
-
-      if (supabaseAdapter) {
+      if (supabaseAdapter)
         await supabaseAdapter.finishMatch(
           tournamentId,
           matchId,
@@ -764,18 +721,15 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
           mom,
           { actionId: `finish-${Date.now()}` },
         );
-      }
-
-      // 3. Sync player stats
       await syncMatchStatsToGlobalPlayers(tournamentId, matchId, match);
     },
 
     handleDeleteMatch: async () => {
       await scoringAdapter.deleteMatch(tournamentId, matchId);
-      if (supabaseAdapter) {
+      if (supabaseAdapter)
         await supabaseAdapter.deleteMatch(tournamentId, matchId);
-      }
     },
+
     processQueuedAction,
   };
 }

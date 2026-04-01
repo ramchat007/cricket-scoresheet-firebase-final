@@ -16,6 +16,8 @@ import ScoreTicker from "./ScoreTicker";
 import BroadcastSummaryCard from "./BroadcastSummaryCard";
 import TournamentBanner from "./TournamentBanner";
 import WinPredictor from "./WinPredictor";
+import MatchIntroSlab from "./MatchIntroSlab";
+import PointsTable from "./PointsTable";
 
 // 🔥 EVENT ANIMATION COMPONENT WITH SLAM & SHAKE
 const EventAnimation = ({ type }) => {
@@ -89,7 +91,9 @@ export default function BroadcastLayer() {
 
   const [autoSpotlightPlayerId, setAutoSpotlightPlayerId] = useState(null);
   const activeBattersRef = useRef([]);
+  const [allMatches, setAllMatches] = useState([]);
 
+  const lockedMatchId = useRef(null);
   useEffect(() => {
     getDoc(doc(db, "settings", "branding")).then((docSnap) => {
       if (docSnap.exists()) {
@@ -121,7 +125,8 @@ export default function BroadcastLayer() {
     sponsors: [],
     fullScreenBanners: [],
     spotlightPlayerId: "",
-    autoSpotlightEnabled: false,
+    autoSpotlightEnabled: true, // 🔥 NEW: Forces it ON globally
+    showAppLogo: true, // 🔥 NEW: Forces it ON globally
   });
 
   const prevTimelineLength = useRef(0);
@@ -160,17 +165,36 @@ export default function BroadcastLayer() {
     const applyData = (docsArray) => {
       const getStatus = (m) =>
         (m.status || m.meta?.status || "").toLowerCase().trim();
-      let activeMatch = docsArray.find((m) =>
-        [
-          "live",
-          "ongoing",
-          "in-progress",
-          "started",
-          "active",
-          "playing",
-        ].includes(getStatus(m)),
-      );
-      if (!activeMatch)
+
+      let activeMatch = null;
+
+      // 🔥 1. CHECK THE LOCK FIRST
+      // If we previously locked onto a live match, stay on it regardless of its current status!
+      if (lockedMatchId.current) {
+        activeMatch = docsArray.find((m) => m.id === lockedMatchId.current);
+      }
+
+      // 🔥 2. NORMAL WATERFALL (If no lock exists)
+      if (!activeMatch) {
+        activeMatch = docsArray.find((m) =>
+          [
+            "live",
+            "ongoing",
+            "in-progress",
+            "started",
+            "active",
+            "playing",
+          ].includes(getStatus(m)),
+        );
+
+        // If we just found a LIVE match, engage the lock!
+        if (activeMatch) {
+          lockedMatchId.current = activeMatch.id;
+        }
+      }
+
+      // 3. FALLBACKS (If nothing is live and no lock is active)
+      if (!activeMatch) {
         activeMatch = docsArray
           .filter((m) =>
             ["upcoming", "scheduled", "pending", "not started", ""].includes(
@@ -178,12 +202,14 @@ export default function BroadcastLayer() {
             ),
           )
           .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0))[0];
-      if (!activeMatch)
+      }
+      if (!activeMatch) {
         activeMatch = docsArray
           .filter((m) =>
             ["finished", "completed", "ended"].includes(getStatus(m)),
           )
           .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))[0];
+      }
 
       if (activeMatch) {
         setMatch(activeMatch);
@@ -192,12 +218,25 @@ export default function BroadcastLayer() {
           data.activeViews = [data.activeView];
         if (!data.sponsors) data.sponsors = [];
         if (!data.fullScreenBanners) data.fullScreenBanners = [];
+
+        // 🔥 4. RELEASE THE LOCK IF COMMANDED
+        // If the controller sends the release command, clear the ref.
+        if (
+          data.releaseLockTimestamp &&
+          data.releaseLockTimestamp > (lockedMatchId.currentReleaseTime || 0)
+        ) {
+          lockedMatchId.current = null;
+          lockedMatchId.currentReleaseTime = data.releaseLockTimestamp;
+        }
+
         setOverlayState({
           activeViews: [],
           showTicker: false,
           hideBottomScoreTicker: false,
           sponsors: [],
           fullScreenBanners: [],
+          autoSpotlightEnabled: true, // 🔥 NEW: Default to true
+          showAppLogo: true, // 🔥 NEW: Default to true
           ...data,
         });
       } else {
@@ -211,9 +250,15 @@ export default function BroadcastLayer() {
       unsubscribe = onSnapshot(
         query(collection(db, "tournaments", tournamentId, "matches")),
         (snapshot) => {
-          applyData(
-            snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
-          );
+          const fetchedMatches = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+
+          // 🔥 FIX: Save all matches to state so the Points Table can calculate standings!
+          setAllMatches(fetchedMatches);
+
+          applyData(fetchedMatches);
         },
         (err) => {
           setError(err.message);
@@ -494,7 +539,6 @@ export default function BroadcastLayer() {
 
     return (
       <div className="flex flex-col items-center animate-in fade-in slide-in-from-top-8">
-        
         {/* 🟢 THE IMAGE BOUNDING BOX 🟢 */}
         {/* Forces a maximum width and height. The drop-shadow makes transparent PNGs pop on stream */}
         {current.image && (
@@ -528,7 +572,6 @@ export default function BroadcastLayer() {
             )}
           </div>
         )}
-        
       </div>
     );
   };
@@ -1142,14 +1185,14 @@ export default function BroadcastLayer() {
         </div>
 
         {overlayState.showAppLogo &&
-          (overlayState.appLogo || globalBranding?.appLogo) && (
+          (overlayState.appLogo || globalBranding?.defaultLogo) && (
             <div className="absolute top-8 right-8 z-[100] animate-fade-in flex flex-col items-center">
               <div
                 className="relative bg-cyan-100 rounded-full p-2.5 border-[3px] border-white ring-2 ring-black/20 flex items-center justify-center shadow-lg"
                 style={{ animation: "spin3D_Coin 10s ease-in-out infinite" }}
               >
                 <img
-                  src={overlayState.appLogo || globalBranding?.appLogo}
+                  src={overlayState.appLogo || globalBranding?.defaultLogo}
                   alt="App Logo"
                   className="h-16 w-auto object-contain"
                 />
@@ -1175,6 +1218,22 @@ export default function BroadcastLayer() {
         >
           {currentInn && <ScoreTicker match={match} />}
         </div>
+        <div
+          className={`absolute bottom-[100px] w-full z-10 flex justify-center transition-all duration-500 ${hideTicker ? "translate-y-[200px] opacity-0 pointer-events-none" : "translate-y-0 opacity-100"}`}
+        >
+          {/* 🟢 MATCH INTRO SLAB */}
+          {overlayState.activeViews?.includes("MATCH_INTRO") && (
+            <MatchIntroSlab match={match} />
+          )}
+        </div>
+
+        {/* 🟢 LIVE POINTS TABLE */}
+        {overlayState.activeViews?.includes("POINTS_TABLE") && (
+          <PointsTable
+            tournamentId={tournamentId}
+            matches={allMatches} // Note: Pass whatever variable holds your tournament matches here!
+          />
+        )}
 
         <div className="absolute top-[50px] left-[50px] flex flex-col gap-6 items-start z-40">
           {isActiveView("SPONSOR_BUG") && <SponsorBug />}

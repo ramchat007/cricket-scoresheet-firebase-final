@@ -90,6 +90,7 @@ export default function BracketBuilder() {
   const [wizardAdvancing, setWizardAdvancing] = useState(2);
   const [wizardIncludeThirdPlace, setWizardIncludeThirdPlace] = useState(false);
   const [wizardInterleaveGroups, setWizardInterleaveGroups] = useState(false);
+  const [wizardRoundRobinAdvancing, setWizardRoundRobinAdvancing] = useState(4);
 
   const [globalSettings, setGlobalSettings] = useState({
     overs: 4,
@@ -258,7 +259,225 @@ export default function BracketBuilder() {
     let newMatches = [];
     let mCounter = 1;
 
-    if (wizardMode === "groups_knockout") {
+    // 🟢 1. AUCTION-FRIENDLY AUTO-ROUND ROBIN
+    if (wizardMode === "round_robin") {
+      // 1. Get ALL available teams (even if group is missing)
+      if (teams.length < 2) {
+        return alert(
+          "No teams found! Please add teams to your tournament first.",
+        );
+      }
+
+      newRounds.push({ id: "r1", name: "League Stage" });
+
+      // 2. Smart Grouping: Use their group if exists, otherwise put everyone in "A"
+      const teamsByGroup = {};
+      teams.forEach((t) => {
+        // If no group, default to "A" (Perfect for Auction teams)
+        const gName = t.group ? t.group.replace("Group", "").trim() : "A";
+        if (!teamsByGroup[gName]) teamsByGroup[gName] = [];
+        teamsByGroup[gName].push(t);
+      });
+
+      const sortedGroupKeys = Object.keys(teamsByGroup).sort();
+      let semisMatches = [];
+
+      // 3. GENERATE ROUND ROBIN WITH BREATHER LOGIC (Smart Rotation)
+      sortedGroupKeys.forEach((groupKey) => {
+        const groupTeams = [...teamsByGroup[groupKey]];
+        if (groupTeams.length % 2 !== 0)
+          groupTeams.push({ id: "BYE", name: "BYE", isBye: true });
+
+        const numTeams = groupTeams.length;
+        const numRounds = numTeams - 1;
+        const matchesPerRound = numTeams / 2;
+
+        // We create a rotating "Circle" of teams
+        for (let r = 0; r < numRounds; r++) {
+          for (let m = 0; m < matchesPerRound; m++) {
+            const teamA = groupTeams[m];
+            const teamB = groupTeams[numTeams - 1 - m];
+
+            // Only add if neither is a BYE
+            if (!teamA.isBye && !teamB.isBye) {
+              newMatches.push({
+                id: `M${mCounter}`,
+                roundId: "r1",
+                title:
+                  sortedGroupKeys.length > 1
+                    ? `Grp ${groupKey} - R${r + 1}`
+                    : `Round ${r + 1}`,
+                slotA: { type: "team", team: teamA, sourceMatchId: "" },
+                slotB: { type: "team", team: teamB, sourceMatchId: "" },
+                settings: {
+                  date: globalSettings.date,
+                  time: "", // We will calculate this next
+                  venue: globalSettings.venue,
+                  overs: globalSettings.overs,
+                },
+              });
+              mCounter++;
+            }
+          }
+          // Rotate the teams for the next round (fixing the first team in place)
+          groupTeams.splice(1, 0, groupTeams.pop());
+        }
+      });
+
+      // 🟢 AUTO-SCHEDULE TIMES WITH GAPS
+      let currentDateTime = null;
+      if (globalSettings.date && globalSettings.time) {
+        currentDateTime = new Date(
+          `${globalSettings.date}T${globalSettings.time}`,
+        );
+      }
+
+      newMatches = newMatches.map((m, idx) => {
+        if (!currentDateTime || isNaN(currentDateTime.getTime())) return m;
+
+        const timeStr = currentDateTime.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        });
+        const dateStr = currentDateTime.toISOString().split("T")[0];
+
+        // Prepare the result
+        const updatedMatch = {
+          ...m,
+          settings: { ...m.settings, date: dateStr, time: timeStr },
+        };
+
+        // Increment for next match: Duration + Gap
+        currentDateTime.setMinutes(
+          currentDateTime.getMinutes() +
+            parseInt(globalSettings.matchDuration || 45) +
+            parseInt(globalSettings.matchGap || 10),
+        );
+
+        return updatedMatch;
+      });
+
+      // 4. Generate the Knockout Stage (Wiring to Standings)
+      const advancingCount = parseInt(wizardRoundRobinAdvancing);
+      if (advancingCount >= 2) {
+        const knockoutRounds = Math.ceil(Math.log2(advancingCount));
+        const bracketSize = Math.pow(2, knockoutRounds);
+        let previousRoundMatches = [];
+
+        for (let r = 0; r < knockoutRounds; r++) {
+          const roundId = `r${r + 2}`;
+          const isFinal = r === knockoutRounds - 1;
+          const isSemi = r === knockoutRounds - 2;
+          const roundName = isFinal
+            ? "Final"
+            : isSemi
+              ? "Semi-Finals"
+              : `Knockouts R${r + 1}`;
+
+          newRounds.push({ id: roundId, name: roundName });
+          const matchesInThisRound = bracketSize / Math.pow(2, r + 1);
+          const currentRoundMatchIds = [];
+
+          for (let m = 0; m < matchesInThisRound; m++) {
+            const matchId = `M${mCounter}`;
+            let slotA, slotB;
+
+            if (r === 0) {
+              // ⚡ SMART LINKING
+              if (sortedGroupKeys.length === 1) {
+                // If everyone is in one pool (Auction style): 1st vs 4th, 2nd vs 3rd
+                slotA = {
+                  type: "standing",
+                  team: null,
+                  sourceMatchId: `STANDING_A_${m + 1}`,
+                };
+                slotB = {
+                  type: "standing",
+                  team: null,
+                  sourceMatchId: `STANDING_A_${advancingCount - m}`,
+                };
+              } else {
+                // If multiple groups: 1st Group A vs 2nd Group B, etc.
+                const g1 = sortedGroupKeys[m % sortedGroupKeys.length];
+                const g2 = sortedGroupKeys[(m + 1) % sortedGroupKeys.length];
+                slotA = {
+                  type: "standing",
+                  team: null,
+                  sourceMatchId: `STANDING_${g1}_1`,
+                };
+                slotB = {
+                  type: "standing",
+                  team: null,
+                  sourceMatchId: `STANDING_${g2}_2`,
+                };
+              }
+            } else {
+              slotA = {
+                type: "link",
+                team: null,
+                sourceMatchId: previousRoundMatches[m * 2],
+              };
+              slotB = {
+                type: "link",
+                team: null,
+                sourceMatchId: previousRoundMatches[m * 2 + 1],
+              };
+            }
+
+            newMatches.push({
+              id: matchId,
+              roundId,
+              title: isFinal
+                ? "Final"
+                : isSemi
+                  ? `Semi-Final ${m + 1}`
+                  : `Knockout M${m + 1}`,
+              slotA,
+              slotB,
+              settings: {
+                date: globalSettings.date,
+                time: "",
+                venue: globalSettings.venue,
+                overs: globalSettings.overs,
+              },
+            });
+            currentRoundMatchIds.push(matchId);
+            if (isSemi) semisMatches.push(matchId);
+            mCounter++;
+          }
+          previousRoundMatches = currentRoundMatchIds;
+        }
+
+        // 5. Automatic 3rd Place Playoff
+        if (wizardIncludeThirdPlace && semisMatches.length === 2) {
+          newMatches.push({
+            id: `M${mCounter}`,
+            roundId: `r${knockoutRounds + 1}`,
+            title: "3rd Place Playoff",
+            slotA: {
+              type: "loser_link",
+              team: null,
+              sourceMatchId: semisMatches[0],
+            },
+            slotB: {
+              type: "loser_link",
+              team: null,
+              sourceMatchId: semisMatches[1],
+            },
+            settings: {
+              date: globalSettings.date,
+              time: "",
+              venue: globalSettings.venue,
+              overs: globalSettings.overs,
+            },
+          });
+          mCounter++;
+        }
+      }
+    }
+    // 2. GROUPS + KNOCKOUT MODE
+    else if (wizardMode === "groups_knockout") {
       const gCount = parseInt(wizardGroupCount);
       const tPerGroup = parseInt(wizardTeamsPerGroup);
       const advPerGroup = parseInt(wizardAdvancing);
@@ -753,17 +972,17 @@ export default function BracketBuilder() {
             bracketMatchId: m.id,
             overs: Number(m.settings?.overs || 4),
             sourceMatchA:
-              m.slotA.type === "link" ||
-              m.slotA.type === "loser_link" ||
-              m.slotA.type === "standing"
-                ? m.slotA.sourceMatchId
-                : null,
+              m.slotA.type === "link" || m.slotA.type === "loser_link"
+                ? `BRACKET-${m.slotA.sourceMatchId}`
+                : m.slotA.type === "standing"
+                  ? m.slotA.sourceMatchId
+                  : null,
             sourceMatchB:
-              m.slotB.type === "link" ||
-              m.slotB.type === "loser_link" ||
-              m.slotB.type === "standing"
-                ? m.slotB.sourceMatchId
-                : null,
+              m.slotB.type === "link" || m.slotB.type === "loser_link"
+                ? `BRACKET-${m.slotB.sourceMatchId}`
+                : m.slotB.type === "standing"
+                  ? m.slotB.sourceMatchId
+                  : null,
           },
         };
 
@@ -1263,19 +1482,69 @@ export default function BracketBuilder() {
             <div className="flex gap-2 mb-6">
               <button
                 onClick={() => setWizardMode("standard")}
-                className={`flex-1 py-2 rounded-lg font-bold text-[10px] uppercase tracking-wider transition-all border ${wizardMode === "standard" ? "bg-indigo-600 text-white border-indigo-600" : lightMode ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-black/20 text-gray-400 border-white/10"}`}
+                className={`flex-1 py-2 rounded-lg font-bold text-[9px] sm:text-[10px] uppercase tracking-wider transition-all border ${wizardMode === "standard" ? "bg-indigo-600 text-white border-indigo-600" : lightMode ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-black/20 text-gray-400 border-white/10"}`}
               >
-                Standard Knockout
+                Knockout
               </button>
               <button
                 onClick={() => setWizardMode("groups_knockout")}
-                className={`flex-1 py-2 rounded-lg font-bold text-[10px] uppercase tracking-wider transition-all border ${wizardMode === "groups_knockout" ? "bg-indigo-600 text-white border-indigo-600" : lightMode ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-black/20 text-gray-400 border-white/10"}`}
+                className={`flex-1 py-2 rounded-lg font-bold text-[9px] sm:text-[10px] uppercase tracking-wider transition-all border ${wizardMode === "groups_knockout" ? "bg-indigo-600 text-white border-indigo-600" : lightMode ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-black/20 text-gray-400 border-white/10"}`}
               >
-                Groups + Knockout
+                Groups + KO
+              </button>
+              {/* 🟢 NEW ROUND ROBIN BUTTON */}
+              <button
+                onClick={() => setWizardMode("round_robin")}
+                className={`flex-1 py-2 rounded-lg font-bold text-[9px] sm:text-[10px] uppercase tracking-wider transition-all border ${wizardMode === "round_robin" ? "bg-indigo-600 text-white border-indigo-600" : lightMode ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-black/20 text-gray-400 border-white/10"}`}
+              >
+                Round Robin
               </button>
             </div>
 
-            {wizardMode === "standard" ? (
+            {wizardMode === "round_robin" ? (
+              <>
+                <p
+                  className={`text-[11px] leading-relaxed mb-4 font-bold ${theme.sub}`}
+                >
+                  Generates a pure league schedule followed by Knockouts
+                  (Semis/Finals).
+                </p>
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  <div>
+                    <label
+                      className={`text-[10px] font-bold uppercase mb-2 block ${theme.sub}`}
+                    >
+                      Total Teams
+                    </label>
+                    <input
+                      type="number"
+                      min="2"
+                      value={wizardTeamsCount}
+                      onChange={(e) => setWizardTeamsCount(e.target.value)}
+                      className={`w-full p-3 rounded-xl border outline-none font-black text-sm ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10 text-white"}`}
+                    />
+                  </div>
+                  <div>
+                    <label
+                      className={`text-[10px] font-bold uppercase mb-2 block ${theme.sub}`}
+                    >
+                      Top Teams Advance
+                    </label>
+                    <select
+                      value={wizardRoundRobinAdvancing}
+                      onChange={(e) =>
+                        setWizardRoundRobinAdvancing(e.target.value)
+                      }
+                      className={`w-full p-3 rounded-xl border outline-none font-black text-sm ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10 text-white"}`}
+                    >
+                      <option value={2}>Top 2 (Direct to Final)</option>
+                      <option value={4}>Top 4 (Semi-Finals)</option>
+                      <option value={8}>Top 8 (Quarter-Finals)</option>
+                    </select>
+                  </div>
+                </div>
+              </>
+            ) : wizardMode === "standard" ? (
               <>
                 <p className={`text-xs mb-4 ${theme.sub}`}>
                   Enter the number of teams. The wizard will automatically map

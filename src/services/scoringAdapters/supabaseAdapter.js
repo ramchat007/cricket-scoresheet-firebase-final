@@ -115,7 +115,7 @@ export function createSupabaseAdapter(supabaseClient) {
     },
 
     subscribeMatchLite(tournamentId, matchId, cb) {
-      console.log(`🔌 Opening WebSocket for match: ${matchId}`);
+      // console.log(`🔌 Opening WebSocket for match: ${matchId}`);
 
       const channel = supabaseClient
         .channel(`score:${tournamentId}:${matchId}`) // Put the normal channel name back

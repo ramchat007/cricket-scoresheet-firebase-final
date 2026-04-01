@@ -1,78 +1,136 @@
 import React from "react";
+import { Star, Award, Trophy, Target, Info } from "lucide-react";
+import { getManOfTheMatch } from "../../utils/statsHelper";
 
 export default function BroadcastSummaryCard({ tournamentName, match, type }) {
   const currentInn = match?.innings?.[match?.currentInnings || 0];
 
   if (!match) return null;
 
-  const isResult =
-    type === "RESULT" ||
+  const isMatchActuallyFinished =
     match.status === "completed" ||
-    match?.meta?.matchStatus === "finished";
+    match?.meta?.matchStatus === "finished" ||
+    match?.result;
+  const isResult =
+    type === "RESULT" || type === "RESULT_CARD" || isMatchActuallyFinished;
   const isToss = type === "TOSS";
   const isInningsBreak = type === "INNINGS_BREAK";
-  const isSecondInnings = match.currentInnings === 1;
+  const isWicket = type === "WICKET";
+  const isSummary = type === "SUMMARY" || type === "SUMMARY_CARD";
 
-  // --- 1. ROCK-SOLID APPEARANCE SORTING ---
+  const momWinningTeamOnly = match.meta?.compulsoryWinningTeamMOM !== false;
+  const mvp = isResult
+    ? getManOfTheMatch(
+        match,
+        isMatchActuallyFinished ? momWinningTeamOnly : false,
+      )
+    : null;
+
+  const TV_CARD_BASE =
+    "bg-[#0B1120] text-white shadow-[0_30px_60px_rgba(0,0,0,0.8)] overflow-hidden rounded-2xl border border-white/10 flex flex-col animate-in fade-in zoom-in-95 duration-500 drop-shadow-2xl";
+
+  // --- LOGIC: NAME CLEANING & DISMISSALS ---
+  const cleanName = (p) => {
+    if (!p) return "";
+    if (typeof p === "object") return p.name || p.playerName || "Unknown";
+    return String(p).trim();
+  };
+
+  const getDismissalText = (stats, isStriker, isNonStriker) => {
+    if (isStriker || isNonStriker) {
+      return (
+        <span className="font-black uppercase text-[10px] tracking-widest text-teal-400 drop-shadow-md">
+          Not Out
+        </span>
+      );
+    }
+    if (!stats || !stats.out) return null;
+
+    const b = stats.bowler || stats.bowlerName || "";
+    const f = stats.fielderName || stats.fielder || stats.catchBy || "";
+    const wType = String(stats.wicketType || "out")
+      .toLowerCase()
+      .replace(/\s+/g, "");
+    const style =
+      "font-bold text-xs uppercase tracking-wider text-slate-300 drop-shadow-sm";
+
+    switch (wType) {
+      case "bowled":
+        return <span className={style}>B {b}</span>;
+      case "caught":
+      case "caughtbehind":
+        return (
+          <span className={style}>
+            C {f} B {b}
+          </span>
+        );
+      case "lbw":
+        return <span className={style}>LBW B {b}</span>;
+      case "runout":
+        return <span className={style}>RUN OUT ({f})</span>;
+      case "stumped":
+        return (
+          <span className={style}>
+            ST {f} B {b}
+          </span>
+        );
+      case "hitwicket":
+        return <span className={style}>HIT WICKET B {b}</span>;
+      case "retiredhurt":
+        return (
+          <span className="text-slate-400 italic text-xs font-bold uppercase">
+            RETIRED HURT
+          </span>
+        );
+      case "retiredout":
+        return <span className={style}>RETIRED OUT</span>;
+      default:
+        return (
+          <span className="text-slate-400 uppercase font-bold text-xs">
+            {stats.wicketType || "OUT"}
+          </span>
+        );
+    }
+  };
+
+  // --- LOGIC: SORTING PLAYERS BY APPEARANCE ---
   const timeline = currentInn?.timeline || [];
 
-  // Build Batting Order by chronological appearance
-  const batsmenByAppearance = [];
+  const playedBatsmen = [];
+  const addToPlayed = (name) => {
+    const cName = cleanName(name);
+    if (cName && !playedBatsmen.includes(cName)) playedBatsmen.push(cName);
+  };
+  if (currentInn?.batsmenList?.[0]) addToPlayed(currentInn.batsmenList[0]);
+  if (currentInn?.batsmenList?.[1]) addToPlayed(currentInn.batsmenList[1]);
   timeline.forEach((ball) => {
-    if (ball.striker && !batsmenByAppearance.includes(ball.striker)) {
-      batsmenByAppearance.push(ball.striker);
-    }
-    if (ball.nonStriker && !batsmenByAppearance.includes(ball.nonStriker)) {
-      batsmenByAppearance.push(ball.nonStriker);
-    }
+    if (ball.batter) addToPlayed(ball.batter);
+    if (ball.nextStriker) addToPlayed(ball.nextStriker);
   });
-  // Safely catch incoming batters who haven't faced a ball yet
-  if (
-    currentInn?.striker &&
-    !batsmenByAppearance.includes(currentInn.striker)
-  ) {
-    batsmenByAppearance.push(currentInn.striker);
-  }
-  if (
-    currentInn?.nonStriker &&
-    !batsmenByAppearance.includes(currentInn.nonStriker)
-  ) {
-    batsmenByAppearance.push(currentInn.nonStriker);
-  }
-  // Fallback for any outliers
-  Object.keys(currentInn?.batsmenStats || {}).forEach((b) => {
-    if (!batsmenByAppearance.includes(b)) batsmenByAppearance.push(b);
-  });
+  const striker = cleanName(currentInn?.striker);
+  const nonStriker = cleanName(currentInn?.nonStriker);
+  addToPlayed(striker);
+  addToPlayed(nonStriker);
 
-  // Build Bowling Order by chronological appearance
-  const bowlersByAppearance = [];
+  const playedBowlers = [];
+  const addToBowl = (name) => {
+    const cName = cleanName(name);
+    if (cName && !playedBowlers.includes(cName)) playedBowlers.push(cName);
+  };
   timeline.forEach((ball) => {
-    if (ball.bowler && !bowlersByAppearance.includes(ball.bowler)) {
-      bowlersByAppearance.push(ball.bowler);
-    }
+    if (ball.bowler) addToBowl(ball.bowler);
   });
-  // Safely catch a new bowler who hasn't bowled their first legal ball yet
-  if (
-    currentInn?.currentBowler &&
-    !bowlersByAppearance.includes(currentInn.currentBowler)
-  ) {
-    bowlersByAppearance.push(currentInn.currentBowler);
-  }
-  // Fallback for any outliers
-  Object.keys(currentInn?.bowlerStats || {}).forEach((b) => {
-    if (!bowlersByAppearance.includes(b)) bowlersByAppearance.push(b);
-  });
+  addToBowl(currentInn?.currentBowler);
 
-  // --- 2. MATCH INFO & TARGET LOGIC ---
-  const score = currentInn?.score || 0;
-  const wickets = currentInn?.wickets || 0;
+  // --- MATCH INFO & THEME EXTRACTOR ---
   const totalOvers = Number(match.meta?.overs || 20);
   const totalBallsInInnings = totalOvers * 6;
+  const score = currentInn?.score || 0;
+  const wickets = currentInn?.wickets || 0;
   const ballsBowled =
     (currentInn?.over || 0) * 6 + (currentInn?.overBallCount || 0);
   const overs = `${currentInn?.over || 0}.${currentInn?.overBallCount || 0}`;
   const crr = ballsBowled > 0 ? ((score / ballsBowled) * 6).toFixed(2) : "0.00";
-
   let targetScore = 0;
   let rrr = "0.00";
   let targetSummary = "TARGET PENDING...";
@@ -84,86 +142,276 @@ export default function BroadcastSummaryCard({ tournamentName, match, type }) {
     targetScore = match.innings[0].score + 1;
     const ballsRemaining = totalBallsInInnings - ballsBowled;
     const runsNeeded = targetScore - score;
-
-    if (ballsRemaining > 0) {
+    if (ballsRemaining > 0)
       rrr = ((runsNeeded / ballsRemaining) * 6).toFixed(2);
-    }
-
-    if (!isResult) {
+    if (!isMatchActuallyFinished)
       targetSummary = `${match.innings[1]?.battingTeam || match.meta?.teamB || "Chasing Team"} needs ${runsNeeded} runs in ${totalOvers} overs`;
-    }
   }
 
-  // 🔥 3. DYNAMIC TEAM COLORS EXTRACTED 🔥
-  const teamA = match.meta?.teamA;
-  const teamB = match.meta?.teamB;
-  const teamAColor = match.meta?.teamAColor || "#0284c7"; // Blue fallback
-  const teamBColor = match.meta?.teamBColor || "#e11d48"; // Rose fallback
-
+  const teamAColor = match.meta?.teamAColor || "#0284c7";
+  const teamBColor = match.meta?.teamBColor || "#e11d48";
   const battingTeamName = currentInn?.battingTeam;
   let battingColor = teamAColor;
   let bowlingColor = teamBColor;
-
-  if (battingTeamName === teamB) {
+  if (battingTeamName === match.meta?.teamB) {
     battingColor = teamBColor;
     bowlingColor = teamAColor;
   }
 
   const getTeamColor = (teamName) => {
-    if (teamName === teamA) return teamAColor;
-    if (teamName === teamB) return teamBColor;
-    return "#14b8a6"; // Default Teal
+    if (teamName === match.meta?.teamA) return teamAColor;
+    if (teamName === match.meta?.teamB) return teamBColor;
+    return "#14b8a6";
   };
 
-  // --- 4. THEME CONFIG ---
-  let mainTheme = {
-    bg: "bg-slate-900",
-    headerGradient: "bg-slate-800",
-    headerBorderColor: battingColor,
-    accentColorClass: "",
-    statusText: currentInn
-      ? `END OF OVER ${currentInn?.over || 0}`
-      : "MATCH PREVIEW",
-    isSemanticAlert: false,
-  };
+  // ====================================================================
+  // RENDER 1: THE GLOSSY TV SCORECARD (For Summary & Wicket)
+  // ====================================================================
+  if (isSummary || isWicket) {
+    if (!currentInn) return null;
+    const extras = currentInn.extras || {
+      wides: 0,
+      noBalls: 0,
+      byes: 0,
+      legByes: 0,
+    };
+    const totalExtras =
+      (extras.wides || 0) +
+      (extras.noBalls || 0) +
+      (extras.byes || 0) +
+      (extras.legByes || 0);
 
-  if (type === "WICKET") {
-    mainTheme = {
-      ...mainTheme,
-      headerGradient: "bg-rose-900",
-      headerBorderClass: "border-rose-500",
-      accentColorClass: "text-rose-400",
-      statusText: "WICKET FALLEN",
-      isSemanticAlert: true,
-    };
-  } else if (isResult) {
-    mainTheme = {
-      ...mainTheme,
-      headerGradient: "bg-amber-900",
-      headerBorderClass: "border-amber-500",
-      accentColorClass: "text-amber-400",
-      statusText: "MATCH RESULT",
-      isSemanticAlert: true,
-    };
-  } else if (isToss) {
-    mainTheme = {
-      ...mainTheme,
-      headerGradient: "bg-indigo-900",
-      headerBorderClass: "border-indigo-500",
-      accentColorClass: "text-indigo-400",
-      statusText: "TOSS UPDATE",
-      isSemanticAlert: true,
-    };
-  } else if (isInningsBreak) {
-    mainTheme = {
-      ...mainTheme,
-      headerGradient: "bg-emerald-900",
-      headerBorderClass: "border-emerald-500",
-      accentColorClass: "text-emerald-400",
-      statusText: "INNINGS BREAK",
-      isSemanticAlert: true,
-    };
+    const isSecondInnings = match.currentInnings === 1;
+
+    return (
+      <div
+        className={`w-[1300px] border-t-[12px] ${isWicket ? "border-rose-600" : "border-slate-400"} ${TV_CARD_BASE}`}
+      >
+        {/* GLOSSY HEADER */}
+        <div
+          className={`flex justify-between items-center px-10 py-5 bg-gradient-to-r ${isWicket ? "from-rose-900 via-rose-950 to-[#0B1120]" : "from-slate-800 via-slate-900 to-[#0B1120]"} border-b border-white/10 shadow-lg relative overflow-hidden`}
+        >
+          <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px]"></div>
+
+          <div className="flex flex-col z-10">
+            <span
+              className={`font-black italic uppercase tracking-[0.3em] text-sm drop-shadow-md ${isWicket ? "text-rose-400 animate-pulse" : "text-slate-400"}`}
+            >
+              {isWicket ? "Wicket Fallen" : "Match Summary"}
+            </span>
+            <span className="text-5xl font-black text-white drop-shadow-lg mt-1 uppercase tracking-tight">
+              {currentInn.battingTeam}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-12 z-10">
+            {isSecondInnings && targetScore > 0 && (
+              <div className="flex flex-col items-end">
+                <span className="text-amber-500 font-black uppercase text-xs tracking-widest mb-1">
+                  Target: {targetScore}
+                </span>
+                <span className="text-white font-bold text-sm bg-white/10 px-3 py-1 rounded border border-white/10">
+                  Need {targetScore - score} from{" "}
+                  {totalBallsInInnings - ballsBowled}
+                </span>
+              </div>
+            )}
+            <div className="text-right flex items-center gap-6">
+              <div className="text-7xl font-black text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.3)] leading-none">
+                {currentInn.score}
+                <span className="text-5xl text-slate-300">
+                  /{currentInn.wickets}
+                </span>
+              </div>
+              <div className="flex flex-col items-start justify-center border-l-2 border-white/20 pl-6">
+                <span className="text-3xl font-bold text-white leading-none">
+                  {overs} <span className="text-lg text-slate-400">OV</span>
+                </span>
+                <span className="text-sm font-black text-slate-400 uppercase tracking-widest mt-1">
+                  CRR: {crr}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* GLOSSY BODY SPLIT */}
+        <div className="flex h-[520px] bg-[#0B1120]">
+          {/* BATTING HALF */}
+          <div className="w-[55%] relative flex flex-col border-r border-white/10 bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-slate-800/30 to-transparent">
+            <div className="bg-black/40 px-6 py-2 flex justify-between items-center border-b border-white/10 shadow-inner">
+              <span className="text-slate-400 font-black uppercase tracking-widest text-sm">
+                Batting
+              </span>
+              <div className="flex gap-6 w-[220px] justify-end text-slate-500 font-black text-xs tracking-widest">
+                <span className="w-12 text-center">R</span>
+                <span className="w-12 text-center">B</span>
+                <span className="w-12 text-center">4s</span>
+                <span className="w-12 text-center">6s</span>
+                <span className="w-16 text-center">SR</span>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto scrollbar-hide">
+              {playedBatsmen.map((name) => {
+                const stats = currentInn.batsmenStats?.[name] || {
+                  runs: 0,
+                  balls: 0,
+                  fours: 0,
+                  sixes: 0,
+                  out: null,
+                };
+                const isS = name === striker;
+                const isNS = name === nonStriker;
+                const isAtCrease = isS || isNS;
+                const sr =
+                  stats.balls > 0
+                    ? ((stats.runs / stats.balls) * 100).toFixed(1)
+                    : "0.0";
+
+                // Highlight the batsman who just got out if it's a wicket card
+                const justGotOut =
+                  isWicket &&
+                  stats.out &&
+                  timeline.length > 0 &&
+                  timeline[timeline.length - 1].whoOut === name;
+
+                let rowStyle = "bg-transparent border-l-4 border-transparent";
+                if (isAtCrease)
+                  rowStyle =
+                    "bg-gradient-to-r from-teal-900/40 to-transparent border-l-4 border-teal-500";
+                if (justGotOut)
+                  rowStyle =
+                    "bg-gradient-to-r from-rose-900/60 to-transparent border-l-4 border-rose-500";
+
+                return (
+                  <div
+                    key={name}
+                    className={`flex justify-between items-center px-6 py-4 border-b border-white/5 transition-all ${rowStyle}`}
+                  >
+                    <div className="flex flex-col flex-1 min-w-0 pr-4">
+                      <div
+                        className={`text-2xl font-black uppercase truncate drop-shadow-md ${isAtCrease ? "text-white" : justGotOut ? "text-rose-100" : stats.out ? "text-slate-500" : "text-slate-200"}`}
+                      >
+                        {name} {isS && <span className="text-teal-400">*</span>}
+                      </div>
+                      <div className="mt-1">
+                        {getDismissalText(stats, isS, isNS)}
+                      </div>
+                    </div>
+                    <div
+                      className={`flex gap-6 w-[220px] justify-end font-mono text-xl font-bold shrink-0 ${isAtCrease ? "text-teal-100" : justGotOut ? "text-rose-200" : "text-slate-300"}`}
+                    >
+                      <span className="w-12 text-center text-white font-black text-2xl drop-shadow-lg">
+                        {stats.runs}
+                      </span>
+                      <span className="w-12 text-center opacity-80">
+                        {stats.balls}
+                      </span>
+                      <span className="w-12 text-center opacity-60">
+                        {stats.fours}
+                      </span>
+                      <span className="w-12 text-center opacity-60">
+                        {stats.sixes}
+                      </span>
+                      <span className="w-16 text-center text-lg opacity-80">
+                        {sr}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* EXTRAS FOOTER */}
+            <div className="bg-black/60 px-6 py-3 border-t border-white/10 flex justify-between items-center mt-auto shadow-[0_-10px_20px_rgba(0,0,0,0.3)]">
+              <span className="text-xs font-black uppercase tracking-widest text-slate-400">
+                Extras
+              </span>
+              <span className="font-mono text-white text-lg font-bold">
+                {totalExtras}{" "}
+                <span className="text-xs text-slate-400 ml-2 tracking-wider">
+                  (WD {extras.wides}, NB {extras.noBalls}, B {extras.byes}, LB{" "}
+                  {extras.legByes})
+                </span>
+              </span>
+            </div>
+          </div>
+
+          {/* BOWLING HALF */}
+          <div className="w-[45%] relative flex flex-col bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-800/30 to-transparent">
+            <div className="bg-black/40 px-6 py-2 flex justify-between items-center border-b border-white/10 shadow-inner">
+              <span className="text-slate-400 font-black uppercase tracking-widest text-sm">
+                Bowling
+              </span>
+              <div className="flex gap-6 w-[200px] justify-end text-slate-500 font-black text-xs tracking-widest">
+                <span className="w-12 text-center">O</span>
+                <span className="w-12 text-center">M</span>
+                <span className="w-12 text-center">R</span>
+                <span className="w-12 text-center">W</span>
+                <span className="w-16 text-center">ECO</span>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto scrollbar-hide">
+              {playedBowlers.map((name) => {
+                const s = currentInn.bowlerStats?.[name] || {
+                  balls: 0,
+                  runs: 0,
+                  wickets: 0,
+                  maidens: 0,
+                };
+                const isCurrent = name === cleanName(currentInn.currentBowler);
+                const eco =
+                  s.balls > 0 ? (s.runs / (s.balls / 6)).toFixed(1) : "0.0";
+
+                return (
+                  <div
+                    key={name}
+                    className={`flex justify-between items-center px-6 py-5 border-b border-white/5 transition-all ${isCurrent ? "bg-gradient-to-r from-transparent to-teal-900/40 border-r-4 border-teal-500" : "bg-transparent border-r-4 border-transparent"}`}
+                  >
+                    <div
+                      className={`text-2xl font-black uppercase truncate flex-1 drop-shadow-md ${isCurrent ? "text-white" : "text-slate-300"}`}
+                    >
+                      {name}{" "}
+                      {isCurrent && (
+                        <span className="text-teal-400 text-lg ml-2">●</span>
+                      )}
+                    </div>
+                    <div
+                      className={`flex gap-6 w-[200px] justify-end font-mono text-xl font-bold shrink-0 ${isCurrent ? "text-teal-100" : "text-slate-300"}`}
+                    >
+                      <span className="w-12 text-center opacity-80">
+                        {Math.floor(s.balls / 6)}.{s.balls % 6}
+                      </span>
+                      <span className="w-12 text-center opacity-60">
+                        {s.maidens || 0}
+                      </span>
+                      <span className="w-12 text-center opacity-80">
+                        {s.runs}
+                      </span>
+                      <span
+                        className={`w-12 text-center text-2xl font-black drop-shadow-lg ${isCurrent ? "text-white" : s.wickets > 0 ? "text-amber-400" : "text-white"}`}
+                      >
+                        {s.wickets}
+                      </span>
+                      <span className="w-16 text-center text-lg opacity-80">
+                        {eco}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
+
+  // ====================================================================
+  // RENDER 2: THE BROADCAST TV CARDS (Toss, Break, Match Result)
+  // ====================================================================
 
   const ScoreBlock = ({ inn, label }) => {
     if (!inn || inn.score === undefined)
@@ -181,12 +429,11 @@ export default function BroadcastSummaryCard({ tournamentName, match, type }) {
     const topBatters = Object.entries(inn.batsmenStats || {})
       .sort((a, b) => b[1].runs - a[1].runs)
       .slice(0, 2);
-
     const blockTeamColor = getTeamColor(inn.battingTeam);
 
     return (
       <div
-        className={`flex flex-col items-center p-6 bg-slate-900 rounded-xl border border-slate-700 w-full relative overflow-hidden shadow-xl`}
+        className={`flex flex-col items-center p-6 bg-slate-900 rounded-xl border border-slate-700 w-full relative overflow-hidden shadow-xl h-full`}
       >
         <div
           className="absolute top-0 w-full h-2"
@@ -201,10 +448,10 @@ export default function BroadcastSummaryCard({ tournamentName, match, type }) {
         >
           {inn.battingTeam || "Team"}
         </h3>
-        <div className="text-6xl font-black text-white mb-4 leading-none">
+        <div className="text-6xl font-black text-white mb-4 leading-none drop-shadow-md">
           {inn.score}/{inn.wickets}
         </div>
-        <div className="w-full border-t border-slate-700/50 pt-4 space-y-3">
+        <div className="w-full border-t border-slate-700/50 pt-4 space-y-3 mt-auto">
           {topBatters.length > 0 ? (
             topBatters.map(([name, s]) => (
               <div
@@ -235,127 +482,151 @@ export default function BroadcastSummaryCard({ tournamentName, match, type }) {
   const hasTossData = Boolean(match.meta?.toss?.winner);
 
   return (
-    <div className="w-[1400px] bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-slate-700 font-sans">
-      <div
-        className={`relative flex flex-col border-b-4 ${mainTheme.isSemanticAlert ? mainTheme.headerBorderClass : ""}`}
-        style={!mainTheme.isSemanticAlert ? { borderColor: battingColor } : {}}
-      >
+    <div className="w-[1400px] bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-slate-700 font-sans animate-in fade-in zoom-in-95 duration-500 drop-shadow-2xl">
+      <div className="relative flex flex-col border-b-4 border-slate-500">
         <div className="bg-slate-950 px-8 py-2 flex justify-between items-center border-b border-slate-800">
           <div className="flex gap-4 text-xs font-bold tracking-[0.2em] text-slate-500 uppercase">
             <span>{match.meta?.matchTitle || match.name || "MATCH"}</span>{" "}
             <span className="text-slate-700">•</span>{" "}
             <span>{tournamentName}</span>
           </div>
-          <div
-            className={`font-black uppercase tracking-widest text-sm animate-pulse ${mainTheme.isSemanticAlert ? mainTheme.accentColorClass : ""}`}
-            style={!mainTheme.isSemanticAlert ? { color: battingColor } : {}}
-          >
-            {mainTheme.statusText}
-          </div>
         </div>
 
+        {/* TV Header Backgrounds */}
         <div
-          className={`h-28 flex items-center justify-between px-10 relative overflow-hidden ${mainTheme.isSemanticAlert ? mainTheme.headerGradient : ""}`}
-          style={
-            !mainTheme.isSemanticAlert
-              ? {
-                  background: `linear-gradient(to right, ${battingColor} 0%, rgba(15,23,42,1) 40%, rgba(15,23,42,1) 60%, ${bowlingColor} 100%)`,
-                }
-              : {}
-          }
+          className={`h-28 flex items-center justify-between px-10 relative overflow-hidden ${
+            isResult
+              ? "bg-emerald-900"
+              : isToss
+                ? "bg-indigo-900"
+                : isInningsBreak
+                  ? "bg-amber-900"
+                  : "bg-slate-800"
+          }`}
         >
           <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px]"></div>
-
-          {isToss ? (
-            <div className="w-full text-center z-10">
-              <span className="text-white font-black text-5xl uppercase italic tracking-wider">
-                TOSS REPORT
-              </span>
-            </div>
-          ) : isResult || isInningsBreak ? (
-            <div className="w-full text-center z-10">
-              <span className="text-white font-black text-5xl uppercase italic tracking-wider">
-                {isInningsBreak ? "INNINGS BREAK" : "MATCH RESULT"}
-              </span>
-            </div>
-          ) : (
-            <>
-              {/* DYNAMIC MATCH HEADER */}
-              <div className="flex flex-col z-10 w-[40%]">
-                <span className="text-white font-black text-5xl uppercase leading-none truncate pr-4 drop-shadow-md">
-                  {battingTeamName || match?.meta?.teamA || "TEAM 1"}
-                </span>
-              </div>
-              <div className="z-10 flex flex-col items-center w-[20%] shrink-0">
-                <div className="text-7xl font-black text-white leading-none drop-shadow-lg">
-                  {score}/{wickets}
-                </div>
-                {isSecondInnings && targetScore > 0 && (
-                  <div className="bg-slate-900/80 px-3 py-1 rounded text-amber-400 font-bold text-sm tracking-widest mt-1 border border-white/10 uppercase drop-shadow-md whitespace-nowrap">
-                    Need {targetScore - score} off{" "}
-                    {totalBallsInInnings - ballsBowled}
-                  </div>
-                )}
-              </div>
-              <div className="flex flex-col items-end z-10 text-right w-[40%]">
-                <span className="text-white font-mono font-black text-2xl uppercase leading-none truncate pl-4 drop-shadow-md">
-                  {currentInn?.bowlingTeam || match?.meta?.teamB || "TEAM 2"}
-                </span>
-                <span className="text-white font-mono font-bold text-4xl leading-none mt-1 drop-shadow-md">
-                  {overs} <span className="text-lg text-white/60">OV</span>
-                </span>
-                <span
-                  className="font-bold text-sm tracking-widest mt-1 drop-shadow-md"
-                  style={{ color: bowlingColor }}
-                >
-                  CRR {crr}
-                </span>
-              </div>
-            </>
-          )}
+          <div className="w-full text-center z-10">
+            <span className="text-white font-black text-5xl uppercase italic tracking-wider drop-shadow-md">
+              {isToss
+                ? "TOSS REPORT"
+                : isInningsBreak
+                  ? "INNINGS BREAK"
+                  : isMatchActuallyFinished
+                    ? "MATCH RESULT"
+                    : "MATCH SUMMARY"}
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* BODY CONTENT */}
-      {isResult || isInningsBreak ? (
-        <div className="flex items-center justify-center gap-6 h-[450px] p-10 w-full bg-slate-900">
-          <ScoreBlock inn={match.innings?.[0]} label="1st INNINGS" />
+      {isResult ? (
+        <div className="flex flex-col w-full bg-slate-900 p-8 justify-center gap-6">
+          <div className="text-center w-full bg-slate-950 py-5 rounded-xl border border-white/5 shadow-inner">
+            <span className="text-amber-500/50 text-xs font-black uppercase tracking-[0.3em] block mb-1">
+              {isMatchActuallyFinished ? "Final Verdict" : "Live Match Status"}
+            </span>
+            <h2
+              className={`text-5xl font-black uppercase tracking-wider leading-tight drop-shadow-[0_0_15px_rgba(52,211,153,0.3)] text-balance ${isMatchActuallyFinished ? "text-emerald-400" : "text-amber-400"}`}
+            >
+              {isMatchActuallyFinished
+                ? match?.meta?.result || match?.result || "MATCH FINISHED"
+                : "MATCH IN PROGRESS"}
+            </h2>
+          </div>
 
-          {/* CENTER INFO BLOCK */}
-          <div className="flex flex-col items-center justify-center min-w-[350px] px-4 text-center shrink-0">
-            {isInningsBreak ? (
-              <>
-                <span className="text-slate-500 text-sm font-black uppercase tracking-[0.3em] mb-1">
-                  Target
-                </span>
-                <span className="text-white text-8xl font-black mb-2 drop-shadow-lg">
-                  {targetScore > 0 ? targetScore : "-"}
-                </span>
-                {targetScore > 0 && (
-                  <>
-                    <div className="bg-emerald-500/10 border border-emerald-500/20 px-4 py-1 rounded-lg mb-4">
-                      <span className="text-emerald-400 text-xl font-mono font-black uppercase">
-                        RRR: {rrr}
+          <div className="flex gap-6 w-full items-stretch">
+            {mvp ? (
+              <div className="w-[450px] shrink-0 bg-gradient-to-br from-amber-900/30 to-slate-900 border-2 border-amber-500/40 rounded-xl p-6 flex flex-col items-center relative overflow-hidden shadow-[0_0_40px_rgba(251,191,36,0.15)]">
+                <div className="absolute top-[-30px] right-[-30px] text-amber-500/10">
+                  <Star size={160} />
+                </div>
+                <div className="flex items-center gap-2 text-amber-400 mb-4 font-black uppercase tracking-widest text-xs z-10 bg-amber-500/10 px-4 py-1.5 rounded-full border border-amber-500/30">
+                  <Award size={16} />{" "}
+                  {isMatchActuallyFinished
+                    ? "Player of the Match"
+                    : "Current MVP Leader"}
+                </div>
+                <img
+                  src={
+                    mvp.photoURL ||
+                    mvp.image ||
+                    "https://cdn-icons-png.flaticon.com/512/847/847969.png"
+                  }
+                  alt={mvp.name}
+                  className="w-36 h-36 object-cover rounded-full border-[4px] border-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.4)] z-10 mb-4 bg-white/5"
+                />
+                <h2 className="text-3xl font-black uppercase italic leading-none text-white drop-shadow-md text-center mb-1 z-10">
+                  {mvp.name}
+                </h2>
+                <div className="text-amber-500 font-bold text-xs tracking-widest uppercase mb-5 z-10">
+                  {mvp.team}
+                </div>
+
+                <div className="w-full grid grid-cols-2 gap-3 z-10 mt-auto">
+                  {mvp.runs > 0 || mvp.balls > 0 ? (
+                    <div className="bg-black/40 border border-white/10 p-3 rounded-lg flex flex-col items-center text-center shadow-inner">
+                      <span className="text-white/50 text-[10px] font-black uppercase tracking-widest mb-1">
+                        Batting
+                      </span>
+                      <span className="text-3xl font-mono font-black text-white">
+                        {mvp.runs}
+                        <span className="text-sm text-slate-400 ml-1">
+                          ({mvp.balls})
+                        </span>
                       </span>
                     </div>
-                    <span className="text-slate-400 text-xs font-bold text-center tracking-wider uppercase leading-tight max-w-[200px]">
-                      {targetSummary}
-                    </span>
-                  </>
-                )}
-              </>
+                  ) : (
+                    <div />
+                  )}
+                  {mvp.wickets > 0 || mvp.ballsBowled > 0 ? (
+                    <div className="bg-black/40 border border-white/10 p-3 rounded-lg flex flex-col items-center text-center shadow-inner">
+                      <span className="text-white/50 text-[10px] font-black uppercase tracking-widest mb-1">
+                        Bowling
+                      </span>
+                      <span className="text-3xl font-mono font-black text-white">
+                        {mvp.wickets}-{mvp.runsConceded}
+                      </span>
+                    </div>
+                  ) : (
+                    <div />
+                  )}
+                </div>
+              </div>
             ) : (
+              <div className="w-[450px] shrink-0 bg-slate-800/50 border border-white/10 rounded-xl flex items-center justify-center text-white/30 font-black uppercase tracking-widest">
+                Gathering Stats...
+              </div>
+            )}
+
+            <div className="flex-1 flex gap-4">
+              <ScoreBlock inn={match.innings?.[0]} label="1st INNINGS" />
+              <ScoreBlock inn={match.innings?.[1]} label="2nd INNINGS" />
+            </div>
+          </div>
+        </div>
+      ) : isInningsBreak ? (
+        <div className="flex items-center justify-center gap-6 h-[450px] p-10 w-full bg-slate-900">
+          <ScoreBlock inn={match.innings?.[0]} label="1st INNINGS" />
+          <div className="flex flex-col items-center justify-center min-w-[350px] px-4 text-center shrink-0">
+            <span className="text-slate-500 text-sm font-black uppercase tracking-[0.3em] mb-1">
+              Target
+            </span>
+            <span className="text-white text-8xl font-black mb-2 drop-shadow-lg">
+              {targetScore > 0 ? targetScore : "-"}
+            </span>
+            {targetScore > 0 && (
               <>
-                <span className="text-amber-500/50 text-sm font-black uppercase tracking-[0.3em] mb-2">
-                  Final Verdict
-                </span>
-                <span className="text-white text-3xl font-black uppercase tracking-wider leading-tight drop-shadow-lg text-balance">
-                  {match?.meta?.result || "MATCH IN PROGRESS"}
+                <div className="bg-emerald-500/10 border border-emerald-500/20 px-4 py-1 rounded-lg mb-4">
+                  <span className="text-emerald-400 text-xl font-mono font-black uppercase">
+                    RRR: {rrr}
+                  </span>
+                </div>
+                <span className="text-slate-400 text-xs font-bold text-center tracking-wider uppercase leading-tight max-w-[200px]">
+                  {targetSummary}
                 </span>
               </>
             )}
           </div>
-
           <ScoreBlock inn={match.innings?.[1]} label="2nd INNINGS" />
         </div>
       ) : isToss ? (
@@ -395,174 +666,7 @@ export default function BroadcastSummaryCard({ tournamentName, match, type }) {
             </>
           )}
         </div>
-      ) : (
-        <div className="grid grid-cols-2 h-[600px] bg-slate-900">
-          {/* BATTING CARD */}
-          <div className="border-r border-slate-800 flex flex-col relative overflow-hidden">
-            {/* Background Batting Hue */}
-            <div
-              className="absolute inset-0 opacity-5 pointer-events-none"
-              style={{
-                background: `linear-gradient(to bottom, ${battingColor}, transparent)`,
-              }}
-            ></div>
-            <div className="bg-slate-950 p-4 flex justify-between items-center border-b border-slate-800 z-10">
-              <span className="text-slate-400 font-bold uppercase tracking-widest text-xl">
-                Batting
-              </span>
-              <div className="flex gap-8 w-[200px] justify-end text-slate-600 font-bold text-sm shrink-0">
-                <span className="w-10 text-center">R</span>
-                <span className="w-10 text-center">B</span>
-                <span className="w-12 text-center">SR</span>
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto z-10">
-              {batsmenByAppearance.length > 0 ? (
-                batsmenByAppearance.map((name, index) => {
-                  // 🔥 FIX: Safe Fallback applied here
-                  const s = currentInn.batsmenStats?.[name] || {
-                    runs: 0,
-                    balls: 0,
-                    out: false,
-                  };
-                  const active =
-                    name === currentInn.striker ||
-                    name === currentInn.nonStriker;
-                  return (
-                    <div
-                      key={name}
-                      style={
-                        active
-                          ? {
-                              backgroundColor: `${battingColor}15`,
-                              borderLeft: `4px solid ${battingColor}`,
-                            }
-                          : {}
-                      }
-                      className={`flex justify-between items-center px-6 py-4 border-b border-slate-800/50 ${!active && index % 2 !== 0 ? "bg-slate-800/30" : "bg-transparent"} ${!active ? "border-l-4 border-transparent" : ""}`}
-                    >
-                      <div className="flex items-center gap-3 flex-1 min-w-0 pr-4">
-                        {active && (
-                          <div
-                            className="w-2 h-2 rounded-full animate-pulse shrink-0 shadow-[0_0_8px_currentColor]"
-                            style={{ backgroundColor: battingColor }}
-                          ></div>
-                        )}
-                        <div
-                          className={`text-2xl font-bold uppercase truncate w-full ${active ? "text-white" : s.out ? "text-slate-600 line-through" : "text-slate-500"}`}
-                        >
-                          {name}
-                        </div>
-                      </div>
-                      <div
-                        className={`flex gap-8 w-[200px] justify-end font-mono text-2xl font-bold shrink-0 ${active ? "text-white" : "text-slate-600"}`}
-                      >
-                        <span className="w-10 text-center">{s.runs}</span>
-                        <span className="w-10 text-center opacity-60">
-                          {s.balls}
-                        </span>
-                        <span className="w-12 text-center opacity-40">
-                          {s.balls > 0
-                            ? ((s.runs / s.balls) * 100).toFixed(0)
-                            : 0}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="p-10 text-center text-slate-600 font-bold uppercase tracking-widest">
-                  Waiting for First Ball...
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* BOWLING CARD */}
-          <div className="flex flex-col relative bg-slate-900 overflow-hidden">
-            {/* Background Bowling Hue */}
-            <div
-              className="absolute inset-0 opacity-5 pointer-events-none"
-              style={{
-                background: `linear-gradient(to bottom, ${bowlingColor}, transparent)`,
-              }}
-            ></div>
-            <div className="bg-slate-950 p-4 flex justify-between items-center border-b border-slate-800 z-10">
-              <span className="text-slate-400 font-bold uppercase tracking-widest text-xl">
-                Bowling
-              </span>
-              <div className="flex gap-8 w-[200px] justify-end text-slate-600 font-bold text-sm shrink-0">
-                <span className="w-12 text-center">O</span>
-                <span className="w-10 text-center">R</span>
-                <span className="w-8 text-center">W</span>
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto z-10">
-              {bowlersByAppearance.length > 0 ? (
-                bowlersByAppearance.map((name, index) => {
-                  // 🔥 FIX: Safe Fallback applied here
-                  const s = currentInn.bowlerStats?.[name] || {
-                    runs: 0,
-                    wickets: 0,
-                    balls: 0,
-                  };
-                  const active = name === currentInn.currentBowler;
-                  return (
-                    <div
-                      key={name}
-                      style={
-                        active
-                          ? {
-                              backgroundColor: `${bowlingColor}15`,
-                              borderLeft: `4px solid ${bowlingColor}`,
-                            }
-                          : {}
-                      }
-                      className={`flex justify-between items-center px-6 py-4 border-b border-slate-800/50 ${!active && index % 2 !== 0 ? "bg-slate-800/30" : "bg-transparent"} ${!active ? "border-l-4 border-transparent" : ""}`}
-                    >
-                      <div className="flex items-center gap-3 flex-1 min-w-0 pr-4">
-                        {active && (
-                          <div
-                            className="w-2 h-2 rounded-full animate-pulse shrink-0 shadow-[0_0_8px_currentColor]"
-                            style={{ backgroundColor: bowlingColor }}
-                          ></div>
-                        )}
-                        <div
-                          className={`text-2xl font-bold uppercase truncate w-full ${active ? "text-white" : "text-slate-500"}`}
-                        >
-                          {name}
-                        </div>
-                      </div>
-                      <div
-                        className={`flex gap-8 w-[200px] justify-end font-mono text-2xl font-bold shrink-0 ${active ? "text-white" : "text-slate-600"}`}
-                      >
-                        <span className="w-12 text-center opacity-60">
-                          {Math.floor(s.balls / 6)}.{s.balls % 6}
-                        </span>
-                        <span className="w-10 text-center">{s.runs}</span>
-                        <span
-                          className="w-8 text-center"
-                          style={
-                            s.wickets > 0 && !active
-                              ? { color: bowlingColor }
-                              : {}
-                          }
-                        >
-                          {s.wickets}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="p-10 text-center text-slate-600 font-bold uppercase tracking-widest">
-                  Waiting for First Over...
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      ) : null}
     </div>
   );
 }

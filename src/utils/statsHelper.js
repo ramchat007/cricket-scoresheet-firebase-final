@@ -174,8 +174,7 @@ export const calculatePlayerStats = (input) => {
 };
 
 // --- 3. ADVANCED MOM LOGIC ---
-// ✅ ADDED: mustBeFromWinningTeam parameter (defaults to true)
-export const getManOfTheMatch = (match, mustBeFromWinningTeam = true) => {
+export const getManOfTheMatch = (match, momWinningTeamOnly = true) => {
   if (!match) return null;
 
   const stats = calculatePlayerStats(match);
@@ -184,21 +183,20 @@ export const getManOfTheMatch = (match, mustBeFromWinningTeam = true) => {
   const context = buildMatchContext(match);
   let eligiblePlayers = stats;
 
-  // ✅ FILTER: If true, remove all players from the losing team
-  if (mustBeFromWinningTeam && context.winner && context.winner !== "TIE") {
+  // 🔥 THE FILTER: Respects the flag passed down from the Tournament Document
+  if (momWinningTeamOnly && context.winner && context.winner !== "TIE") {
     eligiblePlayers = stats.filter((p) => p.team === context.winner);
   }
 
-  // If for some reason filtering left us with nobody (e.g. data mismatch), fallback to all players
+  // Fallback: If filtering left us with nobody (e.g. data mismatch), use all players
   if (!eligiblePlayers.length) eligiblePlayers = stats;
 
   const scored = eligiblePlayers.map((p) => {
-    let score = p.mvpScore;
+    let score = p.mvpScore || 0;
 
-    // 🔥 Impact Bonus
+    // Impact Bonus
     if (context.winner === p.team) score += 5;
-    if (p.runs >= context.targetRuns * 0.3 && context.targetRuns > 0)
-      score += 10; // big contribution
+    if (p.runs >= context.targetRuns * 0.3 && context.targetRuns > 0) score += 10; 
     if (p.strikeRate >= 150 && p.runs > 20) score += 5;
     if (p.wickets >= 2) score += 10;
     if (Number(p.economy) <= 6 && p.ballsBowled >= 12) score += 5;

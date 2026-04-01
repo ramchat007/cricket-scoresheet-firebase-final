@@ -31,6 +31,7 @@ import {
   Palette,
   User,
   Plus,
+  Power,
 } from "lucide-react";
 
 // ☁️ CLOUDINARY CONFIGURATION
@@ -1038,6 +1039,25 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               <X size={18} strokeWidth={4} /> Clear Screen (Kill Switch)
             </button>
 
+            {/* 🔥 NEW: END BROADCAST SESSION BUTTON 🔥 */}
+            <button
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "End this broadcast? This will release the match lock and jump to the Tournament Banner or the next scheduled match.",
+                  )
+                ) {
+                  updateOverlay({
+                    releaseLockTimestamp: Date.now(),
+                    activeViews: ["APP_TOURNAMENT_BANNER"], // Auto-trigger the banner on exit
+                  });
+                }
+              }}
+              className="w-full mt-2 py-3 px-4 rounded-xl font-black text-[12px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-lg shadow-slate-900/20 active:scale-95 text-white bg-slate-800 hover:bg-slate-700 border border-slate-600"
+            >
+              <Power size={16} strokeWidth={3} /> End Broadcast & Release
+            </button>
+
             <div>
               <p
                 className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${theme.sub}`}
@@ -1135,6 +1155,46 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                 colorClass="bg-indigo-600"
               />
             </div>
+            <button
+              onClick={() => {
+                // Toggles the Match Intro on or off
+                const views = config.activeViews || [];
+                const newViews = views.includes("MATCH_INTRO")
+                  ? views.filter((v) => v !== "MATCH_INTRO")
+                  : [...views, "MATCH_INTRO"];
+                updateOverlay({ activeViews: newViews });
+              }}
+              className={`py-3 px-4 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all border ${
+                config.activeViews?.includes("MATCH_INTRO")
+                  ? "bg-cyan-500 text-slate-900 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.5)]"
+                  : "bg-slate-800 text-cyan-400 border-slate-700 hover:bg-slate-700"
+              }`}
+            >
+              Match Intro Slab
+            </button>
+
+            <button
+              onClick={() => {
+                // Toggles the Points Table on or off, and forces the bottom ticker to hide while it's up
+                const views = config.activeViews || [];
+                const isActive = views.includes("POINTS_TABLE");
+                const newViews = isActive
+                  ? views.filter((v) => v !== "POINTS_TABLE")
+                  : [...views, "POINTS_TABLE"];
+
+                updateOverlay({
+                  activeViews: newViews,
+                  hideBottomScoreTicker: !isActive, // Hide the main ticker if showing full-screen table
+                });
+              }}
+              className={`py-3 px-4 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all border ${
+                config.activeViews?.includes("POINTS_TABLE")
+                  ? "bg-amber-500 text-slate-900 border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.5)]"
+                  : "bg-slate-800 text-amber-400 border-slate-700 hover:bg-slate-700"
+              }`}
+            >
+              Live Points Table
+            </button>
           </div>
         </div>
 

@@ -275,10 +275,10 @@ export default function LiveScoring() {
     const useSupabaseScoring =
       import.meta.env.VITE_USE_SUPABASE_SCORING === "true";
 
-    console.log("🛠️ Init Supabase Check:", {
-      useSupabaseScoring,
-      hasSupabaseClient: !!supabase,
-    });
+    // console.log("🛠️ Init Supabase Check:", {
+    //   useSupabaseScoring,
+    //   hasSupabaseClient: !!supabase,
+    // });
 
     if (useSupabaseScoring && supabase) {
       const supabaseAdapter = getScoringAdapter({
@@ -287,7 +287,7 @@ export default function LiveScoring() {
       });
 
       if (supabaseAdapter && supabaseAdapter.subscribeMatchLite) {
-        console.log("✅ Adapter ready. Calling subscribeMatchLite...");
+        // console.log("✅ Adapter ready. Calling subscribeMatchLite...");
 
         unsubSupabase = supabaseAdapter.subscribeMatchLite(
           tournamentId,
