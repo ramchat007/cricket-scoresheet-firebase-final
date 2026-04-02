@@ -150,17 +150,31 @@ export default function TournamentTabs({
     tournamentTeams.forEach((team) => {
       const teamName = (team.name || "Unknown Team").trim();
       teamList.add(teamName);
-      
+
       const roster = team.roster || team.players || [];
       roster.forEach((p) => {
         const pName = typeof p === "object" ? p.name : p;
         if (pName) {
           playerDictionary[pName] = {
-            name: pName, team: teamName,
-            runs: 0, balls: 0, fours: 0, sixes: 0, batSR: "0.00", batAvg: "0.00",
-            innings: 0, notOuts: 0, hs: 0,
-            wickets: 0, runsConceded: 0, ballsBowled: 0, oversBowled: "0.0", bowlEco: "0.00", bowlAvg: "0.00",
-            mvp: 0, history: [],
+            name: pName,
+            team: teamName,
+            runs: 0,
+            balls: 0,
+            fours: 0,
+            sixes: 0,
+            batSR: "0.00",
+            batAvg: "0.00",
+            innings: 0,
+            notOuts: 0,
+            hs: 0,
+            wickets: 0,
+            runsConceded: 0,
+            ballsBowled: 0,
+            oversBowled: "0.0",
+            bowlEco: "0.00",
+            bowlAvg: "0.00",
+            mvp: 0,
+            history: [],
           };
         }
       });
@@ -169,7 +183,9 @@ export default function TournamentTabs({
     // 2. Build History & Innings Count from Firebase Matches
     matches.forEach((m) => {
       if (!m.innings) return;
-      const innList = Array.isArray(m.innings) ? m.innings : Object.values(m.innings);
+      const innList = Array.isArray(m.innings)
+        ? m.innings
+        : Object.values(m.innings);
 
       innList.forEach((inn) => {
         if (!inn) return;
@@ -180,7 +196,27 @@ export default function TournamentTabs({
         if (inn.batsmenStats) {
           Object.entries(inn.batsmenStats).forEach(([name, s]) => {
             if (!playerDictionary[name]) {
-              playerDictionary[name] = { name, team: batTeam, runs:0, balls:0, fours:0, sixes:0, batSR:"0.00", batAvg:"0.00", innings:0, notOuts:0, hs:0, wickets:0, runsConceded:0, ballsBowled:0, oversBowled:"0.0", bowlEco:"0.00", bowlAvg:"0.00", mvp:0, history:[] };
+              playerDictionary[name] = {
+                name,
+                team: batTeam,
+                runs: 0,
+                balls: 0,
+                fours: 0,
+                sixes: 0,
+                batSR: "0.00",
+                batAvg: "0.00",
+                innings: 0,
+                notOuts: 0,
+                hs: 0,
+                wickets: 0,
+                runsConceded: 0,
+                ballsBowled: 0,
+                oversBowled: "0.0",
+                bowlEco: "0.00",
+                bowlAvg: "0.00",
+                mvp: 0,
+                history: [],
+              };
             }
             const p = playerDictionary[name];
             if (s.balls > 0 || s.out) {
@@ -207,7 +243,27 @@ export default function TournamentTabs({
         if (inn.bowlerStats) {
           Object.entries(inn.bowlerStats).forEach(([name, s]) => {
             if (!playerDictionary[name]) {
-              playerDictionary[name] = { name, team: bowlTeam, runs:0, balls:0, fours:0, sixes:0, batSR:"0.00", batAvg:"0.00", innings:0, notOuts:0, hs:0, wickets:0, runsConceded:0, ballsBowled:0, oversBowled:"0.0", bowlEco:"0.00", bowlAvg:"0.00", mvp:0, history:[] };
+              playerDictionary[name] = {
+                name,
+                team: bowlTeam,
+                runs: 0,
+                balls: 0,
+                fours: 0,
+                sixes: 0,
+                batSR: "0.00",
+                batAvg: "0.00",
+                innings: 0,
+                notOuts: 0,
+                hs: 0,
+                wickets: 0,
+                runsConceded: 0,
+                ballsBowled: 0,
+                oversBowled: "0.0",
+                bowlEco: "0.00",
+                bowlAvg: "0.00",
+                mvp: 0,
+                history: [],
+              };
             }
             const p = playerDictionary[name];
             if (s.balls > 0) {
@@ -218,7 +274,7 @@ export default function TournamentTabs({
                 opponent: batTeam,
                 wickets: parseInt(s.wickets || 0),
                 runsConceded: parseInt(s.runs || 0),
-                ballsBowled: parseInt(s.balls || 0)
+                ballsBowled: parseInt(s.balls || 0),
               });
             }
           });
@@ -227,7 +283,7 @@ export default function TournamentTabs({
     });
 
     // 3. Inject Perfect Supabase Math for Totals
-    dbBattingStats.forEach(p => {
+    dbBattingStats.forEach((p) => {
       const name = p.player_name;
       if (playerDictionary[name]) {
         playerDictionary[name].runs = Number(p.total_runs || 0);
@@ -235,33 +291,52 @@ export default function TournamentTabs({
         playerDictionary[name].fours = Number(p.fours || 0);
         playerDictionary[name].sixes = Number(p.sixes || 0);
         playerDictionary[name].batSR = p.strike_rate || "0.00";
-        
+
         // Calculate Average using Supabase Runs and Firebase Innings
-        const outs = playerDictionary[name].innings - playerDictionary[name].notOuts;
-        playerDictionary[name].batAvg = outs > 0 ? (playerDictionary[name].runs / outs).toFixed(2) : playerDictionary[name].runs.toFixed(2);
-        
-        playerDictionary[name].mvp += (Number(p.total_runs || 0)) + (Number(p.fours || 0)) + (Number(p.sixes || 0) * 2);
+        const outs =
+          playerDictionary[name].innings - playerDictionary[name].notOuts;
+        playerDictionary[name].batAvg =
+          outs > 0
+            ? (playerDictionary[name].runs / outs).toFixed(2)
+            : playerDictionary[name].runs.toFixed(2);
+
+        playerDictionary[name].mvp +=
+          Number(p.total_runs || 0) +
+          Number(p.fours || 0) +
+          Number(p.sixes || 0) * 2;
       }
     });
 
-    dbBowlingStats.forEach(p => {
+    dbBowlingStats.forEach((p) => {
       const name = p.player_name;
       if (playerDictionary[name]) {
         playerDictionary[name].wickets = Number(p.wickets || 0);
         playerDictionary[name].runsConceded = Number(p.runs_conceded || 0);
         playerDictionary[name].ballsBowled = Number(p.legal_balls_bowled || 0);
         playerDictionary[name].oversBowled = p.overs_bowled || "0.0";
-        playerDictionary[name].bowlEco = Number(p.legal_balls_bowled) > 0 ? ((Number(p.runs_conceded) / (Number(p.legal_balls_bowled) / 6)).toFixed(2)) : "0.00";
-        
+        playerDictionary[name].bowlEco =
+          Number(p.legal_balls_bowled) > 0
+            ? (
+                Number(p.runs_conceded) /
+                (Number(p.legal_balls_bowled) / 6)
+              ).toFixed(2)
+            : "0.00";
+
         // Calculate Average
-        playerDictionary[name].bowlAvg = playerDictionary[name].wickets > 0 ? (playerDictionary[name].runsConceded / playerDictionary[name].wickets).toFixed(2) : "0.00";
-        
-        playerDictionary[name].mvp += (Number(p.wickets || 0) * 20);
+        playerDictionary[name].bowlAvg =
+          playerDictionary[name].wickets > 0
+            ? (
+                playerDictionary[name].runsConceded /
+                playerDictionary[name].wickets
+              ).toFixed(2)
+            : "0.00";
+
+        playerDictionary[name].mvp += Number(p.wickets || 0) * 20;
       }
     });
 
     // 4. Final Polish & Sort
-    const statsArray = Object.values(playerDictionary).map(p => {
+    const statsArray = Object.values(playerDictionary).map((p) => {
       p.history.sort((a, b) => new Date(b.date) - new Date(a.date));
       return p;
     });
@@ -315,8 +390,7 @@ export default function TournamentTabs({
             lightMode
               ? "bg-white/90 border-gray-200"
               : "bg-[#1C2128]/90 border-white/10"
-          }`}
-        >
+          }`}>
           {[
             { id: "matches", label: "Matches", icon: LayoutList },
             { id: "bracket", label: "Bracket", icon: GitMerge },
@@ -341,8 +415,7 @@ export default function TournamentTabs({
                     isActive
                       ? "bg-teal-600 text-white shadow-lg scale-95 md:scale-100"
                       : `text-slate-500 hover:bg-white/5 border border-transparent ${lightMode ? "hover:text-teal-600 hover:bg-gray-50" : "hover:text-slate-300"}`
-                  }`}
-                >
+                  }`}>
                   <Icon
                     size={16}
                     className={`md:w-4 md:h-4 ${isActive ? "text-white" : ""}`}
@@ -416,24 +489,20 @@ export default function TournamentTabs({
         {activeTab === "admin" && (canEdit || isOwner) && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 animate-in zoom-in-95">
             <div
-              className={`border rounded-xl md:rounded-2xl p-4 md:p-6 shadow-xl relative overflow-hidden group ${theme.card} ${lightMode ? "border-gray-200" : "border-white/5"}`}
-            >
+              className={`border rounded-xl md:rounded-2xl p-4 md:p-6 shadow-xl relative overflow-hidden group ${theme.card} ${lightMode ? "border-gray-200" : "border-white/5"}`}>
               <h3
-                className={`font-bold text-base md:text-lg mb-4 md:mb-6 flex items-center gap-2 ${theme.text}`}
-              >
+                className={`font-bold text-base md:text-lg mb-4 md:mb-6 flex items-center gap-2 ${theme.text}`}>
                 <Shield size={18} className="text-cyan-500 md:w-5 md:h-5" />{" "}
                 Team Management
               </h3>
               {isAuctionEnabled ? (
                 <div
-                  className={`border rounded-xl p-5 md:p-8 text-center ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}
-                >
+                  className={`border rounded-xl p-5 md:p-8 text-center ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
                   <div className="flex justify-center mb-3 md:mb-4">
                     <Lock size={28} className="text-gray-400 md:w-8 md:h-8" />
                   </div>
                   <h4
-                    className={`font-bold text-sm md:text-base mb-1.5 md:mb-2 ${theme.text}`}
-                  >
+                    className={`font-bold text-sm md:text-base mb-1.5 md:mb-2 ${theme.text}`}>
                     Rosters Locked
                   </h4>
                   <p className={`text-xs md:text-sm mb-4 md:mb-6 ${theme.sub}`}>
@@ -443,8 +512,7 @@ export default function TournamentTabs({
                     onClick={() =>
                       navigate(`/tournaments/${tournamentId}/auction`)
                     }
-                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold py-2.5 px-4 md:py-3 md:px-6 rounded-lg md:rounded-xl text-xs md:text-base shadow-lg hover:shadow-purple-500/20 transition-all"
-                  >
+                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold py-2.5 px-4 md:py-3 md:px-6 rounded-lg md:rounded-xl text-xs md:text-base shadow-lg hover:shadow-purple-500/20 transition-all">
                     Go to Auction Console
                   </button>
                 </div>
@@ -452,7 +520,7 @@ export default function TournamentTabs({
                 <TeamManager tournamentId={tournamentId} />
               )}
               {/* 🟢 TEMPORARY MIGRATION BUTTON - DELETE AFTER USING */}
-              <div
+              {/* <div
                 className={`border rounded-xl p-6 shadow-xl ${theme.card} ${lightMode ? "border-red-200 bg-red-50" : "border-red-900/30 bg-red-900/10"}`}
               >
                 <h3 className={`font-bold text-lg mb-2 text-red-500`}>
@@ -532,7 +600,7 @@ export default function TournamentTabs({
                 >
                   Run Migration Script
                 </button>
-              </div>
+              </div> */}
             </div>
             <div className="space-y-4 md:space-y-6">
               {canEdit && (

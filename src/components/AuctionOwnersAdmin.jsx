@@ -16,29 +16,9 @@ import { listGlobalPlayers } from "../utils/firestore";
 import { useTheme } from "../context/ThemeContext";
 import { Trash2 } from "lucide-react"; // 🟢 NEW
 
-// --- UTILITY: COMPRESS IMAGE TO BASE64 ---
-const compressImage = (file, maxWidth = 400) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target.result;
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const ratio = maxWidth / img.width;
-        canvas.width = maxWidth;
-        canvas.height = img.height * ratio;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        // Compress to JPEG with 0.7 quality
-        resolve(canvas.toDataURL("image/jpeg", 0.7));
-      };
-      img.onerror = (err) => reject(err);
-    };
-    reader.onerror = (err) => reject(err);
-  });
-};
+// ☁️ CLOUDINARY CONFIGURATION
+const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 
 // --- SUB-COMPONENT: OWNER ASSIGNMENT FORM (Form Modal) ---
 const OwnerAssignmentForm = ({
@@ -71,16 +51,39 @@ const OwnerAssignmentForm = ({
   // Toggle to filter owners by this tournament
   const [tournamentOnly, setTournamentOnly] = useState(false);
 
-  // --- HANDLER: Compress & Set State ---
+  // --- HANDLER: Upload Directly to Cloudinary ---
   const handleImageUpload = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
+
+    // 1. Basic validation
+    if (file.size > 2 * 1024 * 1024) {
+      return alert("Image too large. Please select a file under 2MB.");
+    }
+
     setProcessingImage(true);
+
+    // 2. Prepare FormData for Cloudinary
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+    formData.append("cloud_name", CLOUDINARY_CLOUD_NAME);
+
     try {
-      const compressed = await compressImage(file, 400);
-      setLogoBase64(compressed);
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+        { method: "POST", body: formData },
+      );
+
+      const data = await response.json();
+
+      if (data.secure_url) {
+        setLogoBase64(data.secure_url); // We still use the state name 'logoBase64' but it now holds a URL
+      } else {
+        throw new Error("Upload failed");
+      }
     } catch (error) {
-      alert("Failed to process image.");
+      alert("Failed to upload image to Cloudinary.");
       console.error(error);
     } finally {
       setProcessingImage(false);
@@ -309,22 +312,24 @@ const OwnerAssignmentForm = ({
           </div>
         </div>
       </div>
-      
+
       {/* 🟢 MODIFIED FOOTER ACTIONS (Added Delete) */}
       <div
         className={`flex gap-2 pt-4 border-t ${lightMode ? "border-gray-200" : "border-gray-800"}`}>
-        
         {team?.id && (
           <button
             type="button"
             onClick={() => {
-              if (window.confirm("⚠️ Delete this team and release its players back into the auction pool?")) {
+              if (
+                window.confirm(
+                  "⚠️ Delete this team and release its players back into the auction pool?",
+                )
+              ) {
                 onDelete(team.id);
               }
             }}
             className={`flex items-center justify-center p-3 rounded-lg transition-colors border ${lightMode ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100" : "bg-red-900/20 text-red-500 border-red-900/50 hover:bg-red-900/40"}`}
-            title="Delete Team"
-          >
+            title="Delete Team">
             <Trash2 size={18} />
           </button>
         )}
@@ -559,7 +564,10 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
       await deleteDoc(doc(db, `tournaments/${tournamentId}/teams`, teamId));
 
       // 2. Release associated players via batch
-      const apRef = collection(db, `tournaments/${tournamentId}/auctionPlayers`);
+      const apRef = collection(
+        db,
+        `tournaments/${tournamentId}/auctionPlayers`,
+      );
       const q = query(apRef, where("teamId", "==", teamId));
       const snap = await getDocs(q);
 
@@ -591,8 +599,13 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
 
   // 🟢 NEW: HANDLE MASTER RESET (Delete All Teams & Release All Players)
   const handleResetAllTeams = async () => {
-    if (!window.confirm("🚨 DANGER ZONE: This will delete ALL teams and reset ALL players back to the auction pool. This action CANNOT BE UNDONE. Are you absolutely sure?")) return;
-    
+    if (
+      !window.confirm(
+        "🚨 DANGER ZONE: This will delete ALL teams and reset ALL players back to the auction pool. This action CANNOT BE UNDONE. Are you absolutely sure?",
+      )
+    )
+      return;
+
     setLoading(true);
     try {
       const batch = writeBatch(db);
@@ -604,7 +617,11 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
 
       // 2. Release all auction players
       auctionPlayers.forEach((p) => {
-        const pRef = doc(db, `tournaments/${tournamentId}/auctionPlayers`, p.id);
+        const pRef = doc(
+          db,
+          `tournaments/${tournamentId}/auctionPlayers`,
+          p.id,
+        );
         if (p.isOwner) {
           batch.delete(pRef); // Remove owners that were added as players
         } else {
@@ -656,8 +673,7 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
                 lightMode
                   ? "text-red-600 border-red-200 hover:bg-red-50"
                   : "text-red-500 border-red-500/30 hover:bg-red-500/10"
-              }`}
-            >
+              }`}>
               Reset Teams Data
             </button>
           )}
