@@ -668,9 +668,16 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
 
   const reAddPlayer = useCallback(
     async (playerId) => {
-      if (!window.confirm("Reset Player?")) return;
+      if (
+        !window.confirm(
+          "Are you sure you want to reset this player back to the auction pool?",
+        )
+      )
+        return;
+
       try {
         await runTransaction(db, async (tx) => {
+          // --- 1. READ PHASE (All gets must happen first) ---
           const pRef = doc(
             db,
             "tournaments",
@@ -678,30 +685,54 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
             "auctionPlayers",
             playerId,
           );
-          const pData = (await tx.get(pRef)).data();
+          const pSnap = await tx.get(pRef);
 
-          if (pData.status === "SOLD" && pData.teamId) {
-            const tRef = doc(
-              db,
-              "tournaments",
-              tournamentId,
-              "teams",
-              pData.teamId,
-            );
-            const tData = (await tx.get(tRef)).data();
-            const newSpent = Math.max(
-              0,
-              (tData.spent || 0) - (pData.soldPrice || 0),
-            );
-            const newRoster = (tData.roster || []).filter(
-              (item) => item.id !== playerId,
-            );
-            tx.update(tRef, { spent: newSpent, roster: newRoster });
+          if (!pSnap.exists()) {
+            throw new Error("Player not found.");
           }
-          tx.update(pRef, { status: "PENDING", soldPrice: 0, teamId: null });
+
+          const pData = pSnap.data();
+          let tRef = null;
+          let tSnap = null;
+
+          // If they are sold, we must fetch the team document BEFORE doing any writes
+          if (pData.status === "SOLD" && pData.teamId) {
+            tRef = doc(db, "tournaments", tournamentId, "teams", pData.teamId);
+            tSnap = await tx.get(tRef);
+          }
+
+          // --- 2. WRITE PHASE (Now we can safely update) ---
+
+          // A. Update the Team (Refund money & Remove from Roster)
+          if (tRef && tSnap && tSnap.exists()) {
+            const tData = tSnap.data();
+
+            // Safely parse as integers to prevent NaN calculation errors
+            const currentSpent = parseInt(tData.spent) || 0;
+            const refundAmount = parseInt(pData.soldPrice) || 0;
+            const newSpent = Math.max(0, currentSpent - refundAmount);
+
+            // Filter out the player from the array safely
+            const newRoster = (tData.roster || []).filter(
+              (item) => item.id !== playerId && item.playerId !== playerId,
+            );
+
+            tx.update(tRef, {
+              spent: newSpent,
+              roster: newRoster,
+            });
+          }
+
+          // B. Update the Player (Reset to Pending)
+          tx.update(pRef, {
+            status: "PENDING",
+            soldPrice: 0,
+            teamId: null,
+          });
         });
       } catch (e) {
-        alert(e.message);
+        console.error("Transaction Error:", e);
+        alert("Failed to reset player: " + e.message);
       }
     },
     [tournamentId],

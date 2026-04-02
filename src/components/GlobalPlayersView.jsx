@@ -7,9 +7,11 @@ import {
   listTournaments,
   listMatchesForTournament,
 } from "../utils/firestore";
+// 🟢 NEW IMPORTS FOR BATCH MERGE
+import { writeBatch, doc } from "firebase/firestore";
+import { db } from "../utils/firebase";
 import { useAuth } from "../hooks/useAuth";
 import { useNavigate } from "react-router-dom";
-// 1. Theme & Icons
 import { useTheme } from "../context/ThemeContext";
 import {
   Search,
@@ -26,6 +28,7 @@ import {
   Loader2,
   Check,
   AlertCircle,
+  GitMerge, // 🟢 Added Merge Icon
 } from "lucide-react";
 
 // --- TOAST COMPONENT ---
@@ -56,8 +59,6 @@ const NotificationToast = ({ message, type, onClose }) => {
 export default function GlobalPlayersView() {
   const { user } = useAuth();
   const navigate = useNavigate();
-
-  // 2. Consume Theme
   const { theme, lightMode } = useTheme();
 
   // Refs
@@ -83,6 +84,11 @@ export default function GlobalPlayersView() {
   const [isEditing, setIsEditing] = useState(false);
   const [processingImage, setProcessingImage] = useState(false);
 
+  // 🟢 NEW: MERGE STATE
+  const [isMergeMode, setIsMergeMode] = useState(false);
+  const [selectedForMerge, setSelectedForMerge] = useState([]); // array of IDs
+  const [primaryMergeId, setPrimaryMergeId] = useState(null);
+
   const [formData, setFormData] = useState({
     id: "",
     name: "",
@@ -92,6 +98,9 @@ export default function GlobalPlayersView() {
     mobile: "",
     photoURL: "",
     paymentScreenshotURL: "",
+    baseMatches: 0,
+    baseRuns: 0,
+    baseWickets: 0,
   });
 
   const showToast = (message, type = "success") => {
@@ -135,10 +144,8 @@ export default function GlobalPlayersView() {
     if (players.length === 0)
       return { processedPlayers: [], orangeCap: null, purpleCap: null };
 
-    // 1. Initialize Map
     const statsMap = {};
     players.forEach((p) => {
-      // 🔥 MAGIC: Find the absolute most recent profile data across Global and Tournaments
       let latest = {
         photoURL: p.photoURL,
         paymentScreenshotURL: p.paymentScreenshotURL,
@@ -167,7 +174,7 @@ export default function GlobalPlayersView() {
 
       statsMap[p.id] = {
         ...p,
-        latestProfile: latest, // Attach the freshest data to the player object
+        latestProfile: latest,
         calculatedStats: {
           matches: 0,
           runs: 0,
@@ -184,14 +191,12 @@ export default function GlobalPlayersView() {
       };
     });
 
-    // 2. Identity Map
     const identityMap = {};
     players.forEach((p) => {
       identityMap[p.name.trim().toLowerCase()] = p.id;
       identityMap[p.id] = p.id;
     });
 
-    // 3. Process Matches
     allMatches.forEach((match) => {
       const status = (match.status || match.meta?.status || "").toLowerCase();
       if (!["finished", "completed"].includes(status)) return;
@@ -205,7 +210,6 @@ export default function GlobalPlayersView() {
         identityMap[(name || "").trim().toLowerCase()];
 
       inningsArray.forEach((inn) => {
-        // Batting Stats
         if (inn.batsmenStats) {
           Object.entries(inn.batsmenStats).forEach(([pName, s]) => {
             const gid = findGlobalId(pName);
@@ -246,7 +250,6 @@ export default function GlobalPlayersView() {
           });
         }
 
-        // Bowling Stats
         if (inn.bowlerStats) {
           Object.entries(inn.bowlerStats).forEach(([pName, s]) => {
             const gid = findGlobalId(pName);
@@ -285,11 +288,11 @@ export default function GlobalPlayersView() {
     });
 
     const allStats = Object.values(statsMap).map((p) => {
+      // 🟢 Fetch strictly from match history. NO double counting!
       p.calculatedStats.matches = p.calculatedStats.history.length;
       return p;
     });
 
-    // 5. Cap Calculation
     const orange = [...allStats].sort((a, b) => {
       if (b.calculatedStats.runs !== a.calculatedStats.runs) {
         return b.calculatedStats.runs - a.calculatedStats.runs;
@@ -318,7 +321,6 @@ export default function GlobalPlayersView() {
       return ecoA - ecoB;
     })[0];
 
-    // 6. Filter & Sort
     let result = [...allStats];
 
     if (searchTerm) {
@@ -327,7 +329,7 @@ export default function GlobalPlayersView() {
       );
     }
     if (roleFilter !== "All") {
-      result = result.filter((p) => p.latestProfile.role === roleFilter); // Filter by newest role
+      result = result.filter((p) => p.latestProfile.role === roleFilter);
     }
 
     result.sort((a, b) => {
@@ -340,7 +342,6 @@ export default function GlobalPlayersView() {
       } else if (
         ["role", "battingStyle", "bowlingStyle"].includes(sortConfig.key)
       ) {
-        // Sort by the newest dynamic profile data
         valA = a.latestProfile[sortConfig.key];
         valB = b.latestProfile[sortConfig.key];
       } else if (sortConfig.key === "name") {
@@ -466,22 +467,22 @@ export default function GlobalPlayersView() {
 
   const openEditModal = (player, e) => {
     e.stopPropagation();
-
-    // 🔥 Populate the edit modal with the absolute latest data we found
     const profile = player.latestProfile || {};
-
     const sanitizeStyle = (val, defaultVal) =>
       !val || val === "Unknown" ? defaultVal : val;
 
     setFormData({
       id: player.id,
-      name: player.name, // Name is global
+      name: player.name,
       role: profile.role || "All-Rounder",
       battingStyle: sanitizeStyle(profile.battingStyle, "Right Hand Bat"),
       bowlingStyle: sanitizeStyle(profile.bowlingStyle, "Right Arm Medium"),
-      mobile: player.mobile || "", // Mobile is global
+      mobile: player.mobile || "",
       photoURL: profile.photoURL || "",
       paymentScreenshotURL: profile.paymentScreenshotURL || "",
+      baseMatches: player.stats?.matches || 0,
+      baseRuns: player.stats?.runs || 0,
+      baseWickets: player.stats?.wickets || 0,
     });
     setIsEditing(true);
     setShowModal(true);
@@ -492,10 +493,13 @@ export default function GlobalPlayersView() {
     if (!formData.name) return showToast("Name is required", "error");
 
     setProcessingImage(true);
-
     try {
+      const newStats = {
+        matches: parseInt(formData.baseMatches) || 0,
+        runs: parseInt(formData.baseRuns) || 0,
+        wickets: parseInt(formData.baseWickets) || 0,
+      };
       if (isEditing && formData.id) {
-        // Updating from Global View updates the Global timestamps, making this the new "Latest"
         await updateGlobalPlayer(formData.id, {
           name: formData.name,
           role: formData.role,
@@ -504,14 +508,15 @@ export default function GlobalPlayersView() {
           mobile: formData.mobile,
           photoURL: formData.photoURL,
           paymentScreenshotURL: formData.paymentScreenshotURL,
-          updatedAt: new Date().toISOString(), // This ensures it overrides old tournament data
+          stats: newStats,
+          updatedAt: new Date().toISOString(),
         });
         showToast("Player Updated Globally!");
       } else {
         const { id, ...payload } = formData;
         await createGlobalPlayer({
           ...payload,
-          stats: { matches: 0, runs: 0, wickets: 0 },
+          stats: newStats,
         });
         showToast("Player Created!");
       }
@@ -525,7 +530,153 @@ export default function GlobalPlayersView() {
     }
   };
 
+  // 🟢 NEW: MERGE HANDLERS
+  const toggleMergeSelection = (e, playerId) => {
+    e.stopPropagation();
+    if (selectedForMerge.includes(playerId)) {
+      setSelectedForMerge((prev) => prev.filter((id) => id !== playerId));
+      if (primaryMergeId === playerId) setPrimaryMergeId(null);
+    } else {
+      setSelectedForMerge((prev) => [...prev, playerId]);
+    }
+  };
+
+  const handleConfirmMerge = async () => {
+    if (!primaryMergeId)
+      return showToast("Please select a Primary profile.", "error");
+    if (selectedForMerge.length < 2)
+      return showToast("Select at least 2 profiles to merge.", "error");
+
+    if (
+      !window.confirm(
+        "Are you sure you want to merge these profiles? This cannot be undone and duplicates will be deleted.",
+      )
+    )
+      return;
+
+    setProcessingImage(true);
+    try {
+      const batch = writeBatch(db);
+      const primaryPlayer = players.find((p) => p.id === primaryMergeId);
+      const duplicates = selectedForMerge
+        .filter((id) => id !== primaryMergeId)
+        .map((id) => players.find((p) => p.id === id));
+
+      // 1. Mathematically Combine the Stats Objects
+      let combinedStats = {
+        matches: parseInt(primaryPlayer.stats?.matches || 0),
+        runs: parseInt(primaryPlayer.stats?.runs || 0),
+        wickets: parseInt(primaryPlayer.stats?.wickets || 0),
+        highestScore: parseInt(primaryPlayer.stats?.highestScore || 0),
+        bestBowling: primaryPlayer.stats?.bestBowling || "0/0",
+      };
+
+      const parseBB = (bb) => {
+        if (!bb || !bb.includes("/")) return { w: 0, r: 0 };
+        const [w, r] = bb.split("/").map(Number);
+        return { w: isNaN(w) ? 0 : w, r: isNaN(r) ? 0 : r };
+      };
+      let bestBowl = parseBB(combinedStats.bestBowling);
+
+      duplicates.forEach((d) => {
+        const dStats = d.stats || {};
+        combinedStats.matches += parseInt(dStats.matches || 0);
+        combinedStats.runs += parseInt(dStats.runs || 0);
+        combinedStats.wickets += parseInt(dStats.wickets || 0);
+
+        if (parseInt(dStats.highestScore || 0) > combinedStats.highestScore) {
+          combinedStats.highestScore = parseInt(dStats.highestScore || 0);
+        }
+
+        const dBowl = parseBB(dStats.bestBowling);
+        if (
+          dBowl.w > bestBowl.w ||
+          (dBowl.w === bestBowl.w && dBowl.r < bestBowl.r)
+        ) {
+          bestBowl = dBowl;
+        }
+      });
+
+      combinedStats.bestBowling = `${bestBowl.w}/${bestBowl.r}`;
+
+      // 2. Update Primary in Batch
+      const primaryRef = doc(db, "players", primaryMergeId);
+      batch.update(primaryRef, {
+        stats: combinedStats,
+        updatedAt: new Date().toISOString(),
+      });
+
+      // 3. Delete Duplicates in Batch
+      duplicates.forEach((d) => {
+        batch.delete(doc(db, "players", d.id));
+      });
+
+      // 4. Commit to Database
+      await batch.commit();
+
+      showToast("Profiles successfully merged!");
+      setIsMergeMode(false);
+      setSelectedForMerge([]);
+      setPrimaryMergeId(null);
+
+      // 5. Reload Real-Time Data
+      const data = await listGlobalPlayers();
+      setPlayers(data);
+    } catch (error) {
+      console.error("Merge error:", error);
+      showToast("Error merging players: " + error.message, "error");
+    } finally {
+      setProcessingImage(false);
+    }
+  };
+
+  // 🟢 NEW: MASTER RESET SCRIPT
+  const performMasterSync = async () => {
+    if (
+      !window.confirm(
+        "🚨 DANGER: This will wipe all manual database stats and overwrite them to perfectly match the Live Match History. Proceed?",
+      )
+    )
+      return;
+
+    setLoading(true);
+    try {
+      // We chunk the updates in case you have more than 500 players (Firestore limit)
+      const chunkSize = 450;
+      for (let i = 0; i < processedPlayers.length; i += chunkSize) {
+        const batch = writeBatch(db);
+        const chunk = processedPlayers.slice(i, i + chunkSize);
+
+        chunk.forEach((p) => {
+          const pureStats = {
+            matches: p.calculatedStats.history.length,
+            runs: p.calculatedStats.runs,
+            wickets: p.calculatedStats.wickets,
+            highestScore: p.calculatedStats.highestScore,
+            strike_rate:
+              p.calculatedStats.ballsFaced > 0
+                ? (
+                    (p.calculatedStats.runs / p.calculatedStats.ballsFaced) *
+                    100
+                  ).toFixed(2)
+                : "0.00",
+          };
+          batch.update(doc(db, "players", p.id), { stats: pureStats });
+        });
+
+        await batch.commit();
+      }
+      showToast("✅ Database successfully synced to pure Match History!");
+    } catch (e) {
+      showToast("Sync failed: " + e.message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const toggleRowExpansion = (playerId) => {
+    // Prevent opening accordion if clicking checkboxes in merge mode
+    if (isMergeMode) return;
     setExpandedPlayerId(expandedPlayerId === playerId ? null : playerId);
   };
 
@@ -624,14 +775,64 @@ export default function GlobalPlayersView() {
             </div>
 
             {user && (
-              <button
-                onClick={openAddModal}
-                className="bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg whitespace-nowrap transition-all active:scale-95 text-white w-full md:w-auto flex items-center justify-center gap-2">
-                <Plus size={14} /> Add
-              </button>
+              <div className="flex w-full md:w-auto gap-2">
+                <button
+                  onClick={performMasterSync}
+                  className="flex-1 md:flex-none px-4 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg text-white bg-amber-500 hover:bg-amber-600 active:scale-95 transition-all">
+                  Sync DB
+                </button>
+                {/* 🟢 NEW: MERGE BUTTON */}
+                <button
+                  onClick={() => {
+                    setIsMergeMode(!isMergeMode);
+                    setSelectedForMerge([]);
+                    setPrimaryMergeId(null);
+                  }}
+                  className={`flex-1 md:flex-none px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg whitespace-nowrap transition-all active:scale-95 text-white flex items-center justify-center gap-2 ${isMergeMode ? "bg-red-500 hover:bg-red-600" : "bg-indigo-600 hover:bg-indigo-500"}`}>
+                  {isMergeMode ? (
+                    <>
+                      <X size={14} /> Cancel
+                    </>
+                  ) : (
+                    <>
+                      <GitMerge size={14} /> Merge
+                    </>
+                  )}
+                </button>
+
+                <button
+                  onClick={openAddModal}
+                  className="flex-1 md:flex-none bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg whitespace-nowrap transition-all active:scale-95 text-white flex items-center justify-center gap-2">
+                  <Plus size={14} /> Add
+                </button>
+              </div>
             )}
           </div>
         </div>
+
+        {/* 🟢 NEW: MERGE ACTION BAR */}
+        {isMergeMode && selectedForMerge.length > 0 && (
+          <div
+            className={`mb-6 p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 border shadow-lg animate-in slide-in-from-top-2 ${lightMode ? "bg-indigo-50 border-indigo-200" : "bg-indigo-900/20 border-indigo-500/30"}`}>
+            <div className="text-xs font-bold flex items-center gap-3">
+              <span className="bg-indigo-500 text-white px-3 py-1.5 rounded-lg">
+                {selectedForMerge.length} Selected
+              </span>
+              <span className={theme.text}>
+                Check multiple boxes below, then choose the Primary profile to
+                keep.
+              </span>
+            </div>
+            {selectedForMerge.length >= 2 && primaryMergeId && (
+              <button
+                onClick={handleConfirmMerge}
+                disabled={processingImage}
+                className="bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-green-500/20 active:scale-95 transition-all">
+                {processingImage ? "Merging..." : "Confirm & Merge Data"}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* CAPS SECTION */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
@@ -693,6 +894,12 @@ export default function GlobalPlayersView() {
                 <thead
                   className={`text-[10px] uppercase font-black tracking-[0.2em] border-b ${lightMode ? "bg-gray-100 text-gray-500 border-gray-200" : "bg-[#0F1115] text-slate-500 border-white/5"}`}>
                   <tr>
+                    {/* 🟢 NEW: MERGE COLUMN HEADER */}
+                    {isMergeMode && (
+                      <th className="px-4 py-4 text-center text-indigo-500 w-12">
+                        Merge
+                      </th>
+                    )}
                     <th
                       className="px-6 py-4 cursor-pointer hover:opacity-70 group w-[40%] md:w-[30%] transition-opacity"
                       onClick={() => handleSort("name")}>
@@ -726,14 +933,13 @@ export default function GlobalPlayersView() {
                   {processedPlayers.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={8}
+                        colSpan={isMergeMode ? 7 : 6}
                         className={`text-center py-16 italic text-sm ${theme.sub}`}>
                         No players found.
                       </td>
                     </tr>
                   ) : (
                     processedPlayers.map((player) => {
-                      // 🔥 Extracting the dynamically calculated newest data for the UI
                       const profile = player.latestProfile;
                       const displayPhoto =
                         profile.photoURL ||
@@ -756,6 +962,36 @@ export default function GlobalPlayersView() {
                                   ? "hover:bg-gray-50"
                                   : "hover:bg-white/5"
                             }`}>
+                            {/* 🟢 NEW: MERGE SELECTION CELL */}
+                            {isMergeMode && (
+                              <td
+                                className="px-4 py-4 text-center border-r border-white/5"
+                                onClick={(e) => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  className="w-5 h-5 cursor-pointer accent-indigo-500 rounded"
+                                  checked={selectedForMerge.includes(player.id)}
+                                  onChange={(e) =>
+                                    toggleMergeSelection(e, player.id)
+                                  }
+                                />
+                                {selectedForMerge.includes(player.id) && (
+                                  <label className="flex flex-col items-center justify-center gap-1 mt-2 cursor-pointer text-[8px] uppercase font-black text-indigo-500 animate-in fade-in">
+                                    <input
+                                      type="radio"
+                                      name="primaryProfile"
+                                      checked={primaryMergeId === player.id}
+                                      onChange={() =>
+                                        setPrimaryMergeId(player.id)
+                                      }
+                                      className="w-4 h-4 accent-green-500"
+                                    />
+                                    Primary
+                                  </label>
+                                )}
+                              </td>
+                            )}
+
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-4">
                                 <img
@@ -824,7 +1060,7 @@ export default function GlobalPlayersView() {
                           {expandedPlayerId === player.id && (
                             <tr
                               className={`border-t border-b animate-in slide-in-from-top-1 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
-                              <td colSpan={8} className="p-6">
+                              <td colSpan={isMergeMode ? 7 : 6} className="p-6">
                                 <div className="flex flex-col md:flex-row gap-8 items-start">
                                   <div className="flex-shrink-0">
                                     <img
@@ -1155,6 +1391,66 @@ export default function GlobalPlayersView() {
                         <option>Left Arm Spin</option>
                         <option>None</option>
                       </select>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-white/10">
+                    <p
+                      className={`text-[10px] uppercase font-black tracking-widest mb-3 ${theme.sub}`}>
+                      Manual Base Stats Adjustment
+                    </p>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label
+                          className={`text-[9px] uppercase font-bold ${theme.sub}`}>
+                          Base Matches
+                        </label>
+                        <input
+                          type="number"
+                          className={inputClass}
+                          value={formData.baseMatches}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              baseMatches: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label
+                          className={`text-[9px] uppercase font-bold ${theme.sub}`}>
+                          Base Runs
+                        </label>
+                        <input
+                          type="number"
+                          className={inputClass}
+                          value={formData.baseRuns}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              baseRuns: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label
+                          className={`text-[9px] uppercase font-bold ${theme.sub}`}>
+                          Base Wickets
+                        </label>
+                        <input
+                          type="number"
+                          className={inputClass}
+                          value={formData.baseWickets}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              baseWickets: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
                     </div>
                   </div>
 
