@@ -30,7 +30,7 @@ export default function AuctionDashboard() {
 
   const [auctionState, setAuctionState] = useState(null);
   const [allPlayers, setAllPlayers] = useState([]);
-  const [globalPlayers, setGlobalPlayers] = useState([]);
+  const [globalPlayers, setGlobalPlayers] = useState([]); // Will hold data from 'players' collection
   const [teams, setTeams] = useState([]);
   const [teamsMap, setTeamsMap] = useState({});
   const [slots, setSlots] = useState([]);
@@ -43,7 +43,7 @@ export default function AuctionDashboard() {
   const [ruleOverride, setRuleOverride] = useState(false);
 
   // State for global bidding mode and offline inputs
-  const [biddingMode, setBiddingMode] = useState("online");
+  const [biddingMode, setBiddingMode] = useState("online"); // "online" or "offline"
   const [customAmounts, setCustomAmounts] = useState({});
 
   useEffect(() => {
@@ -107,6 +107,7 @@ export default function AuctionDashboard() {
       },
     );
 
+    // Fetching from the root "players" collection
     const unsubGlobal = onSnapshot(collection(db, "players"), (snapshot) => {
       setGlobalPlayers(
         snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
@@ -238,11 +239,13 @@ export default function AuctionDashboard() {
     if ((!isLive && !isPaused) || !currentPlayer) {
       return (
         <div
-          className={`${theme.card} border-2 border-dashed ${borderColor} rounded-3xl p-6 text-center flex flex-col items-center justify-center min-h-[300px] shadow-sm`}>
+          className={`${theme.card} border-2 border-dashed ${borderColor} rounded-3xl p-6 text-center flex flex-col items-center justify-center min-h-[300px] shadow-sm`}
+        >
           {canEdit ? (
             <>
               <label
-                className={`text-[10px] ${theme.sub} font-black uppercase block mb-2 tracking-widest`}>
+                className={`text-[10px] ${theme.sub} font-black uppercase block mb-2 tracking-widest`}
+              >
                 Select Auction Slot
               </label>
               <select
@@ -253,7 +256,8 @@ export default function AuctionDashboard() {
                     doc(db, "tournaments", tournamentId, "auction", "state"),
                     { activeSlotId: e.target.value },
                   )
-                }>
+                }
+              >
                 <option value="">-- Choose Slot --</option>
                 {slots.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -263,7 +267,8 @@ export default function AuctionDashboard() {
               </select>
 
               <h2
-                className={`text-lg font-black ${theme.text} mb-4 uppercase tracking-tight italic`}>
+                className={`text-lg font-black ${theme.text} mb-4 uppercase tracking-tight italic`}
+              >
                 {activeSlotId
                   ? `Slot: ${slots.find((s) => s.id === activeSlotId)?.name}`
                   : "Waiting for selection..."}
@@ -273,13 +278,15 @@ export default function AuctionDashboard() {
                 <button
                   onClick={startNextInSlot}
                   disabled={!activeSlotId || upcomingInSlot.length === 0}
-                  className="bg-gradient-to-r from-teal-600 to-teal-700 text-white font-black uppercase tracking-widest text-xs py-4 px-6 rounded-xl disabled:opacity-30 hover:scale-105 active:scale-95 transition-all shadow-lg">
+                  className="bg-gradient-to-r from-teal-600 to-teal-700 text-white font-black uppercase tracking-widest text-xs py-4 px-6 rounded-xl disabled:opacity-30 hover:scale-105 active:scale-95 transition-all shadow-lg"
+                >
                   Start Sequential
                 </button>
                 <button
                   onClick={startRandomInSlot}
                   disabled={!activeSlotId || upcomingInSlot.length === 0}
-                  className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-black uppercase tracking-widest text-xs py-4 px-6 rounded-xl disabled:opacity-30 hover:scale-105 active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2">
+                  className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-black uppercase tracking-widest text-xs py-4 px-6 rounded-xl disabled:opacity-30 hover:scale-105 active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2"
+                >
                   <span className="text-base">🎲</span> Random Player
                 </button>
               </div>
@@ -288,7 +295,8 @@ export default function AuctionDashboard() {
             <div className="text-center">
               <div className="text-4xl mb-4 grayscale opacity-50">⏸️</div>
               <h2
-                className={`text-xl font-black ${theme.sub} uppercase tracking-widest`}>
+                className={`text-xl font-black ${theme.sub} uppercase tracking-widest`}
+              >
                 Auction Paused
               </h2>
             </div>
@@ -297,28 +305,29 @@ export default function AuctionDashboard() {
       );
     }
 
-    // 🟢 1. Find all profiles with this name
-    const matchingProfiles = globalPlayers.filter(
+    // 🟢 1. SAFE LOOKUP: Try exact ID match first.
+    let trueProfile = globalPlayers.find(
       (gp) =>
-        gp.name?.trim().toLowerCase() ===
-        currentPlayer.name?.trim().toLowerCase(),
+        String(gp.id) ===
+        String(currentPlayer.originalPlayerId || currentPlayer.id),
     );
 
-    // 🟢 2. Pick the BEST profile (Most runs AND most recent update)
-    const trueProfile = matchingProfiles.sort((a, b) => {
-      const runsA = parseInt(a.stats?.runs || 0);
-      const runsB = parseInt(b.stats?.runs || 0);
+    // 🟢 2. FALLBACK LOOKUP: If ID is missing, find by name and sort by MOST RECENTLY UPDATED.
+    if (!trueProfile) {
+      const matchingProfiles = globalPlayers.filter(
+        (gp) =>
+          gp.name?.trim().toLowerCase() ===
+          currentPlayer.name?.trim().toLowerCase(),
+      );
 
-      // Primary sort: Most runs
-      if (runsB !== runsA) return runsB - runsA;
+      trueProfile = matchingProfiles.sort((a, b) => {
+        const dateA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+        const dateB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+        return dateB - dateA; // The profile synced most recently jumps to the top!
+      })[0];
+    }
 
-      // Secondary sort: Most recently updated
-      const dateA = new Date(a.updatedAt || a.createdAt || 0).getTime();
-      const dateB = new Date(b.updatedAt || b.createdAt || 0).getTime();
-      return dateB - dateA;
-    })[0];
-
-    // 🟢 3. Use the stats from that best profile
+    // 🟢 3. Use the stats from that correctly verified profile
     const playerStats =
       trueProfile?.stats || currentPlayer?.statsSnapshot || {};
 
@@ -328,9 +337,11 @@ export default function AuctionDashboard() {
 
     return (
       <div
-        className={`${theme.card} border ${borderColor} rounded-[2rem] p-6 relative overflow-hidden shadow-2xl transition-all flex flex-col gap-5`}>
+        className={`${theme.card} border ${borderColor} rounded-[2rem] p-6 relative overflow-hidden shadow-2xl transition-all flex flex-col gap-5`}
+      >
         <div
-          className={`absolute top-0 left-0 w-full h-2 ${isPaused ? "bg-amber-500" : "bg-gradient-to-r from-teal-400 via-cyan-500 to-indigo-500 animate-pulse"}`}></div>
+          className={`absolute top-0 left-0 w-full h-2 ${isPaused ? "bg-amber-500" : "bg-gradient-to-r from-teal-400 via-cyan-500 to-indigo-500 animate-pulse"}`}
+        ></div>
 
         {/* --- COMPACT PLAYER IMAGE --- */}
         <div className="relative z-10 flex flex-col items-center mt-2">
@@ -350,7 +361,8 @@ export default function AuctionDashboard() {
 
           <div className="text-center">
             <h1
-              className={`text-3xl md:text-4xl font-black ${theme.text} mb-1 tracking-tighter uppercase italic leading-none`}>
+              className={`text-3xl md:text-4xl font-black ${theme.text} mb-1 tracking-tighter uppercase italic leading-none`}
+            >
               {currentPlayer.name}
             </h1>
             <p className="text-teal-500 font-black uppercase tracking-[0.2em] text-xs mb-3">
@@ -361,10 +373,12 @@ export default function AuctionDashboard() {
 
         {/* --- QUICK STATS --- */}
         <div
-          className={`grid grid-cols-3 gap-2 p-3 rounded-2xl border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-white/5 border-white/5"}`}>
+          className={`grid grid-cols-3 gap-2 p-3 rounded-2xl border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-white/5 border-white/5"}`}
+        >
           <div className="text-center border-r border-white/10">
             <div
-              className={`text-[8px] uppercase font-black ${theme.sub} mb-1`}>
+              className={`text-[8px] uppercase font-black ${theme.sub} mb-1`}
+            >
               Matches
             </div>
             <div className={`text-lg font-black ${theme.text}`}>
@@ -373,7 +387,8 @@ export default function AuctionDashboard() {
           </div>
           <div className="text-center border-r border-white/10">
             <div
-              className={`text-[8px] uppercase font-black ${theme.sub} mb-1`}>
+              className={`text-[8px] uppercase font-black ${theme.sub} mb-1`}
+            >
               Runs
             </div>
             <div className={`text-lg font-black ${theme.text}`}>
@@ -382,7 +397,8 @@ export default function AuctionDashboard() {
           </div>
           <div className="text-center">
             <div
-              className={`text-[8px] uppercase font-black ${theme.sub} mb-1`}>
+              className={`text-[8px] uppercase font-black ${theme.sub} mb-1`}
+            >
               Wickets
             </div>
             <div className={`text-lg font-black ${theme.text}`}>
@@ -394,9 +410,11 @@ export default function AuctionDashboard() {
         {/* --- PRICES & LEADER --- */}
         <div className="grid grid-cols-2 gap-3">
           <div
-            className={`${lightMode ? "bg-gray-100/50" : "bg-white/5"} p-3 rounded-xl border ${borderColor}`}>
+            className={`${lightMode ? "bg-gray-100/50" : "bg-white/5"} p-3 rounded-xl border ${borderColor}`}
+          >
             <div
-              className={`text-[9px] uppercase font-black ${theme.sub} mb-1`}>
+              className={`text-[9px] uppercase font-black ${theme.sub} mb-1`}
+            >
               Base Price
             </div>
             <div className={`text-lg font-black ${theme.text}`}>
@@ -404,7 +422,8 @@ export default function AuctionDashboard() {
             </div>
           </div>
           <div
-            className={`${lightMode ? "bg-teal-50 border-teal-200" : "bg-teal-500/10 border-teal-500/20"} p-3 rounded-xl border`}>
+            className={`${lightMode ? "bg-teal-50 border-teal-200" : "bg-teal-500/10 border-teal-500/20"} p-3 rounded-xl border`}
+          >
             <div className="text-[9px] uppercase font-black text-teal-500 mb-1">
               Current Bid
             </div>
@@ -417,7 +436,8 @@ export default function AuctionDashboard() {
         {auctionState.highestBidderName && (
           <div className="animate-in slide-in-from-left duration-300 text-center bg-indigo-500/10 border border-indigo-500/20 p-2 rounded-xl">
             <div
-              className={`text-[8px] uppercase font-black ${theme.sub} mb-0.5`}>
+              className={`text-[8px] uppercase font-black ${theme.sub} mb-0.5`}
+            >
               Leading Team
             </div>
             <div className="text-xl font-black text-indigo-500 uppercase italic truncate px-2">
@@ -433,12 +453,14 @@ export default function AuctionDashboard() {
               <button
                 onClick={() => markSold(tournamentId)}
                 disabled={!auctionState.highestBidderId}
-                className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white py-4 rounded-xl font-black text-xs uppercase shadow-xl disabled:opacity-30 transform active:scale-95 transition-all">
+                className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white py-4 rounded-xl font-black text-xs uppercase shadow-xl disabled:opacity-30 transform active:scale-95 transition-all"
+              >
                 SOLD 🔨
               </button>
             ) : (
               <div
-                className={`w-full flex items-center justify-center py-3 rounded-xl border-2 border-dashed ${lightMode ? "border-indigo-300 bg-indigo-50 text-indigo-600" : "border-indigo-500/30 bg-indigo-900/10 text-indigo-400"}`}>
+                className={`w-full flex items-center justify-center py-3 rounded-xl border-2 border-dashed ${lightMode ? "border-indigo-300 bg-indigo-50 text-indigo-600" : "border-indigo-500/30 bg-indigo-900/10 text-indigo-400"}`}
+              >
                 <span className="font-black text-[9px] uppercase tracking-widest text-center leading-snug">
                   Offline Mode Active <br /> Sell via Team Cards
                 </span>
@@ -448,19 +470,22 @@ export default function AuctionDashboard() {
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => markUnsold(tournamentId, currentPlayer.id)}
-                className={`${lightMode ? "bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-200" : "bg-white/5 hover:bg-white/10 text-slate-400 border-white/10"} py-3 rounded-xl font-black text-[9px] uppercase border transition-colors`}>
+                className={`${lightMode ? "bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-200" : "bg-white/5 hover:bg-white/10 text-slate-400 border-white/10"} py-3 rounded-xl font-black text-[9px] uppercase border transition-colors`}
+              >
                 Unsold
               </button>
               <button
                 onClick={toggleAuctionPause}
-                className={`${isPaused ? "bg-teal-600 text-white" : lightMode ? "bg-amber-100 text-amber-700" : "bg-amber-500/20 text-amber-500"} py-3 rounded-xl font-black text-[9px] uppercase transition-all`}>
+                className={`${isPaused ? "bg-teal-600 text-white" : lightMode ? "bg-amber-100 text-amber-700" : "bg-amber-500/20 text-amber-500"} py-3 rounded-xl font-black text-[9px] uppercase transition-all`}
+              >
                 {isPaused ? "Resume" : "Pause"}
               </button>
             </div>
             {auctionState.highestBidderId && (
               <button
                 onClick={reverseLastBid}
-                className="w-full py-2.5 rounded-xl font-black text-[9px] uppercase border border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white transition-all mt-1">
+                className="w-full py-2.5 rounded-xl font-black text-[9px] uppercase border border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white transition-all mt-1"
+              >
                 Undo Last Bid
               </button>
             )}
@@ -476,11 +501,13 @@ export default function AuctionDashboard() {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
           <div className="flex items-center gap-3">
             <h3
-              className={`${theme.text} font-black text-2xl uppercase tracking-tighter italic`}>
+              className={`${theme.text} font-black text-2xl uppercase tracking-tighter italic`}
+            >
               Bidding Console
             </h3>
             <span
-              className={`text-xs ${lightMode ? "bg-teal-50 text-teal-600 border-teal-200" : "bg-[#1C2128] text-teal-400 border-teal-500/20"} px-3 py-1 rounded-lg font-black border uppercase not-italic`}>
+              className={`text-xs ${lightMode ? "bg-teal-50 text-teal-600 border-teal-200" : "bg-[#1C2128] text-teal-400 border-teal-500/20"} px-3 py-1 rounded-lg font-black border uppercase not-italic`}
+            >
               Smart Rules
             </span>
           </div>
@@ -488,7 +515,8 @@ export default function AuctionDashboard() {
           {canEdit && (
             <div className="flex flex-col sm:flex-row items-center gap-4">
               <div
-                className={`flex rounded-xl p-1 border ${lightMode ? "bg-gray-100 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
+                className={`flex rounded-xl p-1 border ${lightMode ? "bg-gray-100 border-gray-200" : "bg-[#0F1115] border-white/5"}`}
+              >
                 <button
                   onClick={() => setBiddingMode("online")}
                   className={`px-5 py-2 rounded-lg text-xs font-black uppercase transition-all ${
@@ -497,7 +525,8 @@ export default function AuctionDashboard() {
                         ? "bg-white text-teal-600 shadow-sm border border-gray-200"
                         : "bg-[#1C2128] text-teal-400 shadow-sm border border-white/10"
                       : theme.sub + " hover:text-teal-500"
-                  }`}>
+                  }`}
+                >
                   Online (Auto)
                 </button>
                 <button
@@ -508,7 +537,8 @@ export default function AuctionDashboard() {
                         ? "bg-white text-indigo-600 shadow-sm border border-gray-200"
                         : "bg-[#1C2128] text-indigo-400 shadow-sm border border-white/10"
                       : theme.sub + " hover:text-indigo-500"
-                  }`}>
+                  }`}
+                >
                   Offline (Manual)
                 </button>
               </div>
@@ -521,7 +551,8 @@ export default function AuctionDashboard() {
                     : lightMode
                       ? "bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200"
                       : "bg-white/5 text-slate-500 border-white/10 hover:bg-white/10"
-                }`}>
+                }`}
+              >
                 {ruleOverride ? "⚠️ Rule Override: ON" : "Rule Override: OFF"}
               </button>
             </div>
@@ -628,7 +659,8 @@ export default function AuctionDashboard() {
                       : "bg-teal-900/20 border-teal-500 scale-[1.02] shadow-xl z-10"
                     : `${theme.card} ${borderColor}`
                 } ${isDisabled && !isHighest ? "opacity-60" : ""} 
-                ${isLocked ? "opacity-30 grayscale" : ""}`}>
+                ${isLocked ? "opacity-30 grayscale" : ""}`}
+              >
                 {isHighest && (
                   <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 bg-teal-500 text-white text-xs md:text-sm px-5 py-1.5 rounded-full font-black uppercase tracking-widest shadow-lg z-20">
                     Leading
@@ -642,20 +674,23 @@ export default function AuctionDashboard() {
                         isHighest
                           ? "text-teal-600 dark:text-teal-400"
                           : theme.text
-                      }`}>
+                      }`}
+                    >
                       {team.name}
                     </div>
 
                     <div
                       className={`text-sm mt-1 font-bold uppercase tracking-wider ${
                         errorReason ? "text-red-500" : theme.sub
-                      }`}>
+                      }`}
+                    >
                       {errorReason ||
                         `Max Bid: ₹${(maxPossibleBid || 0).toLocaleString()}`}
                     </div>
 
                     <div
-                      className={`mt-5 space-y-2 border-y py-4 ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+                      className={`mt-5 space-y-2 border-y py-4 ${lightMode ? "border-gray-200" : "border-white/5"}`}
+                    >
                       <div className="flex justify-between text-xs uppercase font-bold px-1">
                         <span className={theme.sub}>Total Purse</span>
                         <span className={theme.text}>
@@ -669,7 +704,8 @@ export default function AuctionDashboard() {
                         </span>
                       </div>
                       <div
-                        className={`flex justify-between text-sm uppercase font-black px-1 pt-2 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+                        className={`flex justify-between text-sm uppercase font-black px-1 pt-2 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}
+                      >
                         <span className={theme.sub}>Balance</span>
                         <span className="text-teal-600 dark:text-teal-400">
                           ₹{remainingPurse.toLocaleString()}
@@ -678,7 +714,8 @@ export default function AuctionDashboard() {
                     </div>
 
                     <div
-                      className={`text-xs uppercase font-bold tracking-tight mt-4 ${theme.sub}`}>
+                      className={`text-xs uppercase font-bold tracking-tight mt-4 ${theme.sub}`}
+                    >
                       {playersStillNeeded > 0
                         ? `Reserve ₹${(
                             mandatoryReserve || 0
@@ -692,7 +729,8 @@ export default function AuctionDashboard() {
                   <div className="mt-auto space-y-3 pt-4">
                     {isLocked ? (
                       <div
-                        className={`py-4 px-4 rounded-xl text-xs font-black text-center uppercase tracking-widest border ${lightMode ? "bg-red-50 text-red-600 border-red-200" : "bg-red-900/20 text-red-500 border-red-500/20"}`}>
+                        className={`py-4 px-4 rounded-xl text-xs font-black text-center uppercase tracking-widest border ${lightMode ? "bg-red-50 text-red-600 border-red-200" : "bg-red-900/20 text-red-500 border-red-500/20"}`}
+                      >
                         🔒 Slot Locked
                       </div>
                     ) : (
@@ -717,7 +755,8 @@ export default function AuctionDashboard() {
                                       ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
                                       : "bg-[#0F1115] text-slate-600 cursor-not-allowed"
                                     : "bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 text-white shadow-lg"
-                              }`}>
+                              }`}
+                            >
                               {isHighest
                                 ? "Leading"
                                 : !currentPlayer
@@ -735,7 +774,8 @@ export default function AuctionDashboard() {
                                     currentPlayer,
                                   )
                                 }
-                                className={`w-full py-3 rounded-xl text-xs font-black uppercase transition-all border ${lightMode ? "bg-amber-50 hover:bg-amber-500 text-amber-600 hover:text-white border-amber-200" : "bg-amber-600/10 hover:bg-amber-600 text-amber-500 hover:text-white border-amber-600/30"}`}>
+                                className={`w-full py-3 rounded-xl text-xs font-black uppercase transition-all border ${lightMode ? "bg-amber-50 hover:bg-amber-500 text-amber-600 hover:text-white border-amber-200" : "bg-amber-600/10 hover:bg-amber-600 text-amber-500 hover:text-white border-amber-600/30"}`}
+                              >
                                 ⚡ Direct Buy (Base)
                               </button>
                             )}
@@ -744,9 +784,11 @@ export default function AuctionDashboard() {
                           <>
                             {currentPlayer && (
                               <div
-                                className={`mt-2 p-4 rounded-xl border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/5"}`}>
+                                className={`mt-2 p-4 rounded-xl border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/5"}`}
+                              >
                                 <div
-                                  className={`text-xs uppercase font-black tracking-widest mb-3 text-center ${theme.text}`}>
+                                  className={`text-xs uppercase font-black tracking-widest mb-3 text-center ${theme.text}`}
+                                >
                                   Manual / Offline Sale
                                 </div>
                                 <div className="flex flex-col gap-3">
@@ -772,7 +814,8 @@ export default function AuctionDashboard() {
                                         !isHighest &&
                                         !ruleOverride)
                                     }
-                                    className={`w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all disabled:opacity-30 disabled:cursor-not-allowed ${lightMode ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-md" : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-900/20"}`}>
+                                    className={`w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all disabled:opacity-30 disabled:cursor-not-allowed ${lightMode ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-md" : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-900/20"}`}
+                                  >
                                     Direct Sell 🔨
                                   </button>
                                 </div>
@@ -792,7 +835,8 @@ export default function AuctionDashboard() {
                           : lightMode
                             ? "bg-gray-100 border-gray-200 text-gray-500"
                             : "bg-[#0F1115] border-white/5 text-slate-600"
-                      }`}>
+                      }`}
+                    >
                       {isHighest ? "Leader" : "Waiting"}
                     </span>
                   </div>
@@ -815,10 +859,12 @@ export default function AuctionDashboard() {
       displayList = displayList.filter((p) => p.role === filterRole);
     return (
       <div
-        className={`${theme.card} border ${borderColor} rounded-[2rem] p-6 mb-8 shadow-sm`}>
+        className={`${theme.card} border ${borderColor} rounded-[2rem] p-6 mb-8 shadow-sm`}
+      >
         <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
           <div
-            className={`flex ${lightMode ? "bg-gray-100" : "bg-[#0F1115] border-white/5"} rounded-xl p-1 border overflow-x-auto no-scrollbar`}>
+            className={`flex ${lightMode ? "bg-gray-100" : "bg-[#0F1115] border-white/5"} rounded-xl p-1 border overflow-x-auto no-scrollbar`}
+          >
             {["upcoming", "sold", "unsold"].map((t) => (
               <button
                 key={t}
@@ -831,7 +877,8 @@ export default function AuctionDashboard() {
                     : lightMode
                       ? "text-gray-500 hover:text-gray-800"
                       : "text-slate-500 hover:text-slate-300"
-                }`}>
+                }`}
+              >
                 {t}
               </button>
             ))}
@@ -839,7 +886,8 @@ export default function AuctionDashboard() {
           <select
             className={`${inputBgColor} text-sm rounded-xl px-5 py-3 outline-none font-bold`}
             value={filterRole}
-            onChange={(e) => setFilterRole(e.target.value)}>
+            onChange={(e) => setFilterRole(e.target.value)}
+          >
             <option>All</option>
             <option>Batsman</option>
             <option>Bowler</option>
@@ -851,10 +899,12 @@ export default function AuctionDashboard() {
           {displayList.map((player) => (
             <div
               key={player.id}
-              className={`${lightMode ? "bg-white border-gray-200 hover:border-teal-300" : "bg-[#0F1115] border-white/5 hover:border-white/10"} p-4 rounded-xl border flex justify-between items-center group transition-all shadow-sm`}>
+              className={`${lightMode ? "bg-white border-gray-200 hover:border-teal-300" : "bg-[#0F1115] border-white/5 hover:border-white/10"} p-4 rounded-xl border flex justify-between items-center group transition-all shadow-sm`}
+            >
               <div className="flex items-center gap-4">
                 <div
-                  className={`w-12 h-12 rounded-lg overflow-hidden border ${lightMode ? "bg-gray-100 border-gray-200" : "bg-[#161920] border-white/5"}`}>
+                  className={`w-12 h-12 rounded-lg overflow-hidden border ${lightMode ? "bg-gray-100 border-gray-200" : "bg-[#161920] border-white/5"}`}
+                >
                   <PlayerAvatar
                     player={player}
                     tournamentId={tournamentId}
@@ -863,11 +913,13 @@ export default function AuctionDashboard() {
                 </div>
                 <div>
                   <div
-                    className={`font-bold ${theme.text} text-base truncate max-w-[120px]`}>
+                    className={`font-bold ${theme.text} text-base truncate max-w-[120px]`}
+                  >
                     {player.name}
                   </div>
                   <div
-                    className={`text-[10px] ${theme.sub} font-bold uppercase tracking-wider`}>
+                    className={`text-[10px] ${theme.sub} font-bold uppercase tracking-wider`}
+                  >
                     {player.role}
                   </div>
                 </div>
@@ -876,7 +928,8 @@ export default function AuctionDashboard() {
                 <div
                   className={`text-sm font-mono font-bold ${
                     player.status === "SOLD" ? "text-teal-500" : theme.sub
-                  }`}>
+                  }`}
+                >
                   ₹
                   {(player.status === "SOLD"
                     ? player.soldPrice
@@ -885,7 +938,8 @@ export default function AuctionDashboard() {
                 </div>
                 {player.status === "SOLD" && (
                   <div
-                    className={`text-[10px] ${theme.sub} truncate max-w-[90px] font-bold uppercase mt-0.5`}>
+                    className={`text-[10px] ${theme.sub} truncate max-w-[90px] font-bold uppercase mt-0.5`}
+                  >
                     {teamsMap[player.teamId]}
                   </div>
                 )}
@@ -900,19 +954,23 @@ export default function AuctionDashboard() {
   if (!auctionState)
     return (
       <div
-        className={`min-h-screen flex items-center justify-center animate-pulse font-black text-xl uppercase tracking-widest ${theme.bg} text-teal-500`}>
+        className={`min-h-screen flex items-center justify-center animate-pulse font-black text-xl uppercase tracking-widest ${theme.bg} text-teal-500`}
+      >
         Connecting...
       </div>
     );
 
   return (
     <div
-      className={`min-h-screen px-4 pb-24 pt-24 font-sans ${theme.bg} ${theme.text}`}>
+      className={`min-h-screen px-4 pb-24 pt-24 font-sans ${theme.bg} ${theme.text}`}
+    >
+      {/* 🟢 Expanded max-width to allow side-by-side on big monitors */}
       <div className="max-w-[1400px] mx-auto">
         <div className="flex justify-between items-center mb-6">
           <Link
             to={`/tournaments/${tournamentId}`}
-            className={`${theme.sub} hover:text-teal-500 text-sm font-black uppercase tracking-widest flex items-center gap-2 transition-colors group`}>
+            className={`${theme.sub} hover:text-teal-500 text-sm font-black uppercase tracking-widest flex items-center gap-2 transition-colors group`}
+          >
             <span className="group-hover:-translate-x-1 transition-transform">
               ←
             </span>{" "}
@@ -921,20 +979,25 @@ export default function AuctionDashboard() {
           {canEdit && (
             <button
               onClick={() => setShowAdmin(true)}
-              className={`${theme.card} ${lightMode ? "hover:bg-gray-50 border-gray-200" : "hover:bg-white/5 border-white/10"} px-6 py-3 rounded-xl font-black text-xs text-teal-500 border uppercase tracking-widest shadow-sm transition-colors`}>
+              className={`${theme.card} ${lightMode ? "hover:bg-gray-50 border-gray-200" : "hover:bg-white/5 border-white/10"} px-6 py-3 rounded-xl font-black text-xs text-teal-500 border uppercase tracking-widest shadow-sm transition-colors`}
+            >
               ⚙️ Setup
             </button>
           )}
         </div>
 
+        {/* 🟢 THE SPLIT COMMAND CENTER LAYOUT */}
         <div className="flex flex-col lg:flex-row gap-6 items-start">
+          {/* LEFT SIDEBAR: The Player Profile (Sticky on Desktop) */}
           <div className="w-full lg:w-[35%] xl:w-[28%] shrink-0 lg:sticky lg:top-24">
             {renderStage()}
           </div>
 
+          {/* RIGHT MAIN AREA: Bidding Console */}
           <div className="w-full lg:w-[65%] xl:w-[72%]">{renderBidders()}</div>
         </div>
 
+        {/* BOTTOM: Player Queue */}
         <div className="mt-8">{renderQueue()}</div>
 
         {showAdmin && canEdit && (

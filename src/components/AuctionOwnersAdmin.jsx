@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   collection,
   getDocs,
@@ -8,13 +8,14 @@ import {
   where,
   runTransaction,
   arrayUnion,
-  deleteDoc, // 🟢 NEW
-  writeBatch, // 🟢 NEW
+  deleteDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { listGlobalPlayers } from "../utils/firestore";
+import { useAuth } from "../hooks/useAuth";
 import { useTheme } from "../context/ThemeContext";
-import { Trash2 } from "lucide-react"; // 🟢 NEW
+import { Trash2, X, Globe, Loader2, Check, Crown, Save } from "lucide-react";
 
 // ☁️ CLOUDINARY CONFIGURATION
 const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
@@ -27,11 +28,16 @@ const OwnerAssignmentForm = ({
   tournamentId,
   onSave,
   onCancel,
-  onDelete, // 🟢 NEW PROP
+  onDelete,
 }) => {
   const { theme, lightMode } = useTheme();
   const [mode, setMode] = useState("existing");
   const [teamName, setTeamName] = useState(team?.name || "");
+
+  // 🟢 NEW: Syncing Group & Color
+  const [teamGroup, setTeamGroup] = useState(team?.group || "");
+  const [teamColor, setTeamColor] = useState(team?.color || "#0d9488");
+
   const [purse, setPurse] = useState(team?.purse || 10000);
 
   // LOGO STATE
@@ -56,14 +62,12 @@ const OwnerAssignmentForm = ({
     const file = event.target.files[0];
     if (!file) return;
 
-    // 1. Basic validation
     if (file.size > 2 * 1024 * 1024) {
       return alert("Image too large. Please select a file under 2MB.");
     }
 
     setProcessingImage(true);
 
-    // 2. Prepare FormData for Cloudinary
     const formData = new FormData();
     formData.append("file", file);
     formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
@@ -78,7 +82,7 @@ const OwnerAssignmentForm = ({
       const data = await response.json();
 
       if (data.secure_url) {
-        setLogoBase64(data.secure_url); // We still use the state name 'logoBase64' but it now holds a URL
+        setLogoBase64(data.secure_url);
       } else {
         throw new Error("Upload failed");
       }
@@ -100,6 +104,8 @@ const OwnerAssignmentForm = ({
     onSave({
       teamId: team?.id || null,
       teamName,
+      teamGroup, // 🟢 NEW
+      teamColor, // 🟢 NEW
       purse: parseInt(purse),
       mode,
       selectedPlayerId,
@@ -154,7 +160,8 @@ const OwnerAssignmentForm = ({
               lightMode
                 ? "bg-gray-100 border-gray-300"
                 : "bg-gray-900 border-gray-600"
-            } ${processingImage ? "animate-pulse" : ""}`}>
+            } ${processingImage ? "animate-pulse" : ""}`}
+          >
             {logoBase64 ? (
               <img
                 src={logoBase64}
@@ -163,7 +170,8 @@ const OwnerAssignmentForm = ({
               />
             ) : (
               <span
-                className={`text-xs text-center font-bold px-2 ${lightMode ? "text-gray-500" : "text-gray-500"}`}>
+                className={`text-xs text-center font-bold px-2 ${lightMode ? "text-gray-500" : "text-gray-500"}`}
+              >
                 {processingImage ? "Processing..." : "Upload Logo"}
               </span>
             )}
@@ -181,16 +189,57 @@ const OwnerAssignmentForm = ({
       </div>
 
       <div className={wrapperClass}>
-        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-          Team Name
-        </label>
-        <input
-          type="text"
-          className={inputClass}
-          value={teamName}
-          onChange={(e) => setTeamName(e.target.value)}
-        />
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+              Team Name
+            </label>
+            <input
+              type="text"
+              className={inputClass}
+              value={teamName}
+              onChange={(e) => setTeamName(e.target.value)}
+            />
+          </div>
+
+          {/* 🟢 NEW: GROUP & COLOR INPUTS */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                Group / Lot
+              </label>
+              <input
+                type="text"
+                className={inputClass}
+                value={teamGroup}
+                onChange={(e) => setTeamGroup(e.target.value)}
+                placeholder="e.g. Pool A"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                Brand Color
+              </label>
+              <div
+                className={`flex items-center gap-2 px-2 py-1 rounded border ${lightMode ? "bg-white border-gray-300" : "bg-black border-gray-700"}`}
+              >
+                <input
+                  type="color"
+                  value={teamColor}
+                  onChange={(e) => setTeamColor(e.target.value)}
+                  className="w-8 h-8 cursor-pointer bg-transparent border-0 p-0.5 rounded"
+                />
+                <span
+                  className={`text-[10px] font-mono font-bold uppercase tracking-widest ${theme.text}`}
+                >
+                  {teamColor}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
+
       <div>
         <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
           Auction Purse
@@ -198,7 +247,8 @@ const OwnerAssignmentForm = ({
         <div
           className={`flex items-center border rounded-lg overflow-hidden ${
             lightMode ? "bg-white border-gray-300" : "bg-black border-gray-700"
-          }`}>
+          }`}
+        >
           <span className="px-4 text-gray-500 font-bold">₹</span>
           <input
             type="number"
@@ -213,7 +263,8 @@ const OwnerAssignmentForm = ({
           Assign Owner
         </label>
         <div
-          className={`flex rounded-lg p-1 mb-3 ${lightMode ? "bg-gray-200" : "bg-gray-800"}`}>
+          className={`flex rounded-lg p-1 mb-3 ${lightMode ? "bg-gray-200" : "bg-gray-800"}`}
+        >
           <button
             type="button"
             onClick={() => setMode("existing")}
@@ -221,7 +272,8 @@ const OwnerAssignmentForm = ({
               mode === "existing"
                 ? "bg-cyan-600 text-white shadow-sm"
                 : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-            }`}>
+            }`}
+          >
             Select Global
           </button>
           <button
@@ -231,7 +283,8 @@ const OwnerAssignmentForm = ({
               mode === "new"
                 ? "bg-green-600 text-white shadow-sm"
                 : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-            }`}>
+            }`}
+          >
             Create New
           </button>
         </div>
@@ -241,7 +294,8 @@ const OwnerAssignmentForm = ({
             <select
               className={`${inputClass} py-3`}
               value={selectedPlayerId}
-              onChange={(e) => setSelectedPlayerId(e.target.value)}>
+              onChange={(e) => setSelectedPlayerId(e.target.value)}
+            >
               <option value="">-- Select Person --</option>
               {filteredOwners.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -250,9 +304,9 @@ const OwnerAssignmentForm = ({
               ))}
             </select>
 
-            {/* Checkbox to filter the dropdown list */}
             <label
-              className={`flex items-center gap-2 cursor-pointer text-[10px] font-bold ${theme.sub}`}>
+              className={`flex items-center gap-2 cursor-pointer text-[10px] font-bold ${theme.sub}`}
+            >
               <input
                 type="checkbox"
                 checked={tournamentOnly}
@@ -284,7 +338,8 @@ const OwnerAssignmentForm = ({
         )}
 
         <div
-          className={`mt-4 p-3 rounded-lg flex items-start gap-3 ${wrapperClass}`}>
+          className={`mt-4 p-3 rounded-lg flex items-start gap-3 ${wrapperClass}`}
+        >
           <input
             type="checkbox"
             id="isPlayer"
@@ -295,14 +350,19 @@ const OwnerAssignmentForm = ({
           <div className="flex-1">
             <label
               htmlFor="isPlayer"
-              className={`text-sm font-bold block cursor-pointer ${theme.text}`}>
+              className={`text-sm font-bold block cursor-pointer ${theme.text}`}
+            >
               Also Add to Squad?
             </label>
+            <p className={`text-[10px] font-medium mt-0.5 ${theme.sub}`}>
+              They will be added to squad & stats automatically.
+            </p>
             {isPlayer && (
               <select
                 className={`mt-2 text-xs py-1.5 ${inputClass}`}
                 value={playerRole}
-                onChange={(e) => setPlayerRole(e.target.value)}>
+                onChange={(e) => setPlayerRole(e.target.value)}
+              >
                 <option>All-Rounder</option>
                 <option>Batsman</option>
                 <option>Bowler</option>
@@ -313,9 +373,9 @@ const OwnerAssignmentForm = ({
         </div>
       </div>
 
-      {/* 🟢 MODIFIED FOOTER ACTIONS (Added Delete) */}
       <div
-        className={`flex gap-2 pt-4 border-t ${lightMode ? "border-gray-200" : "border-gray-800"}`}>
+        className={`flex gap-2 pt-4 border-t ${lightMode ? "border-gray-200" : "border-gray-800"}`}
+      >
         {team?.id && (
           <button
             type="button"
@@ -329,7 +389,8 @@ const OwnerAssignmentForm = ({
               }
             }}
             className={`flex items-center justify-center p-3 rounded-lg transition-colors border ${lightMode ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100" : "bg-red-900/20 text-red-500 border-red-900/50 hover:bg-red-900/40"}`}
-            title="Delete Team">
+            title="Delete Team"
+          >
             <Trash2 size={18} />
           </button>
         )}
@@ -341,12 +402,14 @@ const OwnerAssignmentForm = ({
             lightMode
               ? "text-gray-600 bg-gray-100 border-gray-200 hover:bg-gray-200"
               : "text-gray-300 bg-gray-800 border-gray-700 hover:bg-gray-700"
-          }`}>
+          }`}
+        >
           Cancel
         </button>
         <button
           onClick={handleSubmit}
-          className="flex-1 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-3 rounded-lg shadow-md active:scale-95 transition-all">
+          className="flex-1 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-3 rounded-lg shadow-md active:scale-95 transition-all"
+        >
           Save
         </button>
       </div>
@@ -464,10 +527,12 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
           };
         }
 
-        // 2. Prepare Team Update
+        // 🟢 2. Prepare Team Update with Group & Color
         const teamData = {
           name: payload.teamName,
           purse: payload.purse,
+          group: payload.teamGroup.trim().toUpperCase(), // Synced from Form
+          color: payload.teamColor, // Synced from Form
           ownerId: finalOwnerId,
           ownerName: ownerDetails.name,
           logoUrl: payload.logoUrl || null,
@@ -556,14 +621,11 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
     }
   };
 
-  // 🟢 NEW: HANDLE INDIVIDUAL TEAM DELETE
   const handleDeleteTeam = async (teamId) => {
     setProcessing(true);
     try {
-      // 1. Delete Team Doc
       await deleteDoc(doc(db, `tournaments/${tournamentId}/teams`, teamId));
 
-      // 2. Release associated players via batch
       const apRef = collection(
         db,
         `tournaments/${tournamentId}/auctionPlayers`,
@@ -575,10 +637,8 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
       snap.forEach((d) => {
         const pData = d.data();
         if (pData.isOwner) {
-          // Dynamically created owner-players should be removed entirely
           batch.delete(d.ref);
         } else {
-          // Regular players go back to the unsold/pending pool
           batch.update(d.ref, {
             status: "PENDING",
             teamId: null,
@@ -597,7 +657,6 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
     }
   };
 
-  // 🟢 NEW: HANDLE MASTER RESET (Delete All Teams & Release All Players)
   const handleResetAllTeams = async () => {
     if (
       !window.confirm(
@@ -610,12 +669,10 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
     try {
       const batch = writeBatch(db);
 
-      // 1. Delete all teams
       teams.forEach((t) => {
         batch.delete(doc(db, `tournaments/${tournamentId}/teams`, t.id));
       });
 
-      // 2. Release all auction players
       auctionPlayers.forEach((p) => {
         const pRef = doc(
           db,
@@ -623,7 +680,7 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
           p.id,
         );
         if (p.isOwner) {
-          batch.delete(pRef); // Remove owners that were added as players
+          batch.delete(pRef);
         } else {
           batch.update(pRef, {
             status: "PENDING",
@@ -634,7 +691,7 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
       });
 
       await batch.commit();
-      await fetchData(); // Refresh entirely
+      await fetchData();
     } catch (error) {
       alert("Failed to reset teams: " + error.message);
     } finally {
@@ -647,10 +704,12 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
   return (
     <div className="space-y-6">
       <div
-        className={`flex flex-col md:flex-row justify-between items-start md:items-end border-b pb-4 gap-4 ${borderClass}`}>
+        className={`flex flex-col md:flex-row justify-between items-start md:items-end border-b pb-4 gap-4 ${borderClass}`}
+      >
         <div>
           <h2
-            className={`text-xl font-black ${theme.text} uppercase tracking-tighter italic`}>
+            className={`text-xl font-black ${theme.text} uppercase tracking-tighter italic`}
+          >
             Teams & Purse Management
           </h2>
         </div>
@@ -661,11 +720,11 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
               lightMode
                 ? "text-teal-700 border-teal-200 hover:bg-teal-50"
                 : "text-teal-400 border-teal-500/20 hover:bg-teal-500/10"
-            }`}>
+            }`}
+          >
             Refresh
           </button>
 
-          {/* 🟢 NEW: Reset All Button */}
           {teams.length > 0 && (
             <button
               onClick={handleResetAllTeams}
@@ -673,14 +732,16 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
                 lightMode
                   ? "text-red-600 border-red-200 hover:bg-red-50"
                   : "text-red-500 border-red-500/30 hover:bg-red-500/10"
-              }`}>
+              }`}
+            >
               Reset Teams Data
             </button>
           )}
 
           <button
             onClick={() => setEditingTeam({ id: null, purse: 10000 })}
-            className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black uppercase rounded-xl shadow-lg transition-all active:scale-95">
+            className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black uppercase rounded-xl shadow-lg transition-all active:scale-95"
+          >
             + Add Team
           </button>
         </div>
@@ -693,7 +754,8 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
           </div>
         ) : mergedData.length === 0 ? (
           <div
-            className={`col-span-full text-center p-12 ${theme.sub} italic text-xs`}>
+            className={`col-span-full text-center p-12 ${theme.sub} italic text-xs`}
+          >
             No teams found. Add one to get started.
           </div>
         ) : (
@@ -702,14 +764,21 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
             return (
               <div
                 key={t.id}
-                className={`${theme.card} p-5 rounded-[2.5rem] shadow-xl border ${borderClass} hover:border-teal-500/30 transition-all group relative`}>
+                style={{
+                  borderTopWidth: "4px",
+                  borderTopColor:
+                    t.color || (lightMode ? "#e5e7eb" : "#1f2937"),
+                }}
+                className={`${theme.card} p-5 rounded-b-[2.5rem] rounded-t-xl shadow-xl border-x border-b ${borderClass} hover:border-teal-500/30 transition-all group relative`}
+              >
                 <button
                   onClick={() => setEditingTeam(t)}
                   className={`absolute top-5 right-5 px-3 py-1.5 rounded-lg transition-all text-xs font-bold z-10 ${
                     lightMode
                       ? "text-gray-500 bg-gray-100 hover:bg-gray-200 hover:text-teal-600"
                       : "text-slate-500 bg-white/5 hover:bg-white/10 hover:text-teal-400"
-                  }`}>
+                  }`}
+                >
                   ✎ Edit
                 </button>
 
@@ -720,7 +789,8 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
                       lightMode
                         ? "bg-gray-100 border-gray-200"
                         : "bg-black/40 border-white/10"
-                    }`}>
+                    }`}
+                  >
                     {t.logoUrl ? (
                       <img
                         src={t.logoUrl}
@@ -733,15 +803,20 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
                   </div>
 
                   <div className="overflow-hidden">
-                    <div className="text-[8px] text-teal-500 uppercase font-black tracking-[0.2em] mb-1">
-                      Active Team
+                    <div className="text-[8px] text-teal-500 uppercase font-black tracking-[0.2em] mb-1 flex items-center gap-2">
+                      Active Team{" "}
+                      {t.group && (
+                        <span className="text-indigo-400">• {t.group}</span>
+                      )}
                     </div>
                     <div
-                      className={`font-black ${theme.text} text-xl uppercase italic leading-none truncate`}>
+                      className={`font-black ${theme.text} text-xl uppercase italic leading-none truncate`}
+                    >
                       {t.name}
                     </div>
                     <div
-                      className={`text-[10px] ${theme.sub} font-bold mt-1 truncate`}>
+                      className={`text-[10px] ${theme.sub} font-bold mt-1 truncate`}
+                    >
                       Owner: <span className={theme.text}>{t.ownerName}</span>
                     </div>
                   </div>
@@ -754,16 +829,20 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
                         lightMode
                           ? "bg-gray-50 border-gray-200"
                           : "bg-[#0F1115] border-white/5"
-                      }`}>
+                      }`}
+                    >
                       <div
-                        className={`text-[7px] ${theme.sub} uppercase font-black mb-1`}>
+                        className={`text-[7px] ${theme.sub} uppercase font-black mb-1`}
+                      >
                         Squad
                       </div>
                       <div
-                        className={`text-lg font-black ${theme.text} italic`}>
+                        className={`text-lg font-black ${theme.text} italic`}
+                      >
                         {t.squadCount}{" "}
                         <span
-                          className={`text-[9px] ${theme.sub} ml-0.5 not-italic`}>
+                          className={`text-[9px] ${theme.sub} ml-0.5 not-italic`}
+                        >
                           / {config?.maxSquadSize}
                         </span>
                       </div>
@@ -773,9 +852,11 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
                         lightMode
                           ? "bg-gray-50 border-gray-200"
                           : "bg-[#0F1115] border-white/5"
-                      }`}>
+                      }`}
+                    >
                       <div
-                        className={`text-[7px] ${theme.sub} uppercase font-black mb-1`}>
+                        className={`text-[7px] ${theme.sub} uppercase font-black mb-1`}
+                      >
                         Spent
                       </div>
                       <div className="text-lg font-black text-red-500 truncate">
@@ -789,10 +870,12 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
                       lightMode
                         ? "bg-gray-50 border-gray-200"
                         : "bg-[#0F1115] border-white/5"
-                    }`}>
+                    }`}
+                  >
                     <div className="flex justify-between items-center">
                       <div
-                        className={`text-[8px] ${theme.sub} uppercase font-black tracking-widest`}>
+                        className={`text-[8px] ${theme.sub} uppercase font-black tracking-widest`}
+                      >
                         Balance
                       </div>
                       <div className="text-lg font-black text-green-500 dark:text-green-400 font-mono tracking-tighter truncate">
@@ -813,9 +896,11 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
             lightMode
               ? "bg-gray-900/60 backdrop-blur-sm"
               : "bg-black/80 backdrop-blur-md"
-          }`}>
+          }`}
+        >
           <div
-            className={`${theme.card} border ${borderClass} w-full max-w-md rounded-2xl shadow-2xl overflow-hidden`}>
+            className={`${theme.card} border ${borderClass} w-full max-w-md rounded-2xl shadow-2xl overflow-hidden`}
+          >
             {processing ? (
               <div className="p-12 text-center text-teal-500 animate-pulse font-black uppercase text-xs tracking-widest">
                 Processing Action...
@@ -827,7 +912,7 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
                 tournamentId={tournamentId}
                 onSave={handleSave}
                 onCancel={() => setEditingTeam(null)}
-                onDelete={handleDeleteTeam} // 🟢 Passed down correctly
+                onDelete={handleDeleteTeam}
               />
             )}
           </div>
