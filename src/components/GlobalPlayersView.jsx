@@ -28,7 +28,7 @@ import {
   Loader2,
   Check,
   AlertCircle,
-  GitMerge, // 🟢 Added Merge Icon
+  GitMerge,
 } from "lucide-react";
 
 // --- TOAST COMPONENT ---
@@ -84,9 +84,13 @@ export default function GlobalPlayersView() {
   const [isEditing, setIsEditing] = useState(false);
   const [processingImage, setProcessingImage] = useState(false);
 
-  // 🟢 NEW: MERGE STATE
+  // 🟢 MULTI-SELECT TOURNAMENT STATE
+  const [tournamentsList, setTournamentsList] = useState([]);
+  const [selectedTournaments, setSelectedTournaments] = useState([]);
+
+  // MERGE STATE
   const [isMergeMode, setIsMergeMode] = useState(false);
-  const [selectedForMerge, setSelectedForMerge] = useState([]); // array of IDs
+  const [selectedForMerge, setSelectedForMerge] = useState([]);
   const [primaryMergeId, setPrimaryMergeId] = useState(null);
 
   const [formData, setFormData] = useState({
@@ -117,6 +121,10 @@ export default function GlobalPlayersView() {
         setPlayers(playersList);
 
         const tournaments = await listTournaments();
+
+        // 🟢 SAVE TOURNAMENTS TO STATE FOR DROPDOWN
+        setTournamentsList(tournaments);
+
         let collectedMatches = [];
 
         await Promise.all(
@@ -288,7 +296,6 @@ export default function GlobalPlayersView() {
     });
 
     const allStats = Object.values(statsMap).map((p) => {
-      // 🟢 Fetch strictly from match history. NO double counting!
       p.calculatedStats.matches = p.calculatedStats.history.length;
       return p;
     });
@@ -460,7 +467,11 @@ export default function GlobalPlayersView() {
       mobile: "",
       photoURL: "",
       paymentScreenshotURL: "",
+      baseMatches: 0,
+      baseRuns: 0,
+      baseWickets: 0,
     });
+    setSelectedTournaments([]); // 🟢 Clear selection for new player
     setIsEditing(false);
     setShowModal(true);
   };
@@ -484,6 +495,10 @@ export default function GlobalPlayersView() {
       baseRuns: player.stats?.runs || 0,
       baseWickets: player.stats?.wickets || 0,
     });
+
+    // 🟢 LOAD EXISTING TOURNAMENTS
+    setSelectedTournaments(player.registeredTournaments || []);
+
     setIsEditing(true);
     setShowModal(true);
   };
@@ -499,8 +514,12 @@ export default function GlobalPlayersView() {
         runs: parseInt(formData.baseRuns) || 0,
         wickets: parseInt(formData.baseWickets) || 0,
       };
+
+      const isoDate = new Date().toISOString();
+
       if (isEditing && formData.id) {
-        await updateGlobalPlayer(formData.id, {
+        // 🟢 UPDATE LOGIC
+        const updatePayload = {
           name: formData.name,
           role: formData.role,
           battingStyle: formData.battingStyle,
@@ -509,16 +528,50 @@ export default function GlobalPlayersView() {
           photoURL: formData.photoURL,
           paymentScreenshotURL: formData.paymentScreenshotURL,
           stats: newStats,
-          updatedAt: new Date().toISOString(),
+          updatedAt: isoDate,
+          registeredTournaments: selectedTournaments, // Push the active arrays
+        };
+
+        // Merge tournament data into the main object
+        selectedTournaments.forEach((tId) => {
+          updatePayload[`tournamentData.${tId}`] = {
+            role: formData.role || "All-Rounder",
+            battingStyle: formData.battingStyle || "Right Hand Bat",
+            bowlingStyle: formData.bowlingStyle || "Right Arm Medium",
+            photoURL: formData.photoURL || "",
+            paymentScreenshotURL: formData.paymentScreenshotURL || "",
+            registeredAt: isoDate,
+          };
         });
-        showToast("Player Updated Globally!");
+
+        await updateGlobalPlayer(formData.id, updatePayload);
+        showToast("Player Updated & Assigned!");
       } else {
+        // 🟢 CREATE LOGIC
         const { id, ...payload } = formData;
-        await createGlobalPlayer({
+
+        const createPayload = {
           ...payload,
           stats: newStats,
+          createdAt: isoDate,
+          updatedAt: isoDate,
+          registeredTournaments: selectedTournaments,
+          tournamentData: {},
+        };
+
+        selectedTournaments.forEach((tId) => {
+          createPayload.tournamentData[tId] = {
+            role: formData.role || "All-Rounder",
+            battingStyle: formData.battingStyle || "Right Hand Bat",
+            bowlingStyle: formData.bowlingStyle || "Right Arm Medium",
+            photoURL: formData.photoURL || "",
+            paymentScreenshotURL: formData.paymentScreenshotURL || "",
+            registeredAt: isoDate,
+          };
         });
-        showToast("Player Created!");
+
+        await createGlobalPlayer(createPayload);
+        showToast("Player Created & Assigned!");
       }
       setShowModal(false);
       const data = await listGlobalPlayers();
@@ -530,7 +583,7 @@ export default function GlobalPlayersView() {
     }
   };
 
-  // 🟢 NEW: MERGE HANDLERS
+  // MERGE HANDLERS
   const toggleMergeSelection = (e, playerId) => {
     e.stopPropagation();
     if (selectedForMerge.includes(playerId)) {
@@ -562,7 +615,6 @@ export default function GlobalPlayersView() {
         .filter((id) => id !== primaryMergeId)
         .map((id) => players.find((p) => p.id === id));
 
-      // 1. Mathematically Combine the Stats Objects
       let combinedStats = {
         matches: parseInt(primaryPlayer.stats?.matches || 0),
         runs: parseInt(primaryPlayer.stats?.runs || 0),
@@ -577,6 +629,9 @@ export default function GlobalPlayersView() {
         return { w: isNaN(w) ? 0 : w, r: isNaN(r) ? 0 : r };
       };
       let bestBowl = parseBB(combinedStats.bestBowling);
+
+      // Collect all unique registered tournaments from duplicates
+      let allTournaments = new Set(primaryPlayer.registeredTournaments || []);
 
       duplicates.forEach((d) => {
         const dStats = d.stats || {};
@@ -595,23 +650,26 @@ export default function GlobalPlayersView() {
         ) {
           bestBowl = dBowl;
         }
+
+        // Grab their tournament history
+        if (Array.isArray(d.registeredTournaments)) {
+          d.registeredTournaments.forEach((t) => allTournaments.add(t));
+        }
       });
 
       combinedStats.bestBowling = `${bestBowl.w}/${bestBowl.r}`;
 
-      // 2. Update Primary in Batch
       const primaryRef = doc(db, "players", primaryMergeId);
       batch.update(primaryRef, {
         stats: combinedStats,
+        registeredTournaments: Array.from(allTournaments), // Apply aggregated tournaments
         updatedAt: new Date().toISOString(),
       });
 
-      // 3. Delete Duplicates in Batch
       duplicates.forEach((d) => {
         batch.delete(doc(db, "players", d.id));
       });
 
-      // 4. Commit to Database
       await batch.commit();
 
       showToast("Profiles successfully merged!");
@@ -619,7 +677,6 @@ export default function GlobalPlayersView() {
       setSelectedForMerge([]);
       setPrimaryMergeId(null);
 
-      // 5. Reload Real-Time Data
       const data = await listGlobalPlayers();
       setPlayers(data);
     } catch (error) {
@@ -630,7 +687,6 @@ export default function GlobalPlayersView() {
     }
   };
 
-  // 🟢 NEW: MASTER RESET SCRIPT
   const performMasterSync = async () => {
     if (
       !window.confirm(
@@ -641,7 +697,6 @@ export default function GlobalPlayersView() {
 
     setLoading(true);
     try {
-      // We chunk the updates in case you have more than 500 players (Firestore limit)
       const chunkSize = 450;
       for (let i = 0; i < processedPlayers.length; i += chunkSize) {
         const batch = writeBatch(db);
@@ -675,7 +730,6 @@ export default function GlobalPlayersView() {
   };
 
   const toggleRowExpansion = (playerId) => {
-    // Prevent opening accordion if clicking checkboxes in merge mode
     if (isMergeMode) return;
     setExpandedPlayerId(expandedPlayerId === playerId ? null : playerId);
   };
@@ -701,7 +755,6 @@ export default function GlobalPlayersView() {
     </div>
   );
 
-  // --- STYLES ---
   const inputClass = `w-full border rounded-xl px-4 py-3 outline-none transition-all font-bold placeholder:font-normal focus:ring-2
     ${
       lightMode
@@ -737,7 +790,6 @@ export default function GlobalPlayersView() {
           </div>
 
           <div className="flex flex-wrap gap-3 w-full md:w-auto justify-center md:justify-end items-center">
-            {/* Search Input */}
             <div className="relative w-full md:w-56">
               <Search
                 className={`absolute left-3 top-1/2 -translate-y-1/2 ${theme.sub}`}
@@ -752,7 +804,6 @@ export default function GlobalPlayersView() {
               />
             </div>
 
-            {/* Role Filter */}
             <div className="relative w-full md:w-auto">
               <Filter
                 className={`absolute left-3 top-1/2 -translate-y-1/2 ${theme.sub}`}
@@ -781,7 +832,6 @@ export default function GlobalPlayersView() {
                   className="flex-1 md:flex-none px-4 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg text-white bg-amber-500 hover:bg-amber-600 active:scale-95 transition-all">
                   Sync DB
                 </button>
-                {/* 🟢 NEW: MERGE BUTTON */}
                 <button
                   onClick={() => {
                     setIsMergeMode(!isMergeMode);
@@ -810,7 +860,6 @@ export default function GlobalPlayersView() {
           </div>
         </div>
 
-        {/* 🟢 NEW: MERGE ACTION BAR */}
         {isMergeMode && selectedForMerge.length > 0 && (
           <div
             className={`mb-6 p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 border shadow-lg animate-in slide-in-from-top-2 ${lightMode ? "bg-indigo-50 border-indigo-200" : "bg-indigo-900/20 border-indigo-500/30"}`}>
@@ -834,7 +883,6 @@ export default function GlobalPlayersView() {
           </div>
         )}
 
-        {/* CAPS SECTION */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
           {orangeCap && (
             <div
@@ -880,7 +928,6 @@ export default function GlobalPlayersView() {
           )}
         </div>
 
-        {/* TABLE */}
         <div
           className={`border rounded-[2rem] overflow-hidden shadow-2xl ${theme.card}`}>
           {loading ? (
@@ -894,7 +941,6 @@ export default function GlobalPlayersView() {
                 <thead
                   className={`text-[10px] uppercase font-black tracking-[0.2em] border-b ${lightMode ? "bg-gray-100 text-gray-500 border-gray-200" : "bg-[#0F1115] text-slate-500 border-white/5"}`}>
                   <tr>
-                    {/* 🟢 NEW: MERGE COLUMN HEADER */}
                     {isMergeMode && (
                       <th className="px-4 py-4 text-center text-indigo-500 w-12">
                         Merge
@@ -962,7 +1008,6 @@ export default function GlobalPlayersView() {
                                   ? "hover:bg-gray-50"
                                   : "hover:bg-white/5"
                             }`}>
-                            {/* 🟢 NEW: MERGE SELECTION CELL */}
                             {isMergeMode && (
                               <td
                                 className="px-4 py-4 text-center border-r border-white/5"
@@ -1262,6 +1307,52 @@ export default function GlobalPlayersView() {
               </div>
               <div className="overflow-y-auto p-8 custom-scrollbar">
                 <form onSubmit={handleSubmit} className="space-y-6">
+                  {/* 🟢 NEW: TOURNAMENT ASSIGNMENT CHECKBOX GRID */}
+                  <div className="pt-2 pb-6 border-b border-white/10">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Trophy size={16} className="text-indigo-500" />
+                      <label
+                        className={`text-[10px] uppercase font-black tracking-widest ${theme.sub}`}>
+                        Assign to Tournaments
+                      </label>
+                    </div>
+                    <div
+                      className={`grid grid-cols-1 gap-2 max-h-40 overflow-y-auto custom-scrollbar p-3 border rounded-xl ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
+                      {tournamentsList.map((t) => (
+                        <label
+                          key={t.id}
+                          className="flex items-center gap-3 cursor-pointer group p-2 hover:bg-white/5 rounded-lg transition-colors">
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4 accent-teal-500 rounded border-gray-300 cursor-pointer"
+                            checked={selectedTournaments.includes(t.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedTournaments((prev) => [
+                                  ...prev,
+                                  t.id,
+                                ]);
+                              } else {
+                                setSelectedTournaments((prev) =>
+                                  prev.filter((id) => id !== t.id),
+                                );
+                              }
+                            }}
+                          />
+                          <span
+                            className={`text-sm font-bold ${theme.text} group-hover:text-teal-500 transition-colors truncate`}>
+                            {t.name}
+                          </span>
+                        </label>
+                      ))}
+                      {tournamentsList.length === 0 && (
+                        <span className="text-xs text-gray-500 italic text-center py-4">
+                          No active tournaments found.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="flex gap-4 justify-center">
                     {/* Profile Photo */}
                     <div className="flex flex-col items-center">

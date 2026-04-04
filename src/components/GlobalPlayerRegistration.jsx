@@ -6,7 +6,6 @@ import {
   where,
   getDocs,
   addDoc,
-  updateDoc,
   doc,
   getDoc,
   arrayUnion,
@@ -29,6 +28,7 @@ import {
   Receipt,
   Sun,
   Moon,
+  Trophy,
 } from "lucide-react";
 
 // 2. Cropper Import
@@ -48,8 +48,7 @@ const NotificationToast = ({ message, type, onClose }) => {
         isError
           ? "bg-red-500/10 border-red-500/20 text-red-500 bg-white dark:bg-red-900/10"
           : "bg-teal-500/10 border-teal-500/20 text-teal-600 dark:text-teal-400 bg-white dark:bg-teal-900/10"
-      }`}
-    >
+      }`}>
       {isError ? <AlertCircle size={20} /> : <Check size={20} />}
       <div>
         <h4 className="font-bold text-sm uppercase tracking-wider">
@@ -80,12 +79,10 @@ async function getCroppedImg(imageSrc, pixelCrop) {
 
   if (!ctx) return null;
 
-  // Set the canvas size to match the cropped area exactly
-  const TARGET_SIZE = 300; // Final compressed size
+  const TARGET_SIZE = 300;
   canvas.width = TARGET_SIZE;
   canvas.height = TARGET_SIZE;
 
-  // Draw the cropped image onto the canvas, scaling it down
   ctx.drawImage(
     image,
     pixelCrop.x,
@@ -117,6 +114,12 @@ export default function GlobalPlayerRegistration() {
     tshirtSize: "M",
   });
 
+  // 🟢 NEW: MULTI-SELECT TOURNAMENT ASSIGNMENT STATE
+  const [tournamentsList, setTournamentsList] = useState([]);
+  const [selectedTournaments, setSelectedTournaments] = useState(
+    tournamentId ? [tournamentId] : [],
+  );
+
   const [isRegistrationClosed, setIsRegistrationClosed] = useState(false);
   const [currentRegCount, setCurrentRegCount] = useState(0);
   const [maxPlayersLimit, setMaxPlayersLimit] = useState(null);
@@ -124,10 +127,9 @@ export default function GlobalPlayerRegistration() {
   const [photoBase64, setPhotoBase64] = useState("");
   const [paymentBase64, setPaymentBase64] = useState("");
 
-  // 🟢 NEW: Trackers to decide whether to upload to Cloudinary or keep existing Base64
   const [photoChanged, setPhotoChanged] = useState(false);
   const [paymentChanged, setPaymentChanged] = useState(false);
-  const [uploadText, setUploadText] = useState(""); // Dynamic loading text
+  const [uploadText, setUploadText] = useState("");
 
   // --- CROPPER STATE ---
   const [cropModalOpen, setCropModalOpen] = useState(false);
@@ -160,6 +162,23 @@ export default function GlobalPlayerRegistration() {
     return data.secure_url;
   };
 
+  // Fetch all active tournaments
+  useEffect(() => {
+    const fetchTournaments = async () => {
+      try {
+        const snap = await getDocs(collection(db, "tournaments"));
+        const tList = snap.docs.map((doc) => ({
+          id: doc.id,
+          name: doc.data().name || "Unnamed Tournament",
+        }));
+        setTournamentsList(tList);
+      } catch (err) {
+        console.error("Error fetching tournaments list:", err);
+      }
+    };
+    fetchTournaments();
+  }, []);
+
   useEffect(() => {
     const fetchTournamentDetails = async () => {
       if (!tournamentId) return;
@@ -185,7 +204,7 @@ export default function GlobalPlayerRegistration() {
     fetchTournamentDetails();
   }, [tournamentId]);
 
-  // 🟢 SMART LIMIT CHECKER
+  // SMART LIMIT CHECKER
   useEffect(() => {
     const checkRegistrationLimit = async () => {
       if (!tournamentId || !maxPlayersLimit) return;
@@ -260,7 +279,7 @@ export default function GlobalPlayerRegistration() {
     try {
       const croppedImage = await getCroppedImg(imageToCrop, croppedAreaPixels);
       setPhotoBase64(croppedImage);
-      setPhotoChanged(true); // 🟢 Flag that a new photo was added
+      setPhotoChanged(true);
       setCropModalOpen(false);
       setImageToCrop(null);
     } catch (e) {
@@ -274,16 +293,16 @@ export default function GlobalPlayerRegistration() {
     setImageToCrop(null);
   };
 
-  // --- PAYMENT HANDLER ---
   const handlePaymentImageChange = async (e) => {
     const file = e.target.files[0];
     if (file) {
       const compressed = await compressImage(file, 400);
       setPaymentBase64(compressed);
-      setPaymentChanged(true); // 🟢 Flag that a new payment was added
+      setPaymentChanged(true);
     }
   };
 
+  // 🟢 UPDATED: Load existing player now imports their enrolled tournaments
   const loadExistingPlayer = (playerData, docId) => {
     setFormData({
       name: playerData.name,
@@ -295,7 +314,11 @@ export default function GlobalPlayerRegistration() {
     });
     setPhotoBase64(playerData.photoURL || "");
     setPaymentBase64(playerData.paymentScreenshotURL || "");
-    setPhotoChanged(false); // Reset flags so we don't upload old DB base64s
+
+    const enrolled = playerData.registeredTournaments || [];
+    setSelectedTournaments(enrolled);
+
+    setPhotoChanged(false);
     setPaymentChanged(false);
     setExistingPlayerId(docId);
     setIsEditing(true);
@@ -328,7 +351,6 @@ export default function GlobalPlayerRegistration() {
     }
 
     try {
-      // 🟢 UPLOAD NEW IMAGES TO CLOUDINARY (Skip if untouched)
       let finalPhotoUrl = photoBase64;
       let finalPaymentUrl = paymentBase64;
 
@@ -346,25 +368,37 @@ export default function GlobalPlayerRegistration() {
 
       const playersRef = collection(db, "players");
       const isoDate = new Date().toISOString();
-      const currentTournament = tournamentId || "global";
 
       // --- ADMIN EDITING AN EXISTING PROFILE ---
       if (isEditing && existingPlayerId) {
         const playerDocRef = doc(db, "players", existingPlayerId);
-        await setDoc(
-          playerDocRef,
-          {
-            name: formData.name.trim() || "Unknown",
+
+        const updatePayload = {
+          name: formData.name.trim() || "Unknown",
+          role: formData.role || "All-Rounder",
+          battingStyle: formData.battingStyle || "Right Hand Bat",
+          bowlingStyle: formData.bowlingStyle || "Right Arm Medium",
+          tshirtSize: formData.tshirtSize,
+          photoURL: finalPhotoUrl,
+          paymentScreenshotURL: finalPaymentUrl,
+          updatedAt: isoDate,
+          registeredTournaments: selectedTournaments, // 🟢 Saves multi-select array
+        };
+
+        // 🟢 Push profile data to ALL selected tournaments
+        selectedTournaments.forEach((tId) => {
+          updatePayload[`tournamentData.${tId}`] = {
             role: formData.role || "All-Rounder",
             battingStyle: formData.battingStyle || "Right Hand Bat",
             bowlingStyle: formData.bowlingStyle || "Right Arm Medium",
             tshirtSize: formData.tshirtSize,
-            photoURL: finalPhotoUrl,
-            paymentScreenshotURL: finalPaymentUrl,
-            updatedAt: isoDate,
-          },
-          { merge: true },
-        );
+            photoURL: finalPhotoUrl || "",
+            paymentScreenshotURL: finalPaymentUrl || "",
+            registeredAt: isoDate,
+          };
+        });
+
+        await setDoc(playerDocRef, updatePayload, { merge: true });
         setStatus("updated");
       } else {
         // --- NEW REGISTRATION FLOW ---
@@ -373,70 +407,64 @@ export default function GlobalPlayerRegistration() {
 
         if (!querySnapshot.empty) {
           const docSnap = querySnapshot.docs[0];
-          const existingData = docSnap.data();
-          const enrolledTournaments = existingData.registeredTournaments || [];
 
-          // 1. Check if already in this tournament
-          if (enrolledTournaments.includes(currentTournament)) {
-            setStatus("exists");
-            setLoading(false);
-            return;
-          }
-
-          // 2. Add existing player to this NEW tournament
+          // Add existing player to NEW tournaments cumulatively
           const playerDocRef = doc(db, "players", docSnap.id);
 
-          await setDoc(
-            playerDocRef,
-            {
-              name: formData.name.trim() || "Unknown",
-              registeredTournaments: arrayUnion(currentTournament),
-              tournamentData: {
-                [currentTournament]: {
-                  role: formData.role || "All-Rounder",
-                  battingStyle: formData.battingStyle || "Right Hand Bat",
-                  bowlingStyle: formData.bowlingStyle || "Right Arm Medium",
-                  tshirtSize: formData.tshirtSize,
-                  photoURL: finalPhotoUrl || "",
-                  paymentScreenshotURL: finalPaymentUrl || "",
-                  registeredAt: isoDate,
-                },
-              },
-              updatedAt: isoDate,
-            },
-            { merge: true },
-          );
+          const updatePayload = {
+            name: formData.name.trim() || "Unknown",
+            updatedAt: isoDate,
+          };
 
+          if (selectedTournaments.length > 0) {
+            updatePayload.registeredTournaments = arrayUnion(
+              ...selectedTournaments,
+            );
+            selectedTournaments.forEach((tId) => {
+              updatePayload[`tournamentData.${tId}`] = {
+                role: formData.role || "All-Rounder",
+                battingStyle: formData.battingStyle || "Right Hand Bat",
+                bowlingStyle: formData.bowlingStyle || "Right Arm Medium",
+                tshirtSize: formData.tshirtSize,
+                photoURL: finalPhotoUrl || "",
+                paymentScreenshotURL: finalPaymentUrl || "",
+                registeredAt: isoDate,
+              };
+            });
+          }
+
+          await setDoc(playerDocRef, updatePayload, { merge: true });
           setStatus("success");
-          showToast(
-            "Global profile updated and added to this tournament!",
-            "success",
-          );
+          showToast("Global profile updated and assigned!", "success");
           setLoading(false);
           return;
         }
 
-        // 3. Completely new player
-        await addDoc(playersRef, {
+        // --- COMPLETELY NEW PLAYER ---
+        const newPlayerPayload = {
           name: formData.name.trim() || "Unknown",
           mobile: cleanMobile,
           stats: { matches: 0, runs: 0, wickets: 0 },
           isVerified: false,
           createdAt: isoDate,
           updatedAt: isoDate,
-          registeredTournaments: [currentTournament],
-          tournamentData: {
-            [currentTournament]: {
-              role: formData.role || "All-Rounder",
-              battingStyle: formData.battingStyle || "Right Hand Bat",
-              bowlingStyle: formData.bowlingStyle || "Right Arm Medium",
-              tshirtSize: formData.tshirtSize,
-              photoURL: finalPhotoUrl || "",
-              paymentScreenshotURL: finalPaymentUrl || "",
-              registeredAt: isoDate,
-            },
-          },
+          registeredTournaments: selectedTournaments,
+          tournamentData: {},
+        };
+
+        selectedTournaments.forEach((tId) => {
+          newPlayerPayload.tournamentData[tId] = {
+            role: formData.role || "All-Rounder",
+            battingStyle: formData.battingStyle || "Right Hand Bat",
+            bowlingStyle: formData.bowlingStyle || "Right Arm Medium",
+            tshirtSize: formData.tshirtSize,
+            photoURL: finalPhotoUrl || "",
+            paymentScreenshotURL: finalPaymentUrl || "",
+            registeredAt: isoDate,
+          };
         });
+
+        await addDoc(playersRef, newPlayerPayload);
         setStatus("success");
       }
     } catch (error) {
@@ -497,14 +525,12 @@ export default function GlobalPlayerRegistration() {
           <div className="flex justify-between gap-4 px-4">
             <button
               onClick={handleCancelCrop}
-              className="flex-1 py-4 rounded-xl border border-white/20 text-white font-bold uppercase tracking-widest text-xs hover:bg-white/10 transition-colors"
-            >
+              className="flex-1 py-4 rounded-xl border border-white/20 text-white font-bold uppercase tracking-widest text-xs hover:bg-white/10 transition-colors">
               Cancel
             </button>
             <button
               onClick={handleSaveCrop}
-              className="flex-1 py-4 rounded-xl bg-teal-500 text-white font-black uppercase tracking-widest text-xs shadow-lg shadow-teal-500/20 active:scale-95 transition-all"
-            >
+              className="flex-1 py-4 rounded-xl bg-teal-500 text-white font-black uppercase tracking-widest text-xs shadow-lg shadow-teal-500/20 active:scale-95 transition-all">
               Save Picture
             </button>
           </div>
@@ -517,8 +543,7 @@ export default function GlobalPlayerRegistration() {
   if (status === "success" || status === "updated") {
     return (
       <div
-        className={`min-h-screen flex items-center justify-center p-4 font-sans ${theme.bg}`}
-      >
+        className={`min-h-screen flex items-center justify-center p-4 font-sans ${theme.bg}`}>
         {toggleTheme && (
           <button
             onClick={toggleTheme}
@@ -527,21 +552,18 @@ export default function GlobalPlayerRegistration() {
                 ? "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
                 : "bg-[#0F1115] border-white/10 text-slate-300 hover:bg-white/5"
             }`}
-            title="Toggle Theme"
-          >
+            title="Toggle Theme">
             {lightMode ? <Moon size={16} /> : <Sun size={16} />}
           </button>
         )}
 
         <div
-          className={`border p-8 rounded-3xl max-w-md w-full text-center shadow-2xl animate-in zoom-in-95 ${theme.card}`}
-        >
+          className={`border p-8 rounded-3xl max-w-md w-full text-center shadow-2xl animate-in zoom-in-95 ${theme.card}`}>
           <div className="w-20 h-20 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center text-4xl mx-auto mb-6 border border-green-500/20 shadow-lg shadow-green-500/10">
             <Check size={40} strokeWidth={3} />
           </div>
           <h2
-            className={`text-2xl font-black mb-2 uppercase tracking-tight italic ${theme.text}`}
-          >
+            className={`text-2xl font-black mb-2 uppercase tracking-tight italic ${theme.text}`}>
             {status === "updated"
               ? "Profile Updated!"
               : "Registration Complete!"}
@@ -552,14 +574,12 @@ export default function GlobalPlayerRegistration() {
           </p>
           <button
             onClick={() => window.location.reload()}
-            className={`block w-full font-bold py-4 rounded-xl transition-all mb-4 text-xs uppercase tracking-widest ${theme.btnBase}`}
-          >
+            className={`block w-full font-bold py-4 rounded-xl transition-all mb-4 text-xs uppercase tracking-widest ${theme.btnBase}`}>
             Back to Form
           </button>
           <Link
             to="/"
-            className={`block text-xs font-bold uppercase tracking-widest transition-colors ${theme.sub} hover:text-teal-500`}
-          >
+            className={`block text-xs font-bold uppercase tracking-widest transition-colors ${theme.sub} hover:text-teal-500`}>
             Back to Home
           </Link>
         </div>
@@ -571,17 +591,14 @@ export default function GlobalPlayerRegistration() {
   if (isRegistrationClosed && !isEditing) {
     return (
       <div
-        className={`min-h-screen flex items-center justify-center p-4 font-sans ${theme.bg}`}
-      >
+        className={`min-h-screen flex items-center justify-center p-4 font-sans ${theme.bg}`}>
         <div
-          className={`border p-8 rounded-3xl max-w-md w-full text-center shadow-2xl animate-in zoom-in-95 ${theme.card}`}
-        >
+          className={`border p-8 rounded-3xl max-w-md w-full text-center shadow-2xl animate-in zoom-in-95 ${theme.card}`}>
           <div className="w-20 h-20 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6 border border-red-500/20">
             <X size={40} strokeWidth={3} />
           </div>
           <h2
-            className={`text-2xl font-black mb-2 uppercase tracking-tight italic ${theme.text}`}
-          >
+            className={`text-2xl font-black mb-2 uppercase tracking-tight italic ${theme.text}`}>
             Registration Closed
           </h2>
           <p className={`mb-6 text-sm font-medium ${theme.sub}`}>
@@ -589,16 +606,14 @@ export default function GlobalPlayerRegistration() {
             for this tournament.
           </p>
           <div
-            className={`p-4 rounded-xl mb-8 border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}
-          >
+            className={`p-4 rounded-xl mb-8 border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
             <p className="text-xs font-bold uppercase tracking-widest text-teal-500">
               Thank you for the overwhelming response!
             </p>
           </div>
           <Link
             to="/"
-            className={`block w-full font-bold py-4 rounded-xl transition-all mb-4 text-xs uppercase tracking-widest ${theme.btnBase}`}
-          >
+            className={`block w-full font-bold py-4 rounded-xl transition-all mb-4 text-xs uppercase tracking-widest ${theme.btnBase}`}>
             Back to Home
           </Link>
         </div>
@@ -609,8 +624,7 @@ export default function GlobalPlayerRegistration() {
   // --- FORM VIEW ---
   return (
     <div
-      className={`min-h-screen p-4 flex flex-col items-center justify-center font-sans ${theme.bg} ${theme.text}`}
-    >
+      className={`min-h-screen p-4 flex flex-col items-center justify-center font-sans ${theme.bg} ${theme.text}`}>
       <NotificationToast
         message={notification?.message}
         type={notification?.type}
@@ -627,8 +641,7 @@ export default function GlobalPlayerRegistration() {
               ? "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
               : "bg-[#0F1115] border-white/10 text-slate-300 hover:bg-white/5"
           }`}
-          title="Toggle Theme"
-        >
+          title="Toggle Theme">
           {lightMode ? <Moon size={16} /> : <Sun size={16} />}
         </button>
       )}
@@ -646,8 +659,7 @@ export default function GlobalPlayerRegistration() {
       <div className="relative z-10 w-full max-w-lg">
         <div className="text-center mb-10">
           <p
-            className={`text-xs font-bold uppercase tracking-widest ${theme.sub}`}
-          >
+            className={`text-xs font-bold uppercase tracking-widest ${theme.sub}`}>
             {tournamentName
               ? "Join the tournament • Create your profile"
               : isEditing
@@ -657,59 +669,58 @@ export default function GlobalPlayerRegistration() {
         </div>
 
         <div
-          className={`border rounded-[2.5rem] p-8 shadow-2xl backdrop-blur-md ${theme.card}`}
-        >
-          {status === "exists" && (
-            <div
-              className={`border p-6 rounded-3xl mb-8 animate-in shake ${
-                lightMode
-                  ? "bg-amber-50 border-amber-200"
-                  : "bg-amber-900/30 border-amber-500/50"
-              }`}
-            >
-              <div className="flex items-center gap-3 mb-3">
-                <AlertCircle className="text-amber-500" />
-                <h4
-                  className={`font-black uppercase text-sm italic tracking-tight ${
-                    lightMode ? "text-amber-800" : "text-amber-200"
-                  }`}
-                >
-                  Profile Already Registered
-                </h4>
-              </div>
-              <p
-                className={`text-xs leading-relaxed mb-4 font-bold ${
-                  lightMode ? "text-amber-700" : "text-slate-200"
-                }`}
-              >
-                This mobile number is already registered in our global
-                directory.
-              </p>
-              <div
-                className={`p-4 rounded-xl border text-center ${
-                  lightMode
-                    ? "bg-white border-amber-100"
-                    : "bg-[#0F1115] border-white/5"
-                }`}
-              >
-                <p className="text-teal-500 text-[10px] font-black uppercase tracking-widest">
-                  Please contact the Admin to update your profile.
+          className={`border rounded-[2.5rem] p-8 shadow-2xl backdrop-blur-md ${theme.card}`}>
+          <form onSubmit={handleSubmit} className="space-y-8">
+            {/* 🟢 MULTI-SELECT TOURNAMENT ASSIGNMENT */}
+            {(user || !tournamentId) && (
+              <div className="relative border-b pb-8 mb-4 border-white/10">
+                <div className="flex items-center gap-2 mb-3">
+                  <Trophy size={16} className="text-indigo-500" />
+                  <label
+                    className={`text-[10px] uppercase font-black tracking-widest ${theme.sub}`}>
+                    Assign to Tournaments {user ? "(Admin Override)" : ""}
+                  </label>
+                </div>
+                <div
+                  className={`grid grid-cols-1 md:grid-cols-2 gap-3 max-h-48 overflow-y-auto custom-scrollbar p-3 border rounded-xl ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/10"}`}>
+                  {tournamentsList.map((t) => (
+                    <label
+                      key={t.id}
+                      className="flex items-center gap-3 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 accent-teal-500 rounded border-gray-300 cursor-pointer"
+                        checked={selectedTournaments.includes(t.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedTournaments((prev) => [...prev, t.id]);
+                          } else {
+                            setSelectedTournaments((prev) =>
+                              prev.filter((id) => id !== t.id),
+                            );
+                          }
+                        }}
+                      />
+                      <span
+                        className={`text-xs font-bold ${theme.text} group-hover:text-teal-500 transition-colors truncate`}>
+                        {t.name}
+                      </span>
+                    </label>
+                  ))}
+                  {tournamentsList.length === 0 && (
+                    <span className="text-xs text-gray-500 italic col-span-full text-center py-4">
+                      No active tournaments found.
+                    </span>
+                  )}
+                </div>
+                <p
+                  className={`text-[10px] mt-3 font-medium italic ${theme.sub}`}>
+                  Select multiple tournaments to instantly assign this profile
+                  and push it to their auction pools simultaneously.
                 </p>
               </div>
-              <button
-                onClick={() => setStatus("idle")}
-                className={`mt-6 w-full py-2 text-[9px] font-black uppercase transition-colors border-t pt-4 ${
-                  lightMode
-                    ? "text-amber-600 border-amber-200 hover:text-amber-800"
-                    : "text-slate-500 border-white/5 hover:text-white"
-                }`}
-              >
-                Register a different number
-              </button>
-            </div>
-          )}
+            )}
 
-          <form onSubmit={handleSubmit} className="space-y-8">
             {/* PHOTO UPLOAD */}
             <div className="flex flex-col items-center">
               <div className="relative group cursor-pointer">
@@ -725,8 +736,7 @@ export default function GlobalPlayerRegistration() {
                 />
                 <label
                   htmlFor="profile-upload"
-                  className="cursor-pointer group relative block"
-                >
+                  className="cursor-pointer group relative block">
                   <div
                     className={`w-32 h-32 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl relative z-10 
                     ${
@@ -735,8 +745,7 @@ export default function GlobalPlayerRegistration() {
                         : lightMode
                           ? "border-dashed border-gray-300 bg-gray-50 group-hover:bg-white"
                           : "border-dashed border-white/10 bg-[#0F1115] group-hover:border-white/30"
-                    }`}
-                  >
+                    }`}>
                     {photoBase64 ? (
                       <img
                         src={photoBase64}
@@ -749,8 +758,7 @@ export default function GlobalPlayerRegistration() {
                           className={`w-8 h-8 mx-auto mb-2 opacity-50 ${theme.sub}`}
                         />
                         <p
-                          className={`text-[9px] uppercase font-black tracking-widest ${theme.sub}`}
-                        >
+                          className={`text-[9px] uppercase font-black tracking-widest ${theme.sub}`}>
                           Upload
                         </p>
                       </div>
@@ -813,8 +821,7 @@ export default function GlobalPlayerRegistration() {
                         formData.role === role
                           ? "bg-teal-500/10 border-teal-500/50 text-teal-600 dark:text-teal-400 shadow-lg"
                           : theme.btnBase
-                      }`}
-                    >
+                      }`}>
                       {role}
                     </button>
                   ),
@@ -827,8 +834,7 @@ export default function GlobalPlayerRegistration() {
                   value={formData.battingStyle}
                   onChange={(e) =>
                     setFormData({ ...formData, battingStyle: e.target.value })
-                  }
-                >
+                  }>
                   <option>Right Hand Bat</option>
                   <option>Left Hand Bat</option>
                 </select>
@@ -837,8 +843,7 @@ export default function GlobalPlayerRegistration() {
                   value={formData.bowlingStyle}
                   onChange={(e) =>
                     setFormData({ ...formData, bowlingStyle: e.target.value })
-                  }
-                >
+                  }>
                   <option>Right Arm Medium</option>
                   <option>Right Arm Fast</option>
                   <option>Right Arm Spin</option>
@@ -851,8 +856,7 @@ export default function GlobalPlayerRegistration() {
 
               <div className="relative mt-4">
                 <span
-                  className={`absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase tracking-widest ${theme.sub}`}
-                >
+                  className={`absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase tracking-widest ${theme.sub}`}>
                   Jersey Size
                 </span>
                 <select
@@ -860,8 +864,7 @@ export default function GlobalPlayerRegistration() {
                   value={formData.tshirtSize}
                   onChange={(e) =>
                     setFormData({ ...formData, tshirtSize: e.target.value })
-                  }
-                >
+                  }>
                   <option value="S">S (36)</option>
                   <option value="M">M (38)</option>
                   <option value="L">L (40)</option>
@@ -878,11 +881,9 @@ export default function GlobalPlayerRegistration() {
                 lightMode
                   ? "bg-gray-50 border-gray-300 hover:bg-white"
                   : "bg-[#0F1115] border-white/10 hover:border-white/20"
-              }`}
-            >
+              }`}>
               <label
-                className={`block text-[10px] font-black uppercase mb-4 text-center tracking-[0.2em] ${theme.sub}`}
-              >
+                className={`block text-[10px] font-black uppercase mb-4 text-center tracking-[0.2em] ${theme.sub}`}>
                 Payment Screenshot *
               </label>
               <input
@@ -894,8 +895,7 @@ export default function GlobalPlayerRegistration() {
               />
               <label
                 htmlFor="payment-upload"
-                className="cursor-pointer block w-full"
-              >
+                className="cursor-pointer block w-full">
                 {paymentBase64 ? (
                   <div className="relative">
                     <img
@@ -913,15 +913,13 @@ export default function GlobalPlayerRegistration() {
                   <div
                     className={`h-32 flex flex-col items-center justify-center rounded-xl transition-colors ${
                       lightMode ? "bg-white border" : "bg-[#161920]"
-                    }`}
-                  >
+                    }`}>
                     <Receipt
                       className={`mb-3 opacity-30 ${theme.text}`}
                       size={32}
                     />
                     <span
-                      className={`text-xs font-bold uppercase tracking-wide ${theme.sub}`}
-                    >
+                      className={`text-xs font-bold uppercase tracking-wide ${theme.sub}`}>
                       Click to upload proof
                     </span>
                   </div>
@@ -932,13 +930,12 @@ export default function GlobalPlayerRegistration() {
             <button
               disabled={loading}
               type="submit"
-              className="w-full bg-gradient-to-r from-teal-600 to-indigo-600 hover:from-teal-500 hover:to-indigo-500 text-white font-black uppercase tracking-widest text-xs py-5 rounded-2xl shadow-xl shadow-teal-900/20 transition-all disabled:opacity-50 active:scale-[0.98] flex items-center justify-center gap-2"
-            >
+              className="w-full bg-gradient-to-r from-teal-600 to-indigo-600 hover:from-teal-500 hover:to-indigo-500 text-white font-black uppercase tracking-widest text-xs py-5 rounded-2xl shadow-xl shadow-teal-900/20 transition-all disabled:opacity-50 active:scale-[0.98] flex items-center justify-center gap-2">
               {loading && <Loader2 className="animate-spin" />}
               {loading
                 ? uploadText || "Processing..."
                 : isEditing
-                  ? "Update Profile"
+                  ? "Update & Assign"
                   : "Submit Registration"}
             </button>
 
@@ -946,8 +943,7 @@ export default function GlobalPlayerRegistration() {
               <button
                 type="button"
                 onClick={() => window.location.reload()}
-                className={`w-full text-xs font-bold uppercase tracking-widest transition-colors ${theme.sub} hover:text-teal-500`}
-              >
+                className={`w-full text-xs font-bold uppercase tracking-widest transition-colors ${theme.sub} hover:text-teal-500`}>
                 Cancel Edit
               </button>
             )}
