@@ -29,6 +29,7 @@ import Broadcaster from "./components/Overlay/Broadcaster.jsx";
 import ObsReceiver from "./components/Overlay/ObsReceiver.jsx";
 import RemoteControl from "./components/Overlay/RemoteControl.jsx";
 import YouTubeViewers from "./components/Overlay/YouTubeViewers.jsx";
+import AuctionOverlay from "./components/Overlay/AuctionOverlay.jsx";
 
 // --- LAZY IMPORTS ---
 const LiveScoring = lazy(() => import("./components/LiveScoring.jsx"));
@@ -156,6 +157,10 @@ function AppContent() {
             <Route
               path="/overlay/:tournamentId/broadcast/active"
               element={<BroadcastLayer />}
+            />
+            <Route
+              path="/overlay/:tournamentId/auction"
+              element={<AuctionOverlay />}
             />
           </Routes>
         </Suspense>

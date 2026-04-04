@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { Eye } from "lucide-react"; // Import the Eye icon for total views
+import { Eye } from "lucide-react";
 
 export default function YouTubeViewers({
-  videoId = "Q4cydjxhkIY",
+  videoId = "sGYQ5ztBJug",
   apiKey = "AIzaSyCgnUtN3tl1GrHJxWOpVaIY8s7cAzhyz84",
 }) {
   const [liveViewers, setLiveViewers] = useState("0");
@@ -12,7 +12,6 @@ export default function YouTubeViewers({
     if (!apiKey || !videoId) return;
 
     const fetchViewerData = async () => {
-      // 🟢 ADDED 'statistics' to the 'part' query parameter
       const apiUrl = `https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails,statistics&id=${videoId}&key=${apiKey}`;
 
       try {
@@ -42,37 +41,52 @@ export default function YouTubeViewers({
   }, [videoId, apiKey]);
 
   return (
-    <div className="flex items-center justify-center w-full h-full bg-transparent p-4 font-sans">
-      {/* 🟢 SLEEK SPLIT-PILL DESIGN FOR OBS */}
-      <div className="flex items-stretch bg-black/60 rounded-2xl shadow-lg border border-white/10 overflow-hidden backdrop-blur-sm">
-        {/* LIVE VIEWERS SECTION */}
-        <div className="flex items-center px-6 py-3 bg-red-500/10 border-r border-white/10">
-          <span className="text-red-500 text-2xl mr-3 animate-pulse drop-shadow-[0_0_8px_rgba(239,68,68,0.8)]">
-            🔴
-          </span>
-          <div className="flex flex-col">
-            <span className="text-white/60 text-[10px] font-black uppercase tracking-widest leading-none mb-1">
-              Live Now
-            </span>
-            <span className="text-white text-4xl font-black drop-shadow-md leading-none tracking-wide">
-              {liveViewers}
-            </span>
-          </div>
-        </div>
+    <>
+      {/* 🟢 THE FIX: Force all React parent containers to be completely transparent */}
+      <style>
+        {`
+          html, body, #root {
+            background-color: transparent !important;
+            background: transparent !important;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+          }
+        `}
+      </style>
 
-        {/* TOTAL VIEWS SECTION */}
-        <div className="flex items-center px-6 py-3 bg-white/5">
-          <Eye className="text-gray-400 mr-3 shrink-0" size={28} />
-          <div className="flex flex-col">
-            <span className="text-white/60 text-[10px] font-black uppercase tracking-widest leading-none mb-1">
-              Total Views
+      <div className="flex items-center justify-center w-screen h-screen bg-transparent p-4 font-sans overflow-hidden">
+        {/* SLEEK SPLIT-PILL DESIGN FOR OBS */}
+        <div className="flex items-stretch bg-black/60 rounded-2xl shadow-lg border border-white/10 overflow-hidden backdrop-blur-sm">
+          {/* LIVE VIEWERS SECTION */}
+          <div className="flex items-center px-6 py-3 bg-red-500/10 border-r border-white/10">
+            <span className="text-red-500 text-2xl mr-3 animate-pulse drop-shadow-[0_0_8px_rgba(239,68,68,0.8)]">
+              🔴
             </span>
-            <span className="text-white text-4xl font-black drop-shadow-md leading-none tracking-wide">
-              {totalViews}
-            </span>
+            <div className="flex flex-col">
+              <span className="text-white/60 text-[10px] font-black uppercase tracking-widest leading-none mb-1">
+                Live Now
+              </span>
+              <span className="text-white text-4xl font-black drop-shadow-md leading-none tracking-wide">
+                {liveViewers}
+              </span>
+            </div>
+          </div>
+
+          {/* TOTAL VIEWS SECTION */}
+          <div className="flex items-center px-6 py-3 bg-white/5">
+            <Eye className="text-gray-400 mr-3 shrink-0" size={28} />
+            <div className="flex flex-col">
+              <span className="text-white/60 text-[10px] font-black uppercase tracking-widest leading-none mb-1">
+                Total Views
+              </span>
+              <span className="text-white text-4xl font-black drop-shadow-md leading-none tracking-wide">
+                {totalViews}
+              </span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

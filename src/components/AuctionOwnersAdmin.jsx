@@ -502,7 +502,7 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
         let finalOwnerId = payload.selectedPlayerId;
         let ownerDetails = null;
 
-        // 1. Handle New Profile
+        // 1. Handle New Profile vs Existing Profile
         if (payload.mode === "new") {
           const newPlayerRef = doc(collection(db, "globalPlayers"));
           transaction.set(newPlayerRef, {
@@ -520,21 +520,22 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
         } else {
           const p = globalPlayers.find((x) => x.id === finalOwnerId);
           ownerDetails = {
-            name: p?.name,
+            name: p?.name || "Unknown",
             photoURL: p?.photoURL || "",
-            role: p?.role,
+            // 🟢 FIXED: If they are playing, use the form role. If not, use their DB role, or fallback to "Owner"
+            role: payload.isPlayer ? payload.playerRole : p?.role || "Owner",
             stats: p?.stats || {},
           };
         }
 
-        // 🟢 2. Prepare Team Update with Group & Color
+        // 2. Prepare Team Update
         const teamData = {
           name: payload.teamName,
           purse: payload.purse,
-          group: payload.teamGroup.trim().toUpperCase(), // Synced from Form
-          color: payload.teamColor, // Synced from Form
+          group: payload.teamGroup.trim().toUpperCase(),
+          color: payload.teamColor,
           ownerId: finalOwnerId,
-          ownerName: ownerDetails.name,
+          ownerName: ownerDetails.name || "Unknown",
           logoUrl: payload.logoUrl || null,
         };
 
@@ -569,16 +570,18 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
           const querySnap = await getDocs(existingQuery);
 
           let auctionPlayerDocId;
+
+          // 🟢 FIXED: Added strict fallbacks so 'undefined' is NEVER passed to Firestore
           const auctionPlayerData = {
             originalPlayerId: finalOwnerId,
-            name: ownerDetails.name,
-            role: ownerDetails.role,
+            name: ownerDetails.name || "Unknown",
+            role: ownerDetails.role || "All-Rounder", // Prevents the crash!
             status: "SOLD",
             teamId: teamRef.id,
             soldPrice: 0,
             isOwner: true,
             isIcon: true,
-            photoURL: ownerDetails.photoURL,
+            photoURL: ownerDetails.photoURL || "",
           };
 
           if (!querySnap.empty) {
@@ -600,13 +603,13 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
           transaction.update(teamRef, {
             roster: arrayUnion({
               id: auctionPlayerDocId,
-              name: ownerDetails.name,
-              role: ownerDetails.role,
+              name: ownerDetails.name || "Unknown",
+              role: ownerDetails.role || "All-Rounder", // Prevents the crash!
               soldPrice: 0,
               isOwner: true,
               isIcon: true,
               originalId: finalOwnerId,
-              photoURL: ownerDetails.photoURL,
+              photoURL: ownerDetails.photoURL || "",
             }),
           });
         }
@@ -616,6 +619,7 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
       await fetchData();
     } catch (e) {
       alert("Transaction failed: " + e.message);
+      console.error(e);
     } finally {
       setProcessing(false);
     }
