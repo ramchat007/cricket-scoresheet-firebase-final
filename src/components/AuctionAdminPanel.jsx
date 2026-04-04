@@ -40,10 +40,10 @@ const PlayerRow = React.memo(
   }) => {
     const { theme, lightMode } = useTheme();
     const [tempTeam, setTempTeam] = useState("");
-    const [tempPrice, setTempPrice] = useState(p.basePrice || 100);
+    const [tempPrice, setTempPrice] = useState(p.basePrice || 0);
 
     useEffect(() => {
-      setTempPrice(p.basePrice || 100);
+      setTempPrice(p.basePrice || 0);
     }, [p.basePrice]);
 
     const handleAssignClick = () => {
@@ -64,8 +64,7 @@ const PlayerRow = React.memo(
 
     return (
       <tr
-        className={`hover:${lightMode ? "bg-gray-50" : "bg-[#0F1115]/50"} transition-colors group`}
-      >
+        className={`hover:${lightMode ? "bg-gray-50" : "bg-[#0F1115]/50"} transition-colors group`}>
         <td className={`p-5 font-bold ${theme.text} whitespace-nowrap`}>
           <div>
             {p.name}
@@ -80,8 +79,7 @@ const PlayerRow = React.memo(
               <select
                 className={`${inputClass} w-32`}
                 value={tempTeam}
-                onChange={(e) => setTempTeam(e.target.value)}
-              >
+                onChange={(e) => setTempTeam(e.target.value)}>
                 <option value="">Select Team</option>
                 {teams.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -97,8 +95,7 @@ const PlayerRow = React.memo(
               />
               <button
                 onClick={handleAssignClick}
-                className="bg-teal-600 text-white px-3 py-2 rounded-lg text-[9px] font-black uppercase hover:bg-teal-500 transition-colors shadow-sm"
-              >
+                className="bg-teal-600 text-white px-3 py-2 rounded-lg text-[9px] font-black uppercase hover:bg-teal-500 transition-colors shadow-sm">
                 Assign
               </button>
             </div>
@@ -117,8 +114,7 @@ const PlayerRow = React.memo(
                 doc(db, "tournaments", tournamentId, "auctionPlayers", p.id),
                 { auctionSlotId: e.target.value },
               )
-            }
-          >
+            }>
             <option value="">-- Unassigned --</option>
             {slots.map((s) => (
               <option key={s.id} value={s.id}>
@@ -156,8 +152,7 @@ const PlayerRow = React.memo(
               p.isIcon
                 ? "text-amber-500 scale-110"
                 : "text-gray-400 hover:text-gray-500 dark:text-slate-700 dark:hover:text-slate-500"
-            }`}
-          >
+            }`}>
             ★
           </button>
           {(poolFilter === "UNSOLD" || poolFilter === "SOLD") && (
@@ -167,15 +162,13 @@ const PlayerRow = React.memo(
                 lightMode
                   ? "bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100"
                   : "bg-teal-900/20 text-teal-400 border-teal-500/20 hover:bg-teal-900/30"
-              }`}
-            >
+              }`}>
               ↺ Reset
             </button>
           )}
           <button
             onClick={() => onDelete(p.id)}
-            className={`${theme.sub} hover:text-red-500 transition-colors p-2`}
-          >
+            className={`${theme.sub} hover:text-red-500 transition-colors p-2`}>
             🗑
           </button>
         </td>
@@ -273,17 +266,13 @@ const GlobalPlayerPicker = ({
 
   return (
     <div
-      className={`fixed inset-0 z-[120] flex items-center justify-center p-4 backdrop-blur-md ${lightMode ? "bg-white/80" : "bg-[#0F1115]/95"}`}
-    >
+      className={`fixed inset-0 z-[120] flex items-center justify-center p-4 backdrop-blur-md ${lightMode ? "bg-white/80" : "bg-[#0F1115]/95"}`}>
       <div
-        className={`${theme.card} border ${borderClass} w-full max-w-lg rounded-3xl flex flex-col max-h-[80vh] shadow-2xl`}
-      >
+        className={`${theme.card} border ${borderClass} w-full max-w-lg rounded-3xl flex flex-col max-h-[80vh] shadow-2xl`}>
         <div
-          className={`p-6 border-b ${borderClass} flex justify-between items-center ${headerFooterBg} rounded-t-3xl`}
-        >
+          className={`p-6 border-b ${borderClass} flex justify-between items-center ${headerFooterBg} rounded-t-3xl`}>
           <h3
-            className={`${theme.text} font-black uppercase tracking-tight text-lg italic`}
-          >
+            className={`${theme.text} font-black uppercase tracking-tight text-lg italic`}>
             Global Database
           </h3>
           <button
@@ -292,8 +281,7 @@ const GlobalPlayerPicker = ({
               lightMode
                 ? "bg-gray-200 text-gray-600 hover:bg-gray-300"
                 : "bg-white/5 text-slate-400 hover:bg-white/10"
-            }`}
-          >
+            }`}>
             ✕
           </button>
         </div>
@@ -308,8 +296,7 @@ const GlobalPlayerPicker = ({
 
           <div className="flex justify-between items-center mt-3">
             <label
-              className={`flex items-center gap-2 cursor-pointer text-[10px] sm:text-xs font-bold ${theme.sub}`}
-            >
+              className={`flex items-center gap-2 cursor-pointer text-[10px] sm:text-xs font-bold ${theme.sub}`}>
               <input
                 type="checkbox"
                 checked={tournamentOnly}
@@ -328,8 +315,7 @@ const GlobalPlayerPicker = ({
                   : lightMode
                     ? "bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200"
                     : "bg-white/5 text-slate-300 border-white/10 hover:bg-white/10"
-              }`}
-            >
+              }`}>
               {isAllSelected ? "Deselect All" : "Select All"}
             </button>
           </div>
@@ -360,8 +346,7 @@ const GlobalPlayerPicker = ({
                       : lightMode
                         ? "bg-white border-gray-200 hover:border-teal-300"
                         : "bg-[#0F1115] border-white/5 hover:border-white/10"
-                  }`}
-                >
+                  }`}>
                   <div className="flex items-center gap-3">
                     <div
                       className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black ${
@@ -372,19 +357,16 @@ const GlobalPlayerPicker = ({
                           : lightMode
                             ? "bg-gray-100 text-gray-600"
                             : "bg-white/5 text-slate-500"
-                      }`}
-                    >
+                      }`}>
                       {p.name.charAt(0)}
                     </div>
                     <div>
                       <div
-                        className={`text-sm font-bold ${isSel ? (lightMode ? "text-teal-700" : "text-teal-400") : theme.text}`}
-                      >
+                        className={`text-sm font-bold ${isSel ? (lightMode ? "text-teal-700" : "text-teal-400") : theme.text}`}>
                         {p.name}
                       </div>
                       <div
-                        className={`text-[10px] ${theme.sub} uppercase font-bold tracking-wider`}
-                      >
+                        className={`text-[10px] ${theme.sub} uppercase font-bold tracking-wider`}>
                         {p.role}
                       </div>
                     </div>
@@ -396,23 +378,20 @@ const GlobalPlayerPicker = ({
           )}
         </div>
         <div
-          className={`p-6 border-t ${borderClass} flex justify-end gap-3 rounded-b-3xl ${headerFooterBg}`}
-        >
+          className={`p-6 border-t ${borderClass} flex justify-end gap-3 rounded-b-3xl ${headerFooterBg}`}>
           <button
             onClick={onClose}
             className={`px-6 py-3 border rounded-xl font-black uppercase text-xs transition-colors ${
               lightMode
                 ? "text-gray-600 border-gray-300 hover:bg-gray-200"
                 : "text-slate-500 border-white/10 hover:bg-white/5"
-            }`}
-          >
+            }`}>
             Cancel
           </button>
           <button
             onClick={() => onImport(selected)}
             disabled={selected.length === 0}
-            className="bg-teal-600 text-white px-6 py-3 rounded-xl font-black text-xs uppercase shadow-lg disabled:opacity-30 active:scale-95 transition-all"
-          >
+            className="bg-teal-600 text-white px-6 py-3 rounded-xl font-black text-xs uppercase shadow-lg disabled:opacity-30 active:scale-95 transition-all">
             Import {selected.length} Players
           </button>
         </div>
@@ -450,7 +429,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
   const systemDefaults = {
     minSquadSize: 11,
     maxSquadSize: 15,
-    minBasePrice: 100,
+    minBasePrice: 0,
     bidIncrement: 100,
     maxBidPerPlayer: 0,
     maxIconsPerTeam: 2,
@@ -1061,24 +1040,21 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
   if (checkingAccess)
     return (
       <div
-        className={`fixed inset-0 ${theme.bg} flex items-center justify-center text-teal-500 font-bold z-[100]`}
-      >
+        className={`fixed inset-0 ${theme.bg} flex items-center justify-center text-teal-500 font-bold z-[100]`}>
         Checking Access...
       </div>
     );
   if (!hasAccess)
     return (
       <div
-        className={`fixed inset-0 ${theme.bg} flex items-center justify-center text-red-500 font-black uppercase z-[100]`}
-      >
+        className={`fixed inset-0 ${theme.bg} flex items-center justify-center text-red-500 font-black uppercase z-[100]`}>
         Access Denied
       </div>
     );
 
   return (
     <div
-      className={`fixed inset-0 z-[100] ${theme.bg} flex flex-col overflow-hidden`}
-    >
+      className={`fixed inset-0 z-[100] ${theme.bg} flex flex-col overflow-hidden`}>
       <GlobalPlayerPicker
         isOpen={showPicker}
         onClose={() => setShowPicker(false)}
@@ -1088,11 +1064,9 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
       />
 
       <div
-        className={`p-4 border-b ${borderClass} flex justify-between items-center ${theme.card}`}
-      >
+        className={`p-4 border-b ${borderClass} flex justify-between items-center ${theme.card}`}>
         <h2
-          className={`${theme.text} font-black flex items-center gap-3 uppercase tracking-tighter italic text-lg`}
-        >
+          className={`${theme.text} font-black flex items-center gap-3 uppercase tracking-tighter italic text-lg`}>
           <span className="bg-teal-600 text-white p-1.5 rounded-lg text-sm">
             ⚙️
           </span>{" "}
@@ -1100,15 +1074,13 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
         </h2>
         <button
           onClick={onClose}
-          className={`${lightMode ? "bg-gray-200 hover:bg-gray-300 text-gray-700" : "bg-white/5 hover:bg-white/10 text-white"} px-5 py-2.5 rounded-xl text-[10px] font-black uppercase transition-colors`}
-        >
+          className={`${lightMode ? "bg-gray-200 hover:bg-gray-300 text-gray-700" : "bg-white/5 hover:bg-white/10 text-white"} px-5 py-2.5 rounded-xl text-[10px] font-black uppercase transition-colors`}>
           Close
         </button>
       </div>
 
       <div
-        className={`flex border-b ${borderClass} ${lightMode ? "bg-gray-50" : "bg-[#161920]"} overflow-x-auto no-scrollbar`}
-      >
+        className={`flex border-b ${borderClass} ${lightMode ? "bg-gray-50" : "bg-[#161920]"} overflow-x-auto no-scrollbar`}>
         {["pool", "slots", "config", "teams", "matches"].map((t) => (
           <button
             key={t}
@@ -1117,8 +1089,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
               tab === t
                 ? "text-teal-500 border-teal-500 bg-teal-500/5"
                 : `${theme.sub} border-transparent hover:${theme.text}`
-            }`}
-          >
+            }`}>
             {t === "config" ? "Rules" : t === "teams" ? "Teams & Owners" : t}
           </button>
         ))}
@@ -1128,29 +1099,25 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
         {tab === "config" && (
           <div className="space-y-6 pb-20">
             <div
-              className={`border p-6 rounded-2xl flex justify-between items-center ${lightMode ? "bg-teal-50 border-teal-200" : "bg-teal-900/10 border-teal-500/20"}`}
-            >
+              className={`border p-6 rounded-2xl flex justify-between items-center ${lightMode ? "bg-teal-50 border-teal-200" : "bg-teal-900/10 border-teal-500/20"}`}>
               <div>
                 <h4 className="text-teal-600 dark:text-teal-400 font-black text-xs uppercase">
                   Repair Auction Signal
                 </h4>
                 <p
-                  className={`text-[10px] ${lightMode ? "text-teal-800/60" : "text-slate-500"}`}
-                >
+                  className={`text-[10px] ${lightMode ? "text-teal-800/60" : "text-slate-500"}`}>
                   Use if dashboard is stuck
                 </p>
               </div>
               <button
                 onClick={forceAuctionReady}
-                className="bg-teal-600 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-teal-700 transition-colors shadow-sm"
-              >
+                className="bg-teal-600 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-teal-700 transition-colors shadow-sm">
                 Repair
               </button>
             </div>
 
             <div
-              className={`${theme.card} p-6 rounded-2xl border ${borderClass} flex justify-between items-center mt-4 shadow-sm`}
-            >
+              className={`${theme.card} p-6 rounded-2xl border ${borderClass} flex justify-between items-center mt-4 shadow-sm`}>
               <div>
                 <h4 className={`${theme.text} font-black text-xs uppercase`}>
                   Limit: 1 Player Per Slot
@@ -1167,19 +1134,16 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   config.limitOnePlayerPerSlot
                     ? "bg-teal-600"
                     : "bg-gray-300 dark:bg-slate-700"
-                }`}
-              >
+                }`}>
                 <div
                   className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${
                     config.limitOnePlayerPerSlot ? "left-7" : "left-1"
-                  }`}
-                ></div>
+                  }`}></div>
               </button>
             </div>
 
             <div
-              className={`${theme.card} p-6 rounded-2xl border ${borderClass} flex justify-between items-center mt-4 shadow-sm`}
-            >
+              className={`${theme.card} p-6 rounded-2xl border ${borderClass} flex justify-between items-center mt-4 shadow-sm`}>
               <div>
                 <h4 className={`${theme.text} font-black text-xs uppercase`}>
                   Allow Direct Buy
@@ -1196,19 +1160,16 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   config.allowDirectBuy
                     ? "bg-teal-600"
                     : "bg-gray-300 dark:bg-slate-700"
-                }`}
-              >
+                }`}>
                 <div
                   className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${
                     config.allowDirectBuy ? "left-7" : "left-1"
-                  }`}
-                ></div>
+                  }`}></div>
               </button>
             </div>
 
             <div
-              className={`${theme.card} border ${borderClass} p-8 rounded-[2rem] shadow-xl relative overflow-hidden`}
-            >
+              className={`${theme.card} border ${borderClass} p-8 rounded-[2rem] shadow-xl relative overflow-hidden`}>
               <div className="mb-10">
                 <div className="flex justify-between items-center mb-6">
                   <h3 className={`${theme.text} font-black uppercase text-xs`}>
@@ -1216,8 +1177,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   </h3>
                   <button
                     onClick={addSlab}
-                    className="bg-teal-600 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-teal-700 shadow-sm transition-colors"
-                  >
+                    className="bg-teal-600 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-teal-700 shadow-sm transition-colors">
                     + Add Slab
                   </button>
                 </div>
@@ -1225,12 +1185,10 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   {(config.bidSlabs || []).map((slab, index) => (
                     <div
                       key={index}
-                      className={`flex gap-4 items-center p-3 rounded-xl border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}
-                    >
+                      className={`flex gap-4 items-center p-3 rounded-xl border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
                       <div className="flex-1">
                         <label
-                          className={`text-[8px] ${theme.sub} block mb-1 uppercase font-black`}
-                        >
+                          className={`text-[8px] ${theme.sub} block mb-1 uppercase font-black`}>
                           Up to (₹)
                         </label>
                         <input
@@ -1243,8 +1201,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                         />
                       </div>
                       <div
-                        className={`flex-1 border-l ${lightMode ? "border-gray-200" : "border-white/10"} pl-4`}
-                      >
+                        className={`flex-1 border-l ${lightMode ? "border-gray-200" : "border-white/10"} pl-4`}>
                         <label className="text-[8px] text-teal-500 block mb-1 uppercase font-black">
                           Inc (₹)
                         </label>
@@ -1259,8 +1216,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                       </div>
                       <button
                         onClick={() => removeSlab(index)}
-                        className="text-red-500 hover:text-red-600 text-xl px-2"
-                      >
+                        className="text-red-500 hover:text-red-600 text-xl px-2">
                         &times;
                       </button>
                     </div>
@@ -1269,15 +1225,13 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
               </div>
 
               <h3
-                className={`${theme.text} font-black uppercase text-xs mb-8 border-b ${borderClass} pb-4`}
-              >
+                className={`${theme.text} font-black uppercase text-xs mb-8 border-b ${borderClass} pb-4`}>
                 Auction Logic Configuration
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-2">
                   <label
-                    className={`text-[10px] font-black ${theme.sub} uppercase`}
-                  >
+                    className={`text-[10px] font-black ${theme.sub} uppercase`}>
                     Min Squad Size
                   </label>
                   <input
@@ -1291,8 +1245,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 </div>
                 <div className="space-y-2">
                   <label
-                    className={`text-[10px] font-black ${theme.sub} uppercase`}
-                  >
+                    className={`text-[10px] font-black ${theme.sub} uppercase`}>
                     Max Squad Size
                   </label>
                   <input
@@ -1306,8 +1259,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 </div>
                 <div className="space-y-2">
                   <label
-                    className={`text-[10px] font-black ${theme.sub} uppercase`}
-                  >
+                    className={`text-[10px] font-black ${theme.sub} uppercase`}>
                     Min Base Price
                   </label>
                   <input
@@ -1321,8 +1273,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 </div>
                 <div className="space-y-2">
                   <label
-                    className={`text-[10px] font-black ${theme.sub} uppercase`}
-                  >
+                    className={`text-[10px] font-black ${theme.sub} uppercase`}>
                     Fallback Increment
                   </label>
                   <input
@@ -1364,14 +1315,12 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
               <div className="flex gap-4 mt-12">
                 <button
                   onClick={handleResetRules}
-                  className={`flex-1 font-black py-5 rounded-xl uppercase text-xs border transition-colors ${lightMode ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100" : "bg-red-900/20 text-red-500 border-red-500/20 hover:bg-red-900/30"}`}
-                >
+                  className={`flex-1 font-black py-5 rounded-xl uppercase text-xs border transition-colors ${lightMode ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100" : "bg-red-900/20 text-red-500 border-red-500/20 hover:bg-red-900/30"}`}>
                   Reset Rules
                 </button>
                 <button
                   onClick={handleUpdateConfig}
-                  className="flex-[2] bg-teal-600 hover:bg-teal-700 text-white font-black py-5 rounded-xl uppercase text-xs shadow-lg transition-all active:scale-[0.98]"
-                >
+                  className="flex-[2] bg-teal-600 hover:bg-teal-700 text-white font-black py-5 rounded-xl uppercase text-xs shadow-lg transition-all active:scale-[0.98]">
                   Update Rules
                 </button>
               </div>
@@ -1379,24 +1328,20 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
 
             {/* 🔥 NEW DANGER ZONE SETTINGS */}
             <h3
-              className={`${theme.text} font-black uppercase text-xs mt-12 mb-6 border-b ${borderClass} pb-4 text-red-500 flex items-center gap-2`}
-            >
+              className={`${theme.text} font-black uppercase text-xs mt-12 mb-6 border-b ${borderClass} pb-4 text-red-500 flex items-center gap-2`}>
               <span>⚠️</span> Advanced Settings (Danger Zone)
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Feature 1: Sync Base Prices */}
               <div
-                className={`${theme.card} p-6 rounded-2xl border ${lightMode ? "border-blue-200 bg-blue-50/50" : "border-blue-500/20 bg-blue-900/10"} shadow-sm flex flex-col`}
-              >
+                className={`${theme.card} p-6 rounded-2xl border ${lightMode ? "border-blue-200 bg-blue-50/50" : "border-blue-500/20 bg-blue-900/10"} shadow-sm flex flex-col`}>
                 <h4
-                  className={`font-black text-xs uppercase ${lightMode ? "text-blue-700" : "text-blue-500"} mb-2`}
-                >
+                  className={`font-black text-xs uppercase ${lightMode ? "text-blue-700" : "text-blue-500"} mb-2`}>
                   Sync Base Prices
                 </h4>
                 <p
-                  className={`text-[10px] ${theme.sub} mb-6 flex-1 leading-relaxed`}
-                >
+                  className={`text-[10px] ${theme.sub} mb-6 flex-1 leading-relaxed`}>
                   Updates every player currently in the auction pool to match
                   your Min Base Price (₹{config.minBasePrice}). Useful when
                   setting up.
@@ -1404,56 +1349,47 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 <button
                   onClick={handleSyncBasePrice}
                   disabled={isResetting}
-                  className={`w-full px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${lightMode ? "bg-blue-100 text-blue-700 hover:bg-blue-200" : "bg-blue-600/20 text-blue-500 hover:bg-blue-600 hover:text-white"}`}
-                >
+                  className={`w-full px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${lightMode ? "bg-blue-100 text-blue-700 hover:bg-blue-200" : "bg-blue-600/20 text-blue-500 hover:bg-blue-600 hover:text-white"}`}>
                   {isResetting ? "Processing..." : "Sync Price To All"}
                 </button>
               </div>
 
               {/* Feature 2: Reset All Players */}
               <div
-                className={`${theme.card} p-6 rounded-2xl border ${lightMode ? "border-amber-200 bg-amber-50/50" : "border-amber-500/20 bg-amber-900/10"} shadow-sm flex flex-col`}
-              >
+                className={`${theme.card} p-6 rounded-2xl border ${lightMode ? "border-amber-200 bg-amber-50/50" : "border-amber-500/20 bg-amber-900/10"} shadow-sm flex flex-col`}>
                 <h4
-                  className={`font-black text-xs uppercase ${lightMode ? "text-amber-700" : "text-amber-500"} mb-2`}
-                >
+                  className={`font-black text-xs uppercase ${lightMode ? "text-amber-700" : "text-amber-500"} mb-2`}>
                   Reset Entire Pool
                 </h4>
                 <p
-                  className={`text-[10px] ${theme.sub} mb-6 flex-1 leading-relaxed`}
-                >
+                  className={`text-[10px] ${theme.sub} mb-6 flex-1 leading-relaxed`}>
                   Marks all SOLD and UNSOLD players back to PENDING. Removes
                   them from their assigned teams and refunds all budgets.
                 </p>
                 <button
                   onClick={handleResetAllPlayers}
                   disabled={isResetting}
-                  className={`w-full px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${lightMode ? "bg-amber-100 text-amber-700 hover:bg-amber-200" : "bg-amber-600/20 text-amber-500 hover:bg-amber-600 hover:text-white"}`}
-                >
+                  className={`w-full px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${lightMode ? "bg-amber-100 text-amber-700 hover:bg-amber-200" : "bg-amber-600/20 text-amber-500 hover:bg-amber-600 hover:text-white"}`}>
                   {isResetting ? "Processing..." : "Reset To Pending"}
                 </button>
               </div>
 
               {/* Feature 3: Delete Auction Pool */}
               <div
-                className={`${theme.card} p-6 rounded-2xl border ${lightMode ? "border-red-200 bg-red-50/50" : "border-red-500/20 bg-red-900/10"} shadow-sm flex flex-col`}
-              >
+                className={`${theme.card} p-6 rounded-2xl border ${lightMode ? "border-red-200 bg-red-50/50" : "border-red-500/20 bg-red-900/10"} shadow-sm flex flex-col`}>
                 <h4
-                  className={`font-black text-xs uppercase ${lightMode ? "text-red-700" : "text-red-500"} mb-2`}
-                >
+                  className={`font-black text-xs uppercase ${lightMode ? "text-red-700" : "text-red-500"} mb-2`}>
                   Delete All Data
                 </h4>
                 <p
-                  className={`text-[10px] ${theme.sub} mb-6 flex-1 leading-relaxed`}
-                >
+                  className={`text-[10px] ${theme.sub} mb-6 flex-1 leading-relaxed`}>
                   Completely wipes the auction pool and removes all players from
                   team rosters. Use this to start a fresh auction.
                 </p>
                 <button
                   onClick={handleClearAuctionPool}
                   disabled={isResetting}
-                  className={`w-full px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${lightMode ? "bg-red-100 text-red-700 hover:bg-red-200" : "bg-red-600/20 text-red-500 hover:bg-red-600 hover:text-white"}`}
-                >
+                  className={`w-full px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${lightMode ? "bg-red-100 text-red-700 hover:bg-red-200" : "bg-red-600/20 text-red-500 hover:bg-red-600 hover:text-white"}`}>
                   {isResetting ? "Processing..." : "Clear Auction Pool"}
                 </button>
               </div>
@@ -1474,11 +1410,9 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
             {/* Stats Overview */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div
-                className={`${theme.card} p-4 rounded-2xl border ${borderClass} shadow-sm`}
-              >
+                className={`${theme.card} p-4 rounded-2xl border ${borderClass} shadow-sm`}>
                 <div
-                  className={`text-[10px] ${theme.sub} uppercase font-black`}
-                >
+                  className={`text-[10px] ${theme.sub} uppercase font-black`}>
                   Total Pooled
                 </div>
                 <div className={`text-2xl ${theme.text} font-black`}>
@@ -1486,8 +1420,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 </div>
               </div>
               <div
-                className={`${theme.card} p-4 rounded-2xl border ${borderClass} shadow-sm`}
-              >
+                className={`${theme.card} p-4 rounded-2xl border ${borderClass} shadow-sm`}>
                 <div className="text-[10px] text-teal-600 dark:text-teal-500 uppercase font-black">
                   Sold
                 </div>
@@ -1496,8 +1429,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 </div>
               </div>
               <div
-                className={`${theme.card} p-4 rounded-2xl border ${borderClass} shadow-sm`}
-              >
+                className={`${theme.card} p-4 rounded-2xl border ${borderClass} shadow-sm`}>
                 <div className="text-[10px] text-amber-600 dark:text-orange-500 uppercase font-black">
                   Pending
                 </div>
@@ -1506,8 +1438,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 </div>
               </div>
               <div
-                className={`${theme.card} p-4 rounded-2xl border ${borderClass} shadow-sm`}
-              >
+                className={`${theme.card} p-4 rounded-2xl border ${borderClass} shadow-sm`}>
                 <div className="text-[10px] text-red-600 dark:text-red-500 uppercase font-black">
                   Unsold
                 </div>
@@ -1519,12 +1450,10 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
 
             {/* Toolbar */}
             <div
-              className={`flex flex-col md:flex-row justify-between items-center gap-4 ${theme.card} p-4 rounded-2xl border ${borderClass} shadow-sm`}
-            >
+              className={`flex flex-col md:flex-row justify-between items-center gap-4 ${theme.card} p-4 rounded-2xl border ${borderClass} shadow-sm`}>
               <div className="flex flex-wrap gap-3 items-center w-full md:w-auto">
                 <div
-                  className={`flex ${lightMode ? "bg-gray-100" : "bg-[#0F1115]"} rounded-xl p-1 border ${borderClass}`}
-                >
+                  className={`flex ${lightMode ? "bg-gray-100" : "bg-[#0F1115]"} rounded-xl p-1 border ${borderClass}`}>
                   {["PENDING", "SOLD", "UNSOLD"].map((f) => (
                     <button
                       key={f}
@@ -1533,8 +1462,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                         poolFilter === f
                           ? "bg-teal-600 text-white shadow-sm"
                           : `${theme.sub} hover:${theme.text}`
-                      }`}
-                    >
+                      }`}>
                       {f}{" "}
                       <span className="opacity-50 text-[9px] ml-1">
                         (
@@ -1551,8 +1479,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 <select
                   value={roleFilter}
                   onChange={(e) => setRoleFilter(e.target.value)}
-                  className={`${inputBgClass} text-xs font-bold px-4 py-2.5 rounded-xl border outline-none focus:border-teal-500`}
-                >
+                  className={`${inputBgClass} text-xs font-bold px-4 py-2.5 rounded-xl border outline-none focus:border-teal-500`}>
                   <option value="All">All Roles ({stats.total})</option>
                   <option value="Batsman">Batsman ({stats.batsmen})</option>
                   <option value="Bowler">Bowler ({stats.bowlers})</option>
@@ -1564,8 +1491,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 <select
                   value={slotFilter}
                   onChange={(e) => setSlotFilter(e.target.value)}
-                  className={`${inputBgClass} text-xs font-bold px-4 py-2.5 rounded-xl border outline-none focus:border-teal-500`}
-                >
+                  className={`${inputBgClass} text-xs font-bold px-4 py-2.5 rounded-xl border outline-none focus:border-teal-500`}>
                   <option value="All">All Slots</option>
                   <option value="Unassigned">
                     Unassigned ({unassignedCount})
@@ -1580,27 +1506,22 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
               </div>
               <button
                 onClick={() => setShowPicker(true)}
-                className="w-full md:w-auto bg-gradient-to-r from-teal-600 to-teal-500 text-white px-6 py-3 rounded-xl font-black text-xs uppercase shadow-lg hover:shadow-teal-500/20 active:scale-95 transition-all"
-              >
+                className="w-full md:w-auto bg-gradient-to-r from-teal-600 to-teal-500 text-white px-6 py-3 rounded-xl font-black text-xs uppercase shadow-lg hover:shadow-teal-500/20 active:scale-95 transition-all">
                 + Import Players
               </button>
             </div>
 
             {/* Table */}
             <div
-              className={`${theme.card} border ${borderClass} rounded-2xl overflow-hidden shadow-xl overflow-x-auto`}
-            >
+              className={`${theme.card} border ${borderClass} rounded-2xl overflow-hidden shadow-xl overflow-x-auto`}>
               <div
-                className={`p-4 border-b ${borderClass} ${lightMode ? "bg-gray-50" : "bg-[#161920]"} text-[10px] font-bold ${theme.sub} uppercase tracking-widest`}
-              >
+                className={`p-4 border-b ${borderClass} ${lightMode ? "bg-gray-50" : "bg-[#161920]"} text-[10px] font-bold ${theme.sub} uppercase tracking-widest`}>
                 Showing {displayList.length} Players
               </div>
               <table
-                className={`w-full text-left text-sm ${theme.text} min-w-[1000px]`}
-              >
+                className={`w-full text-left text-sm ${theme.text} min-w-[1000px]`}>
                 <thead
-                  className={`${lightMode ? "bg-gray-100" : "bg-[#0F1115]"} text-[10px] font-black ${theme.sub} border-b ${borderClass} uppercase tracking-widest`}
-                >
+                  className={`${lightMode ? "bg-gray-100" : "bg-[#0F1115]"} text-[10px] font-black ${theme.sub} border-b ${borderClass} uppercase tracking-widest`}>
                   <tr>
                     <th className="p-5">Name</th>
                     <th className="p-5">Force Assign</th>
@@ -1610,8 +1531,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                   </tr>
                 </thead>
                 <tbody
-                  className={`divide-y ${lightMode ? "divide-gray-200" : "divide-white/5"}`}
-                >
+                  className={`divide-y ${lightMode ? "divide-gray-200" : "divide-white/5"}`}>
                   {displayList.map((p) => (
                     <PlayerRow
                       key={p.id}
@@ -1642,8 +1562,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
         {tab === "slots" && (
           <div className="space-y-6 pb-20">
             <div
-              className={`${theme.card} border ${borderClass} p-6 rounded-[2rem] shadow-sm`}
-            >
+              className={`${theme.card} border ${borderClass} p-6 rounded-[2rem] shadow-sm`}>
               <div className="flex gap-3">
                 <input
                   className={`flex-1 rounded-xl px-5 py-3 outline-none font-bold border ${inputBgClass}`}
@@ -1653,8 +1572,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                 />
                 <button
                   onClick={handleCreateSlot}
-                  className="bg-amber-600 hover:bg-amber-500 text-white px-8 py-2 rounded-xl font-black uppercase tracking-wider text-xs transition-colors shadow-sm"
-                >
+                  className="bg-amber-600 hover:bg-amber-500 text-white px-8 py-2 rounded-xl font-black uppercase tracking-wider text-xs transition-colors shadow-sm">
                   Add Round
                 </button>
               </div>
@@ -1662,8 +1580,7 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
             {slots.map((s) => (
               <div
                 key={s.id}
-                className={`${theme.card} p-4 rounded-xl flex justify-between items-center mb-2 border ${borderClass} shadow-sm`}
-              >
+                className={`${theme.card} p-4 rounded-xl flex justify-between items-center mb-2 border ${borderClass} shadow-sm`}>
                 <div className="flex-1">
                   {editingSlotId === s.id ? (
                     <input
@@ -1683,14 +1600,12 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                     <>
                       <button
                         onClick={() => handleUpdateSlot(s.id)}
-                        className="text-emerald-600 dark:text-green-500 font-bold text-xs hover:underline"
-                      >
+                        className="text-emerald-600 dark:text-green-500 font-bold text-xs hover:underline">
                         Save
                       </button>
                       <button
                         onClick={handleCancelEdit}
-                        className={`${theme.sub} hover:${theme.text} text-xs font-bold hover:underline`}
-                      >
+                        className={`${theme.sub} hover:${theme.text} text-xs font-bold hover:underline`}>
                         Cancel
                       </button>
                     </>
@@ -1698,14 +1613,12 @@ export default function AuctionAdminPanel({ tournamentId, onClose }) {
                     <>
                       <button
                         onClick={() => handleEditSlot(s)}
-                        className={`${theme.sub} hover:text-teal-500 transition-colors`}
-                      >
+                        className={`${theme.sub} hover:text-teal-500 transition-colors`}>
                         ✎
                       </button>
                       <button
                         onClick={() => handleDeleteSlot(s.id)}
-                        className={`${theme.sub} hover:text-red-500 transition-colors`}
-                      >
+                        className={`${theme.sub} hover:text-red-500 transition-colors`}>
                         🗑
                       </button>
                     </>

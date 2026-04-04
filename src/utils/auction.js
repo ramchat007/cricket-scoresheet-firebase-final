@@ -28,7 +28,7 @@ export const getNextBidAmount = (currentBid) => {
 export const canAffordBid = (team, bidAmount, tournamentConfig) => {
   // 1. Check Config (Default to 10 if missing to fix your specific issue)
   const minSquadSize = parseInt(tournamentConfig?.minSquadSize || 10);
-  const minBasePrice = parseInt(tournamentConfig?.minBasePrice || 200);
+  const minBasePrice = parseInt(tournamentConfig?.minBasePrice || 0);
 
   // 2. Get Current Roster Count
   // We trust the array if it exists.

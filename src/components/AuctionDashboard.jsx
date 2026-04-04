@@ -565,7 +565,7 @@ export default function AuctionDashboard() {
             const maxSquadLimit =
               parseInt(tournamentConfig?.maxSquadSize) || 100;
             const minBasePrice =
-              parseInt(tournamentConfig?.minBasePrice) || 100;
+              parseInt(tournamentConfig?.minBasePrice) || 0;
             const maxBidPerPlayer =
               parseInt(tournamentConfig?.maxBidPerPlayer) || 3000;
             const maxIcons = parseInt(tournamentConfig?.maxIconsPerTeam) || 1;
