@@ -887,15 +887,40 @@ export default function BracketBuilder() {
 
       const batch = writeBatch(db);
       const tourneyRef = doc(db, "tournaments", id);
+
+      // 🟢 1. DATA DIET: Strip all heavy data (like base64 images) from the bracket blueprint
+      const leanMatches = matches.map((m) => {
+        const cleanSlot = (slot) => {
+          if (slot.type === "team" && slot.team) {
+            // ONLY keep the ID and Name. Drop the massive base64 logos!
+            return {
+              ...slot,
+              team: { id: slot.team.id, name: slot.team.name },
+            };
+          }
+          return slot;
+        };
+        return { ...m, slotA: cleanSlot(m.slotA), slotB: cleanSlot(m.slotB) };
+      });
+
+      // Save the lightweight version to the main tournament document
       batch.update(tourneyRef, {
         bracketLayout: {
           rounds,
-          matches,
+          matches: leanMatches, // 🔥 Uses the cleaned array!
           matchCounter,
           globalSettings,
           lastUpdated: Date.now(),
         },
       });
+
+      // 🟢 2. BASE64 FILTER: A helper to drop base64 strings but keep Cloudinary URLs
+      const getSafeLogo = (logoStr) => {
+        if (typeof logoStr === "string" && logoStr.startsWith("data:image")) {
+          return null; // Purge old base64
+        }
+        return logoStr || null; // Keep Cloudinary / standard links
+      };
 
       matches.forEach((m, index) => {
         const matchIdStr = `BRACKET-${m.id}`;
@@ -908,13 +933,12 @@ export default function BracketBuilder() {
         if (m.slotA.type === "team" && m.slotA.team) {
           teamAName = m.slotA.team.name;
           teamAId = m.slotA.team.id;
-          teamALogo = m.slotA.team.logo || m.slotA.team.logoUrl || null;
+          teamALogo = getSafeLogo(m.slotA.team.logo || m.slotA.team.logoUrl); // 🔥 Filter applied
         } else if (m.slotA.type === "link" && m.slotA.sourceMatchId)
           teamAName = `Winner of ${m.slotA.sourceMatchId}`;
         else if (m.slotA.type === "loser_link" && m.slotA.sourceMatchId)
           teamAName = `Loser of ${m.slotA.sourceMatchId}`;
         else if (m.slotA.type === "standing" && m.slotA.sourceMatchId) {
-          // Parse STANDING_A_1 into "1st Group A"
           const parts = m.slotA.sourceMatchId.split("_");
           const posStr =
             parts[2] === "1"
@@ -933,7 +957,7 @@ export default function BracketBuilder() {
         if (m.slotB.type === "team" && m.slotB.team) {
           teamBName = m.slotB.team.name;
           teamBId = m.slotB.team.id;
-          teamBLogo = m.slotB.team.logo || m.slotB.team.logoUrl || null;
+          teamBLogo = getSafeLogo(m.slotB.team.logo || m.slotB.team.logoUrl); // 🔥 Filter applied
         } else if (m.slotB.type === "link" && m.slotB.sourceMatchId)
           teamBName = `Winner of ${m.slotB.sourceMatchId}`;
         else if (m.slotB.type === "loser_link" && m.slotB.sourceMatchId)
