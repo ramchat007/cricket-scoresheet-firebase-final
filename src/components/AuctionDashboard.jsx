@@ -7,6 +7,9 @@ import {
   doc,
   getDoc,
   updateDoc,
+  runTransaction,
+  arrayUnion,
+  getDocs, // 🟢 IMPORTED getDocs
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { useAuth } from "../hooks/useAuth";
@@ -22,6 +25,7 @@ import {
 } from "../utils/auction";
 import AuctionAdminPanel from "./AuctionAdminPanel";
 import PlayerAvatar from "./PlayerAvatar";
+import { RefreshCw } from "lucide-react";
 
 export default function AuctionDashboard() {
   const { id: tournamentId } = useParams();
@@ -30,8 +34,11 @@ export default function AuctionDashboard() {
 
   const [auctionState, setAuctionState] = useState(null);
   const [allPlayers, setAllPlayers] = useState([]);
-  const [globalPlayers, setGlobalPlayers] = useState([]); // Will hold data from 'players' collection
+  const [globalPlayers, setGlobalPlayers] = useState([]);
   const [teams, setTeams] = useState([]);
+
+  const [processing, setProcessing] = useState(false);
+  const [customAmounts, setCustomAmounts] = useState({});
   const [teamsMap, setTeamsMap] = useState({});
   const [slots, setSlots] = useState([]);
   const [tournamentConfig, setTournamentConfig] = useState(null);
@@ -41,10 +48,7 @@ export default function AuctionDashboard() {
   const [queueTab, setQueueTab] = useState("upcoming");
   const [showAdmin, setShowAdmin] = useState(false);
   const [ruleOverride, setRuleOverride] = useState(false);
-
-  // State for global bidding mode and offline inputs
-  const [biddingMode, setBiddingMode] = useState("online"); // "online" or "offline"
-  const [customAmounts, setCustomAmounts] = useState({});
+  const [biddingMode, setBiddingMode] = useState("online");
 
   useEffect(() => {
     if (!user || !tournamentConfig) {
@@ -107,19 +111,23 @@ export default function AuctionDashboard() {
       },
     );
 
-    // Fetching from the root "players" collection
-    const unsubGlobal = onSnapshot(collection(db, "players"), (snapshot) => {
-      setGlobalPlayers(
-        snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
-      );
-    });
+    // 🟢 CRITICAL PERFORMANCE FIX:
+    // Replaced real-time onSnapshot with a single getDocs call.
+    // This stops the page from downloading 11MB of data repeatedly!
+    getDocs(collection(db, "players"))
+      .then((snapshot) => {
+        setGlobalPlayers(
+          snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
+        );
+      })
+      .catch((err) => console.error("Error loading global players:", err));
 
     return () => {
       unsubState?.();
       unsubTeams?.();
       unsubPlayers?.();
       unsubSlots?.();
-      unsubGlobal?.();
+      // Removed unsubGlobal because we are no longer listening live to the whole DB
     };
   }, [tournamentId]);
 
@@ -202,31 +210,88 @@ export default function AuctionDashboard() {
   const nextBidAmount =
     isLive || isPaused ? calculateNextBid(auctionState.currentBid) : 0;
 
-  const handleOfflineSell = async (teamId, teamName) => {
-    const amount = parseInt(customAmounts[teamId]);
-
-    if (!amount || isNaN(amount)) {
-      return alert("Please enter a valid amount.");
-    }
-    if (amount < (currentPlayer?.basePrice || 0)) {
-      return alert("Amount cannot be less than the player's base price.");
+  const handleOfflineSell = async (targetTeamId, priceString) => {
+    if (!currentPlayer || !targetTeamId) {
+      return alert("Invalid team selection.");
     }
 
-    if (
-      window.confirm(
-        `Are you sure you want to directly sell ${currentPlayer.name} to ${teamName} for ₹${amount.toLocaleString()}?`,
-      )
-    ) {
-      try {
-        await placeBid(tournamentId, teamId, teamName, amount);
-        setCustomAmounts((prev) => ({ ...prev, [teamId]: "" }));
+    const finalPrice = Number(priceString);
+    if (!finalPrice || finalPrice < (currentPlayer.basePrice || 0)) {
+      return alert("Sold price cannot be empty or less than base price.");
+    }
 
-        setTimeout(async () => {
-          await markSold(tournamentId);
-        }, 500);
-      } catch (error) {
-        alert("Error processing offline sale: " + error.message);
-      }
+    setProcessing(true);
+    try {
+      await runTransaction(db, async (transaction) => {
+        const teamRef = doc(
+          db,
+          "tournaments",
+          tournamentId,
+          "teams",
+          targetTeamId,
+        );
+        const playerRef = doc(
+          db,
+          "tournaments",
+          tournamentId,
+          "auctionPlayers",
+          currentPlayer.id,
+        );
+        const stateRef = doc(
+          db,
+          "tournaments",
+          tournamentId,
+          "auction",
+          "state",
+        );
+
+        const teamSnap = await transaction.get(teamRef);
+        if (!teamSnap.exists()) throw new Error("Team not found.");
+
+        const teamData = teamSnap.data();
+        const availablePurse = (teamData.purse || 0) - (teamData.spent || 0);
+
+        if (!ruleOverride && finalPrice > availablePurse) {
+          throw new Error(
+            `Team does not have enough purse. They only have ₹${availablePurse} remaining.`,
+          );
+        }
+
+        transaction.update(teamRef, {
+          spent: (teamData.spent || 0) + finalPrice,
+          roster: arrayUnion({
+            id: currentPlayer.id,
+            name: currentPlayer.name,
+            role: currentPlayer.role || "Player",
+            soldPrice: finalPrice,
+            isOwner: false,
+            photoURL: currentPlayer.photoURL || "",
+          }),
+        });
+
+        transaction.update(playerRef, {
+          status: "SOLD",
+          teamId: targetTeamId,
+          soldPrice: finalPrice,
+        });
+
+        transaction.update(stateRef, {
+          status: "SOLD",
+          currentBid: finalPrice,
+          currentBidderId: targetTeamId,
+          highestBidderId: targetTeamId,
+        });
+      });
+
+      setCustomAmounts((prev) => ({ ...prev, [targetTeamId]: "" }));
+      alert(
+        `${currentPlayer.name} successfully sold to ${teamsMap[targetTeamId]} for ₹${finalPrice}!`,
+      );
+    } catch (error) {
+      console.error("Offline sell failed:", error);
+      alert(error.message);
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -234,6 +299,26 @@ export default function AuctionDashboard() {
   const inputBgColor = lightMode
     ? "bg-gray-50 border-gray-200 text-gray-900"
     : "bg-[#0F1115] border-white/10 text-slate-200";
+
+  // 1. Add this new state variable
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // 2. Add this function right above your renderStage() function
+  const syncGlobalPlayers = async () => {
+    setIsSyncing(true);
+    try {
+      const snapshot = await getDocs(collection(db, "players"));
+      setGlobalPlayers(
+        snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
+      );
+      // Optional: A tiny visual confirmation it worked
+      setTimeout(() => setIsSyncing(false), 500);
+    } catch (err) {
+      console.error("Error syncing players:", err);
+      alert("Failed to sync players from database.");
+      setIsSyncing(false);
+    }
+  };
 
   const renderStage = () => {
     if ((!isLive && !isPaused) || !currentPlayer) {
@@ -305,14 +390,12 @@ export default function AuctionDashboard() {
       );
     }
 
-    // 🟢 1. SAFE LOOKUP: Try exact ID match first.
     let trueProfile = globalPlayers.find(
       (gp) =>
         String(gp.id) ===
         String(currentPlayer.originalPlayerId || currentPlayer.id),
     );
 
-    // 🟢 2. FALLBACK LOOKUP: If ID is missing, find by name and sort by MOST RECENTLY UPDATED.
     if (!trueProfile) {
       const matchingProfiles = globalPlayers.filter(
         (gp) =>
@@ -323,14 +406,12 @@ export default function AuctionDashboard() {
       trueProfile = matchingProfiles.sort((a, b) => {
         const dateA = new Date(a.updatedAt || a.createdAt || 0).getTime();
         const dateB = new Date(b.updatedAt || b.createdAt || 0).getTime();
-        return dateB - dateA; // The profile synced most recently jumps to the top!
+        return dateB - dateA;
       })[0];
     }
 
-    // 🟢 3. Use the stats from that correctly verified profile
     const playerStats =
       trueProfile?.stats || currentPlayer?.statsSnapshot || {};
-
     const matchesPlayed = parseInt(playerStats.matches || 0);
     const runsScored = parseInt(playerStats.runs || 0);
     const wicketsTaken = parseInt(playerStats.wickets || 0);
@@ -343,7 +424,6 @@ export default function AuctionDashboard() {
           className={`absolute top-0 left-0 w-full h-2 ${isPaused ? "bg-amber-500" : "bg-gradient-to-r from-teal-400 via-cyan-500 to-indigo-500 animate-pulse"}`}
         ></div>
 
-        {/* --- COMPACT PLAYER IMAGE --- */}
         <div className="relative z-10 flex flex-col items-center mt-2">
           <div className="relative">
             <PlayerAvatar
@@ -371,7 +451,6 @@ export default function AuctionDashboard() {
           </div>
         </div>
 
-        {/* --- QUICK STATS --- */}
         <div
           className={`grid grid-cols-3 gap-2 p-3 rounded-2xl border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-white/5 border-white/5"}`}
         >
@@ -407,7 +486,6 @@ export default function AuctionDashboard() {
           </div>
         </div>
 
-        {/* --- PRICES & LEADER --- */}
         <div className="grid grid-cols-2 gap-3">
           <div
             className={`${lightMode ? "bg-gray-100/50" : "bg-white/5"} p-3 rounded-xl border ${borderColor}`}
@@ -446,7 +524,6 @@ export default function AuctionDashboard() {
           </div>
         )}
 
-        {/* --- ADMIN CONTROLS --- */}
         {canEdit && (
           <div className="flex flex-col gap-2 mt-2">
             {biddingMode === "online" ? (
@@ -564,8 +641,7 @@ export default function AuctionDashboard() {
             const minSquadGoal = parseInt(tournamentConfig?.minSquadSize) || 10;
             const maxSquadLimit =
               parseInt(tournamentConfig?.maxSquadSize) || 100;
-            const minBasePrice =
-              parseInt(tournamentConfig?.minBasePrice) || 0;
+            const minBasePrice = parseInt(tournamentConfig?.minBasePrice) || 0;
             const maxBidPerPlayer =
               parseInt(tournamentConfig?.maxBidPerPlayer) || 3000;
             const maxIcons = parseInt(tournamentConfig?.maxIconsPerTeam) || 1;
@@ -806,17 +882,24 @@ export default function AuctionDashboard() {
                                   />
                                   <button
                                     onClick={() =>
-                                      handleOfflineSell(team.id, team.name)
+                                      handleOfflineSell(
+                                        team.id,
+                                        customAmounts[team.id],
+                                      )
                                     }
                                     disabled={
+                                      processing ||
+                                      !currentPlayer ||
+                                      auctionState?.status === "SOLD" ||
                                       !customAmounts[team.id] ||
-                                      (isDisabled &&
-                                        !isHighest &&
-                                        !ruleOverride)
+                                      Number(customAmounts[team.id]) <
+                                        (currentPlayer?.basePrice || 0)
                                     }
-                                    className={`w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all disabled:opacity-30 disabled:cursor-not-allowed ${lightMode ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-md" : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-900/20"}`}
+                                    className="w-full bg-teal-500 hover:bg-teal-400 text-white font-black uppercase tracking-widest px-6 py-4 rounded-xl shadow-lg transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                   >
-                                    Direct Sell 🔨
+                                    {processing
+                                      ? "Processing Sale..."
+                                      : "Sell Player"}
                                   </button>
                                 </div>
                               </div>
@@ -857,6 +940,10 @@ export default function AuctionDashboard() {
     }[queueTab];
     if (filterRole !== "All")
       displayList = displayList.filter((p) => p.role === filterRole);
+
+    // 🟢 LIMITING TO 24 PLAYERS SO IT DOESN'T LAG THE PAGE
+    const cappedList = displayList.slice(0, 24);
+
     return (
       <div
         className={`${theme.card} border ${borderColor} rounded-[2rem] p-6 mb-8 shadow-sm`}
@@ -896,20 +983,17 @@ export default function AuctionDashboard() {
           </select>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 max-h-96 overflow-y-auto custom-scrollbar pr-1">
-          {displayList.map((player) => (
+          {cappedList.map((player) => (
             <div
               key={player.id}
               className={`${lightMode ? "bg-white border-gray-200 hover:border-teal-300" : "bg-[#0F1115] border-white/5 hover:border-white/10"} p-4 rounded-xl border flex justify-between items-center group transition-all shadow-sm`}
             >
               <div className="flex items-center gap-4">
                 <div
-                  className={`w-12 h-12 rounded-lg overflow-hidden border ${lightMode ? "bg-gray-100 border-gray-200" : "bg-[#161920] border-white/5"}`}
+                  className={`w-12 h-12 rounded-lg overflow-hidden border flex items-center justify-center font-black text-lg ${lightMode ? "bg-gray-200 text-gray-500 border-gray-300" : "bg-gray-800 text-gray-400 border-gray-700"}`}
                 >
-                  <PlayerAvatar
-                    player={player}
-                    tournamentId={tournamentId}
-                    className="object-cover w-full h-full"
-                  />
+                  {/* 🟢 REPLACED HEAVY IMAGE WITH INITIALS */}
+                  {player.name ? player.name.charAt(0).toUpperCase() : "?"}
                 </div>
                 <div>
                   <div
@@ -946,6 +1030,12 @@ export default function AuctionDashboard() {
               </div>
             </div>
           ))}
+          {displayList.length > 24 && (
+            <div className="col-span-full text-center text-xs font-bold text-gray-500 py-4">
+              + {displayList.length - 24} more players hidden to optimize
+              performance.
+            </div>
+          )}
         </div>
       </div>
     );
@@ -964,7 +1054,6 @@ export default function AuctionDashboard() {
     <div
       className={`min-h-screen px-4 pb-24 pt-24 font-sans ${theme.bg} ${theme.text}`}
     >
-      {/* 🟢 Expanded max-width to allow side-by-side on big monitors */}
       <div className="max-w-[1400px] mx-auto">
         <div className="flex justify-between items-center mb-6">
           <Link
@@ -976,28 +1065,43 @@ export default function AuctionDashboard() {
             </span>{" "}
             Dashboard
           </Link>
+
           {canEdit && (
-            <button
-              onClick={() => setShowAdmin(true)}
-              className={`${theme.card} ${lightMode ? "hover:bg-gray-50 border-gray-200" : "hover:bg-white/5 border-white/10"} px-6 py-3 rounded-xl font-black text-xs text-teal-500 border uppercase tracking-widest shadow-sm transition-colors`}
-            >
-              ⚙️ Setup
-            </button>
+            <div className="flex items-center gap-3">
+              {/* 🟢 NEW SYNC BUTTON */}
+              <button
+                onClick={syncGlobalPlayers}
+                disabled={isSyncing}
+                className={`${theme.card} ${lightMode ? "hover:bg-indigo-50 border-indigo-200 text-indigo-600" : "hover:bg-indigo-900/20 border-indigo-500/30 text-indigo-400"} px-4 py-3 rounded-xl font-black text-xs border uppercase tracking-widest shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50`}
+              >
+                <RefreshCw
+                  size={14}
+                  className={isSyncing ? "animate-spin" : ""}
+                />
+                <span className="hidden sm:inline">
+                  {isSyncing ? "Syncing..." : "Sync Data"}
+                </span>
+              </button>
+
+              {/* Existing Setup Button */}
+              <button
+                onClick={() => setShowAdmin(true)}
+                className={`${theme.card} ${lightMode ? "hover:bg-gray-50 border-gray-200" : "hover:bg-white/5 border-white/10"} px-6 py-3 rounded-xl font-black text-xs text-teal-500 border uppercase tracking-widest shadow-sm transition-colors`}
+              >
+                ⚙️ Setup
+              </button>
+            </div>
           )}
         </div>
 
-        {/* 🟢 THE SPLIT COMMAND CENTER LAYOUT */}
         <div className="flex flex-col lg:flex-row gap-6 items-start">
-          {/* LEFT SIDEBAR: The Player Profile (Sticky on Desktop) */}
           <div className="w-full lg:w-[35%] xl:w-[28%] shrink-0 lg:sticky lg:top-24">
             {renderStage()}
           </div>
 
-          {/* RIGHT MAIN AREA: Bidding Console */}
           <div className="w-full lg:w-[65%] xl:w-[72%]">{renderBidders()}</div>
         </div>
 
-        {/* BOTTOM: Player Queue */}
         <div className="mt-8">{renderQueue()}</div>
 
         {showAdmin && canEdit && (

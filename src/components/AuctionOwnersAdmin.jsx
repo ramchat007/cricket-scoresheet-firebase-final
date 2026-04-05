@@ -504,7 +504,7 @@ export default function AuctionOwnersAdmin({ tournamentId }) {
 
         // 1. Handle New Profile vs Existing Profile
         if (payload.mode === "new") {
-          const newPlayerRef = doc(collection(db, "globalPlayers"));
+          const newPlayerRef = doc(collection(db, "players"));
           transaction.set(newPlayerRef, {
             name: payload.newOwnerData.name,
             role: payload.isPlayer ? payload.playerRole : "Owner",

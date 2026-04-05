@@ -93,6 +93,7 @@ export default function PlayerAvatar({
         e.target.src = fallback;
       }}
       alt={player?.name || "Player"}
+      loading="lazy"
       className={className}
       {...(forPoster ? { crossOrigin: "anonymous" } : {})}
     />
