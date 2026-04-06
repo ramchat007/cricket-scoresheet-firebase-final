@@ -82,8 +82,10 @@ export default function Navigation() {
   // Links Array
   const links = [
     { name: "Home", path: "/" },
+    { name: "About", path: "/about" },
     { name: "Global Stats", path: "/players" },
-    { name: "Dashboard", path: "/dashboard" }
+    { name: "Dashboard", path: "/dashboard" },
+    { name: "Contact", path: "/contact" }
   ];
 
   if (tournamentId && tournamentId !== "auction") {

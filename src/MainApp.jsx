@@ -3,6 +3,7 @@ import React, { Suspense, lazy, useEffect, useState } from "react";
 import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "./utils/firebase";
+import usePageTracking from "./hooks/usePageTracking";
 
 // --- COMPONENTS ---
 import Navigation from "./components/Navigation.jsx";
@@ -30,6 +31,9 @@ import ObsReceiver from "./components/Overlay/ObsReceiver.jsx";
 import RemoteControl from "./components/Overlay/RemoteControl.jsx";
 import YouTubeViewers from "./components/Overlay/YouTubeViewers.jsx";
 import AuctionOverlay from "./components/Overlay/AuctionOverlay.jsx";
+import AboutPage from "./components/About.jsx";
+import ContactPage from "./components/Contact.jsx";
+import { Helmet } from "react-helmet-async";
 
 // --- LAZY IMPORTS ---
 const LiveScoring = lazy(() => import("./components/LiveScoring.jsx"));
@@ -256,229 +260,293 @@ function AppContent() {
               <Route
                 path="/"
                 element={
-                  <div className="flex flex-col w-full pointer-events-none">
-                    {/* --- SCROLL 1: HERO --- */}
-                    <section className="h-[100vh] flex items-center px-4 md:px-10">
-                      <div className="max-w-4xl animate-in fade-in slide-in-from-bottom-10 duration-1000">
-                        <h1
-                          className={`text-7xl md:text-9xl font-black italic uppercase leading-none drop-shadow-2xl ${lightMode ? "text-gray-900" : "text-white"}`}
-                        >
-                          CricSync <br />{" "}
-                          <span className="text-cyan-500">Live</span>
-                        </h1>
-                        <p
-                          className={`text-xl md:text-2xl font-bold uppercase tracking-[0.3em] mt-6 ${lightMode ? "text-gray-500" : "text-white/70"}`}
-                        >
-                          The Complete Tournament OS
-                        </p>
-                        <div className="mt-12 text-sm font-bold tracking-widest text-cyan-500/50 uppercase animate-pulse">
-                          Scroll to explore ↓
-                        </div>
-                      </div>
-                    </section>
+                  <>
+                    <Helmet>
+                      <title>
+                        CricSync | The Industry Standard Tournament OS
+                      </title>
+                      <meta
+                        name="description"
+                        content="Elevating local and mega cricket tournaments with professional live scoring, IPL-style auctions, and TV-quality broadcast overlays."
+                      />
+                    </Helmet>
 
-                    {/* --- SCROLL 2: LIVE SCORING --- */}
-                    <section className="h-[100vh] flex items-center justify-start px-4 md:px-10">
-                      <div className="max-w-xl">
-                        <div className="flex items-center gap-4 mb-4">
-                          <div className="h-px w-12 bg-teal-500"></div>
-                          <span className="text-teal-500 font-bold uppercase tracking-widest text-xs">
-                            Module 01
-                          </span>
-                        </div>
-                        <h2
-                          className={`text-5xl md:text-7xl font-black uppercase italic mb-6 drop-shadow-lg ${lightMode ? "text-gray-900" : "text-white"}`}
-                        >
-                          Real-Time <br />{" "}
-                          <span className="text-teal-500">Precision</span>
-                        </h2>
-                        <p
-                          className={`text-lg font-medium drop-shadow-md ${lightMode ? "text-gray-600" : "text-gray-300"}`}
-                        >
-                          Low-latency scoring updates with comprehensive player
-                          and tournament statistics. Track individual and team
-                          performances both locally and across the global
-                          leaderboards.
-                        </p>
-                      </div>
-                    </section>
-
-                    {/* --- SCROLL 3: BROADCAST OVERLAYS --- */}
-                    <section className="h-[100vh] flex items-center justify-end px-4 md:px-10 text-right">
-                      <div className="max-w-xl flex flex-col items-end">
-                        <div className="flex items-center gap-4 mb-4">
-                          <span className="text-red-500 font-bold uppercase tracking-widest text-xs">
-                            Module 02
-                          </span>
-                          <div className="h-px w-12 bg-red-500"></div>
-                        </div>
-                        <h2
-                          className={`text-5xl md:text-7xl font-black uppercase italic mb-6 drop-shadow-lg ${lightMode ? "text-gray-900" : "text-white"}`}
-                        >
-                          Broadcast <br />{" "}
-                          <span className="text-red-600">Graphics</span>
-                        </h2>
-                        <p
-                          className={`text-lg font-medium drop-shadow-md ${lightMode ? "text-gray-600" : "text-gray-300"}`}
-                        >
-                          Cloud-controlled OBS overlays. Instantly push
-                          TV-quality lower thirds, live score bugs, and dynamic
-                          player profiles to your streams using our remote
-                          broadcast director.
-                        </p>
-                      </div>
-                    </section>
-
-                    {/* --- SCROLL 4: AUCTION PLATFORM --- */}
-                    <section className="h-[100vh] flex items-center justify-start px-4 md:px-10">
-                      <div className="max-w-xl">
-                        <div className="flex items-center gap-4 mb-4">
-                          <div className="h-px w-12 bg-amber-500"></div>
-                          <span className="text-amber-500 font-bold uppercase tracking-widest text-xs">
-                            Module 03
-                          </span>
-                        </div>
-                        <h2
-                          className={`text-5xl md:text-7xl font-black uppercase italic mb-6 drop-shadow-lg ${lightMode ? "text-gray-900" : "text-white"}`}
-                        >
-                          Live <br />{" "}
-                          <span className="text-amber-500">Auctions</span>
-                        </h2>
-                        <p
-                          className={`text-lg font-medium drop-shadow-md ${lightMode ? "text-gray-600" : "text-gray-300"}`}
-                        >
-                          Host IPL-style mega auctions. Manage global player
-                          registrations, organize squads, and execute intense
-                          live bidding wars with a real-time public viewer.
-                        </p>
-                      </div>
-                    </section>
-
-                    {/* --- SCROLL 5: TOURNAMENT BRACKETS --- */}
-                    <section className="h-[100vh] flex items-center justify-end px-4 md:px-10 text-right">
-                      <div className="max-w-xl flex flex-col items-end">
-                        <div className="flex items-center gap-4 mb-4">
-                          <span className="text-fuchsia-500 font-bold uppercase tracking-widest text-xs">
-                            Module 04
-                          </span>
-                          <div className="h-px w-12 bg-fuchsia-500"></div>
-                        </div>
-                        <h2
-                          className={`text-5xl md:text-7xl font-black uppercase italic mb-6 drop-shadow-lg ${lightMode ? "text-gray-900" : "text-white"}`}
-                        >
-                          Auto <br />{" "}
-                          <span className="text-fuchsia-600">Brackets</span>
-                        </h2>
-                        <p
-                          className={`text-lg font-medium drop-shadow-md ${lightMode ? "text-gray-600" : "text-gray-300"}`}
-                        >
-                          Generate visual knockout trees and fixtures. Keep
-                          teams and fans automatically updated as the tournament
-                          progresses from qualifiers to the grand finale.
-                        </p>
-                      </div>
-                    </section>
-
-                    {/* --- SCROLL 6: MATCH CENTER (Destination) --- */}
-                    <section
-                      className={`min-h-screen relative z-20 pointer-events-auto pt-24 pb-20 px-4 md:px-10 bg-gradient-to-b ${
-                        lightMode
-                          ? "from-transparent via-gray-50 to-gray-100"
-                          : "from-transparent via-[#0f0f0f] to-[#050505]"
-                      }`}
-                    >
-                      <div className="max-w-7xl mx-auto">
-                        <div className="mb-12 text-center relative flex flex-col items-center justify-center">
-                          <h2 className="text-sm font-black tracking-[0.4em] uppercase text-cyan-500 mb-2">
-                            Match Center
-                          </h2>
-                          <div className="h-1 w-24 bg-cyan-500 rounded-full opacity-50 mb-8"></div>
-
-                          {/* 🌍 GLOBAL FILTER & ACTIONS */}
-                          <div className="flex flex-wrap justify-center items-center gap-4 w-full max-w-2xl mx-auto">
-                            {/* Selector is now visible to everyone and filters the UI */}
-                            <div className="flex-1 min-w-[250px]">
-                              <TournamentSelector
-                                tournamentId={tournamentId}
-                                setTournamentId={setTournamentId}
-                                availableTournaments={availableTournaments}
-                              />
-                            </div>
-
-                            {/* 👑 ADMIN ONLY: Create Match Button */}
-                            {user && (
-                              <button
-                                onClick={() => setMatchId("new")}
-                                className="bg-cyan-600 hover:bg-cyan-500 text-white px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-cyan-500/20 active:scale-95 whitespace-nowrap border border-cyan-400/50"
-                              >
-                                + Create Match
-                              </button>
-                            )}
+                    <div className="flex flex-col w-full pointer-events-none">
+                      {/* --- SCROLL 0: HERO --- */}
+                      <section className="h-[100vh] flex items-center px-4 md:px-10">
+                        <div className="max-w-4xl animate-in fade-in slide-in-from-bottom-10 duration-1000">
+                          <h1
+                            className={`text-7xl md:text-9xl font-black italic uppercase leading-none drop-shadow-2xl ${lightMode ? "text-gray-900" : "text-white"}`}
+                          >
+                            CricSync <br />{" "}
+                            <span className="text-cyan-500">Live</span>
+                          </h1>
+                          <p
+                            className={`text-lg md:text-xl font-black uppercase tracking-[0.3em] mt-6 ${lightMode ? "text-gray-600" : "text-cyan-50"}`}
+                          >
+                            The Industry-Standard Tournament OS
+                          </p>
+                          <div className="mt-12 text-sm font-bold tracking-widest text-cyan-500/50 uppercase animate-pulse">
+                            Scroll to explore ↓
                           </div>
                         </div>
+                      </section>
 
-                        {/* 👑 ADMIN ONLY: Match Scheduler Dropdown */}
-                        {user && matchId === "new" && (
+                      {/* --- SCROLL 1: COMPREHENSIVE ORGANIZATION --- */}
+                      <section className="h-[100vh] flex items-center justify-start px-4 md:px-10">
+                        <div className="max-w-xl">
+                          <div className="flex items-center gap-4 mb-4">
+                            <div className="h-px w-12 bg-blue-500"></div>
+                            <span className="text-blue-500 font-bold uppercase tracking-widest text-xs">
+                              Module 01
+                            </span>
+                          </div>
+                          <h2
+                            className={`text-5xl md:text-7xl font-black uppercase italic mb-6 drop-shadow-lg ${lightMode ? "text-gray-900" : "text-white"}`}
+                          >
+                            Total <br />{" "}
+                            <span className="text-blue-500">Control</span>
+                          </h2>
+                          <p
+                            className={`text-lg font-medium drop-shadow-md ${lightMode ? "text-gray-600" : "text-gray-300"}`}
+                          >
+                            Organise tournaments seamlessly. From expert umpire
+                            management to assigning dedicated offline scorers,
+                            online scorers, and on-demand commentators, we bring
+                            absolute discipline to your league.
+                          </p>
+                        </div>
+                      </section>
+
+                      {/* --- SCROLL 2: REAL-TIME SCORING --- */}
+                      <section className="h-[100vh] flex items-center justify-end px-4 md:px-10 text-right">
+                        <div className="max-w-xl flex flex-col items-end">
+                          <div className="flex items-center gap-4 mb-4">
+                            <span className="text-teal-500 font-bold uppercase tracking-widest text-xs">
+                              Module 02
+                            </span>
+                            <div className="h-px w-12 bg-teal-500"></div>
+                          </div>
+                          <h2
+                            className={`text-5xl md:text-7xl font-black uppercase italic mb-6 drop-shadow-lg ${lightMode ? "text-gray-900" : "text-white"}`}
+                          >
+                            Real-Time <br />{" "}
+                            <span className="text-teal-500">Precision</span>
+                          </h2>
+                          <p
+                            className={`text-lg font-medium drop-shadow-md ${lightMode ? "text-gray-600" : "text-gray-300"}`}
+                          >
+                            Lightning-fast, ball-by-ball digital scoresheets
+                            engineered for professional match management. Track
+                            every delivery with industry-standard accuracy
+                            synced instantly across all devices.
+                          </p>
+                        </div>
+                      </section>
+
+                      {/* --- SCROLL 3: LIVE AUCTIONS --- */}
+                      <section className="h-[100vh] flex items-center justify-start px-4 md:px-10">
+                        <div className="max-w-xl">
+                          <div className="flex items-center gap-4 mb-4">
+                            <div className="h-px w-12 bg-amber-500"></div>
+                            <span className="text-amber-500 font-bold uppercase tracking-widest text-xs">
+                              Module 03
+                            </span>
+                          </div>
+                          <h2
+                            className={`text-5xl md:text-7xl font-black uppercase italic mb-6 drop-shadow-lg ${lightMode ? "text-gray-900" : "text-white"}`}
+                          >
+                            Live <br />{" "}
+                            <span className="text-amber-500">Auctions</span>
+                          </h2>
+                          <p
+                            className={`text-lg font-medium drop-shadow-md ${lightMode ? "text-gray-600" : "text-gray-300"}`}
+                          >
+                            Host IPL-style mega auctions with zero compromises.
+                            Manage extensive player registrations, verify team
+                            wallets, and execute intense live bidding wars
+                            effortlessly in real-time.
+                          </p>
+                        </div>
+                      </section>
+
+                      {/* --- SCROLL 4: BROADCAST GRAPHICS --- */}
+                      <section className="h-[100vh] flex items-center justify-end px-4 md:px-10 text-right">
+                        <div className="max-w-xl flex flex-col items-end">
+                          <div className="flex items-center gap-4 mb-4">
+                            <span className="text-red-500 font-bold uppercase tracking-widest text-xs">
+                              Module 04
+                            </span>
+                            <div className="h-px w-12 bg-red-500"></div>
+                          </div>
+                          <h2
+                            className={`text-5xl md:text-7xl font-black uppercase italic mb-6 drop-shadow-lg ${lightMode ? "text-gray-900" : "text-white"}`}
+                          >
+                            Broadcast <br />{" "}
+                            <span className="text-red-600">Overlays</span>
+                          </h2>
+                          <p
+                            className={`text-lg font-medium drop-shadow-md ${lightMode ? "text-gray-600" : "text-gray-300"}`}
+                          >
+                            Bring TV-network quality to grassroots streams.
+                            Seamless Live YouTube streaming integration
+                            featuring professional, remote-controlled,
+                            broadcast-ready OBS overlays.
+                          </p>
+                        </div>
+                      </section>
+
+                      {/* --- SCROLL 5: SMART BRACKETS --- */}
+                      <section className="h-[100vh] flex items-center justify-start px-4 md:px-10">
+                        <div className="max-w-xl">
+                          <div className="flex items-center gap-4 mb-4">
+                            <div className="h-px w-12 bg-fuchsia-500"></div>
+                            <span className="text-fuchsia-500 font-bold uppercase tracking-widest text-xs">
+                              Module 05
+                            </span>
+                          </div>
+                          <h2
+                            className={`text-5xl md:text-7xl font-black uppercase italic mb-6 drop-shadow-lg ${lightMode ? "text-gray-900" : "text-white"}`}
+                          >
+                            Smart <br />{" "}
+                            <span className="text-fuchsia-600">Brackets</span>
+                          </h2>
+                          <p
+                            className={`text-lg font-medium drop-shadow-md ${lightMode ? "text-gray-600" : "text-gray-300"}`}
+                          >
+                            Intelligent tournament trees and dynamic round-robin
+                            standings. Automatically advance winners and keep
+                            your teams perfectly synced from the first qualifier
+                            to the grand finale.
+                          </p>
+                        </div>
+                      </section>
+
+                      {/* --- SCROLL 6: GLOBAL PLAYER STATS & PROFILES --- */}
+                      <section className="h-[100vh] flex items-center justify-end px-4 md:px-10 text-right">
+                        <div className="max-w-xl flex flex-col items-end">
+                          <div className="flex items-center gap-4 mb-4">
+                            <span className="text-purple-500 font-bold uppercase tracking-widest text-xs">
+                              Module 06
+                            </span>
+                            <div className="h-px w-12 bg-purple-500"></div>
+                          </div>
+                          <h2
+                            className={`text-5xl md:text-7xl font-black uppercase italic mb-6 drop-shadow-lg ${lightMode ? "text-gray-900" : "text-white"}`}
+                          >
+                            Digital <br />{" "}
+                            <span className="text-purple-500">Identity</span>
+                          </h2>
+                          <p
+                            className={`text-lg font-medium drop-shadow-md ${lightMode ? "text-gray-600" : "text-gray-300"}`}
+                          >
+                            Track career milestones globally! Every run and
+                            wicket is automatically tallied across all
+                            tournaments, providing every player with a
+                            professional, shareable digital resume.
+                          </p>
+                        </div>
+                      </section>
+
+                      {/* --- SCROLL 7: MATCH CENTER (Destination) --- */}
+                      <section
+                        className={`min-h-screen relative z-20 pointer-events-auto pt-24 pb-20 px-4 md:px-10 bg-gradient-to-b ${
+                          lightMode
+                            ? "from-transparent via-gray-50 to-gray-100"
+                            : "from-transparent via-[#0f0f0f] to-[#050505]"
+                        }`}
+                      >
+                        <div className="max-w-7xl mx-auto">
+                          <div className="mb-12 text-center relative flex flex-col items-center justify-center">
+                            <h2 className="text-sm font-black tracking-[0.4em] uppercase text-cyan-500 mb-2">
+                              Match Center
+                            </h2>
+                            <div className="h-1 w-24 bg-cyan-500 rounded-full opacity-50 mb-8"></div>
+
+                            {/* 🌍 GLOBAL FILTER & ACTIONS */}
+                            <div className="flex flex-wrap justify-center items-center gap-4 w-full max-w-2xl mx-auto">
+                              <div className="flex-1 min-w-[250px]">
+                                <TournamentSelector
+                                  tournamentId={tournamentId}
+                                  setTournamentId={setTournamentId}
+                                  availableTournaments={availableTournaments}
+                                />
+                              </div>
+
+                              {/* 👑 ADMIN ONLY: Create Match Button */}
+                              {user && (
+                                <button
+                                  onClick={() => setMatchId("new")}
+                                  className="bg-cyan-600 hover:bg-cyan-500 text-white px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-cyan-500/20 active:scale-95 whitespace-nowrap border border-cyan-400/50"
+                                >
+                                  + Create Match
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* 👑 ADMIN ONLY: Match Scheduler Dropdown */}
+                          {user && matchId === "new" && (
+                            <div
+                              className={`mb-12 p-6 border rounded-3xl backdrop-blur-xl animate-in fade-in slide-in-from-top-4 shadow-2xl ${
+                                lightMode
+                                  ? "bg-white/80 border-cyan-200"
+                                  : "bg-black/60 border-cyan-500/30"
+                              }`}
+                            >
+                              <div
+                                className={`flex justify-between items-center mb-6 border-b pb-4 ${lightMode ? "border-gray-200" : "border-white/10"}`}
+                              >
+                                <h3
+                                  className={`text-xl font-black italic uppercase tracking-tight ${theme.text}`}
+                                >
+                                  Schedule New Match
+                                </h3>
+                                <button
+                                  onClick={() => setMatchId(null)}
+                                  className="text-gray-400 hover:text-cyan-500 text-xs font-bold uppercase tracking-widest transition-colors"
+                                >
+                                  Close ✕
+                                </button>
+                              </div>
+                              {tournamentId ? (
+                                <MatchScheduler
+                                  tournamentId={tournamentId}
+                                  teams={allTeams}
+                                  onCancel={() => setMatchId(null)}
+                                />
+                              ) : (
+                                <div className="p-6 bg-red-900/20 border border-red-500/30 rounded-xl text-center">
+                                  <span className="text-red-400 text-sm font-bold uppercase tracking-widest">
+                                    ⚠️ Please select a tournament from the
+                                    dropdown above first.
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* UNIVERSAL MATCH LIST */}
                           <div
-                            className={`mb-12 p-6 border rounded-3xl backdrop-blur-xl animate-in fade-in slide-in-from-top-4 shadow-2xl ${
+                            className={`border rounded-3xl p-8 backdrop-blur-md shadow-2xl ${
                               lightMode
-                                ? "bg-white/80 border-cyan-200"
-                                : "bg-black/60 border-cyan-500/30"
+                                ? "bg-white/50 border-gray-200"
+                                : "bg-white/5 border-white/10"
                             }`}
                           >
-                            <div
-                              className={`flex justify-between items-center mb-6 border-b pb-4 ${lightMode ? "border-gray-200" : "border-white/10"}`}
-                            >
-                              <h3
-                                className={`text-xl font-black italic uppercase tracking-tight ${theme.text}`}
-                              >
-                                Schedule New Match
-                              </h3>
-                              <button
-                                onClick={() => setMatchId(null)}
-                                className="text-gray-400 hover:text-cyan-500 text-xs font-bold uppercase tracking-widest transition-colors"
-                              >
-                                Close ✕
-                              </button>
-                            </div>
-                            {tournamentId ? (
-                              <MatchScheduler
-                                tournamentId={tournamentId}
-                                teams={allTeams}
-                                onCancel={() => setMatchId(null)}
-                              />
-                            ) : (
-                              <div className="p-6 bg-red-900/20 border border-red-500/30 rounded-xl text-center">
-                                <span className="text-red-400 text-sm font-bold uppercase tracking-widest">
-                                  ⚠️ Please select a tournament from the
-                                  dropdown above first.
-                                </span>
-                              </div>
-                            )}
+                            <MatchesPage
+                              availableTournaments={availableTournaments.filter(
+                                (t) => t.id === tournamentId,
+                              )}
+                              teams={allTeams}
+                              onSelect={handleMatchesPageSelect}
+                              readOnly={!user}
+                            />
                           </div>
-                        )}
-
-                        {/* UNIVERSAL MATCH LIST (Now dynamically filtered!) */}
-                        <div
-                          className={`border rounded-3xl p-8 backdrop-blur-md shadow-2xl ${
-                            lightMode
-                              ? "bg-white/50 border-gray-200"
-                              : "bg-white/5 border-white/10"
-                          }`}
-                        >
-                          <MatchesPage
-                            // This ensures the MatchesPage only renders the tournament selected in the dropdown!
-                            availableTournaments={availableTournaments.filter(
-                              (t) => t.id === tournamentId,
-                            )}
-                            teams={allTeams}
-                            onSelect={handleMatchesPageSelect}
-                            readOnly={!user}
-                          />
                         </div>
-                      </div>
-                    </section>
-                  </div>
+                      </section>
+                    </div>
+                  </>
                 }
               />
 
@@ -546,6 +614,8 @@ function AppContent() {
                 }
               />
               <Route path="/login" element={<Login />} />
+              <Route path="/about" element={<AboutPage />} />
+              <Route path="/contact" element={<ContactPage />} />
               <Route path="/register" element={<Register />} />
               <Route
                 path="/migrate"
@@ -589,6 +659,7 @@ function AppContent() {
 }
 
 export default function MainApp() {
+  usePageTracking();
   return (
     <ThemeProvider>
       <AppContent />
