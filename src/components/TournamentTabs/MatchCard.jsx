@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { doc, deleteDoc } from "firebase/firestore";
 import { db } from "../../utils/firebase";
+import { supabase } from "../../utils/supabase"; // 🟢 Added Supabase import
 import { useTheme } from "../../context/ThemeContext";
 import {
   Trash2,
@@ -23,17 +24,45 @@ export default function MatchCard({
   const navigate = useNavigate();
   const { theme, lightMode } = useTheme();
 
-  // --- DELETE HANDLER ---
+  // --- 🟢 UPDATED DUAL-DELETE HANDLER ---
   const handleDelete = async (e) => {
     e.stopPropagation();
-    if (!window.confirm(`Are you sure you want to delete this match?`)) return;
+    if (
+      !window.confirm(`Are you sure you want to delete this match completely?`)
+    )
+      return;
+
     try {
+      // 1. Delete from Firebase (Removes the document from Firestore)
       await deleteDoc(
         doc(db, "tournaments", tournamentId, "matches", match.id),
       );
+
+      // 2. Delete from Supabase (Removes the stats and metadata from PostgreSQL)
+      const targetId = match.id.startsWith("BRACKET-")
+        ? match.id
+        : `BRACKET-${match.id}`;
+
+      const { error: sbMatchError } = await supabase
+        .from("matches")
+        .delete()
+        .eq("id", targetId);
+
+      if (sbMatchError) throw sbMatchError;
+
+      // Note: Depending on your Supabase setup, you might also want to delete ball_events
+      // explicitly, but usually setting up "ON DELETE CASCADE" in Postgres is preferred!
+      const { error: sbBallError } = await supabase
+        .from("ball_events")
+        .delete()
+        .eq("match_id", targetId);
+
+      if (sbBallError) throw sbBallError;
+
+      alert("✅ Match permanently deleted.");
     } catch (error) {
       console.error("Error deleting match:", error);
-      alert("Failed to delete match.");
+      alert("Failed to completely delete match. Check console.");
     }
   };
 
@@ -102,9 +131,19 @@ export default function MatchCard({
   );
 
   const logoA =
-    tA?.logoUrl || tA?.logo || tA?.image || match.teamALogo || meta.teamALogo;
+    tA?.logoUrl ||
+    tA?.logo ||
+    tA?.image ||
+    match.teamALogo ||
+    meta.teamALogo ||
+    meta.teamA_logo; // Added teamA_logo fallback
   const logoB =
-    tB?.logoUrl || tB?.logo || tB?.image || match.teamBLogo || meta.teamBLogo;
+    tB?.logoUrl ||
+    tB?.logo ||
+    tB?.image ||
+    match.teamBLogo ||
+    meta.teamBLogo ||
+    meta.teamB_logo; // Added teamB_logo fallback
 
   // --- 5. STATUS & SCORES ---
   const status = (match?.status || "upcoming").toLowerCase();
@@ -172,12 +211,10 @@ export default function MatchCard({
       onClick={() =>
         navigate(`/tournaments/${tournamentId}/scorecard/${match.id}`)
       }
-      className={`group flex flex-col border rounded-2xl overflow-hidden transition-all duration-200 hover:shadow-md cursor-pointer ${lightMode ? "bg-white border-gray-200" : "bg-[#161920] border-white/5"}`}
-    >
+      className={`group flex flex-col border rounded-2xl overflow-hidden transition-all duration-200 hover:shadow-md cursor-pointer ${lightMode ? "bg-white border-gray-200" : "bg-[#161920] border-white/5"}`}>
       {/* HEADER */}
       <div
-        className={`px-4 py-2.5 flex justify-between items-center border-b ${lightMode ? "bg-gray-50/80 border-gray-100" : "bg-white/[0.02] border-white/5"}`}
-      >
+        className={`px-4 py-2.5 flex justify-between items-center border-b ${lightMode ? "bg-gray-50/80 border-gray-100" : "bg-white/[0.02] border-white/5"}`}>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
           {bracketId && (
             <span className="bg-cyan-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded shrink-0">
@@ -185,19 +222,16 @@ export default function MatchCard({
             </span>
           )}
           <span
-            className={`text-[10px] md:text-xs font-bold truncate uppercase ${theme.text}`}
-          >
+            className={`text-[10px] md:text-xs font-bold truncate uppercase ${theme.text}`}>
             {displayTitle}
           </span>
           <span
-            className={`flex items-center gap-1 text-[10px] md:text-xs ${theme.sub}`}
-          >
+            className={`flex items-center gap-1 text-[10px] md:text-xs ${theme.sub}`}>
             <MapPin size={10} className="text-cyan-500" /> {venue}
           </span>
           {formattedDate && (
             <span
-              className={`flex items-center gap-1 text-[10px] md:text-xs ${theme.sub}`}
-            >
+              className={`flex items-center gap-1 text-[10px] md:text-xs ${theme.sub}`}>
               <Clock size={10} /> {formattedDate}
             </span>
           )}
@@ -216,8 +250,7 @@ export default function MatchCard({
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <div
-              className={`shrink-0 w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center overflow-hidden border p-0.5 shadow-sm ${lightMode ? "bg-white border-gray-200" : "bg-black/40 border-white/10"}`}
-            >
+              className={`shrink-0 w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center overflow-hidden border p-0.5 shadow-sm ${lightMode ? "bg-white border-gray-200" : "bg-black/40 border-white/10"}`}>
               {logoA ? (
                 <img
                   src={logoA}
@@ -229,8 +262,7 @@ export default function MatchCard({
               )}
             </div>
             <span
-              className={`text-sm md:text-base font-bold leading-snug break-words ${theme.text}`}
-            >
+              className={`text-sm md:text-base font-bold leading-snug break-words ${theme.text}`}>
               {teamAName}
             </span>
           </div>
@@ -238,8 +270,7 @@ export default function MatchCard({
             {scoreA ? (
               <>
                 <span
-                  className={`text-base md:text-lg font-black font-mono leading-none ${theme.text}`}
-                >
+                  className={`text-base md:text-lg font-black font-mono leading-none ${theme.text}`}>
                   {scoreA.runs}
                   <span className="text-sm md:text-base opacity-60">
                     /{scoreA.wickets}
@@ -251,8 +282,7 @@ export default function MatchCard({
               </>
             ) : (
               <span
-                className={`text-xs italic opacity-40 font-medium ${theme.sub}`}
-              >
+                className={`text-xs italic opacity-40 font-medium ${theme.sub}`}>
                 Yet to bat
               </span>
             )}
@@ -262,8 +292,7 @@ export default function MatchCard({
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <div
-              className={`shrink-0 w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center overflow-hidden border p-0.5 shadow-sm ${lightMode ? "bg-white border-gray-200" : "bg-black/40 border-white/10"}`}
-            >
+              className={`shrink-0 w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center overflow-hidden border p-0.5 shadow-sm ${lightMode ? "bg-white border-gray-200" : "bg-black/40 border-white/10"}`}>
               {logoB ? (
                 <img
                   src={logoB}
@@ -275,8 +304,7 @@ export default function MatchCard({
               )}
             </div>
             <span
-              className={`text-sm md:text-base font-bold leading-snug break-words ${theme.text}`}
-            >
+              className={`text-sm md:text-base font-bold leading-snug break-words ${theme.text}`}>
               {teamBName}
             </span>
           </div>
@@ -284,8 +312,7 @@ export default function MatchCard({
             {scoreB ? (
               <>
                 <span
-                  className={`text-base md:text-lg font-black font-mono leading-none ${theme.text}`}
-                >
+                  className={`text-base md:text-lg font-black font-mono leading-none ${theme.text}`}>
                   {scoreB.runs}
                   <span className="text-sm md:text-base opacity-60">
                     /{scoreB.wickets}
@@ -297,8 +324,7 @@ export default function MatchCard({
               </>
             ) : (
               <span
-                className={`text-xs italic opacity-40 font-medium ${theme.sub}`}
-              >
+                className={`text-xs italic opacity-40 font-medium ${theme.sub}`}>
                 Yet to bat
               </span>
             )}
@@ -308,11 +334,9 @@ export default function MatchCard({
 
       {/* FOOTER */}
       <div
-        className={`px-4 py-2.5 border-t ${lightMode ? "bg-gray-50/50 border-gray-100" : "bg-white/[0.02] border-white/5"}`}
-      >
+        className={`px-4 py-2.5 border-t ${lightMode ? "bg-gray-50/50 border-gray-100" : "bg-white/[0.02] border-white/5"}`}>
         <p
-          className={`text-[10px] md:text-xs font-bold tracking-wide break-words leading-tight ${footerColorClass}`}
-        >
+          className={`text-[10px] md:text-xs font-bold tracking-wide break-words leading-tight ${footerColorClass}`}>
           {footerText}
         </p>
       </div>
@@ -320,14 +344,12 @@ export default function MatchCard({
       {/* ADMIN ACTIONS */}
       {canEdit && (
         <div
-          className={`px-3 py-2 flex items-center justify-between gap-2 border-t ${lightMode ? "bg-gray-50 border-gray-100" : "bg-white/[0.02] border-white/5"}`}
-        >
+          className={`px-3 py-2 flex items-center justify-between gap-2 border-t ${lightMode ? "bg-gray-50 border-gray-100" : "bg-white/[0.02] border-white/5"}`}>
           <div className="flex items-center gap-2">
             <button
               onClick={handleDelete}
               className="p-1.5 rounded-md hover:bg-red-100 dark:hover:bg-red-500/20 text-red-500 transition-colors"
-              title="Delete Match"
-            >
+              title="Delete Match">
               <Trash2 size={14} />
             </button>
             <button
@@ -336,8 +358,7 @@ export default function MatchCard({
                 onOpenCorrection(match);
               }}
               className={`p-1.5 rounded-md transition-colors ${lightMode ? "hover:bg-gray-200 text-gray-500" : "hover:bg-white/10 text-gray-400"}`}
-              title="Match Settings"
-            >
+              title="Match Settings">
               <Settings size={14} />
             </button>
           </div>
@@ -346,8 +367,7 @@ export default function MatchCard({
               e.stopPropagation();
               navigate(`/live/${tournamentId}/${match.id}`);
             }}
-            className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors ${lightMode ? "bg-teal-100 text-teal-700 hover:bg-teal-200" : "bg-teal-500/20 text-teal-400 hover:bg-teal-500/30"}`}
-          >
+            className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors ${lightMode ? "bg-teal-100 text-teal-700 hover:bg-teal-200" : "bg-teal-500/20 text-teal-400 hover:bg-teal-500/30"}`}>
             Scoring Board <ExternalLink size={12} />
           </button>
         </div>

@@ -7,6 +7,7 @@ import PlayerProfileModal from "./PlayerProfileModal";
 import TeamPosterModal from "./TeamPosterModal";
 import PlayerAvatar from "../PlayerAvatar";
 import { useTheme } from "../../context/ThemeContext";
+import { supabase } from "../../utils/supabase";
 import {
   Shield,
   Users,
@@ -18,6 +19,7 @@ import {
   CreditCard,
   Share2,
   RefreshCw,
+  CloudUpload,
   X, // 🟢 FIXED: X icon is now explicitly imported!
 } from "lucide-react";
 
@@ -177,12 +179,10 @@ const TeamStatsModal = ({
     <div className="fixed inset-0 z-[130] flex items-center justify-center p-2 md:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="absolute inset-0" onClick={onClose}></div>
       <div
-        className={`relative w-full max-w-4xl rounded-3xl md:rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col max-h-[90vh] ${theme.card} border ${lightMode ? "border-gray-200" : "border-white/10"}`}
-      >
+        className={`relative w-full max-w-4xl rounded-3xl md:rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col max-h-[90vh] ${theme.card} border ${lightMode ? "border-gray-200" : "border-white/10"}`}>
         {/* --- 🎨 POLISHED HEADER --- */}
         <div
-          className={`p-4 md:p-6 border-b flex flex-col md:flex-row justify-between items-start md:items-center gap-4 md:gap-0 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#161920] border-white/5"}`}
-        >
+          className={`p-4 md:p-6 border-b flex flex-col md:flex-row justify-between items-start md:items-center gap-4 md:gap-0 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#161920] border-white/5"}`}>
           {/* Left: Team Identity */}
           <div className="flex items-center gap-4 w-full md:w-auto">
             {team.logoUrl || team.logo ? (
@@ -198,14 +198,12 @@ const TeamStatsModal = ({
             )}
             <div className="flex-1 min-w-0">
               <h2
-                className={`text-xl md:text-2xl font-black uppercase italic truncate leading-tight ${theme.text}`}
-              >
+                className={`text-xl md:text-2xl font-black uppercase italic truncate leading-tight ${theme.text}`}>
                 {team.name}
               </h2>
               <div className="flex flex-wrap items-center gap-2 md:gap-3 mt-1">
                 <span
-                  className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold border shadow-sm ${lightMode ? "bg-white border-gray-200 text-gray-700" : "bg-slate-800 border-white/10 text-slate-300"}`}
-                >
+                  className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold border shadow-sm ${lightMode ? "bg-white border-gray-200 text-gray-700" : "bg-slate-800 border-white/10 text-slate-300"}`}>
                   P:{dbStats.played} W:{dbStats.won} L:{dbStats.lost}
                 </span>
 
@@ -213,8 +211,7 @@ const TeamStatsModal = ({
                   <button
                     onClick={onForceSync}
                     disabled={isFixingRosters}
-                    className={`flex items-center gap-1 text-[9px] font-black uppercase tracking-wider transition-colors ${lightMode ? "text-teal-600 hover:text-teal-700" : "text-teal-500 hover:text-teal-400"}`}
-                  >
+                    className={`flex items-center gap-1 text-[9px] font-black uppercase tracking-wider transition-colors ${lightMode ? "text-teal-600 hover:text-teal-700" : "text-teal-500 hover:text-teal-400"}`}>
                     <RefreshCw
                       size={10}
                       className={isFixingRosters ? "animate-spin" : ""}
@@ -228,8 +225,7 @@ const TeamStatsModal = ({
             {/* Mobile Close Button (Visible only on small screens) */}
             <button
               onClick={onClose}
-              className={`md:hidden w-8 h-8 flex items-center justify-center rounded-full shrink-0 ${lightMode ? "bg-gray-200 text-gray-600" : "bg-white/10 text-slate-400"}`}
-            >
+              className={`md:hidden w-8 h-8 flex items-center justify-center rounded-full shrink-0 ${lightMode ? "bg-gray-200 text-gray-600" : "bg-white/10 text-slate-400"}`}>
               <X size={16} />
             </button>
           </div>
@@ -237,14 +233,12 @@ const TeamStatsModal = ({
           {/* Right: Navigation Tabs & Desktop Close */}
           <div className="flex items-center justify-between md:justify-end w-full md:w-auto gap-4">
             <div
-              className={`flex p-1 rounded-xl border w-full md:w-auto ${lightMode ? "bg-gray-100 border-gray-200" : "bg-black/20 border-white/5"}`}
-            >
+              className={`flex p-1 rounded-xl border w-full md:w-auto ${lightMode ? "bg-gray-100 border-gray-200" : "bg-black/20 border-white/5"}`}>
               {["squad", "matches"].map((t) => (
                 <button
                   key={t}
                   onClick={() => setActiveTab(t)}
-                  className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-xs font-black uppercase transition-all ${activeTab === t ? "bg-teal-600 text-white shadow-md" : `text-slate-500 ${lightMode ? "hover:text-gray-800" : "hover:text-slate-300"}`}`}
-                >
+                  className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-xs font-black uppercase transition-all ${activeTab === t ? "bg-teal-600 text-white shadow-md" : `text-slate-500 ${lightMode ? "hover:text-gray-800" : "hover:text-slate-300"}`}`}>
                   {t}
                 </button>
               ))}
@@ -253,8 +247,7 @@ const TeamStatsModal = ({
             {/* Desktop Close Button */}
             <button
               onClick={onClose}
-              className={`hidden md:flex w-10 h-10 items-center justify-center rounded-full transition-all shrink-0 shadow-sm ${lightMode ? "bg-white border border-gray-200 hover:bg-gray-100 text-gray-500" : "bg-white/5 border border-white/10 hover:bg-white/10 text-slate-400 hover:text-white"}`}
-            >
+              className={`hidden md:flex w-10 h-10 items-center justify-center rounded-full transition-all shrink-0 shadow-sm ${lightMode ? "bg-white border border-gray-200 hover:bg-gray-100 text-gray-500" : "bg-white/5 border border-white/10 hover:bg-white/10 text-slate-400 hover:text-white"}`}>
               <X size={18} />
             </button>
           </div>
@@ -297,11 +290,9 @@ const TeamStatsModal = ({
                   (role) => (
                     <div
                       key={role}
-                      className={`p-3 rounded-xl border flex flex-col items-center justify-center shadow-sm ${lightMode ? "bg-gray-50 border-gray-200" : "bg-white/5 border-white/5"}`}
-                    >
+                      className={`p-3 rounded-xl border flex flex-col items-center justify-center shadow-sm ${lightMode ? "bg-gray-50 border-gray-200" : "bg-white/5 border-white/5"}`}>
                       <span
-                        className={`text-[10px] font-bold uppercase ${theme.sub}`}
-                      >
+                        className={`text-[10px] font-bold uppercase ${theme.sub}`}>
                         {role}
                       </span>
                       <span className={`text-xl font-black ${theme.text}`}>
@@ -312,12 +303,10 @@ const TeamStatsModal = ({
                 )}
               </div>
               <div
-                className={`rounded-2xl md:rounded-3xl border overflow-hidden shadow-sm ${lightMode ? "bg-white border-gray-200" : "bg-[#0F1115] border-white/5"}`}
-              >
+                className={`rounded-2xl md:rounded-3xl border overflow-hidden shadow-sm ${lightMode ? "bg-white border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
                 <table className="w-full text-left text-sm">
                   <thead
-                    className={`text-[10px] font-black uppercase ${lightMode ? "bg-gray-100 text-gray-500 border-b border-gray-200" : "bg-white/5 text-slate-500 border-b border-white/5"}`}
-                  >
+                    className={`text-[10px] font-black uppercase ${lightMode ? "bg-gray-100 text-gray-500 border-b border-gray-200" : "bg-white/5 text-slate-500 border-b border-white/5"}`}>
                     <tr>
                       <th className="p-4">Player</th>
                       <th className="p-4 hidden sm:table-cell">Role</th>
@@ -327,8 +316,7 @@ const TeamStatsModal = ({
                     </tr>
                   </thead>
                   <tbody
-                    className={`divide-y ${lightMode ? "divide-gray-100" : "divide-white/5"}`}
-                  >
+                    className={`divide-y ${lightMode ? "divide-gray-100" : "divide-white/5"}`}>
                     {roster.map((p, i) => {
                       const hydrated =
                         masterPlayersMap[p.originalPlayerId] ||
@@ -341,8 +329,7 @@ const TeamStatsModal = ({
                       return (
                         <tr
                           key={i}
-                          className={`transition-colors ${lightMode ? "hover:bg-gray-50" : "hover:bg-white/5"}`}
-                        >
+                          className={`transition-colors ${lightMode ? "hover:bg-gray-50" : "hover:bg-white/5"}`}>
                           <td className="p-3 md:p-4 flex items-center gap-3 md:gap-4">
                             <PlayerAvatar
                               player={hydrated}
@@ -358,8 +345,7 @@ const TeamStatsModal = ({
                             </span>
                           </td>
                           <td
-                            className={`p-4 text-xs font-bold uppercase hidden sm:table-cell ${theme.sub}`}
-                          >
+                            className={`p-4 text-xs font-bold uppercase hidden sm:table-cell ${theme.sub}`}>
                             {p.role}
                           </td>
                           {isAuctionEnabled && (
@@ -390,30 +376,25 @@ const TeamStatsModal = ({
                         `/tournaments/${currentTournamentId}/scorecard/${m.id}`,
                       )
                     }
-                    className={`p-4 rounded-2xl border cursor-pointer transition-all shadow-sm ${lightMode ? "bg-white border-gray-200 hover:border-teal-400 hover:shadow-md" : "bg-white/5 border-white/5 hover:border-teal-500/50 hover:bg-white/10"}`}
-                  >
+                    className={`p-4 rounded-2xl border cursor-pointer transition-all shadow-sm ${lightMode ? "bg-white border-gray-200 hover:border-teal-400 hover:shadow-md" : "bg-white/5 border-white/5 hover:border-teal-500/50 hover:bg-white/10"}`}>
                     <div className="flex items-center gap-4">
                       <div
-                        className={`w-10 h-10 md:w-12 md:h-12 shrink-0 rounded-full flex items-center justify-center text-[10px] md:text-xs font-black shadow-inner ${m.computedResult === "WON" ? "bg-teal-500 text-black" : m.computedResult === "LOST" ? "bg-red-500 text-white" : "bg-slate-700 text-white"}`}
-                      >
+                        className={`w-10 h-10 md:w-12 md:h-12 shrink-0 rounded-full flex items-center justify-center text-[10px] md:text-xs font-black shadow-inner ${m.computedResult === "WON" ? "bg-teal-500 text-black" : m.computedResult === "LOST" ? "bg-red-500 text-white" : "bg-slate-700 text-white"}`}>
                         {m.computedResult === "PENDING"
                           ? "TBD"
                           : m.computedResult}
                       </div>
                       <div>
                         <div
-                          className={`text-[10px] font-black uppercase tracking-widest mb-0.5 ${theme.sub}`}
-                        >
+                          className={`text-[10px] font-black uppercase tracking-widest mb-0.5 ${theme.sub}`}>
                           vs {m.computedOpponent}
                         </div>
                         <div
-                          className={`text-sm md:text-base font-bold leading-tight ${theme.text}`}
-                        >
+                          className={`text-sm md:text-base font-bold leading-tight ${theme.text}`}>
                           {m.computedResultText}
                         </div>
                         <div
-                          className={`text-[10px] md:text-xs mt-1 flex items-center gap-1.5 font-medium ${theme.sub}`}
-                        >
+                          className={`text-[10px] md:text-xs mt-1 flex items-center gap-1.5 font-medium ${theme.sub}`}>
                           <Calendar size={12} /> {m.displayDateTime}
                         </div>
                       </div>
@@ -440,31 +421,29 @@ const StatCard = ({
   theme,
 }) => (
   <div
-    className={`p-3 md:p-5 rounded-2xl md:rounded-3xl border text-center md:text-left shadow-lg ${lightMode ? "bg-white border-gray-200" : "bg-[#0F1115] border-white/5"} ${isBorder ? "border-b-4 border-b-green-500 md:border-b-0 md:border-l-4 md:border-l-green-500" : ""}`}
-  >
+    className={`p-3 md:p-5 rounded-2xl md:rounded-3xl border text-center md:text-left shadow-lg ${lightMode ? "bg-white border-gray-200" : "bg-[#0F1115] border-white/5"} ${isBorder ? "border-b-4 border-b-green-500 md:border-b-0 md:border-l-4 md:border-l-green-500" : ""}`}>
     <div className="flex items-center gap-2 mb-1 justify-center md:justify-start opacity-70">
       {Icon && <Icon size={12} className={theme.sub} />}
       <p
-        className={`text-[8px] md:text-[10px] uppercase font-black tracking-widest ${theme.sub}`}
-      >
+        className={`text-[8px] md:text-[10px] uppercase font-black tracking-widest ${theme.sub}`}>
         {label}
       </p>
     </div>
     <p
-      className={`text-sm md:text-2xl font-mono font-bold truncate ${color || theme.text}`}
-    >
+      className={`text-sm md:text-2xl font-mono font-bold truncate ${color || theme.text}`}>
       {value}
     </p>
   </div>
 );
 
 // --- MAIN TEAMS TAB ---
+// --- MAIN TEAMS TAB ---
 export default function TeamsTab({
   tournamentTeams = [],
   tournamentName,
   isAuctionEnabled,
   matches = [],
-  tournamentId: propTournamentId,
+  tournamentId,
 }) {
   const { theme, lightMode } = useTheme();
   const navigate = useNavigate();
@@ -477,13 +456,13 @@ export default function TeamsTab({
   const [isFixingRosters, setIsFixingRosters] = useState(false);
 
   const displayName = tournamentName || "OFFICIAL SQUAD";
-  const safeTournamentId = propTournamentId || urlTournamentId || "unknown";
+  const safeTournamentId = tournamentId || urlTournamentId || "unknown";
 
-  // 🟢 AGGRESSIVE DEEP SYNC LOGIC: Scans 5 different ways to find a photo
-  const syncPostAuctionRosters = async () => {
+  // 🟢 COMBINED MASTER SYNC: Fixes Firebase Photos AND Syncs to Supabase Broadcast in one click!
+  const handleMasterSync = async () => {
     if (
       !window.confirm(
-        "This will run an aggressive deep sync to find all missing photos across the Global and Tournament databases. Continue?",
+        "This will deep sync all missing photos from the global database AND push the updated rosters to the Broadcast Layer. Continue?",
       )
     )
       return;
@@ -494,14 +473,20 @@ export default function TeamsTab({
     try {
       const photoDictionary = {};
 
-      // 1. Scan Global Collection
+      // 1. Scan Global Collection (🔥 FIXED: Now checks inside tournamentData for the Cloudinary URL)
       const globalSnap = await getDocs(collection(db, "players"));
       globalSnap.forEach((doc) => {
         const d = doc.data();
-        const photo = d.photoURL || d.image || d.profilePic || "";
+        const tData = d.tournamentData?.[safeTournamentId] || {};
+
+        // Grab the best photo, prioritizing the tournament-specific Cloudinary URL we just made
+        const photo =
+          tData.photoURL || d.photoURL || d.image || d.profilePic || "";
+
         if (photo && photo.trim() !== "") {
-          photoDictionary[doc.id] = photo;
+          photoDictionary[doc.id] = photo; // Matches originalId
           if (d.originalPlayerId) photoDictionary[d.originalPlayerId] = photo;
+          if (d.originalId) photoDictionary[d.originalId] = photo;
           if (d.userId) photoDictionary[d.userId] = photo;
           if (d.name) photoDictionary[normalize(d.name)] = photo;
         }
@@ -517,27 +502,30 @@ export default function TeamsTab({
         const photo = d.photoURL || d.image || d.profilePic || "";
 
         if (photo && photo.trim() !== "") {
-          photoDictionary[doc.id] = photo;
+          photoDictionary[doc.id] = photo; // Matches auction ID
           if (d.name) photoDictionary[normalize(d.name)] = photo;
         }
-        if (d.originalPlayerId) {
-          bridgeMap[doc.id] = d.originalPlayerId;
-        }
+
+        // Map Auction ID back to Global ID
+        if (d.originalPlayerId) bridgeMap[doc.id] = d.originalPlayerId;
+        if (d.originalId) bridgeMap[doc.id] = d.originalId;
       });
 
-      // 3. Update Teams
+      // 3. Process Teams for BOTH Firebase and Supabase
       const teamsSnap = await getDocs(
         collection(db, "tournaments", safeTournamentId, "teams"),
       );
       const updatePromises = [];
+      const supabasePayload = [];
 
       teamsSnap.forEach((teamDoc) => {
         const teamData = teamDoc.data();
         let changed = false;
 
         const patchedRoster = (teamData.roster || []).map((player) => {
-          // Check all possible keys where this player might be saved
+          // 🔥 FIXED: Added `player.originalId` to the search keys!
           const searchKeys = [
+            player.originalId, // <--- This was the missing key!
             player.originalPlayerId,
             player.userId,
             player.id,
@@ -545,9 +533,11 @@ export default function TeamsTab({
             normalize(player.name),
           ];
 
-          let foundPhoto = player.photoURL || player.image || "";
+          // Use whatever photo is currently there as a baseline
+          let foundPhoto =
+            player.photoURL || player.photoUrl || player.image || "";
 
-          // Find the first valid photo in our massive dictionary
+          // Hunt through the dictionary for a better (Cloudinary) photo
           for (const key of searchKeys) {
             if (key && photoDictionary[key]) {
               foundPhoto = photoDictionary[key];
@@ -555,14 +545,15 @@ export default function TeamsTab({
             }
           }
 
-          // If we found a valid photo and it's missing or different, patch it!
+          // If we found a clean photo and the roster is empty/different, PATCH IT
           if (foundPhoto && player.photoURL !== foundPhoto) {
             changed = true;
-            return { ...player, photoURL: foundPhoto };
+            return { ...player, photoURL: foundPhoto, photoUrl: foundPhoto }; // Save to both camelCases just in case
           }
           return player;
         });
 
+        // If Firebase needs updating, queue it
         if (changed) {
           const teamRef = doc(
             db,
@@ -573,19 +564,50 @@ export default function TeamsTab({
           );
           updatePromises.push(updateDoc(teamRef, { roster: patchedRoster }));
         }
+
+        // Add to Supabase Payload
+        supabasePayload.push({
+          id: teamDoc.id,
+          tournament_id: safeTournamentId,
+          name: teamData.name,
+          logo: teamData.logoUrl || teamData.logo || teamData.image || null,
+          color: teamData.color || "#00b4d8",
+          owner: teamData.ownerName || teamData.owner || null,
+          roster: patchedRoster.map((p) => ({
+            id: p.id || p.originalId || Math.random().toString(36).substr(2, 9),
+            name: p.name,
+            role: p.role || "Squad Member",
+            isIcon: p.isIcon || false,
+            photoUrl: p.photoURL || p.photoUrl || p.image || null,
+          })),
+        });
       });
 
+      // 4. Await Firebase Updates
       if (updatePromises.length > 0) {
         await Promise.all(updatePromises);
-        alert(
-          `✅ Deep Sync Complete! Updated photos for ${updatePromises.length} teams. Refreshing...`,
+        console.log(
+          `Updated ${updatePromises.length} teams in Firebase with new photos.`,
         );
+      }
+
+      // 5. Push to Supabase Broadcast Layer
+      const { error: sbError } = await supabase
+        .from("teams")
+        .upsert(supabasePayload, { onConflict: "id" });
+
+      if (sbError) throw sbError;
+
+      alert(
+        `✅ Master Sync Complete!\n\nPhotos restored in Firebase and successfully pushed to the Broadcast Layer.`,
+      );
+
+      // Reload UI only if Firebase data actually changed locally
+      if (updatePromises.length > 0) {
         window.location.reload();
-      } else {
-        alert("✨ All rosters are already perfectly synced!");
       }
     } catch (error) {
-      console.error("Deep Sync Error:", error);
+      console.error("Master Sync Error:", error);
       alert("Sync failed. Check console.");
     } finally {
       setIsFixingRosters(false);
@@ -598,7 +620,6 @@ export default function TeamsTab({
       if (!safeTournamentId || safeTournamentId === "unknown") return;
       const tempMap = {};
 
-      // Combine both databases into one massive UI map
       const globalSnap = await getDocs(collection(db, "players"));
       globalSnap.forEach((doc) => {
         const d = doc.data();
@@ -632,8 +653,7 @@ export default function TeamsTab({
   if (!tournamentTeams.length)
     return (
       <div
-        className={`text-center py-20 rounded-3xl border border-dashed italic ${lightMode ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-[#161920] text-slate-600 border-white/5"}`}
-      >
+        className={`text-center py-20 rounded-3xl border border-dashed italic ${lightMode ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-[#161920] text-slate-600 border-white/5"}`}>
         No teams found in this tournament.
       </div>
     );
@@ -645,8 +665,7 @@ export default function TeamsTab({
           <Users className="text-teal-500" size={24} />
           <div>
             <h2
-              className={`font-black uppercase tracking-tight text-lg leading-tight ${theme.text}`}
-            >
+              className={`font-black uppercase tracking-tight text-lg leading-tight ${theme.text}`}>
               Tournament Squads
             </h2>
             <p className={`text-xs font-bold ${theme.sub}`}>
@@ -654,16 +673,19 @@ export default function TeamsTab({
             </p>
           </div>
         </div>
+
+        {/* 🟢 SINGLE MASTER SYNC BUTTON */}
         <button
-          onClick={syncPostAuctionRosters}
+          onClick={handleMasterSync}
           disabled={isFixingRosters}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase transition-all shadow-md active:scale-95 ${lightMode ? "bg-white border-2 border-teal-500 text-teal-600 hover:bg-teal-50" : "bg-black/40 border-2 border-teal-500/50 text-teal-400 hover:bg-teal-500/20"}`}
-        >
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase transition-all shadow-md active:scale-95 ${lightMode ? "bg-indigo-600 text-white hover:bg-indigo-700" : "bg-indigo-600 text-white hover:bg-indigo-500"}`}>
           <RefreshCw
             size={16}
-            className={isFixingRosters ? "animate-spin text-teal-500" : ""}
+            className={isFixingRosters ? "animate-spin" : ""}
           />
-          {isFixingRosters ? "Deep Syncing..." : "Fix Team Roster Photos"}
+          {isFixingRosters
+            ? "Deep Syncing..."
+            : "Master Sync: Photos & Broadcast"}
         </button>
       </div>
 
@@ -678,15 +700,13 @@ export default function TeamsTab({
           return (
             <div
               key={team.id}
-              className={`border rounded-[2rem] overflow-hidden shadow-xl flex flex-col h-full group relative ${lightMode ? "bg-white border-gray-200 hover:border-teal-300" : "bg-[#1C2128] border-white/5 hover:border-teal-500/30"}`}
-            >
+              className={`border rounded-[2rem] overflow-hidden shadow-xl flex flex-col h-full group relative ${lightMode ? "bg-white border-gray-200 hover:border-teal-300" : "bg-[#1C2128] border-white/5 hover:border-teal-500/30"}`}>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   setPosterTeam(team);
                 }}
-                className={`absolute top-5 right-5 z-20 w-8 h-8 flex items-center justify-center rounded-full transition-all border active:scale-95 shadow-lg ${lightMode ? "bg-white hover:bg-teal-600 text-gray-400 hover:text-white border-gray-200" : "bg-white/5 hover:bg-teal-600 text-slate-400 hover:text-white border-white/5"}`}
-              >
+                className={`absolute top-5 right-5 z-20 w-8 h-8 flex items-center justify-center rounded-full transition-all border active:scale-95 shadow-lg ${lightMode ? "bg-white hover:bg-teal-600 text-gray-400 hover:text-white border-gray-200" : "bg-white/5 hover:bg-teal-600 text-slate-400 hover:text-white border-white/5"}`}>
                 <Share2 size={14} />
               </button>
 
@@ -700,8 +720,7 @@ export default function TeamsTab({
                     />
                   ) : (
                     <div
-                      className={`w-16 h-16 rounded-2xl flex items-center justify-center text-2xl border shadow-inner ${lightMode ? "bg-gray-100 border-gray-200" : "bg-slate-800 border-white/10"}`}
-                    >
+                      className={`w-16 h-16 rounded-2xl flex items-center justify-center text-2xl border shadow-inner ${lightMode ? "bg-gray-100 border-gray-200" : "bg-slate-800 border-white/10"}`}>
                       <Shield size={32} className="text-gray-400" />
                     </div>
                   )}
@@ -711,34 +730,29 @@ export default function TeamsTab({
                 </div>
                 <div className="flex-1 min-w-0 pr-6">
                   <h3
-                    className={`text-xl font-black truncate italic uppercase tracking-tight leading-tight ${theme.text}`}
-                  >
+                    className={`text-xl font-black truncate italic uppercase tracking-tight leading-tight ${theme.text}`}>
                     {team.name}
                   </h3>
                   {isAuctionEnabled && (
                     <p
-                      className={`text-xs font-bold truncate mt-0.5 flex items-center gap-1.5 ${lightMode ? "text-amber-600" : "text-amber-500/80"}`}
-                    >
+                      className={`text-xs font-bold truncate mt-0.5 flex items-center gap-1.5 ${lightMode ? "text-amber-600" : "text-amber-500/80"}`}>
                       <Crown size={12} /> {team.ownerName || "No Owner"}
                     </p>
                   )}
                   <div className="flex gap-2 mt-2">
                     <span
-                      className={`text-[9px] border px-2 py-0.5 rounded font-mono shadow-sm ${lightMode ? "bg-gray-100 text-gray-600 border-gray-200" : "bg-white/5 text-slate-400 border-white/5"}`}
-                    >
+                      className={`text-[9px] border px-2 py-0.5 rounded font-mono shadow-sm ${lightMode ? "bg-gray-100 text-gray-600 border-gray-200" : "bg-white/5 text-slate-400 border-white/5"}`}>
                       P: {dbStats.played}
                     </span>
                     {dbStats.won > 0 && (
                       <span
-                        className={`text-[9px] px-2 py-0.5 rounded font-bold border shadow-sm ${lightMode ? "bg-teal-100 text-teal-700 border-teal-200" : "bg-teal-900/30 text-teal-400 border-teal-500/20"}`}
-                      >
+                        className={`text-[9px] px-2 py-0.5 rounded font-bold border shadow-sm ${lightMode ? "bg-teal-100 text-teal-700 border-teal-200" : "bg-teal-900/30 text-teal-400 border-teal-500/20"}`}>
                         W: {dbStats.won}
                       </span>
                     )}
                     {dbStats.lost > 0 && (
                       <span
-                        className={`text-[9px] px-2 py-0.5 rounded font-bold border shadow-sm ${lightMode ? "bg-red-100 text-red-700 border-red-200" : "bg-red-900/30 text-red-400 border-red-500/20"}`}
-                      >
+                        className={`text-[9px] px-2 py-0.5 rounded font-bold border shadow-sm ${lightMode ? "bg-red-100 text-red-700 border-red-200" : "bg-red-900/30 text-red-400 border-red-500/20"}`}>
                         L: {dbStats.lost}
                       </span>
                     )}
@@ -753,14 +767,12 @@ export default function TeamsTab({
                     <span
                       className={
                         remaining < 0 ? "text-red-500" : "text-teal-500"
-                      }
-                    >
+                      }>
                       {Math.round(spentPercentage)}%
                     </span>
                   </div>
                   <div
-                    className={`h-1.5 w-full rounded-full overflow-hidden flex shadow-inner ${lightMode ? "bg-gray-200" : "bg-white/5"}`}
-                  >
+                    className={`h-1.5 w-full rounded-full overflow-hidden flex shadow-inner ${lightMode ? "bg-gray-200" : "bg-white/5"}`}>
                     <div
                       className="h-full bg-gradient-to-r from-teal-500 to-emerald-400 transition-all duration-1000 shadow-[0_0_10px_rgba(20,184,166,0.3)]"
                       style={{ width: `${spentPercentage}%` }}
@@ -784,8 +796,7 @@ export default function TeamsTab({
                       <div
                         key={i}
                         className="relative cursor-pointer hover:scale-110 transition-transform group/player shadow-lg"
-                        onClick={() => setSelectedPlayer(hydrated)}
-                      >
+                        onClick={() => setSelectedPlayer(hydrated)}>
                         <PlayerAvatar
                           player={hydrated}
                           playerId={
@@ -815,8 +826,7 @@ export default function TeamsTab({
                   {team.roster?.length > 6 && (
                     <div
                       onClick={() => setViewingTeamStats(team)}
-                      className={`w-10 h-10 rounded-xl border flex items-center justify-center text-[10px] font-bold cursor-pointer transition-colors shadow-md ${lightMode ? "bg-gray-100 border-gray-200 text-gray-500 hover:bg-gray-200" : "bg-white/5 border-white/10 text-slate-500 hover:bg-white/10"}`}
-                    >
+                      className={`w-10 h-10 rounded-xl border flex items-center justify-center text-[10px] font-bold cursor-pointer transition-colors shadow-md ${lightMode ? "bg-gray-100 border-gray-200 text-gray-500 hover:bg-gray-200" : "bg-white/5 border-white/10 text-slate-500 hover:bg-white/10"}`}>
                       +{team.roster.length - 6}
                     </div>
                   )}
@@ -824,12 +834,10 @@ export default function TeamsTab({
               </div>
 
               <div
-                className={`p-4 mt-auto flex justify-center border-t transition-colors ${lightMode ? "bg-gray-50 border-gray-200 group-hover:bg-gray-100" : "bg-[#161920] border-white/5 group-hover:bg-[#1c2128]"}`}
-              >
+                className={`p-4 mt-auto flex justify-center border-t transition-colors ${lightMode ? "bg-gray-50 border-gray-200 group-hover:bg-gray-100" : "bg-[#161920] border-white/5 group-hover:bg-[#1c2128]"}`}>
                 <button
                   onClick={() => setViewingTeamStats(team)}
-                  className={`text-[10px] font-black uppercase tracking-widest hover:text-teal-500 transition-all flex items-center gap-2 group/btn ${theme.sub}`}
-                >
+                  className={`text-[10px] font-black uppercase tracking-widest hover:text-teal-500 transition-all flex items-center gap-2 group/btn ${theme.sub}`}>
                   View Team Analysis{" "}
                   <span className="text-teal-500 group-hover/btn:translate-x-1 transition-transform inline-block">
                     →
@@ -856,7 +864,7 @@ export default function TeamsTab({
         onClose={() => setViewingTeamStats(null)}
         isAuctionEnabled={isAuctionEnabled}
         masterPlayersMap={masterPlayersMap}
-        onForceSync={syncPostAuctionRosters}
+        onForceSync={handleMasterSync}
         isFixingRosters={isFixingRosters}
       />
       <TeamPosterModal

@@ -24,6 +24,7 @@ import TeamsTab from "./TeamsTab";
 import PointsTab from "./PointsTab";
 import PlayerStatsTab from "./PlayerStatsTab";
 import TournamentSettings from "./TournamentSettings";
+import SettingsTab from "./SettingsTab";
 
 export default function TournamentTabs({
   activeTab,
@@ -455,6 +456,7 @@ export default function TournamentTabs({
             tournamentName={tournamentName}
             isAuctionEnabled={isAuctionEnabled}
             matches={matches}
+            tournamentId={tournamentId}
           />
         )}
         {activeTab === "points" && (
@@ -496,26 +498,33 @@ export default function TournamentTabs({
                 Team Management
               </h3>
               {isAuctionEnabled ? (
-                <div
-                  className={`border rounded-xl p-5 md:p-8 text-center ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
-                  <div className="flex justify-center mb-3 md:mb-4">
-                    <Lock size={28} className="text-gray-400 md:w-8 md:h-8" />
+                <>
+                  <div
+                    className={`border rounded-xl p-5 md:p-8 text-center ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
+                    <div className="flex justify-center mb-3 md:mb-4">
+                      <Lock size={28} className="text-gray-400 md:w-8 md:h-8" />
+                    </div>
+                    <h4
+                      className={`font-bold text-sm md:text-base mb-1.5 md:mb-2 ${theme.text}`}>
+                      Rosters Locked
+                    </h4>
+                    <p
+                      className={`text-xs md:text-sm mb-4 md:mb-6 ${theme.sub}`}>
+                      Teams are managed in the Auction Console.
+                    </p>
+                    <button
+                      onClick={() =>
+                        navigate(`/tournaments/${tournamentId}/auction`)
+                      }
+                      className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold py-2.5 px-4 md:py-3 md:px-6 rounded-lg md:rounded-xl text-xs md:text-base shadow-lg hover:shadow-purple-500/20 transition-all">
+                      Go to Auction Console
+                    </button>
                   </div>
-                  <h4
-                    className={`font-bold text-sm md:text-base mb-1.5 md:mb-2 ${theme.text}`}>
-                    Rosters Locked
-                  </h4>
-                  <p className={`text-xs md:text-sm mb-4 md:mb-6 ${theme.sub}`}>
-                    Teams are managed in the Auction Console.
-                  </p>
-                  <button
-                    onClick={() =>
-                      navigate(`/tournaments/${tournamentId}/auction`)
-                    }
-                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold py-2.5 px-4 md:py-3 md:px-6 rounded-lg md:rounded-xl text-xs md:text-base shadow-lg hover:shadow-purple-500/20 transition-all">
-                    Go to Auction Console
-                  </button>
-                </div>
+                  <SettingsTab
+                    tournament={{ ...tournamentData, id: tournamentId }}
+                    canEdit={canEdit}
+                  />
+                </>
               ) : (
                 <TeamManager tournamentId={tournamentId} />
               )}

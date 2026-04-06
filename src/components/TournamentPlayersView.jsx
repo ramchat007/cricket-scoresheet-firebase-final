@@ -15,6 +15,7 @@ import {
   addDoc,
   setDoc,
   arrayUnion,
+  updateDoc,
 } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import {
@@ -22,6 +23,7 @@ import {
   listMatchesForTournament,
 } from "../utils/firestore";
 import { useAuth } from "../hooks/useAuth";
+import { uploadBase64ToCloudinary } from "../utils/helpers";
 
 // 1. Theme & Icons
 import { useTheme } from "../context/ThemeContext";
@@ -45,6 +47,7 @@ import {
   ArrowUpDown,
   LayoutGrid,
   List,
+  CloudUpload,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Download } from "lucide-react";
@@ -62,8 +65,7 @@ const NotificationToast = ({ message, type, onClose }) => {
         isError
           ? "bg-red-500/10 border-red-500/20 text-red-500 bg-white dark:bg-red-900/10"
           : "bg-teal-500/10 border-teal-500/20 text-teal-600 dark:text-teal-400 bg-white dark:bg-teal-900/10"
-      }`}
-    >
+      }`}>
       {isError ? <AlertCircle size={24} /> : <Check size={24} />}
       <div>
         <h4 className="font-bold text-base uppercase tracking-wider">
@@ -78,12 +80,14 @@ const NotificationToast = ({ message, type, onClose }) => {
   );
 };
 
-// --- CROP UTILITY FUNCTION ---
+// --- 🟢 CROP UTILITY FUNCTION (WITH TAINTED CANVAS FIX) ---
 const createImage = (url) =>
   new Promise((resolve, reject) => {
     const image = new Image();
     image.addEventListener("load", () => resolve(image));
     image.addEventListener("error", (error) => reject(error));
+    // Tells the browser it is safe to crop external Cloudinary images
+    image.setAttribute("crossOrigin", "anonymous");
     image.src = url;
   });
 
@@ -112,11 +116,6 @@ async function getCroppedImg(imageSrc, pixelCrop) {
 
   return canvas.toDataURL("image/jpeg", 0.8);
 }
-
-const handleCancelCrop = () => {
-  setCropModalOpen(false);
-  setImageToCrop(null);
-};
 
 export default function TournamentPlayersView() {
   const { tournamentId } = useParams();
@@ -208,21 +207,9 @@ export default function TournamentPlayersView() {
       return;
     }
 
-    // Map through the accurately calculated processedPlayers
     const formattedData = processedPlayers.map((player, index) => {
       const stats = player.calculatedStats || {};
       const tData = player.tournamentData?.[tournamentId] || {};
-
-      // Calculate advanced metrics
-      const strikeRate =
-        stats.ballsFaced > 0
-          ? ((stats.runs / stats.ballsFaced) * 100).toFixed(2)
-          : "0.00";
-      const oversBowled = stats.ballsBowled / 6;
-      const economy =
-        oversBowled > 0
-          ? (stats.runsConceded / oversBowled).toFixed(2)
-          : "0.00";
 
       return {
         "Sr No.": index + 1,
@@ -237,7 +224,6 @@ export default function TournamentPlayersView() {
     const worksheet = XLSX.utils.json_to_sheet(formattedData);
     const workbook = XLSX.utils.book_new();
 
-    // Auto-size columns for better readability in Excel
     const colWidths = [
       { wch: 8 }, // Sr No
       { wch: 25 }, // Name
@@ -250,7 +236,6 @@ export default function TournamentPlayersView() {
 
     XLSX.utils.book_append_sheet(workbook, worksheet, "Tournament Stats");
 
-    // Dynamic filename based on the current tournament URL
     const cleanTournamentName = tournamentId
       ? tournamentId.replace(/-/g, "_")
       : "Tournament";
@@ -319,6 +304,8 @@ export default function TournamentPlayersView() {
               if (b > 0 || isOut) {
                 p.calculatedStats.runs += r;
                 p.calculatedStats.ballsFaced += b;
+                p.calculatedStats.fours += Number(s.fours) || 0;
+                p.calculatedStats.sixes += Number(s.sixes) || 0;
                 if (!isOut) p.calculatedStats.notOuts += 1;
                 if (r > p.calculatedStats.highestScore)
                   p.calculatedStats.highestScore = r;
@@ -461,8 +448,7 @@ export default function TournamentPlayersView() {
 
   const SortIcon = ({ colKey }) => (
     <span
-      className={`ml-1 transition-opacity inline-block ${sortConfig.key === colKey ? "opacity-100" : "opacity-0 group-hover:opacity-50"}`}
-    >
+      className={`ml-1 transition-opacity inline-block ${sortConfig.key === colKey ? "opacity-100" : "opacity-0 group-hover:opacity-50"}`}>
       {sortConfig.key === colKey && sortConfig.direction === "asc" ? "↑" : "↓"}
     </span>
   );
@@ -486,15 +472,30 @@ export default function TournamentPlayersView() {
     setCroppedAreaPixels(croppedAreaPixels);
   }, []);
 
+  const handleCancelCrop = () => {
+    setCropModalOpen(false);
+    setImageToCrop(null);
+  };
+
   const handleSaveCrop = async () => {
     try {
       setProcessingImage(true);
-      const croppedImage = await getCroppedImg(imageToCrop, croppedAreaPixels);
-      setFormData((prev) => ({ ...prev, photoURL: croppedImage }));
+      const croppedImageBase64 = await getCroppedImg(
+        imageToCrop,
+        croppedAreaPixels,
+      );
+
+      showToast("Uploading photo to secure server...", "success");
+
+      const cloudinaryUrl = await uploadBase64ToCloudinary(croppedImageBase64);
+
+      setFormData((prev) => ({ ...prev, photoURL: cloudinaryUrl }));
+
       setCropModalOpen(false);
       setImageToCrop(null);
+      showToast("Photo uploaded successfully!");
     } catch (e) {
-      showToast("Failed to crop image", "error");
+      showToast("Failed to crop/upload image", "error");
     } finally {
       setProcessingImage(false);
     }
@@ -525,15 +526,108 @@ export default function TournamentPlayersView() {
     if (!file) return;
     setProcessingImage(true);
     try {
+      showToast("Uploading payment proof...", "success");
       const compressedBase64 = await compressImage(file, 600);
+      const cloudinaryUrl = await uploadBase64ToCloudinary(compressedBase64);
+
       setFormData((prev) => ({
         ...prev,
-        paymentScreenshotURL: compressedBase64,
+        paymentScreenshotURL: cloudinaryUrl,
       }));
+      showToast("Payment proof uploaded!");
     } catch (error) {
       showToast("Failed to process payment image", "error");
     } finally {
       setProcessingImage(false);
+    }
+  };
+
+  // 🟢 MASS MIGRATION: Convert old Firebase Base64 images to Cloudinary URLs
+  const handleBulkCloudinaryMigration = async () => {
+    if (
+      !window.confirm(
+        "This will scan all players in this tournament and convert any heavy base64 images into clean Cloudinary URLs. This may take a minute. Continue?",
+      )
+    )
+      return;
+
+    setLoading(true);
+    let migratedCount = 0;
+
+    try {
+      showToast("Starting Cloudinary migration... Please wait.", "success");
+      const playersRef = collection(db, "players");
+      const q = query(
+        playersRef,
+        where("registeredTournaments", "array-contains", tournamentId),
+      );
+      const querySnapshot = await getDocs(q);
+
+      for (const docSnap of querySnapshot.docs) {
+        const pData = docSnap.data();
+        const tData = pData.tournamentData?.[tournamentId] || {};
+        let needsUpdate = false;
+
+        let updatePayload = { updatedAt: new Date().toISOString() };
+        let freshlyGeneratedGlobalUrl = null;
+
+        if (
+          pData.photoURL &&
+          typeof pData.photoURL === "string" &&
+          pData.photoURL.startsWith("data:image")
+        ) {
+          console.log(`Migrating global photo for ${pData.name}...`);
+          const cleanUrl = await uploadBase64ToCloudinary(pData.photoURL);
+          updatePayload.photoURL = cleanUrl;
+          freshlyGeneratedGlobalUrl = cleanUrl;
+          needsUpdate = true;
+        }
+
+        if (
+          tData.photoURL &&
+          typeof tData.photoURL === "string" &&
+          tData.photoURL.startsWith("data:image")
+        ) {
+          console.log(`Migrating tournament photo for ${pData.name}...`);
+          if (tData.photoURL === pData.photoURL && freshlyGeneratedGlobalUrl) {
+            updatePayload[`tournamentData.${tournamentId}.photoURL`] =
+              freshlyGeneratedGlobalUrl;
+          } else {
+            const cleanUrl = await uploadBase64ToCloudinary(tData.photoURL);
+            updatePayload[`tournamentData.${tournamentId}.photoURL`] = cleanUrl;
+          }
+          needsUpdate = true;
+        }
+
+        if (
+          tData.paymentScreenshotURL &&
+          typeof tData.paymentScreenshotURL === "string" &&
+          tData.paymentScreenshotURL.startsWith("data:image")
+        ) {
+          console.log(`Migrating payment screenshot for ${pData.name}...`);
+          const cleanUrl = await uploadBase64ToCloudinary(
+            tData.paymentScreenshotURL,
+          );
+          updatePayload[`tournamentData.${tournamentId}.paymentScreenshotURL`] =
+            cleanUrl;
+          needsUpdate = true;
+        }
+
+        if (needsUpdate) {
+          await updateDoc(doc(db, "players", docSnap.id), updatePayload);
+          migratedCount++;
+        }
+      }
+
+      alert(
+        `✅ Migration Complete! Successfully moved ${migratedCount} player records to Cloudinary.`,
+      );
+      loadTournamentData();
+    } catch (error) {
+      console.error("Migration Error:", error);
+      alert("❌ Migration failed. Check console for details.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -682,16 +776,13 @@ export default function TournamentPlayersView() {
 
   const DetailItem = ({ label, value, isMono = false }) => (
     <div
-      className={`flex flex-col p-4 rounded-xl border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#161920] border-white/5"}`}
-    >
+      className={`flex flex-col p-4 rounded-xl border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#161920] border-white/5"}`}>
       <span
-        className={`text-[10px] uppercase font-black mb-1.5 tracking-wider ${theme.sub}`}
-      >
+        className={`text-[10px] uppercase font-black mb-1.5 tracking-wider ${theme.sub}`}>
         {label}
       </span>
       <span
-        className={`text-sm break-words font-bold ${isMono ? "font-mono text-teal-500" : theme.text}`}
-      >
+        className={`text-sm break-words font-bold ${isMono ? "font-mono text-teal-500" : theme.text}`}>
         {value || "N/A"}
       </span>
     </div>
@@ -702,8 +793,7 @@ export default function TournamentPlayersView() {
 
   return (
     <div
-      className={`min-h-screen p-4 md:p-6 pb-20 font-sans transition-colors duration-300 ${theme.bg} ${theme.text}`}
-    >
+      className={`min-h-screen p-4 md:p-6 pb-20 font-sans transition-colors duration-300 ${theme.bg} ${theme.text}`}>
       <NotificationToast
         message={notification?.message}
         type={notification?.type}
@@ -744,14 +834,12 @@ export default function TournamentPlayersView() {
             <div className="flex justify-between gap-4 px-4">
               <button
                 onClick={handleCancelCrop}
-                className="flex-1 py-4 rounded-xl border border-white/20 text-white font-bold uppercase tracking-widest text-sm hover:bg-white/10 transition-colors"
-              >
+                className="flex-1 py-4 rounded-xl border border-white/20 text-white font-bold uppercase tracking-widest text-sm hover:bg-white/10 transition-colors">
                 Cancel
               </button>
               <button
                 onClick={handleSaveCrop}
-                className="flex-1 py-4 rounded-xl bg-indigo-500 text-white font-black uppercase tracking-widest text-sm shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
-              >
+                className="flex-1 py-4 rounded-xl bg-indigo-500 text-white font-black uppercase tracking-widest text-sm shadow-lg shadow-indigo-500/20 active:scale-95 transition-all">
                 Save Picture
               </button>
             </div>
@@ -763,12 +851,10 @@ export default function TournamentPlayersView() {
       {selectedPlayer && (
         <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
           <div
-            className={`relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-3xl shadow-2xl p-6 md:p-8 custom-scrollbar ${lightMode ? "bg-white border border-gray-200" : "bg-[#1C2128] border border-white/10"}`}
-          >
+            className={`relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-3xl shadow-2xl p-6 md:p-8 custom-scrollbar ${lightMode ? "bg-white border border-gray-200" : "bg-[#1C2128] border border-white/10"}`}>
             <button
               onClick={() => setSelectedPlayer(null)}
-              className="absolute top-4 right-4 md:top-6 md:right-6 p-2 rounded-full bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 transition-colors z-10"
-            >
+              className="absolute top-4 right-4 md:top-6 md:right-6 p-2 rounded-full bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 transition-colors z-10">
               <X size={24} />
             </button>
 
@@ -786,8 +872,7 @@ export default function TournamentPlayersView() {
               <div className="flex-grow pt-2 w-full">
                 <div className="flex flex-wrap sm:flex-nowrap items-start sm:items-center gap-3 mb-2 pr-12 md:pr-14">
                   <h2
-                    className={`text-2xl md:text-3xl font-black italic tracking-tight break-words ${theme.text}`}
-                  >
+                    className={`text-2xl md:text-3xl font-black italic tracking-tight break-words ${theme.text}`}>
                     {selectedPlayer.name}
                   </h2>
                   {user && (
@@ -797,22 +882,19 @@ export default function TournamentPlayersView() {
                           setSelectedPlayer(null);
                           openEditModal(selectedPlayer);
                         }}
-                        className={`p-2.5 rounded-lg transition-all ${lightMode ? "bg-gray-100 hover:bg-gray-200 text-gray-700" : "bg-white/5 hover:bg-white/10 text-white"}`}
-                      >
+                        className={`p-2.5 rounded-lg transition-all ${lightMode ? "bg-gray-100 hover:bg-gray-200 text-gray-700" : "bg-white/5 hover:bg-white/10 text-white"}`}>
                         <Edit3 size={18} />
                       </button>
                       <button
                         onClick={() => handleDelete(selectedPlayer.id)}
-                        className="p-2.5 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-all"
-                      >
+                        className="p-2.5 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-all">
                         <Trash2 size={18} />
                       </button>
                     </div>
                   )}
                 </div>
                 <span
-                  className={`inline-block text-xs px-4 py-1.5 rounded-full uppercase font-black tracking-widest border mb-6 ${lightMode ? "bg-gray-100 border-gray-200 text-gray-600" : "bg-white/5 border-white/10 text-slate-300"}`}
-                >
+                  className={`inline-block text-xs px-4 py-1.5 rounded-full uppercase font-black tracking-widest border mb-6 ${lightMode ? "bg-gray-100 border-gray-200 text-gray-600" : "bg-white/5 border-white/10 text-slate-300"}`}>
                   {selectedPlayer.activeRole}
                 </span>
 
@@ -853,8 +935,7 @@ export default function TournamentPlayersView() {
                   selectedPlayer.paymentScreenshotURL) && (
                   <div>
                     <h4
-                      className={`text-xs font-black uppercase mb-4 tracking-widest ${theme.sub}`}
-                    >
+                      className={`text-xs font-black uppercase mb-4 tracking-widest ${theme.sub}`}>
                       Payment Proof
                     </h4>
                     <img
@@ -876,11 +957,9 @@ export default function TournamentPlayersView() {
                     selectedPlayer.paymentScreenshotURL)
                     ? ""
                     : "md:col-span-2"
-                }
-              >
+                }>
                 <h4
-                  className={`text-xs font-black uppercase mb-4 tracking-widest ${theme.sub}`}
-                >
+                  className={`text-xs font-black uppercase mb-4 tracking-widest ${theme.sub}`}>
                   Recent Matches
                 </h4>
                 {selectedPlayer.calculatedStats.history.length > 0 ? (
@@ -892,12 +971,10 @@ export default function TournamentPlayersView() {
                           onClick={() =>
                             goToMatch(match.tournamentId, match.matchId)
                           }
-                          className={`flex justify-between items-center p-4 rounded-xl cursor-pointer border hover:border-teal-500 transition-colors ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}
-                        >
+                          className={`flex justify-between items-center p-4 rounded-xl cursor-pointer border hover:border-teal-500 transition-colors ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
                           <div>
                             <div
-                              className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${theme.sub}`}
-                            >
+                              className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${theme.sub}`}>
                               {new Date(match.date).toLocaleDateString()}
                             </div>
                             <div className={`text-sm font-bold ${theme.text}`}>
@@ -925,8 +1002,7 @@ export default function TournamentPlayersView() {
                   </div>
                 ) : (
                   <div
-                    className={`p-6 text-center text-sm font-medium italic rounded-xl border border-dashed ${theme.sub} ${lightMode ? "border-gray-300" : "border-white/10"}`}
-                  >
+                    className={`p-6 text-center text-sm font-medium italic rounded-xl border border-dashed ${theme.sub} ${lightMode ? "border-gray-300" : "border-white/10"}`}>
                     No matches played yet.
                   </div>
                 )}
@@ -941,24 +1017,20 @@ export default function TournamentPlayersView() {
         <div className="flex flex-col lg:flex-row justify-between items-center mb-8 gap-6">
           <div className="text-center lg:text-left">
             <h1
-              className={`text-3xl font-black uppercase tracking-tighter italic flex items-center gap-3 justify-center lg:justify-start ${theme.text}`}
-            >
+              className={`text-3xl font-black uppercase tracking-tighter italic flex items-center gap-3 justify-center lg:justify-start ${theme.text}`}>
               <span
-                className={`p-3 rounded-2xl ${lightMode ? "bg-indigo-100 text-indigo-600" : "bg-indigo-500/10 text-indigo-500"}`}
-              >
+                className={`p-3 rounded-2xl ${lightMode ? "bg-indigo-100 text-indigo-600" : "bg-indigo-500/10 text-indigo-500"}`}>
                 <Trophy size={24} />
               </span>
               {tournamentId ? tournamentId.replace(/-/g, " ") : "Tournament"}
             </h1>
             <p
-              className={`text-sm mt-3 font-bold uppercase tracking-widest flex items-center gap-2 justify-center lg:justify-start ${theme.sub}`}
-            >
+              className={`text-sm mt-3 font-bold uppercase tracking-widest flex items-center gap-2 justify-center lg:justify-start ${theme.sub}`}>
               {processedPlayers.length} profiles registered
             </p>
           </div>
 
           <div className="flex flex-wrap gap-3 w-full lg:w-auto justify-center lg:justify-end items-center">
-            {/* TIGHTENED SEARCH */}
             <div className="relative w-full sm:w-[130px] flex-grow sm:flex-grow-0">
               <Search
                 className={`absolute left-3 top-1/2 -translate-y-1/2 ${theme.sub}`}
@@ -975,7 +1047,6 @@ export default function TournamentPlayersView() {
               />
             </div>
 
-            {/* TIGHTENED DROPDOWNS: Role Filter */}
             <div className="relative w-full sm:w-[130px] flex-grow sm:flex-grow-0">
               <Filter
                 className={`absolute left-3 top-1/2 -translate-y-1/2 ${theme.sub}`}
@@ -984,8 +1055,7 @@ export default function TournamentPlayersView() {
               <select
                 value={roleFilter}
                 onChange={(e) => setRoleFilter(e.target.value)}
-                className={`${inputClass.replace("px-4", "pl-8 pr-7").replace("text-sm", "text-xs")} appearance-none cursor-pointer`}
-              >
+                className={`${inputClass.replace("px-4", "pl-8 pr-7").replace("text-sm", "text-xs")} appearance-none cursor-pointer`}>
                 <option value="All">All Roles</option>
                 <option value="Batsman">Batsman</option>
                 <option value="Bowler">Bowler</option>
@@ -998,7 +1068,6 @@ export default function TournamentPlayersView() {
               />
             </div>
 
-            {/* TIGHTENED DROPDOWNS: Sort Filter */}
             <div className="relative w-full sm:w-[125px] flex-grow sm:flex-grow-0">
               <ArrowUpDown
                 className={`absolute left-3 top-1/2 -translate-y-1/2 ${theme.sub}`}
@@ -1010,8 +1079,7 @@ export default function TournamentPlayersView() {
                   const [key, dir] = e.target.value.split("-");
                   setSortConfig({ key, direction: dir });
                 }}
-                className={`${inputClass.replace("px-4", "pl-8 pr-7").replace("text-sm", "text-xs")} appearance-none cursor-pointer`}
-              >
+                className={`${inputClass.replace("px-4", "pl-8 pr-7").replace("text-sm", "text-xs")} appearance-none cursor-pointer`}>
                 <option value="runs-desc">Most Runs</option>
                 <option value="wickets-desc">Most Wkts</option>
                 <option value="matches-desc">Most Mat</option>
@@ -1023,22 +1091,18 @@ export default function TournamentPlayersView() {
               />
             </div>
 
-            {/* VIEW TOGGLE */}
             <div
-              className={`flex p-1 rounded-xl border ${lightMode ? "bg-gray-100 border-gray-200" : "bg-[#0F1115] border-white/10"}`}
-            >
+              className={`flex p-1 rounded-xl border ${lightMode ? "bg-gray-100 border-gray-200" : "bg-[#0F1115] border-white/10"}`}>
               <button
                 onClick={() => setViewMode("grid")}
                 className={`p-2.5 rounded-lg transition-all ${viewMode === "grid" ? (lightMode ? "bg-white shadow-sm text-indigo-600" : "bg-white/10 text-indigo-400") : theme.sub}`}
-                title="Grid View"
-              >
+                title="Grid View">
                 <LayoutGrid size={18} />
               </button>
               <button
                 onClick={() => setViewMode("list")}
                 className={`p-2.5 rounded-lg transition-all ${viewMode === "list" ? (lightMode ? "bg-white shadow-sm text-indigo-600" : "bg-white/10 text-indigo-400") : theme.sub}`}
-                title="List View"
-              >
+                title="List View">
                 <List size={18} />
               </button>
             </div>
@@ -1047,8 +1111,7 @@ export default function TournamentPlayersView() {
               <button
                 onClick={toggleTheme}
                 className={`p-3.5 rounded-xl border transition-all ${lightMode ? "bg-white border-gray-200 text-gray-600 hover:bg-gray-50" : "bg-[#0F1115] border-white/10 text-slate-300 hover:bg-white/5"}`}
-                title="Toggle Theme"
-              >
+                title="Toggle Theme">
                 {lightMode ? <Moon size={18} /> : <Sun size={18} />}
               </button>
             )}
@@ -1061,16 +1124,20 @@ export default function TournamentPlayersView() {
                     lightMode
                       ? "bg-white text-green-600 border-green-200 hover:bg-green-50"
                       : "bg-green-900/20 text-green-400 border-green-500/30 hover:bg-green-900/40"
-                  }`}
-                >
+                  }`}>
                   <Download size={16} /> Export
                 </button>
 
                 <button
                   onClick={openAddModal}
-                  className="bg-gradient-to-r from-teal-600 to-indigo-600 hover:from-teal-500 hover:to-indigo-500 text-white p-3.5 px-6 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
-                >
+                  className="bg-gradient-to-r from-teal-600 to-indigo-600 hover:from-teal-500 hover:to-indigo-500 text-white p-3.5 px-6 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
                   <Plus size={16} /> Add Player
+                </button>
+
+                <button
+                  onClick={handleBulkCloudinaryMigration}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white p-3.5 px-6 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
+                  <CloudUpload size={16} /> Migrate to Cloudinary
                 </button>
               </div>
             )}
@@ -1081,11 +1148,9 @@ export default function TournamentPlayersView() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-10">
           {orangeCap && (
             <div
-              className={`p-6 rounded-[2rem] flex items-center gap-5 shadow-sm border transition-all ${lightMode ? "bg-orange-50/50 border-orange-200" : "bg-orange-900/10 border-orange-500/20"}`}
-            >
+              className={`p-6 rounded-[2rem] flex items-center gap-5 shadow-sm border transition-all ${lightMode ? "bg-orange-50/50 border-orange-200" : "bg-orange-900/10 border-orange-500/20"}`}>
               <div
-                className={`p-4 rounded-full border ${lightMode ? "bg-orange-100 border-orange-200 text-orange-600" : "bg-orange-500/10 border-orange-500/20 text-orange-500"}`}
-              >
+                className={`p-4 rounded-full border ${lightMode ? "bg-orange-100 border-orange-200 text-orange-600" : "bg-orange-500/10 border-orange-500/20 text-orange-500"}`}>
                 <Medal size={28} />
               </div>
               <div>
@@ -1096,8 +1161,7 @@ export default function TournamentPlayersView() {
                   {orangeCap.name}
                 </div>
                 <div
-                  className={`text-sm font-mono font-bold mt-1 ${theme.sub}`}
-                >
+                  className={`text-sm font-mono font-bold mt-1 ${theme.sub}`}>
                   {orangeCap.calculatedStats.runs} Runs
                 </div>
               </div>
@@ -1105,11 +1169,9 @@ export default function TournamentPlayersView() {
           )}
           {purpleCap && (
             <div
-              className={`p-6 rounded-[2rem] flex items-center gap-5 shadow-sm border transition-all ${lightMode ? "bg-purple-50/50 border-purple-200" : "bg-purple-900/10 border-purple-500/20"}`}
-            >
+              className={`p-6 rounded-[2rem] flex items-center gap-5 shadow-sm border transition-all ${lightMode ? "bg-purple-50/50 border-purple-200" : "bg-purple-900/10 border-purple-500/20"}`}>
               <div
-                className={`p-4 rounded-full border ${lightMode ? "bg-purple-100 border-purple-200 text-purple-600" : "bg-purple-500/10 border-purple-500/20 text-purple-500"}`}
-              >
+                className={`p-4 rounded-full border ${lightMode ? "bg-purple-100 border-purple-200 text-purple-600" : "bg-purple-500/10 border-purple-500/20 text-purple-500"}`}>
                 <Medal size={28} />
               </div>
               <div>
@@ -1120,8 +1182,7 @@ export default function TournamentPlayersView() {
                   {purpleCap.name}
                 </div>
                 <div
-                  className={`text-sm font-mono font-bold mt-1 ${theme.sub}`}
-                >
+                  className={`text-sm font-mono font-bold mt-1 ${theme.sub}`}>
                   {purpleCap.calculatedStats.wickets} Wickets
                 </div>
               </div>
@@ -1129,7 +1190,7 @@ export default function TournamentPlayersView() {
           )}
         </div>
 
-        {/* PLAYERS RENDERING (Grid OR List based on viewMode state) */}
+        {/* PLAYERS RENDERING */}
         {loading ? (
           <div className="py-24 flex flex-col items-center justify-center text-indigo-500 animate-pulse text-sm font-black uppercase tracking-widest gap-4">
             <Loader2 className="animate-spin" size={40} /> Loading Roster...
@@ -1157,8 +1218,7 @@ export default function TournamentPlayersView() {
                     lightMode
                       ? "bg-white border-gray-200 hover:border-indigo-300"
                       : "bg-[#1C2128] border-white/5 hover:border-indigo-500/50"
-                  }`}
-                >
+                  }`}>
                   <div className="flex items-center gap-4">
                     <img
                       src={displayPhoto}
@@ -1171,37 +1231,31 @@ export default function TournamentPlayersView() {
                     />
                     <div className="flex flex-col overflow-hidden">
                       <span
-                        className={`font-black text-lg leading-tight truncate ${theme.text}`}
-                      >
+                        className={`font-black text-lg leading-tight truncate ${theme.text}`}>
                         {player.name}
                       </span>
                       <span
-                        className={`text-[10px] uppercase font-bold tracking-widest mt-1 ${theme.sub}`}
-                      >
+                        className={`text-[10px] uppercase font-bold tracking-widest mt-1 ${theme.sub}`}>
                         {displayRole}
                       </span>
                     </div>
                   </div>
 
                   <div
-                    className={`grid grid-cols-3 gap-3 pt-4 border-t text-center ${lightMode ? "border-gray-100" : "border-white/5"}`}
-                  >
+                    className={`grid grid-cols-3 gap-3 pt-4 border-t text-center ${lightMode ? "border-gray-100" : "border-white/5"}`}>
                     <div className="flex flex-col">
                       <span
-                        className={`text-[9px] uppercase font-black tracking-widest mb-1 ${theme.sub}`}
-                      >
+                        className={`text-[9px] uppercase font-black tracking-widest mb-1 ${theme.sub}`}>
                         Matches
                       </span>
                       <span
-                        className={`text-base font-mono font-bold ${theme.text}`}
-                      >
+                        className={`text-base font-mono font-bold ${theme.text}`}>
                         {player.calculatedStats.matches}
                       </span>
                     </div>
                     <div className="flex flex-col border-l border-r border-black/5 dark:border-white/5">
                       <span
-                        className={`text-[9px] uppercase font-black tracking-widest mb-1 text-teal-500/80`}
-                      >
+                        className={`text-[9px] uppercase font-black tracking-widest mb-1 text-teal-500/80`}>
                         Runs
                       </span>
                       <span className="text-base font-mono font-bold text-teal-500">
@@ -1210,8 +1264,7 @@ export default function TournamentPlayersView() {
                     </div>
                     <div className="flex flex-col">
                       <span
-                        className={`text-[9px] uppercase font-black tracking-widest mb-1 text-purple-500/80`}
-                      >
+                        className={`text-[9px] uppercase font-black tracking-widest mb-1 text-purple-500/80`}>
                         Wickets
                       </span>
                       <span className="text-base font-mono font-bold text-purple-500">
@@ -1226,50 +1279,42 @@ export default function TournamentPlayersView() {
         ) : (
           // LIST VIEW (TABLE)
           <div
-            className={`border rounded-[2.5rem] overflow-hidden shadow-2xl ${theme.card}`}
-          >
+            className={`border rounded-[2.5rem] overflow-hidden shadow-2xl ${theme.card}`}>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead
-                  className={`text-[11px] uppercase font-black tracking-[0.2em] border-b ${lightMode ? "bg-gray-100 text-gray-500 border-gray-200" : "bg-[#0F1115] text-slate-500 border-white/5"}`}
-                >
+                  className={`text-[11px] uppercase font-black tracking-[0.2em] border-b ${lightMode ? "bg-gray-100 text-gray-500 border-gray-200" : "bg-[#0F1115] text-slate-500 border-white/5"}`}>
                   <tr>
                     <th
                       className="px-6 py-5 cursor-pointer hover:opacity-70 group transition-opacity"
-                      onClick={() => handleSort("name")}
-                    >
+                      onClick={() => handleSort("name")}>
                       Player <SortIcon colKey="name" />
                     </th>
                     <th
                       className="px-6 py-5 text-center cursor-pointer hover:opacity-70 group transition-opacity"
-                      onClick={() => handleSort("matches")}
-                    >
+                      onClick={() => handleSort("matches")}>
                       Mat <SortIcon colKey="matches" />
                     </th>
                     <th
                       className="px-6 py-5 text-center cursor-pointer hover:opacity-70 group transition-opacity"
-                      onClick={() => handleSort("runs")}
-                    >
+                      onClick={() => handleSort("runs")}>
                       Runs <SortIcon colKey="runs" />
                     </th>
                     <th
                       className="px-6 py-5 text-center cursor-pointer hover:opacity-70 group hidden md:table-cell transition-opacity"
-                      onClick={() => handleSort("highestScore")}
-                    >
+                      onClick={() => handleSort("highestScore")}>
                       HS <SortIcon colKey="highestScore" />
                     </th>
                     <th
                       className="px-6 py-5 text-center cursor-pointer hover:opacity-70 group transition-opacity"
-                      onClick={() => handleSort("wickets")}
-                    >
+                      onClick={() => handleSort("wickets")}>
                       Wkts <SortIcon colKey="wickets" />
                     </th>
                     <th className="px-6 py-5 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody
-                  className={`divide-y ${lightMode ? "divide-gray-100" : "divide-white/5"}`}
-                >
+                  className={`divide-y ${lightMode ? "divide-gray-100" : "divide-white/5"}`}>
                   {processedPlayers.map((player) => {
                     const tData = player.tournamentData?.[tournamentId] || {};
                     const displayPhoto =
@@ -1282,8 +1327,7 @@ export default function TournamentPlayersView() {
                       <tr
                         key={player.id}
                         onClick={() => setSelectedPlayer(player)}
-                        className={`cursor-pointer group transition-colors ${lightMode ? "hover:bg-gray-50" : "hover:bg-white/5"}`}
-                      >
+                        className={`cursor-pointer group transition-colors ${lightMode ? "hover:bg-gray-50" : "hover:bg-white/5"}`}>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-4">
                             <img
@@ -1297,29 +1341,25 @@ export default function TournamentPlayersView() {
                             />
                             <div className="flex flex-col">
                               <span
-                                className={`font-bold text-base ${theme.text}`}
-                              >
+                                className={`font-bold text-base ${theme.text}`}>
                                 {player.name}
                               </span>
                               <span
-                                className={`text-[10px] uppercase font-bold tracking-widest mt-0.5 ${theme.sub}`}
-                              >
+                                className={`text-[10px] uppercase font-bold tracking-widest mt-0.5 ${theme.sub}`}>
                                 {displayRole}
                               </span>
                             </div>
                           </div>
                         </td>
                         <td
-                          className={`px-6 py-4 text-center text-sm font-mono font-bold ${theme.sub}`}
-                        >
+                          className={`px-6 py-4 text-center text-sm font-mono font-bold ${theme.sub}`}>
                           {player.calculatedStats.matches}
                         </td>
                         <td className="px-6 py-4 text-center font-bold text-teal-500 font-mono text-base">
                           {player.calculatedStats.runs}
                         </td>
                         <td
-                          className={`px-6 py-4 text-center text-sm font-mono font-bold hidden md:table-cell ${theme.sub}`}
-                        >
+                          className={`px-6 py-4 text-center text-sm font-mono font-bold hidden md:table-cell ${theme.sub}`}>
                           {player.calculatedStats.highestScore}
                         </td>
                         <td className="px-6 py-4 text-center font-bold text-purple-500 font-mono text-base">
@@ -1330,14 +1370,12 @@ export default function TournamentPlayersView() {
                             <div className="flex justify-end gap-2">
                               <button
                                 onClick={(e) => openEditModal(player, e)}
-                                className={`p-2 rounded-lg transition-all ${lightMode ? "text-gray-400 hover:bg-gray-200 hover:text-gray-900" : "text-slate-500 hover:bg-white/10 hover:text-white"}`}
-                              >
+                                className={`p-2 rounded-lg transition-all ${lightMode ? "text-gray-400 hover:bg-gray-200 hover:text-gray-900" : "text-slate-500 hover:bg-white/10 hover:text-white"}`}>
                                 <Edit3 size={18} />
                               </button>
                               <button
                                 onClick={(e) => handleDelete(player.id, e)}
-                                className="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-500/10 transition-all"
-                              >
+                                className="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-500/10 transition-all">
                                 <Trash2 size={18} />
                               </button>
                             </div>
@@ -1356,23 +1394,18 @@ export default function TournamentPlayersView() {
         {previewImage && (
           <div
             className="fixed inset-0 z-[600] bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
-            onClick={() => setPreviewImage(null)}
-          >
-            {/* 🟢 1. Set a forced container width (max-w-xl is 576px) */}
+            onClick={() => setPreviewImage(null)}>
             <div className="relative w-full max-w-xl flex justify-center">
               <img
                 src={previewImage}
                 alt="Preview"
-                // 🟢 2. Added 'w-full' and 'h-auto' to FORCE the image to stretch and fill the 576px container
                 className="rounded-xl shadow-2xl border border-white/10 w-full h-auto object-contain"
                 style={{ maxHeight: "90vh" }}
                 onClick={(e) => e.stopPropagation()}
               />
-
               <button
                 className="absolute -top-10 right-0 text-white hover:text-red-400 font-bold text-sm uppercase tracking-widest transition-colors flex items-center gap-2"
-                onClick={() => setPreviewImage(null)}
-              >
+                onClick={() => setPreviewImage(null)}>
                 Close <X size={20} />
               </button>
             </div>
@@ -1383,34 +1416,43 @@ export default function TournamentPlayersView() {
         {showFormModal && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[500] flex items-center justify-center p-4 animate-in fade-in">
             <div
-              className={`border w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${theme.card} ${theme.text}`}
-            >
+              className={`border w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${theme.card} ${theme.text}`}>
               <div
-                className={`p-6 border-b flex justify-between items-center sticky top-0 z-10 ${lightMode ? "bg-white border-gray-200" : "bg-[#1C2128] border-white/5"}`}
-              >
+                className={`p-6 border-b flex justify-between items-center sticky top-0 z-10 ${lightMode ? "bg-white border-gray-200" : "bg-[#1C2128] border-white/5"}`}>
                 <h3
-                  className={`text-xl font-black uppercase tracking-tight italic ${theme.text}`}
-                >
+                  className={`text-xl font-black uppercase tracking-tight italic ${theme.text}`}>
                   {isEditing ? "Edit Player" : "Register Player"}
                 </h3>
                 <button
                   onClick={() => setShowFormModal(false)}
-                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${lightMode ? "bg-gray-100 hover:bg-gray-200" : "bg-white/5 hover:bg-white/10"}`}
-                >
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${lightMode ? "bg-gray-100 hover:bg-gray-200" : "bg-white/5 hover:bg-white/10"}`}>
                   <X size={20} />
                 </button>
               </div>
               <div className="overflow-y-auto p-6 md:p-8 custom-scrollbar">
                 <form onSubmit={handleSubmit} className="space-y-8">
                   <div className="flex gap-6 justify-center">
+                    {/* 🟢 FIXED PROFILE PHOTO UX */}
                     <div className="flex flex-col items-center">
-                      <div
-                        className="relative group cursor-pointer"
-                        onClick={() => fileInputRef.current.click()}
-                      >
+                      <div className="relative group block">
                         <div
-                          className={`w-28 h-28 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl ${formData.photoURL ? "border-indigo-500 shadow-indigo-500/20" : lightMode ? "bg-gray-100 border-gray-200 border-dashed" : "bg-[#0F1115] border-white/10 border-dashed"}`}
-                        >
+                          onClick={() => {
+                            if (formData.photoURL) {
+                              setImageToCrop(formData.photoURL);
+                              setCrop({ x: 0, y: 0 });
+                              setZoom(1);
+                              setCropModalOpen(true);
+                            } else {
+                              fileInputRef.current.click();
+                            }
+                          }}
+                          className={`w-28 h-28 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl cursor-pointer ${
+                            formData.photoURL
+                              ? "border-teal-500 shadow-teal-500/20"
+                              : lightMode
+                                ? "bg-gray-100 border-gray-200 border-dashed"
+                                : "bg-[#0F1115] border-white/10 border-dashed"
+                          }`}>
                           {formData.photoURL ? (
                             <img
                               src={formData.photoURL}
@@ -1423,32 +1465,53 @@ export default function TournamentPlayersView() {
                               size={32}
                             />
                           )}
+
+                          {formData.photoURL && (
+                            <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                              <span className="text-[10px] font-black uppercase text-white tracking-widest">
+                                Crop
+                              </span>
+                            </div>
+                          )}
                         </div>
-                        <input
-                          type="file"
-                          ref={fileInputRef}
-                          onChange={handleProfileImageSelect}
-                          className="hidden"
-                          accept="image/*"
-                          onClick={(e) => {
-                            e.target.value = null;
-                          }}
-                        />
+
+                        {formData.photoURL && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              fileInputRef.current.click();
+                            }}
+                            className="absolute -bottom-2 -right-2 bg-teal-500 text-white rounded-full p-1.5 shadow-lg border-2 border-white dark:border-[#1C2128] hover:bg-teal-400 transition-colors"
+                            title="Upload New Photo">
+                            <Camera size={14} />
+                          </button>
+                        )}
                       </div>
+
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleProfileImageSelect}
+                        className="hidden"
+                        accept="image/*"
+                        onClick={(e) => {
+                          e.target.value = null;
+                        }}
+                      />
                       <p
-                        className={`text-[10px] uppercase mt-3 font-black tracking-widest text-center ${theme.sub}`}
-                      >
+                        className={`text-[9px] uppercase mt-3 font-black tracking-widest text-center ${theme.sub}`}>
                         Profile
                       </p>
                     </div>
+
+                    {/* 🟢 FIXED PAYMENT PHOTO UX */}
                     <div className="flex flex-col items-center">
-                      <div
-                        className="relative group cursor-pointer"
-                        onClick={() => paymentInputRef.current.click()}
-                      >
+                      <label
+                        htmlFor="tournament-payment-upload"
+                        className="relative group cursor-pointer block">
                         <div
-                          className={`w-28 h-28 rounded-xl border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl ${formData.paymentScreenshotURL ? "border-purple-500 shadow-purple-500/20" : lightMode ? "bg-gray-100 border-gray-200 border-dashed" : "bg-[#0F1115] border-white/10 border-dashed"}`}
-                        >
+                          className={`w-28 h-28 rounded-xl border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl ${formData.paymentScreenshotURL ? "border-purple-500 shadow-purple-500/20" : lightMode ? "bg-gray-100 border-gray-200 border-dashed" : "bg-[#0F1115] border-white/10 border-dashed"}`}>
                           {formData.paymentScreenshotURL ? (
                             <img
                               src={formData.paymentScreenshotURL}
@@ -1462,17 +1525,20 @@ export default function TournamentPlayersView() {
                             />
                           )}
                         </div>
-                        <input
-                          type="file"
-                          ref={paymentInputRef}
-                          onChange={handlePaymentImageUpload}
-                          className="hidden"
-                          accept="image/*"
-                        />
-                      </div>
+                      </label>
+                      <input
+                        type="file"
+                        id="tournament-payment-upload"
+                        ref={paymentInputRef}
+                        onChange={handlePaymentImageUpload}
+                        className="hidden"
+                        accept="image/*"
+                        onClick={(e) => {
+                          e.target.value = null;
+                        }}
+                      />
                       <p
-                        className={`text-[10px] uppercase mt-3 font-black tracking-widest text-center ${theme.sub}`}
-                      >
+                        className={`text-[9px] uppercase mt-3 font-black tracking-widest text-center ${theme.sub}`}>
                         Payment
                       </p>
                     </div>
@@ -1496,6 +1562,7 @@ export default function TournamentPlayersView() {
                       }
                       placeholder="Mobile Number"
                     />
+
                     <div className="grid grid-cols-2 gap-3">
                       {[
                         "Batsman",
@@ -1507,12 +1574,12 @@ export default function TournamentPlayersView() {
                           key={role}
                           type="button"
                           onClick={() => setFormData({ ...formData, role })}
-                          className={`py-3.5 px-2 rounded-xl text-xs font-black uppercase tracking-wider border transition-all ${formData.role === role ? "bg-teal-500/10 border-teal-500/50 text-teal-600 dark:text-teal-400" : lightMode ? "bg-white border-gray-200 text-gray-500 hover:bg-gray-50" : "bg-[#0F1115] border-white/5 text-slate-500 hover:text-slate-300"}`}
-                        >
+                          className={`py-3.5 px-2 rounded-xl text-xs font-black uppercase tracking-wider border transition-all ${formData.role === role ? "bg-teal-500/10 border-teal-500/50 text-teal-600 dark:text-teal-400" : lightMode ? "bg-white border-gray-200 text-gray-500 hover:bg-gray-50" : "bg-[#0F1115] border-white/5 text-slate-500 hover:text-slate-300"}`}>
                           {role}
                         </button>
                       ))}
                     </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <select
                         className={inputClass}
@@ -1522,8 +1589,7 @@ export default function TournamentPlayersView() {
                             ...formData,
                             battingStyle: e.target.value,
                           })
-                        }
-                      >
+                        }>
                         <option>Right Hand Bat</option>
                         <option>Left Hand Bat</option>
                       </select>
@@ -1535,8 +1601,7 @@ export default function TournamentPlayersView() {
                             ...formData,
                             bowlingStyle: e.target.value,
                           })
-                        }
-                      >
+                        }>
                         <option>Right Arm Medium</option>
                         <option>Right Arm Fast</option>
                         <option>Right Arm Spin</option>
@@ -1547,11 +1612,11 @@ export default function TournamentPlayersView() {
                       </select>
                     </div>
                   </div>
+
                   <button
                     type="submit"
                     disabled={processingImage}
-                    className="w-full bg-gradient-to-r from-teal-600 to-indigo-600 hover:from-teal-500 hover:to-indigo-500 text-white font-black uppercase tracking-widest text-sm py-5 rounded-xl shadow-lg transition-all disabled:opacity-50 active:scale-[0.98]"
-                  >
+                    className="w-full bg-gradient-to-r from-teal-600 to-indigo-600 hover:from-teal-500 hover:to-indigo-500 text-white font-black uppercase tracking-widest text-sm py-5 rounded-xl shadow-lg transition-all disabled:opacity-50 active:scale-[0.98]">
                     {processingImage
                       ? "Processing..."
                       : isEditing

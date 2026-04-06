@@ -1,4 +1,10 @@
-import React, { useEffect, useState, useRef, useMemo } from "react";
+import React, {
+  useEffect,
+  useState,
+  useRef,
+  useMemo,
+  useCallback,
+} from "react";
 import {
   listGlobalPlayers,
   createGlobalPlayer,
@@ -7,7 +13,6 @@ import {
   listTournaments,
   listMatchesForTournament,
 } from "../utils/firestore";
-// 🟢 NEW IMPORTS FOR BATCH MERGE
 import { writeBatch, doc } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { useAuth } from "../hooks/useAuth";
@@ -32,18 +37,60 @@ import {
 } from "lucide-react";
 import { Helmet } from "react-helmet-async";
 
+// 🟢 NEW IMPORTS FOR CROPPER & CLOUDINARY
+import Cropper from "react-easy-crop";
+import { uploadBase64ToCloudinary } from "../utils/helpers";
+
+// --- CROP UTILITY FUNCTIONS ---
+const createImage = (url) =>
+  new Promise((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener("load", () => resolve(image));
+    image.addEventListener("error", (error) => reject(error));
+
+    // 🟢 THE FIX: Tells the browser it is safe to crop external Cloudinary images!
+    image.setAttribute("crossOrigin", "anonymous");
+
+    image.src = url;
+  });
+
+async function getCroppedImg(imageSrc, pixelCrop) {
+  const image = await createImage(imageSrc);
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+
+  if (!ctx) return null;
+
+  const TARGET_SIZE = 300;
+  canvas.width = TARGET_SIZE;
+  canvas.height = TARGET_SIZE;
+
+  ctx.drawImage(
+    image,
+    pixelCrop.x,
+    pixelCrop.y,
+    pixelCrop.width,
+    pixelCrop.height,
+    0,
+    0,
+    TARGET_SIZE,
+    TARGET_SIZE,
+  );
+
+  return canvas.toDataURL("image/jpeg", 0.8);
+}
+
 // --- TOAST COMPONENT ---
 const NotificationToast = ({ message, type, onClose }) => {
   if (!message) return null;
   const isError = type === "error";
   return (
     <div
-      className={`fixed top-6 right-6 z-[200] flex items-center gap-3 px-6 py-4 rounded-xl shadow-2xl animate-in slide-in-from-right duration-300 border backdrop-blur-md ${
+      className={`fixed top-6 right-6 z-[800] flex items-center gap-3 px-6 py-4 rounded-xl shadow-2xl animate-in slide-in-from-right duration-300 border backdrop-blur-md ${
         isError
           ? "bg-red-500/10 border-red-500/20 text-red-500 bg-white dark:bg-red-900/10"
           : "bg-teal-500/10 border-teal-500/20 text-teal-600 dark:text-teal-400 bg-white dark:bg-teal-900/10"
-      }`}
-    >
+      }`}>
       {isError ? <AlertCircle size={20} /> : <Check size={20} />}
       <div>
         <h4 className="font-bold text-sm uppercase tracking-wider">
@@ -86,6 +133,13 @@ export default function GlobalPlayersView() {
   const [isEditing, setIsEditing] = useState(false);
   const [processingImage, setProcessingImage] = useState(false);
 
+  // 🟢 CROPPER STATE
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [imageToCrop, setImageToCrop] = useState(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
+
   // 🟢 MULTI-SELECT TOURNAMENT STATE
   const [tournamentsList, setTournamentsList] = useState([]);
   const [selectedTournaments, setSelectedTournaments] = useState([]);
@@ -123,8 +177,6 @@ export default function GlobalPlayersView() {
         setPlayers(playersList);
 
         const tournaments = await listTournaments();
-
-        // 🟢 SAVE TOURNAMENTS TO STATE FOR DROPDOWN
         setTournamentsList(tournaments);
 
         let collectedMatches = [];
@@ -408,7 +460,7 @@ export default function GlobalPlayersView() {
     setSortConfig({ key, direction });
   };
 
-  const compressImage = (file, maxWidth = 400) => {
+  const compressImage = (file, maxWidth = 600) => {
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
@@ -428,15 +480,48 @@ export default function GlobalPlayersView() {
     });
   };
 
-  const handleImageUpload = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    setProcessingImage(true);
+  // 🟢 CROPPER & CLOUDINARY HANDLERS
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => {
+        setImageToCrop(reader.result);
+        setCrop({ x: 0, y: 0 });
+        setZoom(1);
+        setCropModalOpen(true);
+      };
+    }
+  };
+
+  const onCropComplete = useCallback((_, croppedAreaPixels) => {
+    setCroppedAreaPixels(croppedAreaPixels);
+  }, []);
+
+  const handleCancelCrop = () => {
+    setCropModalOpen(false);
+    setImageToCrop(null);
+  };
+
+  const handleSaveCrop = async () => {
     try {
-      const compressedBase64 = await compressImage(file, 400);
-      setFormData((prev) => ({ ...prev, photoURL: compressedBase64 }));
-    } catch (error) {
-      showToast("Failed to process image", "error");
+      setProcessingImage(true);
+      const croppedImageBase64 = await getCroppedImg(
+        imageToCrop,
+        croppedAreaPixels,
+      );
+      showToast("Uploading photo to secure server...", "success");
+
+      const cloudinaryUrl = await uploadBase64ToCloudinary(croppedImageBase64);
+      setFormData((prev) => ({ ...prev, photoURL: cloudinaryUrl }));
+
+      setCropModalOpen(false);
+      setImageToCrop(null);
+      showToast("Photo uploaded successfully!");
+    } catch (e) {
+      console.error(e);
+      showToast("Failed to crop or upload image.", "error");
     } finally {
       setProcessingImage(false);
     }
@@ -447,11 +532,15 @@ export default function GlobalPlayersView() {
     if (!file) return;
     setProcessingImage(true);
     try {
-      const compressedBase64 = await compressImage(file, 500);
+      showToast("Uploading payment proof...", "success");
+      const compressedBase64 = await compressImage(file, 600);
+      const cloudinaryUrl = await uploadBase64ToCloudinary(compressedBase64);
+
       setFormData((prev) => ({
         ...prev,
-        paymentScreenshotURL: compressedBase64,
+        paymentScreenshotURL: cloudinaryUrl,
       }));
+      showToast("Payment proof uploaded!");
     } catch (error) {
       showToast("Failed to process payment image", "error");
     } finally {
@@ -473,7 +562,7 @@ export default function GlobalPlayersView() {
       baseRuns: 0,
       baseWickets: 0,
     });
-    setSelectedTournaments([]); // 🟢 Clear selection for new player
+    setSelectedTournaments([]);
     setIsEditing(false);
     setShowModal(true);
   };
@@ -498,9 +587,7 @@ export default function GlobalPlayersView() {
       baseWickets: player.stats?.wickets || 0,
     });
 
-    // 🟢 LOAD EXISTING TOURNAMENTS
     setSelectedTournaments(player.registeredTournaments || []);
-
     setIsEditing(true);
     setShowModal(true);
   };
@@ -520,7 +607,6 @@ export default function GlobalPlayersView() {
       const isoDate = new Date().toISOString();
 
       if (isEditing && formData.id) {
-        // 🟢 UPDATE LOGIC
         const updatePayload = {
           name: formData.name,
           role: formData.role,
@@ -531,10 +617,9 @@ export default function GlobalPlayersView() {
           paymentScreenshotURL: formData.paymentScreenshotURL,
           stats: newStats,
           updatedAt: isoDate,
-          registeredTournaments: selectedTournaments, // Push the active arrays
+          registeredTournaments: selectedTournaments,
         };
 
-        // Merge tournament data into the main object
         selectedTournaments.forEach((tId) => {
           updatePayload[`tournamentData.${tId}`] = {
             role: formData.role || "All-Rounder",
@@ -549,7 +634,6 @@ export default function GlobalPlayersView() {
         await updateGlobalPlayer(formData.id, updatePayload);
         showToast("Player Updated & Assigned!");
       } else {
-        // 🟢 CREATE LOGIC
         const { id, ...payload } = formData;
 
         const createPayload = {
@@ -632,7 +716,6 @@ export default function GlobalPlayersView() {
       };
       let bestBowl = parseBB(combinedStats.bestBowling);
 
-      // Collect all unique registered tournaments from duplicates
       let allTournaments = new Set(primaryPlayer.registeredTournaments || []);
 
       duplicates.forEach((d) => {
@@ -653,7 +736,6 @@ export default function GlobalPlayersView() {
           bestBowl = dBowl;
         }
 
-        // Grab their tournament history
         if (Array.isArray(d.registeredTournaments)) {
           d.registeredTournaments.forEach((t) => allTournaments.add(t));
         }
@@ -664,7 +746,7 @@ export default function GlobalPlayersView() {
       const primaryRef = doc(db, "players", primaryMergeId);
       batch.update(primaryRef, {
         stats: combinedStats,
-        registeredTournaments: Array.from(allTournaments), // Apply aggregated tournaments
+        registeredTournaments: Array.from(allTournaments),
         updatedAt: new Date().toISOString(),
       });
 
@@ -738,24 +820,20 @@ export default function GlobalPlayersView() {
 
   const SortIcon = ({ colKey }) => (
     <span
-      className={`ml-1 transition-opacity ${sortConfig.key === colKey ? "opacity-100" : "opacity-0 group-hover:opacity-50"}`}
-    >
+      className={`ml-1 transition-opacity ${sortConfig.key === colKey ? "opacity-100" : "opacity-0 group-hover:opacity-50"}`}>
       {sortConfig.key === colKey && sortConfig.direction === "asc" ? "↑" : "↓"}
     </span>
   );
 
   const DetailItem = ({ label, value, isMono = false }) => (
     <div
-      className={`flex flex-col p-3 rounded-xl border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#161920] border-white/5"}`}
-    >
+      className={`flex flex-col p-3 rounded-xl border ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#161920] border-white/5"}`}>
       <span
-        className={`text-[9px] uppercase font-black mb-1 tracking-wider ${theme.sub}`}
-      >
+        className={`text-[9px] uppercase font-black mb-1 tracking-wider ${theme.sub}`}>
         {label}
       </span>
       <span
-        className={`text-sm break-words font-bold ${isMono ? "font-mono text-teal-500" : theme.text}`}
-      >
+        className={`text-sm break-words font-bold ${isMono ? "font-mono text-teal-500" : theme.text}`}>
         {value || "N/A"}
       </span>
     </div>
@@ -778,31 +856,75 @@ export default function GlobalPlayersView() {
         />
       </Helmet>
       <div
-        className={`min-h-screen p-2 md:p-4 pb-20 font-sans transition-colors duration-300 ${theme.bg} ${theme.text}`}
-      >
+        className={`min-h-screen p-2 md:p-4 pb-20 font-sans transition-colors duration-300 ${theme.bg} ${theme.text}`}>
         <NotificationToast
           message={notification?.message}
           type={notification?.type}
           onClose={() => setNotification(null)}
         />
 
+        {/* ✂️ CROP MODAL */}
+        {cropModalOpen && imageToCrop && (
+          <div className="fixed inset-0 z-[600] bg-black/95 flex flex-col animate-in fade-in duration-200">
+            <div className="flex-grow relative">
+              <Cropper
+                image={imageToCrop}
+                crop={crop}
+                zoom={zoom}
+                aspect={1}
+                cropShape="round"
+                showGrid={false}
+                onCropChange={setCrop}
+                onZoomChange={setZoom}
+                onCropComplete={onCropComplete}
+              />
+            </div>
+            <div className="bg-[#111] p-6 pb-12 flex flex-col gap-6">
+              <div className="flex items-center gap-4 px-4">
+                <span className="text-white text-sm font-bold uppercase">
+                  Zoom
+                </span>
+                <input
+                  type="range"
+                  value={zoom}
+                  min={1}
+                  max={3}
+                  step={0.1}
+                  onChange={(e) => setZoom(e.target.value)}
+                  className="w-full accent-teal-500"
+                />
+              </div>
+              <div className="flex justify-between gap-4 px-4">
+                <button
+                  onClick={handleCancelCrop}
+                  className="flex-1 py-4 rounded-xl border border-white/20 text-white font-bold uppercase tracking-widest text-sm hover:bg-white/10 transition-colors">
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveCrop}
+                  disabled={processingImage}
+                  className="flex-1 py-4 rounded-xl bg-teal-500 text-white font-black uppercase tracking-widest text-sm shadow-lg shadow-teal-500/20 active:scale-95 transition-all disabled:opacity-50">
+                  {processingImage ? "Uploading..." : "Save Picture"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="max-w-[1400px] mx-auto">
           {/* HEADER */}
           <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
             <div className="text-center md:text-left">
               <h1
-                className={`text-2xl font-black uppercase tracking-tighter italic flex items-center gap-2 justify-center md:justify-start ${theme.text}`}
-              >
+                className={`text-2xl font-black uppercase tracking-tighter italic flex items-center gap-2 justify-center md:justify-start ${theme.text}`}>
                 <span
-                  className={`p-2 rounded-xl ${lightMode ? "bg-teal-100 text-teal-600" : "bg-teal-500/10 text-teal-500"}`}
-                >
+                  className={`p-2 rounded-xl ${lightMode ? "bg-teal-100 text-teal-600" : "bg-teal-500/10 text-teal-500"}`}>
                   <Trophy size={20} />
                 </span>
                 Global Database
               </h1>
               <p
-                className={`text-xs mt-2 font-bold uppercase tracking-widest flex items-center gap-2 justify-center md:justify-start ${theme.sub}`}
-              >
+                className={`text-xs mt-2 font-bold uppercase tracking-widest flex items-center gap-2 justify-center md:justify-start ${theme.sub}`}>
                 {processedPlayers.length} players found
               </p>
             </div>
@@ -830,8 +952,7 @@ export default function GlobalPlayersView() {
                 <select
                   value={roleFilter}
                   onChange={(e) => setRoleFilter(e.target.value)}
-                  className={`${inputClass} pl-10 cursor-pointer appearance-none pr-8`}
-                >
+                  className={`${inputClass} pl-10 cursor-pointer appearance-none pr-8`}>
                   <option value="All">All Roles</option>
                   <option value="Batsman">Batsman</option>
                   <option value="Bowler">Bowler</option>
@@ -848,8 +969,7 @@ export default function GlobalPlayersView() {
                 <div className="flex w-full md:w-auto gap-2">
                   <button
                     onClick={performMasterSync}
-                    className="flex-1 md:flex-none px-4 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg text-white bg-amber-500 hover:bg-amber-600 active:scale-95 transition-all"
-                  >
+                    className="flex-1 md:flex-none px-4 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg text-white bg-amber-500 hover:bg-amber-600 active:scale-95 transition-all">
                     Sync DB
                   </button>
                   <button
@@ -858,8 +978,7 @@ export default function GlobalPlayersView() {
                       setSelectedForMerge([]);
                       setPrimaryMergeId(null);
                     }}
-                    className={`flex-1 md:flex-none px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg whitespace-nowrap transition-all active:scale-95 text-white flex items-center justify-center gap-2 ${isMergeMode ? "bg-red-500 hover:bg-red-600" : "bg-indigo-600 hover:bg-indigo-500"}`}
-                  >
+                    className={`flex-1 md:flex-none px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg whitespace-nowrap transition-all active:scale-95 text-white flex items-center justify-center gap-2 ${isMergeMode ? "bg-red-500 hover:bg-red-600" : "bg-indigo-600 hover:bg-indigo-500"}`}>
                     {isMergeMode ? (
                       <>
                         <X size={14} /> Cancel
@@ -873,8 +992,7 @@ export default function GlobalPlayersView() {
 
                   <button
                     onClick={openAddModal}
-                    className="flex-1 md:flex-none bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg whitespace-nowrap transition-all active:scale-95 text-white flex items-center justify-center gap-2"
-                  >
+                    className="flex-1 md:flex-none bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg whitespace-nowrap transition-all active:scale-95 text-white flex items-center justify-center gap-2">
                     <Plus size={14} /> Add
                   </button>
                 </div>
@@ -884,8 +1002,7 @@ export default function GlobalPlayersView() {
 
           {isMergeMode && selectedForMerge.length > 0 && (
             <div
-              className={`mb-6 p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 border shadow-lg animate-in slide-in-from-top-2 ${lightMode ? "bg-indigo-50 border-indigo-200" : "bg-indigo-900/20 border-indigo-500/30"}`}
-            >
+              className={`mb-6 p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 border shadow-lg animate-in slide-in-from-top-2 ${lightMode ? "bg-indigo-50 border-indigo-200" : "bg-indigo-900/20 border-indigo-500/30"}`}>
               <div className="text-xs font-bold flex items-center gap-3">
                 <span className="bg-indigo-500 text-white px-3 py-1.5 rounded-lg">
                   {selectedForMerge.length} Selected
@@ -899,8 +1016,7 @@ export default function GlobalPlayersView() {
                 <button
                   onClick={handleConfirmMerge}
                   disabled={processingImage}
-                  className="bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-green-500/20 active:scale-95 transition-all"
-                >
+                  className="bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-green-500/20 active:scale-95 transition-all">
                   {processingImage ? "Merging..." : "Confirm & Merge Data"}
                 </button>
               )}
@@ -910,11 +1026,9 @@ export default function GlobalPlayersView() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
             {orangeCap && (
               <div
-                className={`p-5 rounded-[2rem] flex items-center gap-5 shadow-xl relative overflow-hidden group border transition-all ${lightMode ? "bg-orange-50 border-orange-200" : "bg-gradient-to-br from-orange-900/30 to-[#161920] border-orange-500/20"}`}
-              >
+                className={`p-5 rounded-[2rem] flex items-center gap-5 shadow-xl relative overflow-hidden group border transition-all ${lightMode ? "bg-orange-50 border-orange-200" : "bg-gradient-to-br from-orange-900/30 to-[#161920] border-orange-500/20"}`}>
                 <div
-                  className={`p-4 rounded-full text-3xl border group-hover:scale-110 transition-transform ${lightMode ? "bg-orange-100 border-orange-200 text-orange-600" : "bg-orange-500/10 border-orange-500/20 text-orange-500"}`}
-                >
+                  className={`p-4 rounded-full text-3xl border group-hover:scale-110 transition-transform ${lightMode ? "bg-orange-100 border-orange-200 text-orange-600" : "bg-orange-500/10 border-orange-500/20 text-orange-500"}`}>
                   <Medal size={32} />
                 </div>
                 <div>
@@ -925,8 +1039,7 @@ export default function GlobalPlayersView() {
                     {orangeCap.name}
                   </div>
                   <div
-                    className={`text-sm font-mono font-bold mt-1 ${theme.sub}`}
-                  >
+                    className={`text-sm font-mono font-bold mt-1 ${theme.sub}`}>
                     {orangeCap.calculatedStats.runs} Runs
                   </div>
                 </div>
@@ -934,11 +1047,9 @@ export default function GlobalPlayersView() {
             )}
             {purpleCap && (
               <div
-                className={`p-5 rounded-[2rem] flex items-center gap-5 shadow-xl relative overflow-hidden group border transition-all ${lightMode ? "bg-purple-50 border-purple-200" : "bg-gradient-to-br from-purple-900/30 to-[#161920] border-purple-500/20"}`}
-              >
+                className={`p-5 rounded-[2rem] flex items-center gap-5 shadow-xl relative overflow-hidden group border transition-all ${lightMode ? "bg-purple-50 border-purple-200" : "bg-gradient-to-br from-purple-900/30 to-[#161920] border-purple-500/20"}`}>
                 <div
-                  className={`p-4 rounded-full text-3xl border group-hover:scale-110 transition-transform ${lightMode ? "bg-purple-100 border-purple-200 text-purple-600" : "bg-purple-500/10 border-purple-500/20 text-purple-500"}`}
-                >
+                  className={`p-4 rounded-full text-3xl border group-hover:scale-110 transition-transform ${lightMode ? "bg-purple-100 border-purple-200 text-purple-600" : "bg-purple-500/10 border-purple-500/20 text-purple-500"}`}>
                   <Medal size={32} />
                 </div>
                 <div>
@@ -949,8 +1060,7 @@ export default function GlobalPlayersView() {
                     {purpleCap.name}
                   </div>
                   <div
-                    className={`text-sm font-mono font-bold mt-1 ${theme.sub}`}
-                  >
+                    className={`text-sm font-mono font-bold mt-1 ${theme.sub}`}>
                     {purpleCap.calculatedStats.wickets} Wickets
                   </div>
                 </div>
@@ -959,8 +1069,7 @@ export default function GlobalPlayersView() {
           </div>
 
           <div
-            className={`border rounded-[2rem] overflow-hidden shadow-2xl ${theme.card}`}
-          >
+            className={`border rounded-[2rem] overflow-hidden shadow-2xl ${theme.card}`}>
             {loading ? (
               <div className="p-12 flex flex-col items-center justify-center text-teal-500 animate-pulse text-xs font-black uppercase tracking-widest gap-3">
                 <Loader2 className="animate-spin" size={32} />
@@ -970,8 +1079,7 @@ export default function GlobalPlayersView() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left border-collapse">
                   <thead
-                    className={`text-[10px] uppercase font-black tracking-[0.2em] border-b ${lightMode ? "bg-gray-100 text-gray-500 border-gray-200" : "bg-[#0F1115] text-slate-500 border-white/5"}`}
-                  >
+                    className={`text-[10px] uppercase font-black tracking-[0.2em] border-b ${lightMode ? "bg-gray-100 text-gray-500 border-gray-200" : "bg-[#0F1115] text-slate-500 border-white/5"}`}>
                     <tr>
                       {isMergeMode && (
                         <th className="px-4 py-4 text-center text-indigo-500 w-12">
@@ -980,46 +1088,39 @@ export default function GlobalPlayersView() {
                       )}
                       <th
                         className="px-6 py-4 cursor-pointer hover:opacity-70 group w-[40%] md:w-[30%] transition-opacity"
-                        onClick={() => handleSort("name")}
-                      >
+                        onClick={() => handleSort("name")}>
                         Player Details <SortIcon colKey="name" />
                       </th>
                       <th
                         className="px-4 py-4 text-center cursor-pointer hover:opacity-70 group transition-opacity"
-                        onClick={() => handleSort("matches")}
-                      >
+                        onClick={() => handleSort("matches")}>
                         Mat <SortIcon colKey="matches" />
                       </th>
                       <th
                         className="px-4 py-4 text-center cursor-pointer hover:opacity-70 group transition-opacity"
-                        onClick={() => handleSort("runs")}
-                      >
+                        onClick={() => handleSort("runs")}>
                         Runs <SortIcon colKey="runs" />
                       </th>
                       <th
                         className="px-4 py-4 text-center cursor-pointer hover:opacity-70 group hidden md:table-cell transition-opacity"
-                        onClick={() => handleSort("highestScore")}
-                      >
+                        onClick={() => handleSort("highestScore")}>
                         HS <SortIcon colKey="highestScore" />
                       </th>
                       <th
                         className="px-4 py-4 text-center cursor-pointer hover:opacity-70 group transition-opacity"
-                        onClick={() => handleSort("wickets")}
-                      >
+                        onClick={() => handleSort("wickets")}>
                         Wkts <SortIcon colKey="wickets" />
                       </th>
                       <th className="px-6 py-4 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody
-                    className={`divide-y ${lightMode ? "divide-gray-100" : "divide-white/5"}`}
-                  >
+                    className={`divide-y ${lightMode ? "divide-gray-100" : "divide-white/5"}`}>
                     {processedPlayers.length === 0 ? (
                       <tr>
                         <td
                           colSpan={isMergeMode ? 7 : 6}
-                          className={`text-center py-16 italic text-sm ${theme.sub}`}
-                        >
+                          className={`text-center py-16 italic text-sm ${theme.sub}`}>
                           No players found.
                         </td>
                       </tr>
@@ -1046,13 +1147,11 @@ export default function GlobalPlayersView() {
                                   : lightMode
                                     ? "hover:bg-gray-50"
                                     : "hover:bg-white/5"
-                              }`}
-                            >
+                              }`}>
                               {isMergeMode && (
                                 <td
                                   className="px-4 py-4 text-center border-r border-white/5"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
+                                  onClick={(e) => e.stopPropagation()}>
                                   <input
                                     type="checkbox"
                                     className="w-5 h-5 cursor-pointer accent-indigo-500 rounded"
@@ -1093,14 +1192,12 @@ export default function GlobalPlayersView() {
                                   />
                                   <div className="flex flex-col overflow-hidden">
                                     <span
-                                      className={`font-bold text-sm leading-tight truncate max-w-[120px] md:max-w-none transition-colors ${theme.text}`}
-                                    >
+                                      className={`font-bold text-sm leading-tight truncate max-w-[120px] md:max-w-none transition-colors ${theme.text}`}>
                                       {player.name}
                                     </span>
                                     <div className="flex flex-wrap gap-1 mt-1.5">
                                       <span
-                                        className={`text-[9px] px-2 py-0.5 rounded border truncate uppercase font-bold tracking-wider ${lightMode ? "bg-white border-gray-200 text-gray-500" : "bg-[#0F1115] text-slate-500 border-white/10"}`}
-                                      >
+                                        className={`text-[9px] px-2 py-0.5 rounded border truncate uppercase font-bold tracking-wider ${lightMode ? "bg-white border-gray-200 text-gray-500" : "bg-[#0F1115] text-slate-500 border-white/10"}`}>
                                         {displayRole}
                                       </span>
                                     </div>
@@ -1108,16 +1205,14 @@ export default function GlobalPlayersView() {
                                 </div>
                               </td>
                               <td
-                                className={`px-4 py-4 text-center font-mono font-bold ${theme.sub}`}
-                              >
+                                className={`px-4 py-4 text-center font-mono font-bold ${theme.sub}`}>
                                 {player.calculatedStats.matches}
                               </td>
                               <td className="px-4 py-4 text-center font-bold text-teal-500 font-mono text-base">
                                 {player.calculatedStats.runs}
                               </td>
                               <td
-                                className={`px-4 py-4 text-center font-mono font-bold hidden md:table-cell ${theme.sub}`}
-                              >
+                                className={`px-4 py-4 text-center font-mono font-bold hidden md:table-cell ${theme.sub}`}>
                                 {player.calculatedStats.highestScore}
                               </td>
                               <td className="px-4 py-4 text-center font-bold text-purple-500 font-mono text-base">
@@ -1135,16 +1230,14 @@ export default function GlobalPlayersView() {
                                         onClick={(e) =>
                                           openEditModal(player, e)
                                         }
-                                        className={`p-2 rounded-lg transition-all ${lightMode ? "text-gray-400 hover:bg-gray-100 hover:text-gray-900" : "text-slate-500 hover:bg-white/10 hover:text-white"}`}
-                                      >
+                                        className={`p-2 rounded-lg transition-all ${lightMode ? "text-gray-400 hover:bg-gray-100 hover:text-gray-900" : "text-slate-500 hover:bg-white/10 hover:text-white"}`}>
                                         <Edit3 size={16} />
                                       </button>
                                       <button
                                         onClick={(e) =>
                                           handleDelete(player.id, e)
                                         }
-                                        className="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-500/10 transition-all"
-                                      >
+                                        className="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-500/10 transition-all">
                                         <Trash2 size={16} />
                                       </button>
                                     </>
@@ -1155,12 +1248,10 @@ export default function GlobalPlayersView() {
 
                             {expandedPlayerId === player.id && (
                               <tr
-                                className={`border-t border-b animate-in slide-in-from-top-1 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}
-                              >
+                                className={`border-t border-b animate-in slide-in-from-top-1 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
                                 <td
                                   colSpan={isMergeMode ? 7 : 6}
-                                  className="p-6"
-                                >
+                                  className="p-6">
                                   <div className="flex flex-col md:flex-row gap-8 items-start">
                                     <div className="flex-shrink-0">
                                       <img
@@ -1214,19 +1305,16 @@ export default function GlobalPlayersView() {
 
                                       {user && displayPayment && (
                                         <div
-                                          className={`mb-8 pt-6 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}
-                                        >
+                                          className={`mb-8 pt-6 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}>
                                           <h4
-                                            className={`text-xs font-black uppercase mb-4 tracking-widest ${theme.sub}`}
-                                          >
+                                            className={`text-xs font-black uppercase mb-4 tracking-widest ${theme.sub}`}>
                                             Latest Receipt / Proof
                                           </h4>
                                           <div
                                             className="relative group w-full md:w-64 cursor-pointer"
                                             onClick={() =>
                                               setPreviewImage(displayPayment)
-                                            }
-                                          >
+                                            }>
                                             <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-xl">
                                               <span className="text-white font-bold text-xs uppercase tracking-widest">
                                                 Enlarge
@@ -1242,11 +1330,9 @@ export default function GlobalPlayersView() {
                                       )}
 
                                       <div
-                                        className={`pt-6 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}
-                                      >
+                                        className={`pt-6 border-t ${lightMode ? "border-gray-200" : "border-white/5"}`}>
                                         <h4
-                                          className={`text-xs font-black uppercase mb-4 flex items-center gap-2 tracking-widest ${theme.sub}`}
-                                        >
+                                          className={`text-xs font-black uppercase mb-4 flex items-center gap-2 tracking-widest ${theme.sub}`}>
                                           Global Match History (
                                           {
                                             player.calculatedStats.history
@@ -1268,20 +1354,17 @@ export default function GlobalPlayersView() {
                                                       match.matchId,
                                                     )
                                                   }
-                                                  className={`p-4 rounded-xl cursor-pointer transition-all flex justify-between items-center group/card border ${lightMode ? "bg-white border-gray-200 hover:border-teal-500/50 hover:shadow-md" : "bg-[#161920] border-white/5 hover:border-teal-500/40 hover:bg-[#1C2128]"}`}
-                                                >
+                                                  className={`p-4 rounded-xl cursor-pointer transition-all flex justify-between items-center group/card border ${lightMode ? "bg-white border-gray-200 hover:border-teal-500/50 hover:shadow-md" : "bg-[#161920] border-white/5 hover:border-teal-500/40 hover:bg-[#1C2128]"}`}>
                                                   <div>
                                                     <div
-                                                      className={`text-[9px] font-bold uppercase tracking-wider mb-1 ${theme.sub}`}
-                                                    >
+                                                      className={`text-[9px] font-bold uppercase tracking-wider mb-1 ${theme.sub}`}>
                                                       {new Date(
                                                         match.date,
                                                       ).toLocaleDateString() ||
                                                         "Date"}
                                                     </div>
                                                     <div
-                                                      className={`font-bold text-sm transition-colors group-hover/card:text-teal-500 ${theme.text}`}
-                                                    >
+                                                      className={`font-bold text-sm transition-colors group-hover/card:text-teal-500 ${theme.text}`}>
                                                       vs{" "}
                                                       {match.opponent ||
                                                         "Opponent"}
@@ -1304,8 +1387,7 @@ export default function GlobalPlayersView() {
                                                           <span
                                                             className={
                                                               theme.sub
-                                                            }
-                                                          >
+                                                            }>
                                                             -
                                                           </span>
                                                         )}
@@ -1316,8 +1398,7 @@ export default function GlobalPlayersView() {
                                           </div>
                                         ) : (
                                           <div
-                                            className={`text-xs italic p-6 border border-dashed rounded-xl text-center font-medium ${lightMode ? "text-gray-400 bg-white border-gray-200" : "text-slate-600 bg-[#161920] border-white/5"}`}
-                                          >
+                                            className={`text-xs italic p-6 border border-dashed rounded-xl text-center font-medium ${lightMode ? "text-gray-400 bg-white border-gray-200" : "text-slate-600 bg-[#161920] border-white/5"}`}>
                                             No global match history recorded.
                                           </div>
                                         )}
@@ -1341,8 +1422,7 @@ export default function GlobalPlayersView() {
           {previewImage && (
             <div
               className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
-              onClick={() => setPreviewImage(null)}
-            >
+              onClick={() => setPreviewImage(null)}>
               <div className="relative max-w-4xl max-h-[90vh]">
                 <img
                   src={previewImage}
@@ -1353,8 +1433,7 @@ export default function GlobalPlayersView() {
                 />
                 <button
                   className="absolute -top-12 right-0 text-white hover:text-red-400 font-bold text-sm uppercase tracking-widest transition-colors flex items-center gap-2"
-                  onClick={() => setPreviewImage(null)}
-                >
+                  onClick={() => setPreviewImage(null)}>
                   Close <X size={16} />
                 </button>
               </div>
@@ -1365,20 +1444,16 @@ export default function GlobalPlayersView() {
           {showModal && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-in fade-in">
               <div
-                className={`border w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${theme.card} ${theme.text}`}
-              >
+                className={`border w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${theme.card} ${theme.text}`}>
                 <div
-                  className={`p-6 border-b flex justify-between items-center sticky top-0 z-10 ${lightMode ? "bg-white border-gray-200" : "bg-[#1C2128] border-white/5"}`}
-                >
+                  className={`p-6 border-b flex justify-between items-center sticky top-0 z-10 ${lightMode ? "bg-white border-gray-200" : "bg-[#1C2128] border-white/5"}`}>
                   <h3
-                    className={`text-lg font-black uppercase tracking-tight italic ${theme.text}`}
-                  >
+                    className={`text-lg font-black uppercase tracking-tight italic ${theme.text}`}>
                     {isEditing ? "Edit Global Profile" : "Create New Player"}
                   </h3>
                   <button
                     onClick={() => setShowModal(false)}
-                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${lightMode ? "bg-gray-100 text-gray-500 hover:bg-gray-200" : "bg-white/5 text-slate-400 hover:text-white"}`}
-                  >
+                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${lightMode ? "bg-gray-100 text-gray-500 hover:bg-gray-200" : "bg-white/5 text-slate-400 hover:text-white"}`}>
                     <X size={16} />
                   </button>
                 </div>
@@ -1389,19 +1464,16 @@ export default function GlobalPlayersView() {
                       <div className="flex items-center gap-2 mb-4">
                         <Trophy size={16} className="text-indigo-500" />
                         <label
-                          className={`text-[10px] uppercase font-black tracking-widest ${theme.sub}`}
-                        >
+                          className={`text-[10px] uppercase font-black tracking-widest ${theme.sub}`}>
                           Assign to Tournaments
                         </label>
                       </div>
                       <div
-                        className={`grid grid-cols-1 gap-2 max-h-40 overflow-y-auto custom-scrollbar p-3 border rounded-xl ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}
-                      >
+                        className={`grid grid-cols-1 gap-2 max-h-40 overflow-y-auto custom-scrollbar p-3 border rounded-xl ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
                         {tournamentsList.map((t) => (
                           <label
                             key={t.id}
-                            className="flex items-center gap-3 cursor-pointer group p-2 hover:bg-white/5 rounded-lg transition-colors"
-                          >
+                            className="flex items-center gap-3 cursor-pointer group p-2 hover:bg-white/5 rounded-lg transition-colors">
                             <input
                               type="checkbox"
                               className="w-4 h-4 accent-teal-500 rounded border-gray-300 cursor-pointer"
@@ -1420,8 +1492,7 @@ export default function GlobalPlayersView() {
                               }}
                             />
                             <span
-                              className={`text-sm font-bold ${theme.text} group-hover:text-teal-500 transition-colors truncate`}
-                            >
+                              className={`text-sm font-bold ${theme.text} group-hover:text-teal-500 transition-colors truncate`}>
                               {t.name}
                             </span>
                           </label>
@@ -1434,16 +1505,32 @@ export default function GlobalPlayersView() {
                       </div>
                     </div>
 
+                    {/* Profile Photo */}
                     <div className="flex gap-4 justify-center">
                       {/* Profile Photo */}
+                      {/* 🟢 FIXED Profile Photo UX */}
                       <div className="flex flex-col items-center">
-                        <div
-                          className="relative group cursor-pointer"
-                          onClick={() => fileInputRef.current.click()}
-                        >
+                        <div className="relative group block">
+                          {/* If they HAVE a photo, clicking it opens the cropper with that photo */}
+                          {/* If they DO NOT have a photo, clicking it opens the file selector */}
                           <div
-                            className={`w-24 h-24 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl ${formData.photoURL ? "border-teal-500 shadow-teal-500/20" : lightMode ? "bg-gray-100 border-gray-200 border-dashed" : "bg-[#0F1115] border-white/10 border-dashed"}`}
-                          >
+                            onClick={() => {
+                              if (formData.photoURL) {
+                                setImageToCrop(formData.photoURL);
+                                setCrop({ x: 0, y: 0 });
+                                setZoom(1);
+                                setCropModalOpen(true);
+                              } else {
+                                fileInputRef.current.click();
+                              }
+                            }}
+                            className={`w-24 h-24 rounded-full border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl cursor-pointer ${
+                              formData.photoURL
+                                ? "border-teal-500 shadow-teal-500/20"
+                                : lightMode
+                                  ? "bg-gray-100 border-gray-200 border-dashed"
+                                  : "bg-[#0F1115] border-white/10 border-dashed"
+                            }`}>
                             {formData.photoURL ? (
                               <img
                                 src={formData.photoURL}
@@ -1453,30 +1540,55 @@ export default function GlobalPlayersView() {
                             ) : (
                               <Camera className={`opacity-50 ${theme.sub}`} />
                             )}
+
+                            {/* Hover overlay explaining they can edit */}
+                            {formData.photoURL && (
+                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <span className="text-[10px] font-black uppercase text-white tracking-widest">
+                                  Crop
+                                </span>
+                              </div>
+                            )}
                           </div>
-                          <input
-                            type="file"
-                            ref={fileInputRef}
-                            onChange={handleImageUpload}
-                            className="hidden"
-                            accept="image/*"
-                          />
+
+                          {/* A separate, explicit button to upload a BRAND NEW photo */}
+                          {formData.photoURL && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                fileInputRef.current.click();
+                              }}
+                              className="absolute -bottom-2 -right-2 bg-teal-500 text-white rounded-full p-1.5 shadow-lg border-2 border-white dark:border-[#1C2128] hover:bg-teal-400 transition-colors"
+                              title="Upload New Photo">
+                              <Camera size={12} />
+                            </button>
+                          )}
                         </div>
+
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          onChange={handleImageUpload}
+                          className="hidden"
+                          accept="image/*"
+                          onClick={(e) => {
+                            e.target.value = null;
+                          }}
+                        />
                         <p
-                          className={`text-[9px] uppercase mt-2 font-black tracking-widest text-center ${theme.sub}`}
-                        >
+                          className={`text-[9px] uppercase mt-2 font-black tracking-widest text-center ${theme.sub}`}>
                           Profile
                         </p>
                       </div>
+
                       {/* Payment */}
                       <div className="flex flex-col items-center">
-                        <div
-                          className="relative group cursor-pointer"
-                          onClick={() => paymentInputRef.current.click()}
-                        >
+                        <label
+                          htmlFor="global-payment-upload"
+                          className="relative group cursor-pointer block">
                           <div
-                            className={`w-24 h-24 rounded-xl border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl ${formData.paymentScreenshotURL ? "border-purple-500 shadow-purple-500/20" : lightMode ? "bg-gray-100 border-gray-200 border-dashed" : "bg-[#0F1115] border-white/10 border-dashed"}`}
-                          >
+                            className={`w-24 h-24 rounded-xl border-4 flex items-center justify-center overflow-hidden transition-all shadow-xl ${formData.paymentScreenshotURL ? "border-purple-500 shadow-purple-500/20" : lightMode ? "bg-gray-100 border-gray-200 border-dashed" : "bg-[#0F1115] border-white/10 border-dashed"}`}>
                             {formData.paymentScreenshotURL ? (
                               <img
                                 src={formData.paymentScreenshotURL}
@@ -1487,17 +1599,19 @@ export default function GlobalPlayersView() {
                               <Receipt className={`opacity-50 ${theme.sub}`} />
                             )}
                           </div>
-                          <input
-                            type="file"
-                            ref={paymentInputRef}
-                            onChange={handlePaymentImageUpload}
-                            className="hidden"
-                            accept="image/*"
-                          />
-                        </div>
+                        </label>
+                        <input
+                          type="file"
+                          id="global-payment-upload"
+                          onChange={handlePaymentImageUpload}
+                          className="hidden"
+                          accept="image/*"
+                          onClick={(e) => {
+                            e.target.value = null;
+                          }}
+                        />
                         <p
-                          className={`text-[9px] uppercase mt-2 font-black tracking-widest text-center ${theme.sub}`}
-                        >
+                          className={`text-[9px] uppercase mt-2 font-black tracking-widest text-center ${theme.sub}`}>
                           Payment
                         </p>
                       </div>
@@ -1533,8 +1647,7 @@ export default function GlobalPlayersView() {
                             key={role}
                             type="button"
                             onClick={() => setFormData({ ...formData, role })}
-                            className={`py-3 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all ${formData.role === role ? "bg-teal-500/10 border-teal-500/50 text-teal-500" : lightMode ? "bg-white border-gray-200 text-gray-500 hover:bg-gray-50" : "bg-[#0F1115] border-white/5 text-slate-500 hover:text-slate-300"}`}
-                          >
+                            className={`py-3 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all ${formData.role === role ? "bg-teal-500/10 border-teal-500/50 text-teal-500" : lightMode ? "bg-white border-gray-200 text-gray-500 hover:bg-gray-50" : "bg-[#0F1115] border-white/5 text-slate-500 hover:text-slate-300"}`}>
                             {role}
                           </button>
                         ))}
@@ -1549,8 +1662,7 @@ export default function GlobalPlayersView() {
                               ...formData,
                               battingStyle: e.target.value,
                             })
-                          }
-                        >
+                          }>
                           <option>Right Hand Bat</option>
                           <option>Left Hand Bat</option>
                         </select>
@@ -1562,8 +1674,7 @@ export default function GlobalPlayersView() {
                               ...formData,
                               bowlingStyle: e.target.value,
                             })
-                          }
-                        >
+                          }>
                           <option>Right Arm Medium</option>
                           <option>Right Arm Fast</option>
                           <option>Right Arm Spin</option>
@@ -1577,15 +1688,13 @@ export default function GlobalPlayersView() {
 
                     <div className="pt-4 border-t border-white/10">
                       <p
-                        className={`text-[10px] uppercase font-black tracking-widest mb-3 ${theme.sub}`}
-                      >
+                        className={`text-[10px] uppercase font-black tracking-widest mb-3 ${theme.sub}`}>
                         Manual Base Stats Adjustment
                       </p>
                       <div className="grid grid-cols-3 gap-3">
                         <div>
                           <label
-                            className={`text-[9px] uppercase font-bold ${theme.sub}`}
-                          >
+                            className={`text-[9px] uppercase font-bold ${theme.sub}`}>
                             Base Matches
                           </label>
                           <input
@@ -1602,8 +1711,7 @@ export default function GlobalPlayersView() {
                         </div>
                         <div>
                           <label
-                            className={`text-[9px] uppercase font-bold ${theme.sub}`}
-                          >
+                            className={`text-[9px] uppercase font-bold ${theme.sub}`}>
                             Base Runs
                           </label>
                           <input
@@ -1620,8 +1728,7 @@ export default function GlobalPlayersView() {
                         </div>
                         <div>
                           <label
-                            className={`text-[9px] uppercase font-bold ${theme.sub}`}
-                          >
+                            className={`text-[9px] uppercase font-bold ${theme.sub}`}>
                             Base Wickets
                           </label>
                           <input
@@ -1642,8 +1749,7 @@ export default function GlobalPlayersView() {
                     <button
                       type="submit"
                       disabled={processingImage}
-                      className="w-full bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 text-white font-black uppercase tracking-widest text-xs py-4 rounded-xl shadow-lg transition-all disabled:opacity-50 active:scale-[0.98]"
-                    >
+                      className="w-full bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 text-white font-black uppercase tracking-widest text-xs py-4 rounded-xl shadow-lg transition-all disabled:opacity-50 active:scale-[0.98]">
                       {processingImage
                         ? "Processing..."
                         : isEditing

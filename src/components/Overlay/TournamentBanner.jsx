@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { doc, collection, onSnapshot } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { db } from "../../utils/firebase";
+import { supabase } from "../../utils/supabase"; // 🟢 Added Supabase Import
 import PlayerAvatar from "../PlayerAvatar";
 
 export default function TournamentBanner({ tournamentId }) {
@@ -9,64 +10,64 @@ export default function TournamentBanner({ tournamentId }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  // --- 1. DATA SUBSCRIPTION ---
+  // --- 1. DUAL DATA FETCHING ---
   useEffect(() => {
     if (!tournamentId) return;
 
-    const unsubTournament = onSnapshot(
-      doc(db, "tournaments", tournamentId),
-      (docSnap) => {
-        if (docSnap.exists()) setTournament(docSnap.data());
-      },
-    );
+    const fetchBroadcastData = async () => {
+      try {
+        // A. Fetch Tournament Meta (Just once, no listener needed for banners)
+        const tSnap = await getDoc(doc(db, "tournaments", tournamentId));
+        if (tSnap.exists()) {
+          setTournament(tSnap.data());
+        }
 
-    const unsubTeams = onSnapshot(
-      collection(db, "tournaments", tournamentId, "teams"),
-      (snapshot) => {
-        const teamsData = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-        setTeams(teamsData);
+        // B. Fetch Teams, Logos, and Rosters from Supabase
+        const { data: sbTeams, error } = await supabase
+          .from("teams")
+          .select("*")
+          .eq("tournament_id", tournamentId);
+
+        if (error) throw error;
+
+        if (sbTeams) {
+          setTeams(sbTeams);
+        }
+      } catch (err) {
+        console.error("Error fetching broadcast data:", err);
+      } finally {
         setLoading(false);
-      },
-    );
-
-    return () => {
-      unsubTournament();
-      unsubTeams();
+      }
     };
+
+    fetchBroadcastData();
   }, [tournamentId]);
 
   // --- 🔥 2. PRELOAD ENGINE: CACHE ALL IMAGES IN BACKGROUND 🔥 ---
   useEffect(() => {
     if (teams.length === 0) return;
 
-    // We look through every team and every player to find photo URLs to preload
     const urlsToPreload = new Set();
 
     teams.forEach((team) => {
       // Team Logo
-      const tLogo = team.logo || team.logoUrl;
-      if (tLogo) urlsToPreload.add(tLogo);
+      if (team.logo) urlsToPreload.add(team.logo);
 
       // Player Photos
       if (team.roster) {
         team.roster.forEach((p) => {
-          const pPhoto = p.photoURL || p.photoUrl || p.image;
-          if (pPhoto) urlsToPreload.add(pPhoto);
+          if (p.photoUrl) urlsToPreload.add(p.photoUrl);
         });
       }
     });
 
-    // Fire off the preload requests
     urlsToPreload.forEach((url) => {
       const img = new Image();
       img.src = url;
     });
 
     console.log(
-      `🚀 Preloaded ${urlsToPreload.size} broadcast assets to memory.`,
+      `🚀 Preloaded ${urlsToPreload.size} broadcast assets from Supabase to memory.`,
     );
   }, [teams]);
 
@@ -85,7 +86,7 @@ export default function TournamentBanner({ tournamentId }) {
   const displayList = useMemo(() => {
     if (!activeTeam) return [];
     const rawRoster = activeTeam.roster || [];
-    const ownerName = activeTeam.ownerName || activeTeam.owner;
+    const ownerName = activeTeam.owner;
 
     let ownerObj = null;
     let playingRoster = [];
@@ -127,9 +128,7 @@ export default function TournamentBanner({ tournamentId }) {
   // Styling Helpers
   const activeColor = activeTeam?.color || "#00b4d8";
   const getTeamLogo = (t) =>
-    t?.logo ||
-    t?.logoUrl ||
-    "https://cdn-icons-png.flaticon.com/512/164/164449.png";
+    t?.logo || "https://cdn-icons-png.flaticon.com/512/164/164449.png";
   const tournamentLogo =
     tournament?.logoUrl ||
     tournament?.logo ||
@@ -141,7 +140,7 @@ export default function TournamentBanner({ tournamentId }) {
         <div className="flex flex-col items-center gap-4">
           <div className="w-16 h-16 border-4 border-t-teal-500 border-white/10 rounded-full animate-spin"></div>
           <span className="text-white font-black tracking-widest uppercase opacity-50">
-            Preparing Broadcast...
+            Fetching Supabase Assets...
           </span>
         </div>
       </div>
@@ -154,8 +153,7 @@ export default function TournamentBanner({ tournamentId }) {
       <div className="absolute inset-0 z-0 pointer-events-none">
         <div
           className="absolute inset-0 transition-colors duration-1000"
-          style={{ backgroundColor: `${activeColor}10` }}
-        ></div>
+          style={{ backgroundColor: `${activeColor}10` }}></div>
         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 mix-blend-overlay"></div>
 
         <div
@@ -163,15 +161,13 @@ export default function TournamentBanner({ tournamentId }) {
           className="absolute inset-0 opacity-30 transition-all duration-1000"
           style={{
             background: `radial-gradient(circle at 50% 0%, ${activeColor} 0%, transparent 60%)`,
-          }}
-        ></div>
+          }}></div>
         <div
           key={`glow-b-${activeTeam?.id}`}
           className="absolute inset-0 opacity-20 transition-all duration-1000"
           style={{
             background: `radial-gradient(circle at 50% 100%, ${activeColor} 0%, transparent 50%)`,
-          }}
-        ></div>
+          }}></div>
       </div>
 
       {/* 🏷️ HEADER SECTION */}
@@ -188,8 +184,7 @@ export default function TournamentBanner({ tournamentId }) {
             </h2>
             <span
               className="font-bold tracking-[0.5em] text-sm uppercase opacity-80"
-              style={{ color: activeColor }}
-            >
+              style={{ color: activeColor }}>
               Squad Showcase
             </span>
           </div>
@@ -205,15 +200,13 @@ export default function TournamentBanner({ tournamentId }) {
       {/* 🏆 TEAM IDENTITY SECTION */}
       <div
         key={`identity-${activeTeam?.id}`}
-        className="z-20 flex flex-col items-center pt-8 pb-4 animate-slide-in"
-      >
+        className="z-20 flex flex-col items-center pt-8 pb-4 animate-slide-in">
         <div
           className="w-28 h-28 bg-white rounded-full p-1.5 border-4 shadow-2xl mb-4 transition-all duration-1000"
           style={{
             borderColor: activeColor,
             boxShadow: `0 0 40px ${activeColor}44`,
-          }}
-        >
+          }}>
           <img
             src={getTeamLogo(activeTeam)}
             className="w-full h-full object-contain rounded-full"
@@ -232,29 +225,26 @@ export default function TournamentBanner({ tournamentId }) {
             <div
               key={`${activeTeam.id}-${person.id || idx}`}
               className="relative bg-[#0f141f]/80 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl flex flex-col group animate-fade-in"
-              style={{ animationDelay: `${idx * 40}ms` }}
-            >
+              style={{ animationDelay: `${idx * 40}ms` }}>
               <div
                 className="absolute top-0 left-0 right-0 h-1.5 z-20"
                 style={{
                   backgroundColor: person.isOwner ? "#fbbf24" : activeColor,
-                }}
-              ></div>
+                }}></div>
 
               <div className="w-full aspect-square bg-slate-950 overflow-hidden relative">
+                {/* Notice: We map 'person.photoUrl' down so PlayerAvatar knows where to look */}
                 <PlayerAvatar
-                  player={person}
+                  player={{ ...person, photoUrl: person.photoUrl }}
                   playerId={person.id || person.originalId}
                   tournamentId={tournamentId}
-                  // 🔥 No grayscale, high quality object-fit
                   className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                 />
 
                 {person.isIcon && (
                   <div
                     className="absolute top-3 right-3 text-3xl animate-pulse z-10"
-                    style={{ color: activeColor }}
-                  >
+                    style={{ color: activeColor }}>
                     ★
                   </div>
                 )}
@@ -264,11 +254,9 @@ export default function TournamentBanner({ tournamentId }) {
                 className="p-4 text-center border-t border-white/5"
                 style={{
                   background: `linear-gradient(to bottom, ${activeColor}08, transparent)`,
-                }}
-              >
+                }}>
                 <div
-                  className={`text-lg font-black uppercase truncate leading-tight ${person.isOwner ? "text-amber-400" : "text-white"}`}
-                >
+                  className={`text-lg font-black uppercase truncate leading-tight ${person.isOwner ? "text-amber-400" : "text-white"}`}>
                   {person.name}
                 </div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mt-1">
@@ -288,8 +276,7 @@ export default function TournamentBanner({ tournamentId }) {
           style={{
             backgroundColor: activeColor,
             boxShadow: `0 0 15px ${activeColor}`,
-          }}
-        ></div>
+          }}></div>
       </div>
 
       <style>{`

@@ -1,5 +1,12 @@
 import React, { useState } from "react";
-import { doc, updateDoc, deleteDoc } from "firebase/firestore";
+import {
+  doc,
+  updateDoc,
+  deleteDoc,
+  collection,
+  getDocs,
+  writeBatch,
+} from "firebase/firestore";
 import { db } from "../../utils/firebase";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "../../context/ThemeContext";
@@ -12,12 +19,14 @@ import {
   Lock,
   ScrollText,
   Loader2,
+  DatabaseZap, // 🟢 Added icon for the maintenance section
 } from "lucide-react";
 
 export default function SettingsTab({ tournament, canEdit }) {
   const navigate = useNavigate();
   const { theme, lightMode } = useTheme();
   const [isSaving, setIsSaving] = useState(false);
+  const [isRecalculating, setIsRecalculating] = useState(false); // 🟢 New state for the button
 
   // 1. Initialize State from Tournament Data
   const [tieRule, setTieRule] = useState(
@@ -43,6 +52,135 @@ export default function SettingsTab({ tournament, canEdit }) {
     }
   };
 
+  // 🟢 NEW FUNCTION: Recalculate Ghost Stats
+  const handleRecalculateStats = async () => {
+    if (!canEdit) return;
+
+    const confirmMsg =
+      "🔄 Are you sure? This will scan all existing completed matches and rebuild every player's stats from scratch to fix any ghost data.";
+    if (!window.confirm(confirmMsg)) return;
+
+    setIsRecalculating(true);
+    try {
+      const batch = writeBatch(db);
+      const playerAggregates = {}; // Store tallies here: { "PlayerName": { runs: 10, wickets: 2... } }
+
+      // 1. Fetch all matches for this tournament
+      const matchesSnap = await getDocs(
+        collection(db, "tournaments", tournament.id, "matches"),
+      );
+
+      // 2. Tally up stats ONLY from valid, completed matches
+      matchesSnap.forEach((docSnap) => {
+        const matchData = docSnap.data();
+        const status = (
+          matchData.status ||
+          matchData.meta?.status ||
+          ""
+        ).toLowerCase();
+
+        if (["completed", "finished"].includes(status) && matchData.innings) {
+          matchData.innings.forEach((inn) => {
+            // Aggregate Batting
+            if (inn.batsmenStats) {
+              Object.entries(inn.batsmenStats).forEach(
+                ([playerName, stats]) => {
+                  if (!playerAggregates[playerName])
+                    playerAggregates[playerName] = {
+                      runs: 0,
+                      balls: 0,
+                      fours: 0,
+                      sixes: 0,
+                      wickets: 0,
+                      runsConceded: 0,
+                      ballsBowled: 0,
+                      matches: 0,
+                    };
+                  playerAggregates[playerName].runs += stats.runs || 0;
+                  playerAggregates[playerName].fours += stats.fours || 0;
+                  playerAggregates[playerName].sixes += stats.sixes || 0;
+                  playerAggregates[playerName].balls += stats.balls || 0;
+                  // Note: You can add logic to increment 'matches' count here if needed
+                },
+              );
+            }
+            // Aggregate Bowling
+            if (inn.bowlerStats) {
+              Object.entries(inn.bowlerStats).forEach(([playerName, stats]) => {
+                if (!playerAggregates[playerName])
+                  playerAggregates[playerName] = {
+                    runs: 0,
+                    balls: 0,
+                    fours: 0,
+                    sixes: 0,
+                    wickets: 0,
+                    runsConceded: 0,
+                    ballsBowled: 0,
+                    matches: 0,
+                  };
+                playerAggregates[playerName].wickets += stats.wickets || 0;
+                playerAggregates[playerName].runsConceded += stats.runs || 0; // Runs conceded
+
+                // Convert overs (e.g. 1.2) to total balls
+                const oversStr = String(stats.overs || 0);
+                const [fullOvers, extraBalls] = oversStr.split(".");
+                playerAggregates[playerName].ballsBowled +=
+                  parseInt(fullOvers || 0) * 6 + parseInt(extraBalls || 0);
+              });
+            }
+          });
+        }
+      });
+
+      // 3. Fetch all teams to apply the newly calculated stats
+      const teamsSnap = await getDocs(
+        collection(db, "tournaments", tournament.id, "teams"),
+      );
+
+      teamsSnap.forEach((teamDoc) => {
+        const teamData = teamDoc.data();
+        let needsUpdate = false;
+
+        // Assuming your players are stored in a 'squad' array inside the team document
+        if (teamData.squad && Array.isArray(teamData.squad)) {
+          const updatedSquad = teamData.squad.map((player) => {
+            const freshStats = playerAggregates[player.name] || {
+              runs: 0,
+              fours: 0,
+              sixes: 0,
+              wickets: 0,
+              ballsBowled: 0,
+              runsConceded: 0,
+            };
+
+            // Apply fresh stats, wiping out ghost data
+            return {
+              ...player,
+              runs: freshStats.runs,
+              fours: freshStats.fours,
+              sixes: freshStats.sixes,
+              wickets: freshStats.wickets,
+              ballsBowled: freshStats.ballsBowled,
+              runsConceded: freshStats.runsConceded,
+            };
+          });
+
+          batch.update(teamDoc.ref, { squad: updatedSquad });
+          needsUpdate = true;
+        }
+      });
+
+      // 4. Commit the batch update
+      await batch.commit();
+      alert("✅ Player stats have been fully recalculated and synced!");
+    } catch (e) {
+      console.error("Recalculation Error:", e);
+      alert("Error recalculating stats: " + e.message);
+    } finally {
+      setIsRecalculating(false);
+    }
+  };
+
   const handleDeleteTournament = async () => {
     const confirmMsg = `⚠️ DANGER ZONE ⚠️\n\nAre you sure you want to delete "${tournament.name}"?\nThis action cannot be undone and will delete all matches and teams.`;
     if (!window.confirm(confirmMsg)) return;
@@ -53,7 +191,7 @@ export default function SettingsTab({ tournament, canEdit }) {
 
     try {
       await deleteDoc(doc(db, "tournaments", tournament.id));
-      navigate("/tournaments"); // Redirect to home
+      navigate("/tournaments");
     } catch (e) {
       alert("Error deleting: " + e.message);
     }
@@ -174,7 +312,41 @@ export default function SettingsTab({ tournament, canEdit }) {
         </div>
       </div>
 
-      {/* SECTION 2: DANGER ZONE */}
+      {/* 🟢 NEW SECTION: DATA MAINTENANCE */}
+      <div
+        className={`border rounded-2xl p-6 shadow-xl transition-all ${
+          lightMode
+            ? "bg-indigo-50 border-indigo-200"
+            : "bg-[#1C2128] border-indigo-500/20"
+        }`}>
+        <h3
+          className={`text-lg font-bold mb-2 flex items-center gap-2 ${lightMode ? "text-indigo-700" : "text-indigo-400"}`}>
+          <DatabaseZap size={20} /> Data Maintenance
+        </h3>
+        <p
+          className={`text-xs mb-4 ${lightMode ? "text-indigo-600/70" : "text-slate-400"}`}>
+          If you deleted a test match and players still have ghost runs/wickets,
+          click below to wipe the leaderboard and recalculate everything from
+          scratch based only on existing completed matches.
+        </p>
+        <button
+          onClick={handleRecalculateStats}
+          disabled={isRecalculating}
+          className={`w-full py-3 font-bold rounded-xl transition-all flex items-center justify-center gap-2 ${
+            lightMode
+              ? "bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-100 shadow-sm"
+              : "bg-indigo-900/20 hover:bg-indigo-900/40 text-indigo-400 border border-indigo-500/30"
+          } disabled:opacity-50 disabled:cursor-not-allowed`}>
+          {isRecalculating ? (
+            <Loader2 className="animate-spin" size={18} />
+          ) : (
+            <DatabaseZap size={18} />
+          )}
+          {isRecalculating ? "Scanning Matches..." : "Recalculate Player Stats"}
+        </button>
+      </div>
+
+      {/* SECTION 3: DANGER ZONE */}
       <div
         className={`border rounded-2xl p-6 shadow-xl transition-all ${
           lightMode

@@ -888,11 +888,11 @@ export default function BracketBuilder() {
       const batch = writeBatch(db);
       const tourneyRef = doc(db, "tournaments", id);
 
-      // 🟢 1. DATA DIET: Strip all heavy data (like base64 images) from the bracket blueprint
+      // 🟢 1. DATA DIET: Strip massive base64 logos from the Tournament Doc
       const leanMatches = matches.map((m) => {
         const cleanSlot = (slot) => {
           if (slot.type === "team" && slot.team) {
-            // ONLY keep the ID and Name. Drop the massive base64 logos!
+            // ONLY keep ID and Name in the blueprint
             return {
               ...slot,
               team: { id: slot.team.id, name: slot.team.name },
@@ -903,25 +903,17 @@ export default function BracketBuilder() {
         return { ...m, slotA: cleanSlot(m.slotA), slotB: cleanSlot(m.slotB) };
       });
 
-      // Save the lightweight version to the main tournament document
       batch.update(tourneyRef, {
         bracketLayout: {
           rounds,
-          matches: leanMatches, // 🔥 Uses the cleaned array!
+          matches: leanMatches,
           matchCounter,
           globalSettings,
           lastUpdated: Date.now(),
         },
       });
 
-      // 🟢 2. BASE64 FILTER: A helper to drop base64 strings but keep Cloudinary URLs
-      const getSafeLogo = (logoStr) => {
-        if (typeof logoStr === "string" && logoStr.startsWith("data:image")) {
-          return null; // Purge old base64
-        }
-        return logoStr || null; // Keep Cloudinary / standard links
-      };
-
+      // 🟢 2. MATCH CREATION: Pull logos from the main 'teams' array
       matches.forEach((m, index) => {
         const matchIdStr = `BRACKET-${m.id}`;
         const matchRef = doc(db, "tournaments", id, "matches", matchIdStr);
@@ -930,15 +922,25 @@ export default function BracketBuilder() {
         let teamAName = "TBD";
         let teamAId = null;
         let teamALogo = null;
+
         if (m.slotA.type === "team" && m.slotA.team) {
           teamAName = m.slotA.team.name;
           teamAId = m.slotA.team.id;
-          teamALogo = getSafeLogo(m.slotA.team.logo || m.slotA.team.logoUrl); // 🔥 Filter applied
-        } else if (m.slotA.type === "link" && m.slotA.sourceMatchId)
+
+          // 🔥 EXPANDED FIX: Catch logoUrl, logo, image, photoUrl, AND photoURL
+          const fullTeamA = teams.find((t) => t.id === teamAId);
+          teamALogo =
+            fullTeamA?.logoUrl ||
+            fullTeamA?.logo ||
+            fullTeamA?.image ||
+            fullTeamA?.photoUrl ||
+            fullTeamA?.photoURL ||
+            null;
+        } else if (m.slotA.type === "link" && m.slotA.sourceMatchId) {
           teamAName = `Winner of ${m.slotA.sourceMatchId}`;
-        else if (m.slotA.type === "loser_link" && m.slotA.sourceMatchId)
+        } else if (m.slotA.type === "loser_link" && m.slotA.sourceMatchId) {
           teamAName = `Loser of ${m.slotA.sourceMatchId}`;
-        else if (m.slotA.type === "standing" && m.slotA.sourceMatchId) {
+        } else if (m.slotA.type === "standing" && m.slotA.sourceMatchId) {
           const parts = m.slotA.sourceMatchId.split("_");
           const posStr =
             parts[2] === "1"
@@ -949,20 +951,32 @@ export default function BracketBuilder() {
                   ? "3rd"
                   : "4th";
           teamAName = `${posStr} Group ${parts[1]}`;
-        } else if (m.slotA.type === "bye") teamAName = "BYE";
+        } else if (m.slotA.type === "bye") {
+          teamAName = "BYE";
+        }
 
         let teamBName = "TBD";
         let teamBId = null;
         let teamBLogo = null;
+
         if (m.slotB.type === "team" && m.slotB.team) {
           teamBName = m.slotB.team.name;
           teamBId = m.slotB.team.id;
-          teamBLogo = getSafeLogo(m.slotB.team.logo || m.slotB.team.logoUrl); // 🔥 Filter applied
-        } else if (m.slotB.type === "link" && m.slotB.sourceMatchId)
+
+          // 🔥 EXPANDED FIX: Catch all variations for Team B as well
+          const fullTeamB = teams.find((t) => t.id === teamBId);
+          teamBLogo =
+            fullTeamB?.logoUrl ||
+            fullTeamB?.logo ||
+            fullTeamB?.image ||
+            fullTeamB?.photoUrl ||
+            fullTeamB?.photoURL ||
+            null;
+        } else if (m.slotB.type === "link" && m.slotB.sourceMatchId) {
           teamBName = `Winner of ${m.slotB.sourceMatchId}`;
-        else if (m.slotB.type === "loser_link" && m.slotB.sourceMatchId)
+        } else if (m.slotB.type === "loser_link" && m.slotB.sourceMatchId) {
           teamBName = `Loser of ${m.slotB.sourceMatchId}`;
-        else if (m.slotB.type === "standing" && m.slotB.sourceMatchId) {
+        } else if (m.slotB.type === "standing" && m.slotB.sourceMatchId) {
           const parts = m.slotB.sourceMatchId.split("_");
           const posStr =
             parts[2] === "1"
@@ -973,7 +987,9 @@ export default function BracketBuilder() {
                   ? "3rd"
                   : "4th";
           teamBName = `${posStr} Group ${parts[1]}`;
-        } else if (m.slotB.type === "bye") teamBName = "BYE";
+        } else if (m.slotB.type === "bye") {
+          teamBName = "BYE";
+        }
 
         const matchData = {
           matchTitle: m.title,
@@ -1150,8 +1166,7 @@ export default function BracketBuilder() {
                     : slot.type === "bye"
                       ? "bg-gray-500/10 text-gray-500 border-gray-500/30"
                       : "bg-teal-500/10 text-teal-500 border-teal-500/30"
-            }`}
-          >
+            }`}>
             {slot.type === "link"
               ? "Winner Linked"
               : slot.type === "loser_link"
@@ -1166,11 +1181,9 @@ export default function BracketBuilder() {
 
         {slot.type === "bye" ? (
           <div
-            className={`h-10 rounded-lg border flex items-center justify-center ${lightMode ? "bg-gray-100 border-gray-200" : "bg-white/5 border-white/10"}`}
-          >
+            className={`h-10 rounded-lg border flex items-center justify-center ${lightMode ? "bg-gray-100 border-gray-200" : "bg-white/5 border-white/10"}`}>
             <span
-              className={`text-[10px] font-black uppercase tracking-widest opacity-50 ${theme.sub}`}
-            >
+              className={`text-[10px] font-black uppercase tracking-widest opacity-50 ${theme.sub}`}>
               BYE (Advances)
             </span>
           </div>
@@ -1186,8 +1199,7 @@ export default function BracketBuilder() {
                 : lightMode
                   ? "bg-gray-50 border-gray-200 border-dashed"
                   : "bg-black/20 border-white/10 border-dashed"
-            }`}
-          >
+            }`}>
             {slot.team ? (
               <>
                 <span className={`font-bold text-xs ${theme.text}`}>
@@ -1195,15 +1207,13 @@ export default function BracketBuilder() {
                 </span>
                 <button
                   onClick={() => removeTeamFromSlot(match.id, slotKey)}
-                  className="absolute right-2 text-red-500 text-[10px] font-bold"
-                >
+                  className="absolute right-2 text-red-500 text-[10px] font-bold">
                   X
                 </button>
               </>
             ) : (
               <span
-                className={`text-[10px] font-bold italic opacity-40 flex items-center gap-1 ${theme.text}`}
-              >
+                className={`text-[10px] font-bold italic opacity-40 flex items-center gap-1 ${theme.text}`}>
                 <Users size={12} /> Drag Team Here
               </span>
             )}
@@ -1211,24 +1221,21 @@ export default function BracketBuilder() {
         ) : slot.type === "standing" ? (
           <div className="flex items-center gap-2">
             <div
-              className={`h-10 px-3 rounded-lg border flex-1 flex items-center gap-2 ${lightMode ? "bg-amber-50 border-amber-200" : "bg-amber-900/10 border-amber-500/30"}`}
-            >
+              className={`h-10 px-3 rounded-lg border flex-1 flex items-center gap-2 ${lightMode ? "bg-amber-50 border-amber-200" : "bg-amber-900/10 border-amber-500/30"}`}>
               <ListOrdered size={12} className="text-amber-500" />
               <select
                 value={slot.sourceMatchId}
                 onChange={(e) =>
                   updateSlotLink(match.id, slotKey, e.target.value)
                 }
-                className={`w-full bg-transparent text-xs font-bold outline-none ${lightMode ? "text-amber-900" : "text-amber-200"}`}
-              >
+                className={`w-full bg-transparent text-xs font-bold outline-none ${lightMode ? "text-amber-900" : "text-amber-200"}`}>
                 <option value="">Select Table Placement</option>
                 {["A", "B", "C", "D", "E", "F", "G", "H"].map((group) => (
                   <optgroup key={group} label={`Group ${group}`}>
                     {[1, 2, 3, 4].map((pos) => (
                       <option
                         key={`${group}-${pos}`}
-                        value={`STANDING_${group}_${pos}`}
-                      >
+                        value={`STANDING_${group}_${pos}`}>
                         {pos}
                         {pos === 1
                           ? "st"
@@ -1248,8 +1255,7 @@ export default function BracketBuilder() {
         ) : (
           <div className="flex items-center gap-2">
             <div
-              className={`h-10 px-3 rounded-lg border flex-1 flex items-center gap-2 ${lightMode ? "bg-purple-50 border-purple-200" : "bg-purple-900/10 border-purple-500/30"}`}
-            >
+              className={`h-10 px-3 rounded-lg border flex-1 flex items-center gap-2 ${lightMode ? "bg-purple-50 border-purple-200" : "bg-purple-900/10 border-purple-500/30"}`}>
               <LinkIcon
                 size={12}
                 className={
@@ -1263,8 +1269,7 @@ export default function BracketBuilder() {
                 onChange={(e) =>
                   updateSlotLink(match.id, slotKey, e.target.value)
                 }
-                className={`w-full bg-transparent text-xs font-bold outline-none ${lightMode ? "text-purple-900" : "text-purple-200"}`}
-              >
+                className={`w-full bg-transparent text-xs font-bold outline-none ${lightMode ? "text-purple-900" : "text-purple-200"}`}>
                 <option value="">
                   Select Match {slot.type === "loser_link" ? "Loser" : "Winner"}
                 </option>
@@ -1289,16 +1294,13 @@ export default function BracketBuilder() {
 
   return (
     <div
-      className={`h-screen flex flex-col ${theme.bg} ${theme.text} overflow-hidden`}
-    >
+      className={`h-screen flex flex-col ${theme.bg} ${theme.text} overflow-hidden`}>
       <div
-        className={`p-4 border-b flex justify-between items-center shrink-0 shadow-sm z-10 ${lightMode ? "bg-white border-gray-200" : "bg-[#161920] border-white/10"}`}
-      >
+        className={`p-4 border-b flex justify-between items-center shrink-0 shadow-sm z-10 ${lightMode ? "bg-white border-gray-200" : "bg-[#161920] border-white/10"}`}>
         <div className="flex items-center gap-4">
           <button
             onClick={() => navigate(-1)}
-            className="p-2 rounded-lg bg-gray-500/10 hover:bg-gray-500/20"
-          >
+            className="p-2 rounded-lg bg-gray-500/10 hover:bg-gray-500/20">
             <ArrowLeft size={20} />
           </button>
           <h1 className="text-lg font-black uppercase tracking-widest italic flex items-center gap-2">
@@ -1309,20 +1311,17 @@ export default function BracketBuilder() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setShowWizard(true)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest border transition-all ${lightMode ? "bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100" : "bg-indigo-500/10 border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/20"}`}
-          >
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest border transition-all ${lightMode ? "bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100" : "bg-indigo-500/10 border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/20"}`}>
             <Wand2 size={16} /> Auto-Generate
           </button>
           <button
             onClick={() => setShowGlobalConfig(true)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest border transition-all ${lightMode ? "bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100" : "bg-white/5 border-white/10 text-gray-300 hover:bg-white/10"}`}
-          >
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest border transition-all ${lightMode ? "bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100" : "bg-white/5 border-white/10 text-gray-300 hover:bg-white/10"}`}>
             <Settings size={16} /> Global Defaults
           </button>
           <button
             onClick={handleSaveBracket}
-            className="flex items-center gap-2 px-4 py-2 bg-cyan-600 text-white rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-cyan-500 transition-all shadow-lg active:scale-95"
-          >
+            className="flex items-center gap-2 px-4 py-2 bg-cyan-600 text-white rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-cyan-500 transition-all shadow-lg active:scale-95">
             <Save size={16} /> Save Setup
           </button>
         </div>
@@ -1330,14 +1329,11 @@ export default function BracketBuilder() {
 
       <div className="flex flex-1 overflow-hidden">
         <div
-          className={`w-64 border-r flex flex-col shrink-0 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}
-        >
+          className={`w-64 border-r flex flex-col shrink-0 ${lightMode ? "bg-gray-50 border-gray-200" : "bg-[#0F1115] border-white/5"}`}>
           <div
-            className={`p-4 border-b z-10 shadow-sm ${lightMode ? "border-gray-200 bg-gray-50" : "border-white/5 bg-[#0F1115]"}`}
-          >
+            className={`p-4 border-b z-10 shadow-sm ${lightMode ? "border-gray-200 bg-gray-50" : "border-white/5 bg-[#0F1115]"}`}>
             <h2
-              className={`text-xs font-black uppercase tracking-widest ${theme.sub}`}
-            >
+              className={`text-xs font-black uppercase tracking-widest ${theme.sub}`}>
               Available Teams
             </h2>
           </div>
@@ -1348,17 +1344,14 @@ export default function BracketBuilder() {
               .map(([groupName, groupTeams]) => (
                 <div key={groupName} className="space-y-2">
                   <div
-                    className={`flex items-center gap-2 mb-1 border-b pb-1 ${lightMode ? "border-gray-200" : "border-white/10"}`}
-                  >
+                    className={`flex items-center gap-2 mb-1 border-b pb-1 ${lightMode ? "border-gray-200" : "border-white/10"}`}>
                     <Shield size={12} className="text-teal-500" />
                     <h3
-                      className={`text-[10px] font-black uppercase tracking-widest ${theme.text}`}
-                    >
+                      className={`text-[10px] font-black uppercase tracking-widest ${theme.text}`}>
                       {groupName}
                     </h3>
                     <span
-                      className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full ${lightMode ? "bg-gray-200 text-gray-600" : "bg-white/10 text-gray-400"}`}
-                    >
+                      className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full ${lightMode ? "bg-gray-200 text-gray-600" : "bg-white/10 text-gray-400"}`}>
                       {groupTeams.length}
                     </span>
                   </div>
@@ -1368,8 +1361,7 @@ export default function BracketBuilder() {
                       key={team.id}
                       draggable
                       onDragStart={(e) => handleDragStartTeam(e, team)}
-                      className={`p-2.5 rounded-lg border flex items-center gap-2 cursor-grab active:cursor-grabbing hover:-translate-y-0.5 transition-all shadow-sm ${lightMode ? "bg-white border-gray-200 hover:border-cyan-400" : "bg-[#1C2128] border-white/5 hover:border-cyan-500/50"}`}
-                    >
+                      className={`p-2.5 rounded-lg border flex items-center gap-2 cursor-grab active:cursor-grabbing hover:-translate-y-0.5 transition-all shadow-sm ${lightMode ? "bg-white border-gray-200 hover:border-cyan-400" : "bg-[#1C2128] border-white/5 hover:border-cyan-500/50"}`}>
                       <GripVertical
                         size={14}
                         className="text-gray-400 opacity-50 shrink-0"
@@ -1426,8 +1418,7 @@ export default function BracketBuilder() {
                       }}
                       onDragOver={handleDragOver}
                       onDrop={(e) => handleMatchDrop(e, match.id, round.id)}
-                      className={`p-3 rounded-xl border shadow-sm cursor-grab active:cursor-grabbing hover:border-indigo-400 transition-all ${lightMode ? "bg-white border-gray-200" : "bg-[#1C2128] border-white/10"}`}
-                    >
+                      className={`p-3 rounded-xl border shadow-sm cursor-grab active:cursor-grabbing hover:border-indigo-400 transition-all ${lightMode ? "bg-white border-gray-200" : "bg-[#1C2128] border-white/10"}`}>
                       <div className="flex justify-between items-center border-b pb-2 mb-2 border-white/10">
                         <div className="flex items-center gap-2">
                           <GripVertical
@@ -1453,15 +1444,13 @@ export default function BracketBuilder() {
                               setTempMatchId(match.id);
                             }}
                             title="Match Settings"
-                            className={`p-1.5 rounded-md transition-colors ${lightMode ? "bg-gray-100 hover:bg-gray-200 text-gray-600" : "bg-white/5 hover:bg-white/10 text-gray-400"}`}
-                          >
+                            className={`p-1.5 rounded-md transition-colors ${lightMode ? "bg-gray-100 hover:bg-gray-200 text-gray-600" : "bg-white/5 hover:bg-white/10 text-gray-400"}`}>
                             <Settings size={14} />
                           </button>
                           <button
                             onClick={() => deleteMatch(match.id)}
                             title="Delete Match"
-                            className={`p-1.5 rounded-md transition-colors ${lightMode ? "bg-red-50 hover:bg-red-100 text-red-500" : "bg-red-500/10 hover:bg-red-500/20 text-red-400"}`}
-                          >
+                            className={`p-1.5 rounded-md transition-colors ${lightMode ? "bg-red-50 hover:bg-red-100 text-red-500" : "bg-red-500/10 hover:bg-red-500/20 text-red-400"}`}>
                             <Trash2 size={14} />
                           </button>
                         </div>
@@ -1475,8 +1464,7 @@ export default function BracketBuilder() {
                   ))}
                 <button
                   onClick={() => addMatchToRound(round.id)}
-                  className={`w-full py-3 rounded-xl border border-dashed flex items-center justify-center gap-2 text-xs font-bold uppercase transition-colors ${lightMode ? "border-gray-300 text-gray-500 hover:bg-gray-50 hover:text-cyan-600 hover:border-cyan-300" : "border-white/20 text-gray-400 hover:bg-white/5 hover:text-cyan-400 hover:border-cyan-500/50"}`}
-                >
+                  className={`w-full py-3 rounded-xl border border-dashed flex items-center justify-center gap-2 text-xs font-bold uppercase transition-colors ${lightMode ? "border-gray-300 text-gray-500 hover:bg-gray-50 hover:text-cyan-600 hover:border-cyan-300" : "border-white/20 text-gray-400 hover:bg-white/5 hover:text-cyan-400 hover:border-cyan-500/50"}`}>
                   <Plus size={14} /> Add Match Here
                 </button>
               </div>
@@ -1485,8 +1473,7 @@ export default function BracketBuilder() {
           <div className="w-80 shrink-0 h-full">
             <button
               onClick={addRound}
-              className={`w-full h-24 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-2 text-xs font-black uppercase tracking-widest transition-colors ${lightMode ? "border-gray-300 text-gray-400 hover:bg-gray-50 hover:text-cyan-600" : "border-white/10 text-gray-500 hover:bg-white/5 hover:text-cyan-400"}`}
-            >
+              className={`w-full h-24 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-2 text-xs font-black uppercase tracking-widest transition-colors ${lightMode ? "border-gray-300 text-gray-400 hover:bg-gray-50 hover:text-cyan-600" : "border-white/10 text-gray-500 hover:bg-white/5 hover:text-cyan-400"}`}>
               <Plus size={20} /> Add Next Round
             </button>
           </div>
@@ -1497,8 +1484,7 @@ export default function BracketBuilder() {
       {showWizard && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 animate-in fade-in">
           <div
-            className={`w-full max-w-[420px] p-6 rounded-3xl border shadow-2xl ${theme.card} ${lightMode ? "border-gray-200" : "border-white/10"}`}
-          >
+            className={`w-full max-w-[420px] p-6 rounded-3xl border shadow-2xl ${theme.card} ${lightMode ? "border-gray-200" : "border-white/10"}`}>
             <h3 className="text-lg font-black uppercase mb-4 text-indigo-500 flex items-center gap-2">
               <Wand2 size={18} /> Bracket Wizard
             </h3>
@@ -1506,21 +1492,18 @@ export default function BracketBuilder() {
             <div className="flex gap-2 mb-6">
               <button
                 onClick={() => setWizardMode("standard")}
-                className={`flex-1 py-2 rounded-lg font-bold text-[9px] sm:text-[10px] uppercase tracking-wider transition-all border ${wizardMode === "standard" ? "bg-indigo-600 text-white border-indigo-600" : lightMode ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-black/20 text-gray-400 border-white/10"}`}
-              >
+                className={`flex-1 py-2 rounded-lg font-bold text-[9px] sm:text-[10px] uppercase tracking-wider transition-all border ${wizardMode === "standard" ? "bg-indigo-600 text-white border-indigo-600" : lightMode ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-black/20 text-gray-400 border-white/10"}`}>
                 Knockout
               </button>
               <button
                 onClick={() => setWizardMode("groups_knockout")}
-                className={`flex-1 py-2 rounded-lg font-bold text-[9px] sm:text-[10px] uppercase tracking-wider transition-all border ${wizardMode === "groups_knockout" ? "bg-indigo-600 text-white border-indigo-600" : lightMode ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-black/20 text-gray-400 border-white/10"}`}
-              >
+                className={`flex-1 py-2 rounded-lg font-bold text-[9px] sm:text-[10px] uppercase tracking-wider transition-all border ${wizardMode === "groups_knockout" ? "bg-indigo-600 text-white border-indigo-600" : lightMode ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-black/20 text-gray-400 border-white/10"}`}>
                 Groups + KO
               </button>
               {/* 🟢 NEW ROUND ROBIN BUTTON */}
               <button
                 onClick={() => setWizardMode("round_robin")}
-                className={`flex-1 py-2 rounded-lg font-bold text-[9px] sm:text-[10px] uppercase tracking-wider transition-all border ${wizardMode === "round_robin" ? "bg-indigo-600 text-white border-indigo-600" : lightMode ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-black/20 text-gray-400 border-white/10"}`}
-              >
+                className={`flex-1 py-2 rounded-lg font-bold text-[9px] sm:text-[10px] uppercase tracking-wider transition-all border ${wizardMode === "round_robin" ? "bg-indigo-600 text-white border-indigo-600" : lightMode ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-black/20 text-gray-400 border-white/10"}`}>
                 Round Robin
               </button>
             </div>
@@ -1528,16 +1511,14 @@ export default function BracketBuilder() {
             {wizardMode === "round_robin" ? (
               <>
                 <p
-                  className={`text-[11px] leading-relaxed mb-4 font-bold ${theme.sub}`}
-                >
+                  className={`text-[11px] leading-relaxed mb-4 font-bold ${theme.sub}`}>
                   Generates a pure league schedule followed by Knockouts
                   (Semis/Finals).
                 </p>
                 <div className="grid grid-cols-2 gap-3 mb-4">
                   <div>
                     <label
-                      className={`text-[10px] font-bold uppercase mb-2 block ${theme.sub}`}
-                    >
+                      className={`text-[10px] font-bold uppercase mb-2 block ${theme.sub}`}>
                       Total Teams
                     </label>
                     <input
@@ -1550,8 +1531,7 @@ export default function BracketBuilder() {
                   </div>
                   <div>
                     <label
-                      className={`text-[10px] font-bold uppercase mb-2 block ${theme.sub}`}
-                    >
+                      className={`text-[10px] font-bold uppercase mb-2 block ${theme.sub}`}>
                       Top Teams Advance
                     </label>
                     <select
@@ -1559,8 +1539,7 @@ export default function BracketBuilder() {
                       onChange={(e) =>
                         setWizardRoundRobinAdvancing(e.target.value)
                       }
-                      className={`w-full p-3 rounded-xl border outline-none font-black text-sm ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10 text-white"}`}
-                    >
+                      className={`w-full p-3 rounded-xl border outline-none font-black text-sm ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10 text-white"}`}>
                       <option value={2}>Top 2 (Direct to Final)</option>
                       <option value={4}>Top 4 (Semi-Finals)</option>
                       <option value={8}>Top 8 (Quarter-Finals)</option>
@@ -1575,8 +1554,7 @@ export default function BracketBuilder() {
                   perfect powers of 2 and place Byes where necessary.
                 </p>
                 <label
-                  className={`text-[10px] font-bold uppercase mb-2 block ${theme.sub}`}
-                >
+                  className={`text-[10px] font-bold uppercase mb-2 block ${theme.sub}`}>
                   Total Teams
                 </label>
                 <input
@@ -1590,16 +1568,14 @@ export default function BracketBuilder() {
             ) : (
               <>
                 <p
-                  className={`text-[11px] leading-relaxed mb-4 font-bold ${theme.sub}`}
-                >
+                  className={`text-[11px] leading-relaxed mb-4 font-bold ${theme.sub}`}>
                   Generates an interleaved Round Robin Stage followed by a
                   Knockout bracket.
                 </p>
                 <div className="grid grid-cols-2 gap-3 mb-4">
                   <div>
                     <label
-                      className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}
-                    >
+                      className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}>
                       Number of Groups
                     </label>
                     <input
@@ -1612,8 +1588,7 @@ export default function BracketBuilder() {
                   </div>
                   <div>
                     <label
-                      className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}
-                    >
+                      className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}>
                       Teams Per Group
                     </label>
                     <input
@@ -1627,15 +1602,13 @@ export default function BracketBuilder() {
                 </div>
                 <div className="mb-4">
                   <label
-                    className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}
-                  >
+                    className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}>
                     Advancing (Per Group)
                   </label>
                   <select
                     value={wizardAdvancing}
                     onChange={(e) => setWizardAdvancing(e.target.value)}
-                    className={`w-full p-3 rounded-xl border outline-none font-black text-sm ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10 text-white"}`}
-                  >
+                    className={`w-full p-3 rounded-xl border outline-none font-black text-sm ${lightMode ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10 text-white"}`}>
                     <option value={1}>
                       Top 1 (Total {wizardGroupCount * 1} advance)
                     </option>
@@ -1652,8 +1625,7 @@ export default function BracketBuilder() {
                 </div>
 
                 <div
-                  className={`flex items-center gap-3 p-3 rounded-xl border mb-3 ${lightMode ? "bg-indigo-50 border-indigo-200" : "bg-indigo-900/20 border-indigo-500/30"}`}
-                >
+                  className={`flex items-center gap-3 p-3 rounded-xl border mb-3 ${lightMode ? "bg-indigo-50 border-indigo-200" : "bg-indigo-900/20 border-indigo-500/30"}`}>
                   <input
                     type="checkbox"
                     id="interleaveToggle"
@@ -1665,8 +1637,7 @@ export default function BracketBuilder() {
                   />
                   <label
                     htmlFor="interleaveToggle"
-                    className={`text-[10px] font-bold uppercase tracking-widest cursor-pointer ${theme.text}`}
-                  >
+                    className={`text-[10px] font-bold uppercase tracking-widest cursor-pointer ${theme.text}`}>
                     Interleave Group Matches
                   </label>
                 </div>
@@ -1675,8 +1646,7 @@ export default function BracketBuilder() {
 
             {/* 🔥 NEW: 3rd Place Playoff Toggle */}
             <div
-              className={`flex items-center gap-3 p-3 rounded-xl border mb-6 ${lightMode ? "bg-indigo-50 border-indigo-200" : "bg-indigo-900/20 border-indigo-500/30"}`}
-            >
+              className={`flex items-center gap-3 p-3 rounded-xl border mb-6 ${lightMode ? "bg-indigo-50 border-indigo-200" : "bg-indigo-900/20 border-indigo-500/30"}`}>
               <input
                 type="checkbox"
                 id="thirdPlaceToggle"
@@ -1686,8 +1656,7 @@ export default function BracketBuilder() {
               />
               <label
                 htmlFor="thirdPlaceToggle"
-                className={`text-[10px] font-bold uppercase tracking-widest cursor-pointer ${theme.text}`}
-              >
+                className={`text-[10px] font-bold uppercase tracking-widest cursor-pointer ${theme.text}`}>
                 Generate 3rd Place Match
               </label>
             </div>
@@ -1695,14 +1664,12 @@ export default function BracketBuilder() {
             <div className="flex gap-2">
               <button
                 onClick={() => setShowWizard(false)}
-                className={`flex-1 py-3 rounded-xl font-bold uppercase tracking-widest text-[10px] transition-all ${lightMode ? "bg-gray-200 text-gray-700" : "bg-white/10 text-white"}`}
-              >
+                className={`flex-1 py-3 rounded-xl font-bold uppercase tracking-widest text-[10px] transition-all ${lightMode ? "bg-gray-200 text-gray-700" : "bg-white/10 text-white"}`}>
                 Cancel
               </button>
               <button
                 onClick={handleGenerateWizard}
-                className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold uppercase tracking-widest text-[10px] transition-all active:scale-95 shadow-lg shadow-indigo-500/30"
-              >
+                className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold uppercase tracking-widest text-[10px] transition-all active:scale-95 shadow-lg shadow-indigo-500/30">
                 Generate
               </button>
             </div>
@@ -1714,16 +1681,14 @@ export default function BracketBuilder() {
       {activeConfigMatch && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 animate-in fade-in">
           <div
-            className={`w-full max-w-sm p-6 rounded-3xl border shadow-2xl ${theme.card} ${lightMode ? "border-gray-200" : "border-white/10"}`}
-          >
+            className={`w-full max-w-sm p-6 rounded-3xl border shadow-2xl ${theme.card} ${lightMode ? "border-gray-200" : "border-white/10"}`}>
             <h3 className="text-lg font-black uppercase mb-4 text-cyan-50 flex items-center gap-2">
               <Calendar size={18} /> Match Settings
             </h3>
             <div className="space-y-4">
               <div>
                 <label
-                  className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}
-                >
+                  className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}>
                   Match ID (Code)
                 </label>
                 <input
@@ -1736,8 +1701,7 @@ export default function BracketBuilder() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label
-                    className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}
-                  >
+                    className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}>
                     Overs
                   </label>
                   <input
@@ -1766,8 +1730,7 @@ export default function BracketBuilder() {
                 </div>
                 <div>
                   <label
-                    className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}
-                  >
+                    className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}>
                     Time
                   </label>
                   <input
@@ -1797,8 +1760,7 @@ export default function BracketBuilder() {
               </div>
               <div>
                 <label
-                  className={`text-[10px] font-bold uppercase mb-1 block flex items-center gap-1 ${theme.sub}`}
-                >
+                  className={`text-[10px] font-bold uppercase mb-1 block flex items-center gap-1 ${theme.sub}`}>
                   <Calendar size={10} /> Date
                 </label>
                 <input
@@ -1824,8 +1786,7 @@ export default function BracketBuilder() {
               </div>
               <div>
                 <label
-                  className={`text-[10px] font-bold uppercase mb-1 block flex items-center gap-1 ${theme.sub}`}
-                >
+                  className={`text-[10px] font-bold uppercase mb-1 block flex items-center gap-1 ${theme.sub}`}>
                   <MapPin size={10} /> Venue
                 </label>
                 <input
@@ -1856,8 +1817,7 @@ export default function BracketBuilder() {
             </div>
             <button
               onClick={handleCloseSettingsModal}
-              className="w-full mt-6 py-3 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl font-bold uppercase tracking-widest text-xs transition-all active:scale-95"
-            >
+              className="w-full mt-6 py-3 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl font-bold uppercase tracking-widest text-xs transition-all active:scale-95">
               Done
             </button>
           </div>
@@ -1868,8 +1828,7 @@ export default function BracketBuilder() {
       {showGlobalConfig && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 animate-in fade-in">
           <div
-            className={`w-full max-w-md p-6 rounded-3xl border shadow-2xl ${theme.card} ${lightMode ? "border-gray-200" : "border-white/10"}`}
-          >
+            className={`w-full max-w-md p-6 rounded-3xl border shadow-2xl ${theme.card} ${lightMode ? "border-gray-200" : "border-white/10"}`}>
             <h3 className="text-lg font-black uppercase mb-1 text-cyan-500 flex items-center gap-2">
               <Settings size={18} /> Global Match Settings
             </h3>
@@ -1881,8 +1840,7 @@ export default function BracketBuilder() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label
-                    className={`text-[10px] font-bold uppercase mb-1 block flex items-center gap-1 ${theme.sub}`}
-                  >
+                    className={`text-[10px] font-bold uppercase mb-1 block flex items-center gap-1 ${theme.sub}`}>
                     <Calendar size={10} /> Starting Date
                   </label>
                   <input
@@ -1899,8 +1857,7 @@ export default function BracketBuilder() {
                 </div>
                 <div>
                   <label
-                    className={`text-[10px] font-bold uppercase mb-1 block flex items-center gap-1 ${theme.sub}`}
-                  >
+                    className={`text-[10px] font-bold uppercase mb-1 block flex items-center gap-1 ${theme.sub}`}>
                     <Clock size={10} /> Start Time
                   </label>
                   <input
@@ -1918,8 +1875,7 @@ export default function BracketBuilder() {
               </div>
               <div>
                 <label
-                  className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}
-                >
+                  className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}>
                   Default Venue
                 </label>
                 <input
@@ -1938,8 +1894,7 @@ export default function BracketBuilder() {
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-1">
                   <label
-                    className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}
-                  >
+                    className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}>
                     Overs
                   </label>
                   <input
@@ -1956,8 +1911,7 @@ export default function BracketBuilder() {
                 </div>
                 <div className="col-span-1">
                   <label
-                    className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}
-                  >
+                    className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}>
                     Duration (m)
                   </label>
                   <input
@@ -1974,8 +1928,7 @@ export default function BracketBuilder() {
                 </div>
                 <div className="col-span-1">
                   <label
-                    className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}
-                  >
+                    className={`text-[10px] font-bold uppercase mb-1 block ${theme.sub}`}>
                     Gap (m)
                   </label>
                   <input
@@ -1996,20 +1949,17 @@ export default function BracketBuilder() {
             <div className="flex flex-col gap-2 mt-6">
               <button
                 onClick={handleClearEntireBracket}
-                className={`w-full py-3 mb-2 rounded-xl font-black uppercase tracking-widest text-[10px] border transition-all flex justify-center items-center gap-2 shadow-sm ${lightMode ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100" : "bg-red-900/20 text-red-500 border-red-500/30 hover:bg-red-900/40"}`}
-              >
+                className={`w-full py-3 mb-2 rounded-xl font-black uppercase tracking-widest text-[10px] border transition-all flex justify-center items-center gap-2 shadow-sm ${lightMode ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100" : "bg-red-900/20 text-red-500 border-red-500/30 hover:bg-red-900/40"}`}>
                 <Trash2 size={14} /> Clear Entire Bracket
               </button>
               <button
                 onClick={applyChronologicalSettings}
-                className={`w-full py-3 rounded-xl font-bold uppercase tracking-widest text-[10px] border transition-all ${lightMode ? "bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100" : "bg-purple-900/20 text-purple-400 border-purple-500/30 hover:bg-purple-900/40"}`}
-              >
+                className={`w-full py-3 rounded-xl font-bold uppercase tracking-widest text-[10px] border transition-all ${lightMode ? "bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100" : "bg-purple-900/20 text-purple-400 border-purple-500/30 hover:bg-purple-900/40"}`}>
                 Auto-Schedule Current Matches
               </button>
               <button
                 onClick={() => setShowGlobalConfig(false)}
-                className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl font-bold uppercase tracking-widest text-xs transition-all active:scale-95"
-              >
+                className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl font-bold uppercase tracking-widest text-xs transition-all active:scale-95">
                 Save Defaults & Close
               </button>
             </div>
