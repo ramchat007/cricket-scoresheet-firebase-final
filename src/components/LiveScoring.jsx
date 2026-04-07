@@ -473,8 +473,6 @@ export default function LiveScoring() {
           content="Experience real-time cricket scoring with CricSync's Live Scoring feature. Get instant updates on match events, player performances, and team statistics. Join the action today!"
         />
       </Helmet>
-      // 🟢 1. OUTER WRAPPER: 'overflow-hidden' explicitly prevents double
-      scrollbars!
       <div
         className={`w-full h-[calc(100dvh-70px)] overflow-hidden flex flex-col lg:flex-row justify-center lg:items-center lg:gap-6 lg:p-6 font-sans transition-colors duration-300 ${theme.bg} ${theme.text}`}
       >

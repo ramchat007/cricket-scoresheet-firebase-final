@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { doc, updateDoc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
 import { db } from "../../utils/firebase";
+import { supabase } from "../../utils/supabase"; // 🟢 Added Supabase import
 import { useTheme } from "../../context/ThemeContext";
 import {
   Tv,
@@ -38,7 +39,7 @@ import {
 const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 
-// 🔥 NEW: DEFAULT BROADCAST CONFIGURATION
+// 🔥 DEFAULT BROADCAST CONFIGURATION
 const DEFAULT_CONFIG = {
   activeViews: [],
   showTicker: false,
@@ -50,9 +51,9 @@ const DEFAULT_CONFIG = {
   customMessageBody: "",
   tickerText: "",
   spotlightPlayerId: "",
-  autoSpotlightEnabled: true, // ✅ Forced ON by default
+  autoSpotlightEnabled: true,
   appLogo: "",
-  showAppLogo: true, // ✅ Forced ON by default
+  showAppLogo: true,
   broadcastAudioEnabled: true,
 };
 
@@ -74,7 +75,53 @@ export default function OverlayController({ tournamentId, matchId, match }) {
   const [teamAColor, setTeamAColor] = useState("#0284c7");
   const [teamBColor, setTeamBColor] = useState("#e11d48");
 
-  // 🔥 NEW: LIVE SYNC & AUTO-SAVE COLORS FROM DATABASE
+  // 🟢 NEW: Lightweight Roster State from Supabase
+  const [teamASquadLite, setTeamASquadLite] = useState([]);
+  const [teamBSquadLite, setTeamBSquadLite] = useState([]);
+
+  // --- 1. FETCH LIGHTWEIGHT ROSTERS FROM SUPABASE ---
+  useEffect(() => {
+    const fetchLiteRosters = async () => {
+      if (!tournamentId || !match?.meta) return;
+
+      try {
+        // Fetch only exactly what we need for the dropdown (no heavy photos)
+        if (match.meta.teamAId) {
+          const { data: teamA } = await supabase
+            .from("teams")
+            .select("roster")
+            .eq("id", match.meta.teamAId)
+            .single();
+
+          if (teamA?.roster) {
+            setTeamASquadLite(
+              teamA.roster.map((p) => ({ id: p.id, name: p.name })),
+            );
+          }
+        }
+
+        if (match.meta.teamBId) {
+          const { data: teamB } = await supabase
+            .from("teams")
+            .select("roster")
+            .eq("id", match.meta.teamBId)
+            .single();
+
+          if (teamB?.roster) {
+            setTeamBSquadLite(
+              teamB.roster.map((p) => ({ id: p.id, name: p.name })),
+            );
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load lightweight rosters from Supabase", err);
+      }
+    };
+
+    fetchLiteRosters();
+  }, [tournamentId, match?.meta?.teamAId, match?.meta?.teamBId]);
+
+  // --- 2. LIVE SYNC & AUTO-SAVE COLORS FROM DATABASE ---
   useEffect(() => {
     const fetchLiveTeamColors = async () => {
       if (!tournamentId || !match?.meta) return;
@@ -103,14 +150,12 @@ export default function OverlayController({ tournamentId, matchId, match }) {
           }
         }
 
-        // Apply fallbacks if teams don't have colors set
         const finalAColor = fetchedAColor || "#0284c7";
         const finalBColor = fetchedBColor || "#e11d48";
 
         setTeamAColor(finalAColor);
         setTeamBColor(finalBColor);
 
-        // If the match doc was missing colors, force save them so the ticker picks them up immediately!
         if (needsAutoSave || !match.meta.teamAColor || !match.meta.teamBColor) {
           await updateDoc(
             doc(db, "tournaments", tournamentId, "matches", matchId),
@@ -128,15 +173,13 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     fetchLiveTeamColors();
   }, [tournamentId, matchId, match?.meta?.teamAId, match?.meta?.teamBId]);
 
-  const teamASquad = match?.teamASquad || [];
-  const teamBSquad = match?.teamBSquad || [];
   const currentInn = match?.innings?.[match?.currentInnings || 0];
   const liveStriker = currentInn?.striker;
   const liveBowler = currentInn?.currentBowler;
 
   const getPlayerIdByName = (name) => {
     if (!name) return null;
-    const allPlayers = [...teamASquad, ...teamBSquad];
+    const allPlayers = [...teamASquadLite, ...teamBSquadLite];
     const p = allPlayers.find(
       (x) => x.name?.trim().toLowerCase() === name.trim().toLowerCase(),
     );
@@ -293,7 +336,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
     }
   };
 
-  // 🔥 UPDATED: Sponsor name is no longer required for image uploads
   const handleLogoUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -303,7 +345,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
       const secureUrl = await uploadToCloudinary(file);
       const newSponsor = {
         id: Date.now().toString(),
-        name: newSponsorName.trim(), // Will save as empty string if left blank
+        name: newSponsorName.trim(),
         phone: newSponsorPhone.trim(),
         image: secureUrl,
       };
@@ -726,6 +768,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
             <div>
               <label className={labelClass}>Manual Player Selection</label>
               <div className="relative">
+                {/* 🟢 THE DROPDOWN NOW USES SUPABASE LITE DATA */}
                 <select
                   className={`${inputClass} cursor-pointer appearance-none`}
                   value={config.spotlightPlayerId || ""}
@@ -736,18 +779,18 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                   <option value="" className="text-gray-500">
                     -- Choose a Player --
                   </option>
-                  {teamASquad.length > 0 && (
+                  {teamASquadLite.length > 0 && (
                     <optgroup label={match?.meta?.teamA || "Team A"}>
-                      {teamASquad.map((p) => (
+                      {teamASquadLite.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name}
                         </option>
                       ))}
                     </optgroup>
                   )}
-                  {teamBSquad.length > 0 && (
+                  {teamBSquadLite.length > 0 && (
                     <optgroup label={match?.meta?.teamB || "Team B"}>
-                      {teamBSquad.map((p) => (
+                      {teamBSquadLite.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name}
                         </option>
@@ -1039,7 +1082,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
               <X size={18} strokeWidth={4} /> Clear Screen (Kill Switch)
             </button>
 
-            {/* 🔥 NEW: END BROADCAST SESSION BUTTON 🔥 */}
             <button
               onClick={() => {
                 if (
@@ -1049,7 +1091,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
                 ) {
                   updateOverlay({
                     releaseLockTimestamp: Date.now(),
-                    activeViews: ["APP_TOURNAMENT_BANNER"], // Auto-trigger the banner on exit
+                    activeViews: ["APP_TOURNAMENT_BANNER"],
                   });
                 }
               }}
@@ -1157,7 +1199,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
             </div>
             <button
               onClick={() => {
-                // Toggles the Match Intro on or off
                 const views = config.activeViews || [];
                 const newViews = views.includes("MATCH_INTRO")
                   ? views.filter((v) => v !== "MATCH_INTRO")
@@ -1175,7 +1216,6 @@ export default function OverlayController({ tournamentId, matchId, match }) {
 
             <button
               onClick={() => {
-                // Toggles the Points Table on or off, and forces the bottom ticker to hide while it's up
                 const views = config.activeViews || [];
                 const isActive = views.includes("POINTS_TABLE");
                 const newViews = isActive
@@ -1184,7 +1224,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
 
                 updateOverlay({
                   activeViews: newViews,
-                  hideBottomScoreTicker: !isActive, // Hide the main ticker if showing full-screen table
+                  hideBottomScoreTicker: !isActive,
                 });
               }}
               className={`py-3 px-4 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all border ${

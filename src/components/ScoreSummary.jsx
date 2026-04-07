@@ -79,7 +79,8 @@ export default function ScoreSummary({ match }) {
   if (!match)
     return (
       <div
-        className={`border rounded-2xl p-8 text-center animate-pulse shadow-xl ${theme.card} ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+        className={`border rounded-2xl p-8 text-center animate-pulse shadow-xl ${theme.card} ${lightMode ? "border-gray-200" : "border-white/5"}`}
+      >
         <div className={`text-lg font-bold tracking-widest ${theme.sub}`}>
           LOADING MATCH DATA...
         </div>
@@ -209,9 +210,10 @@ export default function ScoreSummary({ match }) {
           lightMode
             ? "bg-gradient-to-b from-white to-gray-50 border-gray-200"
             : "bg-gradient-to-b from-[#1C2128] to-[#161920] border-white/10"
-        }`}>
+        }`}
+      >
         {/* Status Badge */}
-        <div className="absolute top-4 right-4">
+        {/* <div className="absolute top-4 right-4">
           <span
             className={`text-[10px] font-black uppercase tracking-[0.15em] px-3 py-1.5 rounded-full border shadow-sm flex items-center gap-2 ${
               status === "finished"
@@ -226,21 +228,24 @@ export default function ScoreSummary({ match }) {
             {formatLiveCount(liveViewers)}{" "}
             {status === "finished" ? "FINISHED" : "LIVE"}
           </span>
-        </div>
+        </div> */}
 
         <div className="flex justify-between items-center mt-6">
           {/* Team A */}
           <div className="text-left w-5/12">
             <div
-              className={`text-base md:text-lg font-bold mb-1 truncate leading-tight ${lightMode ? "text-gray-500" : "text-slate-300"}`}>
+              className={`text-base md:text-lg font-bold mb-1 truncate leading-tight ${lightMode ? "text-gray-500" : "text-slate-300"}`}
+            >
               {battingFirstTeam}
             </div>
             {inn1 ? (
               <div
-                className={`font-mono font-black text-3xl md:text-4xl leading-none tracking-tighter ${theme.text}`}>
+                className={`font-mono font-black text-3xl md:text-4xl leading-none tracking-tighter ${theme.text}`}
+              >
                 {inn1.score}/{inn1.wickets}
                 <span
-                  className={`text-sm md:text-base font-sans font-medium ml-2 block md:inline ${theme.sub}`}>
+                  className={`text-sm md:text-base font-sans font-medium ml-2 block md:inline ${theme.sub}`}
+                >
                   ({inn1.over}.{inn1.overBallCount} / {totalOvers} ov)
                 </span>
               </div>
@@ -252,23 +257,27 @@ export default function ScoreSummary({ match }) {
           </div>
 
           <div
-            className={`font-black text-xl italic opacity-20 select-none ${theme.text}`}>
+            className={`font-black text-xl italic opacity-20 select-none ${theme.text}`}
+          >
             VS
           </div>
 
           {/* Team B */}
           <div className="text-right w-5/12">
             <div
-              className={`text-base md:text-lg font-bold mb-1 truncate leading-tight ${lightMode ? "text-gray-500" : "text-slate-300"}`}>
+              className={`text-base md:text-lg font-bold mb-1 truncate leading-tight ${lightMode ? "text-gray-500" : "text-slate-300"}`}
+            >
               {battingSecondTeam}{" "}
               {currentInningIndex === 1 && status !== "finished" && "●"}
             </div>
             {inn2 ? (
               <div
-                className={`font-mono font-black text-3xl md:text-4xl leading-none tracking-tighter ${theme.text}`}>
+                className={`font-mono font-black text-3xl md:text-4xl leading-none tracking-tighter ${theme.text}`}
+              >
                 {inn2.score}/{inn2.wickets}
                 <span
-                  className={`text-sm md:text-base font-sans font-medium ml-2 block md:inline ${theme.sub}`}>
+                  className={`text-sm md:text-base font-sans font-medium ml-2 block md:inline ${theme.sub}`}
+                >
                   ({inn2.over}.{inn2.overBallCount} / {totalOvers} ov)
                 </span>
               </div>
@@ -283,9 +292,11 @@ export default function ScoreSummary({ match }) {
         {/* Match Result */}
         {resultText && (
           <div
-            className={`mt-6 text-center border-t pt-4 ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+            className={`mt-6 text-center border-t pt-4 ${lightMode ? "border-gray-200" : "border-white/5"}`}
+          >
             <span
-              className={`text-lg md:text-xl font-black uppercase tracking-wider drop-shadow-md animate-in zoom-in duration-500 ${lightMode ? "text-teal-600" : "text-teal-400"}`}>
+              className={`text-lg md:text-xl font-black uppercase tracking-wider drop-shadow-md animate-in zoom-in duration-500 ${lightMode ? "text-teal-600" : "text-teal-400"}`}
+            >
               🏆 {resultText}
             </span>
             {isSecondInnings && status === "finished" && (
@@ -303,9 +314,11 @@ export default function ScoreSummary({ match }) {
               lightMode
                 ? "bg-indigo-50 border-indigo-100"
                 : "bg-indigo-900/20 border-indigo-500/20"
-            }`}>
+            }`}
+          >
             <div
-              className={`text-[12px] uppercase font-bold tracking-widest mb-1 ${lightMode ? "text-indigo-600" : "text-indigo-300"}`}>
+              className={`text-[12px] uppercase font-bold tracking-widest mb-1 ${lightMode ? "text-indigo-600" : "text-indigo-300"}`}
+            >
               Target: <span className={theme.text}>{targetScore}</span>
             </div>
             {(() => {
@@ -330,7 +343,8 @@ export default function ScoreSummary({ match }) {
                     balls
                   </div>
                   <div
-                    className={`text-[11px] mt-1 font-mono ${lightMode ? "text-indigo-600" : "text-indigo-300"}`}>
+                    className={`text-[11px] mt-1 font-mono ${lightMode ? "text-indigo-600" : "text-indigo-300"}`}
+                  >
                     Required RR:{" "}
                     <span className={`font-bold ${theme.text}`}>{rrr}</span>
                   </div>
@@ -344,7 +358,8 @@ export default function ScoreSummary({ match }) {
       {/* 2. ON THE CREASE */}
       {status !== "finished" && currentInning && (
         <div
-          className={`border rounded-2xl p-5 shadow-lg ${theme.card} ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+          className={`border rounded-2xl p-5 shadow-lg ${theme.card} ${lightMode ? "border-gray-200" : "border-white/5"}`}
+        >
           <div className="grid grid-cols-2 gap-3 pb-3">
             {/* Striker */}
             <div
@@ -352,23 +367,27 @@ export default function ScoreSummary({ match }) {
                 lightMode
                   ? "bg-white border-teal-200"
                   : "bg-[#0F1115] border-teal-500/30"
-              }`}>
+              }`}
+            >
               <div
                 className={`absolute top-0 right-0 text-[11px] font-bold px-2 py-1 rounded-bl-lg ${
                   lightMode
                     ? "bg-teal-100 text-teal-700"
                     : "bg-teal-600/20 text-teal-400"
-                }`}>
+                }`}
+              >
                 STRIKER
               </div>
               <div className={`font-bold text-lg truncate pr-2 ${theme.text}`}>
                 {strikerName}
               </div>
               <div
-                className={`text-2xl font-mono font-bold mt-1 ${lightMode ? "text-teal-600" : "text-teal-400"}`}>
+                className={`text-2xl font-mono font-bold mt-1 ${lightMode ? "text-teal-600" : "text-teal-400"}`}
+              >
                 {currentInning.batsmenStats?.[strikerName]?.runs || 0}
                 <span
-                  className={`text-sm ml-1.5 font-sans font-medium ${theme.sub}`}>
+                  className={`text-sm ml-1.5 font-sans font-medium ${theme.sub}`}
+                >
                   ({currentInning.batsmenStats?.[strikerName]?.balls || 0})
                 </span>
               </div>
@@ -380,15 +399,18 @@ export default function ScoreSummary({ match }) {
                 lightMode
                   ? "bg-gray-50 border-gray-200"
                   : "bg-[#0F1115] border-white/5"
-              }`}>
+              }`}
+            >
               <div className={`font-bold text-lg truncate ${theme.sub}`}>
                 {nonStrikerName}
               </div>
               <div
-                className={`text-2xl font-mono font-bold mt-1 ${theme.text}`}>
+                className={`text-2xl font-mono font-bold mt-1 ${theme.text}`}
+              >
                 {currentInning.batsmenStats?.[nonStrikerName]?.runs || 0}
                 <span
-                  className={`text-sm ml-1.5 font-sans font-medium ${theme.sub}`}>
+                  className={`text-sm ml-1.5 font-sans font-medium ${theme.sub}`}
+                >
                   ({currentInning.batsmenStats?.[nonStrikerName]?.balls || 0})
                 </span>
               </div>
@@ -396,9 +418,11 @@ export default function ScoreSummary({ match }) {
           </div>
 
           <div
-            className={`flex justify-between items-center mb-4 border-b pb-3 ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+            className={`flex justify-between items-center mb-4 border-b pb-3 ${lightMode ? "border-gray-200" : "border-white/5"}`}
+          >
             <div
-              className={`text-[12px] uppercase font-black tracking-widest ${theme.sub}`}>
+              className={`text-[12px] uppercase font-black tracking-widest ${theme.sub}`}
+            >
               Current Partnership
             </div>
             {partnership && (
@@ -407,7 +431,8 @@ export default function ScoreSummary({ match }) {
                   lightMode
                     ? "bg-teal-50 text-teal-700 border-teal-200"
                     : "bg-teal-900/20 text-teal-400 border-teal-500/20"
-                }`}>
+                }`}
+              >
                 <span className={`text-base mr-1 ${theme.text}`}>
                   {partnership.runs}
                 </span>
@@ -419,7 +444,8 @@ export default function ScoreSummary({ match }) {
           {recentTimeline.length > 0 && (
             <div className="mb-5">
               <div
-                className={`text-[10px] uppercase font-bold mb-2 pl-1 ${theme.sub}`}>
+                className={`text-[10px] uppercase font-bold mb-2 pl-1 ${theme.sub}`}
+              >
                 Recent (Last 6)
               </div>
               {/* Removed overflow/scrollbar, added flex-wrap for safety, set exact height */}
@@ -487,10 +513,12 @@ export default function ScoreSummary({ match }) {
                     <React.Fragment key={i}>
                       {showDivider && (
                         <div
-                          className={`w-[2px] h-5 rounded-full mx-0.5 flex-shrink-0 opacity-50 ${lightMode ? "bg-gray-300" : "bg-slate-600"}`}></div>
+                          className={`w-[2px] h-5 rounded-full mx-0.5 flex-shrink-0 opacity-50 ${lightMode ? "bg-gray-300" : "bg-slate-600"}`}
+                        ></div>
                       )}
                       <div
-                        className={`w-9 h-9 rounded-full flex flex-shrink-0 items-center justify-center text-xs border ${colorClass} transition-all shadow-sm`}>
+                        className={`w-9 h-9 rounded-full flex flex-shrink-0 items-center justify-center text-xs border ${colorClass} transition-all shadow-sm`}
+                      >
                         {val}
                       </div>
                     </React.Fragment>
@@ -506,10 +534,12 @@ export default function ScoreSummary({ match }) {
               lightMode
                 ? "bg-gray-50 border-gray-200"
                 : "bg-[#161920] border-white/5"
-            }`}>
+            }`}
+          >
             <div>
               <div
-                className={`text-[11px] uppercase font-bold mb-1 tracking-wider ${theme.sub}`}>
+                className={`text-[11px] uppercase font-bold mb-1 tracking-wider ${theme.sub}`}
+              >
                 Bowling
               </div>
               <div className={`font-bold text-lg ${theme.text}`}>
@@ -518,7 +548,8 @@ export default function ScoreSummary({ match }) {
             </div>
             <div className="text-right">
               <div
-                className={`font-mono font-black text-2xl leading-none ${theme.text}`}>
+                className={`font-mono font-black text-2xl leading-none ${theme.text}`}
+              >
                 {currentInning.bowlerStats?.[bowlerName]?.wickets || 0}
                 <span className={`mx-1 ${theme.sub}`}>-</span>
                 {currentInning.bowlerStats?.[bowlerName]?.runs || 0}
@@ -577,9 +608,11 @@ export default function ScoreSummary({ match }) {
         ].map((stat, idx) => (
           <div
             key={idx}
-            className={`border p-4 rounded-2xl text-center shadow-sm ${theme.card} ${lightMode ? "border-gray-200" : "border-white/5"}`}>
+            className={`border p-4 rounded-2xl text-center shadow-sm ${theme.card} ${lightMode ? "border-gray-200" : "border-white/5"}`}
+          >
             <div
-              className={`text-[11px] uppercase font-black tracking-widest mb-1 ${theme.sub}`}>
+              className={`text-[11px] uppercase font-black tracking-widest mb-1 ${theme.sub}`}
+            >
               {stat.label}
             </div>
             <div className={`${stat.color} font-mono font-black text-2xl`}>
