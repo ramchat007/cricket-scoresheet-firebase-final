@@ -88,12 +88,18 @@ export default function BroadcastLayer() {
   const [overlayConfig, setOverlayConfig] = useState({});
 
   const [globalBranding, setGlobalBranding] = useState(null);
-
-  const [autoSpotlightPlayerId, setAutoSpotlightPlayerId] = useState(null);
-  const activeBattersRef = useRef([]);
   const [allMatches, setAllMatches] = useState([]);
 
   const lockedMatchId = useRef(null);
+
+  // 🟢 AUTO-SPOTLIGHT QUEUE ENGINE STATE
+  const [spotlightQueue, setSpotlightQueue] = useState([]);
+  const [autoSpotlightPlayerId, setAutoSpotlightPlayerId] = useState(null);
+  const prevBattersRef = useRef([]);
+  const prevBowlerRef = useRef(null);
+  const hasShownStartOfMatchRef = useRef(false);
+  const prevInningsRef = useRef(0);
+
   useEffect(() => {
     getDoc(doc(db, "settings", "branding")).then((docSnap) => {
       if (docSnap.exists()) {
@@ -125,8 +131,8 @@ export default function BroadcastLayer() {
     sponsors: [],
     fullScreenBanners: [],
     spotlightPlayerId: "",
-    autoSpotlightEnabled: true, // 🔥 NEW: Forces it ON globally
-    showAppLogo: true, // 🔥 NEW: Forces it ON globally
+    autoSpotlightEnabled: true,
+    showAppLogo: true,
   });
 
   const prevTimelineLength = useRef(0);
@@ -138,6 +144,7 @@ export default function BroadcastLayer() {
       setShowPopup(false);
       setAnimationType(null);
       setAutoSpotlightPlayerId(null);
+      setSpotlightQueue([]); // Clear queue on kill switch
       if (timerRef.current) clearTimeout(timerRef.current);
     }
   }, [overlayConfig?.forceClearOverlay]);
@@ -168,13 +175,10 @@ export default function BroadcastLayer() {
 
       let activeMatch = null;
 
-      // 🔥 1. CHECK THE LOCK FIRST
-      // If we previously locked onto a live match, stay on it regardless of its current status!
       if (lockedMatchId.current) {
         activeMatch = docsArray.find((m) => m.id === lockedMatchId.current);
       }
 
-      // 🔥 2. NORMAL WATERFALL (If no lock exists)
       if (!activeMatch) {
         activeMatch = docsArray.find((m) =>
           [
@@ -187,13 +191,11 @@ export default function BroadcastLayer() {
           ].includes(getStatus(m)),
         );
 
-        // If we just found a LIVE match, engage the lock!
         if (activeMatch) {
           lockedMatchId.current = activeMatch.id;
         }
       }
 
-      // 3. FALLBACKS (If nothing is live and no lock is active)
       if (!activeMatch) {
         activeMatch = docsArray
           .filter((m) =>
@@ -219,8 +221,6 @@ export default function BroadcastLayer() {
         if (!data.sponsors) data.sponsors = [];
         if (!data.fullScreenBanners) data.fullScreenBanners = [];
 
-        // 🔥 4. RELEASE THE LOCK IF COMMANDED
-        // If the controller sends the release command, clear the ref.
         if (
           data.releaseLockTimestamp &&
           data.releaseLockTimestamp > (lockedMatchId.currentReleaseTime || 0)
@@ -235,8 +235,8 @@ export default function BroadcastLayer() {
           hideBottomScoreTicker: false,
           sponsors: [],
           fullScreenBanners: [],
-          autoSpotlightEnabled: true, // 🔥 NEW: Default to true
-          showAppLogo: true, // 🔥 NEW: Default to true
+          autoSpotlightEnabled: true,
+          showAppLogo: true,
           ...data,
         });
       } else {
@@ -254,10 +254,7 @@ export default function BroadcastLayer() {
             id: doc.id,
             ...doc.data(),
           }));
-
-          // 🔥 FIX: Save all matches to state so the Points Table can calculate standings!
           setAllMatches(fetchedMatches);
-
           applyData(fetchedMatches);
         },
         (err) => {
@@ -357,8 +354,6 @@ export default function BroadcastLayer() {
     match?.result ||
     hasWon;
 
-  // 🔥 FIX 1: isPlayStarted now checks if a Striker is selected!
-  // This automatically drops the Toss card when players walk onto the field before 0.1 is bowled.
   const isPlayStarted =
     currentInn &&
     (currentInn.over > 0 || currentInn.overBallCount > 0 || currentInn.striker);
@@ -377,47 +372,127 @@ export default function BroadcastLayer() {
   else if (!currentInn) viewMode = "WAITING";
   else viewMode = "LIVE";
 
+  // =========================================================================
+  // 🧠 1. THE QUEUE DETECTOR ENGINE (Tracks live changes and builds the line)
+  // =========================================================================
+  const getPlayerIdByName = (name) => {
+    if (!name) return null;
+    const allPlayers = [
+      ...(match?.teamASquad || []),
+      ...(match?.teamBSquad || []),
+    ];
+    const p = allPlayers.find(
+      (x) => x.name?.trim().toLowerCase() === name.trim().toLowerCase(),
+    );
+    return p?.id;
+  };
+
+  // Reset the "Start of Match" flag if the innings changes
   useEffect(() => {
-    if (!currentInn || !overlayState.autoSpotlightEnabled || !match) {
-      if (currentInn) {
-        activeBattersRef.current = [
-          currentInn.striker,
-          currentInn.nonStriker,
-        ].filter(Boolean);
-      }
-      return;
+    if (match?.currentInnings !== prevInningsRef.current) {
+      hasShownStartOfMatchRef.current = false;
+      prevInningsRef.current = match?.currentInnings;
     }
+  }, [match?.currentInnings]);
 
-    const currentBatters = [currentInn.striker, currentInn.nonStriker].filter(
-      Boolean,
-    );
-    const newBatter = currentBatters.find(
-      (b) => !activeBattersRef.current.includes(b),
-    );
+  useEffect(() => {
+    if (!currentInn || !overlayState.autoSpotlightEnabled || !match) return;
 
-    if (newBatter && activeBattersRef.current.length > 0) {
-      const allPlayers = [
-        ...(match.teamASquad || []),
-        ...(match.teamBSquad || []),
-      ];
-      const p = allPlayers.find(
-        (p) => p.name?.trim().toLowerCase() === newBatter.trim().toLowerCase(),
-      );
+    const liveStrikerId = getPlayerIdByName(currentInn.striker);
+    const liveNonStrikerId = getPlayerIdByName(currentInn.nonStriker);
+    const liveBowlerId = getPlayerIdByName(currentInn.currentBowler);
+    const totalBalls =
+      (currentInn.over || 0) * 6 + (currentInn.overBallCount || 0);
 
-      if (p) {
-        setAutoSpotlightPlayerId(p.id);
-        setTimeout(() => {
-          setAutoSpotlightPlayerId(null);
-        }, 12000);
+    const newQueue = [];
+    const currentBatters = [liveStrikerId, liveNonStrikerId].filter(Boolean);
+
+    // Scenario 1: Start of Match/Innings
+    if (totalBalls === 0 && liveStrikerId && liveNonStrikerId && liveBowlerId) {
+      if (!hasShownStartOfMatchRef.current) {
+        newQueue.push(liveStrikerId, liveNonStrikerId, liveBowlerId);
+        hasShownStartOfMatchRef.current = true;
       }
     }
+    // Scenario 2: Mid-Match Changes
+    else if (totalBalls > 0) {
+      // New Bowler Detected
+      if (
+        liveBowlerId &&
+        liveBowlerId !== prevBowlerRef.current &&
+        prevBowlerRef.current !== null
+      ) {
+        newQueue.push(liveBowlerId);
+      }
 
-    activeBattersRef.current = currentBatters;
+      // New Batsman Detected
+      const prevBatters = prevBattersRef.current;
+      currentBatters.forEach((batterId) => {
+        if (
+          batterId &&
+          !prevBatters.includes(batterId) &&
+          prevBatters.length > 0
+        ) {
+          newQueue.push(batterId);
+        }
+      });
+    }
+
+    if (newQueue.length > 0) {
+      setSpotlightQueue((prev) => {
+        const filtered = newQueue.filter((id) => !prev.includes(id));
+        return [...prev, ...filtered];
+      });
+    }
+
+    prevBowlerRef.current = liveBowlerId;
+    prevBattersRef.current = currentBatters;
   }, [
     currentInn?.striker,
     currentInn?.nonStriker,
+    currentInn?.currentBowler,
+    currentInn?.over,
+    currentInn?.overBallCount,
     overlayState.autoSpotlightEnabled,
     match,
+  ]);
+
+  // =========================================================================
+  // ⏱️ 2. THE QUEUE PROCESSOR ENGINE (Shows cards one by one for 12 seconds)
+  // =========================================================================
+  useEffect(() => {
+    // A. Manual Override from the Controller
+    if (isActiveView("SPOTLIGHT") && overlayState.spotlightPlayerId) {
+      setAutoSpotlightPlayerId(overlayState.spotlightPlayerId);
+      return;
+    }
+
+    // B. Auto Queue Processing
+    if (
+      spotlightQueue.length > 0 &&
+      !autoSpotlightPlayerId &&
+      !isActiveView("SPOTLIGHT")
+    ) {
+      const nextId = spotlightQueue[0];
+      setAutoSpotlightPlayerId(nextId);
+
+      const timer = setTimeout(() => {
+        setAutoSpotlightPlayerId(null);
+        setSpotlightQueue((prev) => prev.slice(1));
+      }, 12000);
+
+      return () => clearTimeout(timer);
+    }
+
+    // C. Clean up if nothing is active
+    if (spotlightQueue.length === 0 && !isActiveView("SPOTLIGHT")) {
+      setAutoSpotlightPlayerId(null);
+    }
+  }, [
+    spotlightQueue,
+    autoSpotlightPlayerId,
+    overlayState.spotlightPlayerId,
+    overlayState.activeViews,
   ]);
 
   useEffect(() => {
@@ -534,27 +609,21 @@ export default function BroadcastLayer() {
     if (sponsors.length === 0) return null;
     const current = sponsors[idx];
 
-    // Check if we have text to display
     const hasText = current.name || current.phone;
 
     return (
       <div className="flex flex-col items-center animate-in fade-in slide-in-from-top-8">
-        {/* 🟢 THE IMAGE BOUNDING BOX 🟢 */}
-        {/* Forces a maximum width and height. The drop-shadow makes transparent PNGs pop on stream */}
         {current.image && (
           <div className="w-[240px] h-[120px] flex items-center justify-center z-10 drop-shadow-2xl">
             <img
               key={`img-${idx}`}
               src={current.image}
               alt={current.name || "Sponsor"}
-              // max-w and max-h ensure the image scales down to fit the box without stretching
               className="max-w-full max-h-full object-contain animate-in fade-in duration-500"
             />
           </div>
         )}
 
-        {/* 🟢 THE TEXT PILL 🟢 */}
-        {/* Only renders if there is actually a name or phone number provided */}
         {hasText && (
           <div
             key={`text-${idx}`}
@@ -810,8 +879,10 @@ export default function BroadcastLayer() {
     const wickets = getStat(["wickets", "totalWickets", "W", "wkt"]);
     const eco = getStat(["economy", "eco", "economyRate", "Econ"]);
 
+    // 🟢 CLOUDINARY RESOLVER
     const photo =
       pData.photoURL ||
+      pData.photoUrl ||
       pData.imageUrl ||
       pData.profilePic ||
       pData.image ||
@@ -1020,7 +1091,6 @@ export default function BroadcastLayer() {
     isActiveView("CUSTOM_AD_BANNERS") ||
     ["TOSS", "INNINGS_BREAK", "RESULT"].includes(viewMode);
 
-  // 🔥 FIX 2: Show Mini Scorebug automatically when Main Ticker is hidden
   const shouldShowMiniScore =
     isActiveView("MINI_SCORE") ||
     (hideTicker && currentInn && !isMatchFinished);
@@ -1043,10 +1113,6 @@ export default function BroadcastLayer() {
   if (!overlayConfig) {
     return <div className="transparent-fallback" />;
   }
-
-  const activeSpotlightId =
-    autoSpotlightPlayerId || overlayState.spotlightPlayerId;
-  const isSpotlightVisible = autoSpotlightPlayerId || isActiveView("SPOTLIGHT");
 
   return (
     <div className="w-screen h-screen flex items-center justify-center overflow-hidden bg-transparent pointer-events-none">
@@ -1229,10 +1295,7 @@ export default function BroadcastLayer() {
 
         {/* 🟢 LIVE POINTS TABLE */}
         {overlayState.activeViews?.includes("POINTS_TABLE") && (
-          <PointsTable
-            tournamentId={tournamentId}
-            matches={allMatches} // Note: Pass whatever variable holds your tournament matches here!
-          />
+          <PointsTable tournamentId={tournamentId} matches={allMatches} />
         )}
 
         <div className="absolute top-[50px] left-[50px] flex flex-col gap-6 items-start z-40">
@@ -1248,8 +1311,10 @@ export default function BroadcastLayer() {
         <div className="absolute bottom-[250px] left-[50px] flex flex-col justify-end gap-6 items-start z-40">
           {isActiveView("ORGANIZER") && <OrganizerCard />}
           {isActiveView("PARTNERSHIP") && <PartnershipCard />}
-          {isSpotlightVisible && activeSpotlightId && (
-            <PlayerSpotlight playerId={activeSpotlightId} />
+
+          {/* 🟢 THE AUTO-SPOTLIGHT RENDER */}
+          {autoSpotlightPlayerId && (
+            <PlayerSpotlight playerId={autoSpotlightPlayerId} />
           )}
         </div>
 
