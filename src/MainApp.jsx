@@ -185,7 +185,10 @@ function AppContent() {
           <Routes>
             <Route path="/broadcast" element={<Broadcaster />} />
             <Route path="/obs/:streamId" element={<ObsReceiver />} />
-            <Route path="/obs/viewers" element={<YouTubeViewers />} />
+            <Route
+              path="/obs/viewers/:tournamentId"
+              element={<YouTubeViewers />}
+            />
             <Route path="/remote/:streamId" element={<RemoteControl />} />
           </Routes>
         </Suspense>

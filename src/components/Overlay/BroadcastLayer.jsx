@@ -18,6 +18,7 @@ import TournamentBanner from "./TournamentBanner";
 import WinPredictor from "./WinPredictor";
 import MatchIntroSlab from "./MatchIntroSlab";
 import PointsTable from "./PointsTable";
+import YouTubeViewers from "./YouTubeViewers";
 
 // 🔥 EVENT ANIMATION COMPONENT WITH SLAM & SHAKE
 const EventAnimation = ({ type }) => {
@@ -81,6 +82,7 @@ export default function BroadcastLayer() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [tournamentName, setTournamentName] = useState("Tournament");
+  const [tournamentLiveUrl, setTournamentLiveUrl] = useState(null);
   const [scale, setScale] = useState(1);
   const [showPopup, setShowPopup] = useState(false);
   const [popupType, setPopupType] = useState("SUMMARY");
@@ -160,7 +162,12 @@ export default function BroadcastLayer() {
   useEffect(() => {
     if (!tournamentId) return;
     getDoc(doc(db, "tournaments", tournamentId)).then((s) => {
-      if (s.exists()) setTournamentName(s.data().name || "Tournament");
+      if (s.exists()) {
+        const tData = s.data();
+        setTournamentName(tData.name || "Tournament");
+        console.log("Tournament Live Stream URL:", tData?.liveStreamUrl);
+        setTournamentLiveUrl(tData?.liveStreamUrl || null);
+      }
     });
   }, [tournamentId]);
 
