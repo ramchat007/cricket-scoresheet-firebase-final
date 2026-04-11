@@ -192,7 +192,7 @@ export default function ScoreTicker({ match }) {
         
         {/* --- DYNAMIC TOP BAR --- */}
         <div className="w-full max-w-[1750px] flex justify-between items-end px-4 mb-2 z-10">
-          <div className="w-[160px] text-center">
+          <div className="w-[200px] text-center">
             <span className="block bg-slate-900/95 border border-white/20 rounded-full px-4 py-1.5 shadow-lg text-xs font-black uppercase tracking-widest text-white truncate drop-shadow-md">
               {battingTeam}
             </span>
@@ -226,7 +226,7 @@ export default function ScoreTicker({ match }) {
             </div>
           )}
 
-          <div className="w-[160px] text-center">
+          <div className="w-[200px] text-center">
             <span className="block bg-slate-900/95 border border-white/20 rounded-full px-4 py-1.5 shadow-lg text-xs font-black uppercase tracking-widest text-white truncate drop-shadow-md">
               {bowlingTeam}
             </span>

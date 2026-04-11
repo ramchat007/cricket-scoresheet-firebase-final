@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { doc, updateDoc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
 import { db } from "../../utils/firebase";
-import { supabase } from "../../utils/supabase"; // 🟢 Added Supabase import
+// 🔴 REMOVED SUPABASE IMPORT
 import { useTheme } from "../../context/ThemeContext";
 import {
   Tv,
@@ -75,51 +75,72 @@ export default function OverlayController({ tournamentId, matchId, match }) {
   const [teamAColor, setTeamAColor] = useState("#0284c7");
   const [teamBColor, setTeamBColor] = useState("#e11d48");
 
-  // 🟢 NEW: Lightweight Roster State from Supabase
+  // 🟢 NEW: Lightweight Roster State from Firebase
   const [teamASquadLite, setTeamASquadLite] = useState([]);
   const [teamBSquadLite, setTeamBSquadLite] = useState([]);
 
-  // --- 1. FETCH LIGHTWEIGHT ROSTERS FROM SUPABASE ---
+  // --- 1. FETCH LIGHTWEIGHT ROSTERS FROM FIREBASE ---
   useEffect(() => {
     const fetchLiteRosters = async () => {
       if (!tournamentId || !match?.meta) return;
 
       try {
-        // Fetch only exactly what we need for the dropdown (no heavy photos)
+        // TEAM A ROSTER FETCH
         if (match.meta.teamAId) {
-          const { data: teamA } = await supabase
-            .from("teams")
-            .select("roster")
-            .eq("id", match.meta.teamAId)
-            .single();
-
-          if (teamA?.roster) {
+          // If the match object already has it, use it instantly (Zero latency)
+          if (match.teamASquad && match.teamASquad.length > 0) {
             setTeamASquadLite(
-              teamA.roster.map((p) => ({ id: p.id, name: p.name })),
+              match.teamASquad.map((p) => ({ id: p.id, name: p.name })),
             );
+          } else {
+            // Otherwise, fetch from Firebase Teams Collection
+            const teamASnap = await getDoc(
+              doc(db, "tournaments", tournamentId, "teams", match.meta.teamAId),
+            );
+            if (teamASnap.exists() && teamASnap.data().roster) {
+              setTeamASquadLite(
+                teamASnap
+                  .data()
+                  .roster.map((p) => ({ id: p.id, name: p.name })),
+              );
+            }
           }
         }
 
+        // TEAM B ROSTER FETCH
         if (match.meta.teamBId) {
-          const { data: teamB } = await supabase
-            .from("teams")
-            .select("roster")
-            .eq("id", match.meta.teamBId)
-            .single();
-
-          if (teamB?.roster) {
+          // If the match object already has it, use it instantly
+          if (match.teamBSquad && match.teamBSquad.length > 0) {
             setTeamBSquadLite(
-              teamB.roster.map((p) => ({ id: p.id, name: p.name })),
+              match.teamBSquad.map((p) => ({ id: p.id, name: p.name })),
             );
+          } else {
+            // Otherwise, fetch from Firebase Teams Collection
+            const teamBSnap = await getDoc(
+              doc(db, "tournaments", tournamentId, "teams", match.meta.teamBId),
+            );
+            if (teamBSnap.exists() && teamBSnap.data().roster) {
+              setTeamBSquadLite(
+                teamBSnap
+                  .data()
+                  .roster.map((p) => ({ id: p.id, name: p.name })),
+              );
+            }
           }
         }
       } catch (err) {
-        console.error("Failed to load lightweight rosters from Supabase", err);
+        console.error("Failed to load lightweight rosters from Firebase", err);
       }
     };
 
     fetchLiteRosters();
-  }, [tournamentId, match?.meta?.teamAId, match?.meta?.teamBId]);
+  }, [
+    tournamentId,
+    match?.meta?.teamAId,
+    match?.meta?.teamBId,
+    match?.teamASquad,
+    match?.teamBSquad,
+  ]);
 
   // --- 2. LIVE SYNC & AUTO-SAVE COLORS FROM DATABASE ---
   useEffect(() => {
@@ -768,7 +789,7 @@ export default function OverlayController({ tournamentId, matchId, match }) {
             <div>
               <label className={labelClass}>Manual Player Selection</label>
               <div className="relative">
-                {/* 🟢 THE DROPDOWN NOW USES SUPABASE LITE DATA */}
+                {/* 🟢 THE DROPDOWN NOW USES FIREBASE LITE DATA */}
                 <select
                   className={`${inputClass} cursor-pointer appearance-none`}
                   value={config.spotlightPlayerId || ""}

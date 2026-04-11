@@ -165,7 +165,6 @@ export default function BroadcastLayer() {
       if (s.exists()) {
         const tData = s.data();
         setTournamentName(tData.name || "Tournament");
-        console.log("Tournament Live Stream URL:", tData?.liveStreamUrl);
         setTournamentLiveUrl(tData?.liveStreamUrl || null);
       }
     });
@@ -394,11 +393,29 @@ export default function BroadcastLayer() {
     return p?.id;
   };
 
-  // Reset the "Start of Match" flag if the innings changes
+  // 🛡️ REFRESH PROTECTION HELPERS: Safely check if a player is brand new
+  const getHasBowled = (bowlerName) => {
+    const stats = currentInn?.bowlerStats?.[bowlerName];
+    if (!stats) return false;
+    // If they have overs, runs, or wickets, they are NOT new
+    return (
+      parseFloat(stats.overs || 0) > 0 ||
+      (stats.runs || 0) > 0 ||
+      (stats.wickets || 0) > 0
+    );
+  };
+
+  const getBallsFaced = (batterName) => {
+    const stats = currentInn?.batsmenStats?.[batterName];
+    return stats?.balls || 0;
+  };
+
+  // Reset the component memory if the innings changes (e.g., Target Chasing starts)
   useEffect(() => {
     if (match?.currentInnings !== prevInningsRef.current) {
-      hasShownStartOfMatchRef.current = false;
       prevInningsRef.current = match?.currentInnings;
+      prevBattersRef.current = [];
+      prevBowlerRef.current = null;
     }
   }, [match?.currentInnings]);
 
@@ -408,42 +425,42 @@ export default function BroadcastLayer() {
     const liveStrikerId = getPlayerIdByName(currentInn.striker);
     const liveNonStrikerId = getPlayerIdByName(currentInn.nonStriker);
     const liveBowlerId = getPlayerIdByName(currentInn.currentBowler);
-    const totalBalls =
-      (currentInn.over || 0) * 6 + (currentInn.overBallCount || 0);
 
-    const newQueue = [];
     const currentBatters = [liveStrikerId, liveNonStrikerId].filter(Boolean);
+    const newQueue = [];
 
-    // Scenario 1: Start of Match/Innings
-    if (totalBalls === 0 && liveStrikerId && liveNonStrikerId && liveBowlerId) {
-      if (!hasShownStartOfMatchRef.current) {
-        newQueue.push(liveStrikerId, liveNonStrikerId, liveBowlerId);
-        hasShownStartOfMatchRef.current = true;
-      }
-    }
-    // Scenario 2: Mid-Match Changes
-    else if (totalBalls > 0) {
-      // New Bowler Detected
-      if (
-        liveBowlerId &&
-        liveBowlerId !== prevBowlerRef.current &&
-        prevBowlerRef.current !== null
-      ) {
+    // 🎯 THE BOWLER CHECK
+    if (liveBowlerId && liveBowlerId !== prevBowlerRef.current) {
+      if (prevBowlerRef.current === null) {
+        // SCENARIO 1 (Page Refreshed): Only queue if they haven't bowled yet
+        if (!getHasBowled(currentInn.currentBowler)) {
+          newQueue.push(liveBowlerId);
+        }
+      } else {
+        // SCENARIO 2 (Live Change Mid-Game): Over changed, always queue new bowler
         newQueue.push(liveBowlerId);
       }
+    }
 
-      // New Batsman Detected
-      const prevBatters = prevBattersRef.current;
-      currentBatters.forEach((batterId) => {
-        if (
-          batterId &&
-          !prevBatters.includes(batterId) &&
-          prevBatters.length > 0
-        ) {
+    // 🎯 THE BATTER CHECK
+    const prevBatters = prevBattersRef.current;
+    currentBatters.forEach((batterId) => {
+      if (batterId && !prevBatters.includes(batterId)) {
+        if (prevBatters.length === 0) {
+          // SCENARIO 1 (Page Refreshed): Only queue if they haven't faced a ball yet
+          const name =
+            batterId === liveStrikerId
+              ? currentInn.striker
+              : currentInn.nonStriker;
+          if (getBallsFaced(name) === 0) {
+            newQueue.push(batterId);
+          }
+        } else {
+          // SCENARIO 2 (Live Change Mid-Game): Fall of Wicket, always queue incoming batter
           newQueue.push(batterId);
         }
-      });
-    }
+      }
+    });
 
     if (newQueue.length > 0) {
       setSpotlightQueue((prev) => {
@@ -452,47 +469,47 @@ export default function BroadcastLayer() {
       });
     }
 
+    // Lock the current players into memory so we know if they change next time
     prevBowlerRef.current = liveBowlerId;
     prevBattersRef.current = currentBatters;
   }, [
     currentInn?.striker,
     currentInn?.nonStriker,
     currentInn?.currentBowler,
-    currentInn?.over,
-    currentInn?.overBallCount,
     overlayState.autoSpotlightEnabled,
     match,
   ]);
 
   // =========================================================================
-  // ⏱️ 2. THE QUEUE PROCESSOR ENGINE (Shows cards one by one for 12 seconds)
+  // ⏱️ 2. THE QUEUE PROCESSOR ENGINE (Shows cards one by one for 4 seconds)
   // =========================================================================
   useEffect(() => {
-    // A. Manual Override from the Controller
+    // A. Manual Override from the Controller (Takes absolute priority)
     if (isActiveView("SPOTLIGHT") && overlayState.spotlightPlayerId) {
       setAutoSpotlightPlayerId(overlayState.spotlightPlayerId);
       return;
     }
 
     // B. Auto Queue Processing
-    if (
-      spotlightQueue.length > 0 &&
-      !autoSpotlightPlayerId &&
-      !isActiveView("SPOTLIGHT")
-    ) {
-      const nextId = spotlightQueue[0];
-      setAutoSpotlightPlayerId(nextId);
-
+    if (autoSpotlightPlayerId) {
+      // 🎯 FIX 1 & 2: If someone is currently on screen, start the 4-second countdown
       const timer = setTimeout(() => {
-        setAutoSpotlightPlayerId(null);
-        setSpotlightQueue((prev) => prev.slice(1));
-      }, 12000);
+        setAutoSpotlightPlayerId(null); // Hide the card
+        setSpotlightQueue((prev) => prev.slice(1)); // Remove them from the line
+      }, 6000);
 
-      return () => clearTimeout(timer);
+      return () => clearTimeout(timer); // Safely clears only when the person changes
+    } else if (spotlightQueue.length > 0 && !isActiveView("SPOTLIGHT")) {
+      // If the screen is empty, but we have people waiting in line, show the first person!
+      setAutoSpotlightPlayerId(spotlightQueue[0]);
     }
 
-    // C. Clean up if nothing is active
-    if (spotlightQueue.length === 0 && !isActiveView("SPOTLIGHT")) {
+    // C. Clean up if the manual controller completely kills the view
+    if (
+      spotlightQueue.length === 0 &&
+      !isActiveView("SPOTLIGHT") &&
+      autoSpotlightPlayerId
+    ) {
       setAutoSpotlightPlayerId(null);
     }
   }, [
