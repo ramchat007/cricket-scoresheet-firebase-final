@@ -5,6 +5,7 @@
  * - Player Stats (strict separation)
  * - MVP + Advanced MOM logic (impact-based)
  */
+import { calculateNRR, inningsBallsFaced } from "./nrr";
 
 // --- 1. POINTS TABLE CALCULATOR ---
 export const calculatePointsTable = (matches = []) => {
@@ -74,12 +75,12 @@ export const calculatePointsTable = (matches = []) => {
       const battingTeam = inn.battingTeam?.trim();
       const bowlingTeam = battingTeam === teamA ? teamB : teamA;
 
-      const balls = (inn.over || 0) * 6 + (inn.overBallCount || 0);
       const matchOvers = parseInt(match.meta?.overs || 20);
-      const fullBalls = matchOvers * 6;
-
-      const effectiveBalls =
-        inn.wickets >= 10 || inn.isAllOut ? fullBalls : balls;
+      const totalWickets = parseInt(match.meta?.totalWickets || 10);
+      const effectiveBalls = inningsBallsFaced(inn, {
+        maxOvers: matchOvers,
+        totalWickets,
+      });
 
       if (table[battingTeam]) {
         table[battingTeam].runsScored += inn.score || 0;
@@ -95,15 +96,14 @@ export const calculatePointsTable = (matches = []) => {
 
   return Object.values(table)
     .map((t) => {
-      const faced = t.oversFaced || 1;
-      const bowled = t.oversBowled || 1;
-
-      const runRateFor = (t.runsScored / faced) * 6;
-      const runRateAgainst = (t.runsConceded / bowled) * 6;
-
       return {
         ...t,
-        nrr: Number(runRateFor - runRateAgainst).toFixed(3),
+        nrr: calculateNRR({
+          runsScored: t.runsScored,
+          ballsFaced: t.oversFaced,
+          runsConceded: t.runsConceded,
+          ballsBowled: t.oversBowled,
+        }),
       };
     })
     .sort((a, b) => b.points - a.points || b.nrr - a.nrr);

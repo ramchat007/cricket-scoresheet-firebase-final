@@ -3,14 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { recalculateTournamentStats } from "../../utils/matchService";
 import { useTheme } from "../../context/ThemeContext";
 import { RefreshCw, History, Trophy } from "lucide-react";
-
-// --- NRR Helper ---
-const calculateNRR = (runsScored, oversFaced, runsConceded, oversBowled) => {
-  if (oversFaced === 0) return 0;
-  const runRateFor = runsScored / oversFaced;
-  const runRateAgainst = oversBowled === 0 ? 0 : runsConceded / oversBowled;
-  return (runRateFor - runRateAgainst).toFixed(3);
-};
+import { calculateNRR, inningsBallsFaced } from "../../utils/nrr";
 
 // --- Client Side Calculation (Smart Resolution Support) ---
 const processStandings = (teams, matches) => {
@@ -172,27 +165,31 @@ const processStandings = (teams, matches) => {
       pushHist(s2, "T", t1);
     }
 
-    // Standard NRR Calculation
-    const getOvers = (o, b) => parseFloat(o) + parseFloat(b) / 6;
+    // Standard NRR Calculation (balls-based, all-out aware)
+    const maxOvers = parseInt(m.meta?.overs || 20);
+    const totalWickets = parseInt(m.meta?.totalWickets || 10);
+    const inn1Balls = inningsBallsFaced(inn1, { maxOvers, totalWickets });
+    const inn2Balls = inningsBallsFaced(inn2, { maxOvers, totalWickets });
+
     s1.runsScored += inn1.score;
-    s1.oversFaced += getOvers(inn1.over, inn1.overBallCount);
+    s1.oversFaced += inn1Balls;
     s2.runsConceded += inn1.score;
-    s2.oversBowled += getOvers(inn1.over, inn1.overBallCount);
+    s2.oversBowled += inn1Balls;
 
     s2.runsScored += inn2.score;
-    s2.oversFaced += getOvers(inn2.over, inn2.overBallCount);
+    s2.oversFaced += inn2Balls;
     s1.runsConceded += inn2.score;
-    s1.oversBowled += getOvers(inn2.over, inn2.overBallCount);
+    s1.oversBowled += inn2Balls;
   });
 
   return Object.values(standings).map((t) => ({
     ...t,
-    nrr: calculateNRR(
-      t.runsScored,
-      t.oversFaced,
-      t.runsConceded,
-      t.oversBowled,
-    ),
+    nrr: calculateNRR({
+      runsScored: t.runsScored,
+      ballsFaced: t.oversFaced,
+      runsConceded: t.runsConceded,
+      ballsBowled: t.oversBowled,
+    }),
   }));
 };
 

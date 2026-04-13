@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "step3:replay": "node scripts/step3-replay-check.mjs"
+    "step3:replay": "node scripts/step3-replay-check.mjs",
+    "step5:nrr": "node scripts/step5-nrr-check.mjs"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.18.0",
