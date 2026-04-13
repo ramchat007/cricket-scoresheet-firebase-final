@@ -445,58 +445,13 @@ function initializeSecondInnings(s) {
 }
 
 export function useScoring({ tournamentId, matchId, match, setMatch }) {
-  const useSupabaseScoring =
-    import.meta.env.VITE_USE_SUPABASE_SCORING === "true";
+  const scoringPrimary =
+    (import.meta.env.VITE_SCORING_PRIMARY || "firebase").toLowerCase();
+  const useSupabaseScoring = scoringPrimary === "supabase";
   const scoringAdapter = getScoringAdapter({
-    useSupabase: false,
+    useSupabase: useSupabaseScoring,
     supabaseClient: supabase,
   });
-  let supabaseAdapter = null;
-
-  if (useSupabaseScoring && supabase) {
-    supabaseAdapter = getScoringAdapter({
-      useSupabase: true,
-      supabaseClient: supabase,
-    });
-  }
-
-  const buildSupabaseEventPayload = (
-    actionType,
-    payload = {},
-    currentMatch,
-  ) => {
-    const inn =
-      currentMatch?.innings?.[currentMatch?.currentInnings || 0] || {};
-    const lastBall =
-      Array.isArray(inn.timeline) && inn.timeline.length > 0
-        ? inn.timeline[inn.timeline.length - 1]
-        : null;
-
-    const recalculated = {
-      score: inn.score || 0,
-      wickets: inn.wickets || 0,
-      over: inn.over || 0,
-      overBallCount: inn.overBallCount || 0,
-      extras: inn.extras || { wides: 0, noBalls: 0, byes: 0, legByes: 0 },
-      batsmenStats: inn.batsmenStats || {},
-      bowlerStats: inn.bowlerStats || {},
-      fallOfWickets: inn.fallOfWickets || [],
-      awaitingNewBatsman: !!inn.awaitingNewBatsman,
-      awaitingNewBowler: !!inn.awaitingNewBowler,
-    };
-
-    return {
-      eventType: actionType,
-      payload: {
-        ...payload,
-        newBall:
-          actionType === "BALL" || actionType === "EXTRA_BALL_RUNS"
-            ? lastBall
-            : undefined,
-        recalculated,
-      },
-    };
-  };
 
   const performOptimisticUpdate = (actionFn) => {
     if (setMatch && match) {
@@ -511,25 +466,10 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
 
   const runScoringAction = (actionFn, queuePayload = null) => {
     const startedAt = Date.now();
-    const optimisticState = performOptimisticUpdate((s) => actionFn(s));
+    performOptimisticUpdate((s) => actionFn(s));
 
     try {
       scoringAdapter.ballTransaction(tournamentId, matchId, actionFn);
-
-      if (supabaseAdapter && queuePayload?.actionType && optimisticState) {
-        const supabasePayload = buildSupabaseEventPayload(
-          queuePayload.actionType,
-          queuePayload.payload || {},
-          optimisticState,
-        );
-        supabaseAdapter
-          .ballTransaction(tournamentId, matchId, {
-            actionId: queuePayload.actionId,
-            eventType: supabasePayload.eventType,
-            payload: supabasePayload.payload,
-          })
-          .catch((err) => console.error("Supabase mirror write failed:", err));
-      }
 
       if (queuePayload?.actionId) markActionProcessed(queuePayload.actionId);
       recordScoringMetric("SCORING_ACTION_SUCCESS", {
@@ -631,26 +571,6 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
       action.matchId,
       handler,
     );
-
-    if (supabaseAdapter) {
-      const localDraft = match ? JSON.parse(JSON.stringify(match)) : null;
-      const optimisticState = localDraft ? handler(localDraft) : null;
-      const supabasePayload = buildSupabaseEventPayload(
-        actionType,
-        payload,
-        optimisticState,
-      );
-
-      await supabaseAdapter.ballTransaction(
-        action.tournamentId,
-        action.matchId,
-        {
-          actionId: action.actionId,
-          eventType: supabasePayload.eventType,
-          payload: supabasePayload.payload,
-        },
-      );
-    }
 
     markActionProcessed(action.actionId);
   };
@@ -758,22 +678,11 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
         r,
         mom,
       );
-      if (supabaseAdapter)
-        await supabaseAdapter.finishMatch(
-          tournamentId,
-          matchId,
-          match.meta?.teamA,
-          r,
-          mom,
-          { actionId: `finish-${Date.now()}` },
-        );
       await syncMatchStatsToGlobalPlayers(tournamentId, matchId, match);
     },
 
     handleDeleteMatch: async () => {
       await scoringAdapter.deleteMatch(tournamentId, matchId);
-      if (supabaseAdapter)
-        await supabaseAdapter.deleteMatch(tournamentId, matchId);
     },
 
     processQueuedAction,
