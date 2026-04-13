@@ -1,4 +1,10 @@
-import React, { useEffect, useState, useLayoutEffect, useRef } from "react";
+import React, {
+  useEffect,
+  useState,
+  useLayoutEffect,
+  useRef,
+  useMemo,
+} from "react";
 import { useParams } from "react-router-dom";
 import {
   collection,
@@ -11,6 +17,8 @@ import {
 } from "firebase/firestore";
 import { db } from "../../utils/firebase";
 import { Users, Zap, Activity, AlertTriangle } from "lucide-react";
+import { buildLiveStateSnapshot } from "../../utils/liveState";
+import { recordScoringMetric } from "../../utils/scoringTelemetry";
 
 import ScoreTicker from "./ScoreTicker";
 import BroadcastSummaryCard from "./BroadcastSummaryCard";
@@ -346,12 +354,49 @@ export default function BroadcastLayer() {
   const isActiveView = (viewName) =>
     overlayState.activeViews?.includes(viewName);
 
-  const currentInn = match?.innings?.[match?.currentInnings || 0];
+  const liveState = useMemo(() => buildLiveStateSnapshot(match), [match]);
 
-  const isChasing = match?.currentInnings === 1;
+  const matchForRender = useMemo(() => {
+    if (!match || !liveState?.canonicalInnings) return match;
+    if (Array.isArray(match.innings)) {
+      const innings = [...match.innings];
+      innings[liveState.currentInningsIndex] = liveState.canonicalInnings;
+      return { ...match, innings };
+    }
+    if (match.innings && typeof match.innings === "object") {
+      return {
+        ...match,
+        innings: {
+          ...match.innings,
+          [liveState.currentInningsIndex]: liveState.canonicalInnings,
+        },
+      };
+    }
+    return match;
+  }, [match, liveState]);
+
+  const currentInn = liveState?.canonicalInnings;
+
+  useEffect(() => {
+    if (!liveState?.hasDivergence) return;
+    console.warn("Broadcast divergence detected; using timeline-corrected state.", {
+      eventIndex: liveState.eventIndex,
+      stateVersion: liveState.stateVersion,
+      divergence: liveState.divergence,
+      checksum: liveState.checksum,
+    });
+    recordScoringMetric("BROADCAST_DIVERGENCE_DETECTED", {
+      eventIndex: liveState.eventIndex,
+      stateVersion: liveState.stateVersion,
+      checksum: liveState.checksum,
+      divergence: liveState.divergence,
+    });
+  }, [liveState]);
+
+  const isChasing = matchForRender?.currentInnings === 1;
   const target =
-    match?.meta?.target ||
-    (match?.innings?.[0] ? match.innings[0].score + 1 : 0);
+    matchForRender?.meta?.target ||
+    (matchForRender?.innings?.[0] ? matchForRender.innings[0].score + 1 : 0);
   const hasWon = isChasing && currentInn?.score >= target;
   const isMatchFinished =
     ["completed", "finished"].includes(
@@ -373,7 +418,10 @@ export default function BroadcastLayer() {
   else if (!match) viewMode = "NOT_FOUND";
   else if (isMatchFinished) viewMode = "RESULT";
   else if (isInningsBreak) viewMode = "INNINGS_BREAK";
-  else if ((match?.toss?.winner || match?.meta?.toss?.winner) && !isPlayStarted)
+  else if (
+    (matchForRender?.toss?.winner || matchForRender?.meta?.toss?.winner) &&
+    !isPlayStarted
+  )
     viewMode = "TOSS";
   else if (!currentInn) viewMode = "WAITING";
   else viewMode = "LIVE";
@@ -384,8 +432,8 @@ export default function BroadcastLayer() {
   const getPlayerIdByName = (name) => {
     if (!name) return null;
     const allPlayers = [
-      ...(match?.teamASquad || []),
-      ...(match?.teamBSquad || []),
+      ...(matchForRender?.teamASquad || []),
+      ...(matchForRender?.teamBSquad || []),
     ];
     const p = allPlayers.find(
       (x) => x.name?.trim().toLowerCase() === name.trim().toLowerCase(),
@@ -417,7 +465,7 @@ export default function BroadcastLayer() {
       prevBattersRef.current = [];
       prevBowlerRef.current = null;
     }
-  }, [match?.currentInnings]);
+  }, [matchForRender?.currentInnings]);
 
   useEffect(() => {
     if (!currentInn || !overlayState.autoSpotlightEnabled || !match) return;
@@ -1144,6 +1192,12 @@ export default function BroadcastLayer() {
         style={containerStyle}
         className="relative bg-transparent font-sans w-[1920px] h-[1080px]"
       >
+        {liveState?.hasDivergence && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[320] bg-rose-600/90 border border-rose-300 text-white text-xs font-bold px-4 py-1.5 rounded-full tracking-wide">
+            SYNC CHECK: timeline-corrected · ev#{liveState.eventIndex} · v
+            {liveState.stateVersion}
+          </div>
+        )}
         {(viewMode === "NOT_FOUND" || viewMode === "WAITING") && (
           <div className="absolute inset-0 z-10 flex flex-col bg-slate-950 overflow-hidden">
             <div className="absolute inset-0 flex">
@@ -1232,7 +1286,7 @@ export default function BroadcastLayer() {
             <div className="absolute inset-0 flex items-center justify-center z-50">
               <BroadcastSummaryCard
                 tournamentName={tournamentName}
-                match={match}
+                match={matchForRender}
                 type={viewMode}
               />
             </div>
@@ -1259,7 +1313,7 @@ export default function BroadcastLayer() {
         >
           <BroadcastSummaryCard
             tournamentName={tournamentName}
-            match={match}
+            match={matchForRender}
             type={popupType}
           />
         </div>
@@ -1269,7 +1323,7 @@ export default function BroadcastLayer() {
         >
           <BroadcastSummaryCard
             tournamentName={tournamentName}
-            match={match}
+            match={matchForRender}
             type={manualCardType}
           />
         </div>
@@ -1299,21 +1353,21 @@ export default function BroadcastLayer() {
 
         {isActiveView("WIN_PREDICTOR") && (
           <div className="absolute bottom-[225px] left-1/2 -translate-x-1/2 w-[600px] z-40">
-            <WinPredictor match={match} />
+            <WinPredictor match={matchForRender} />
           </div>
         )}
 
         <div
           className={`absolute bottom-[50px] w-full z-10 flex justify-center transition-all duration-500 ${hideTicker ? "translate-y-[200px] opacity-0 pointer-events-none" : "translate-y-0 opacity-100"}`}
         >
-          {currentInn && <ScoreTicker match={match} />}
+          {currentInn && <ScoreTicker match={matchForRender} />}
         </div>
         <div
           className={`absolute bottom-[100px] w-full z-10 flex justify-center transition-all duration-500 ${hideTicker ? "translate-y-[200px] opacity-0 pointer-events-none" : "translate-y-0 opacity-100"}`}
         >
           {/* 🟢 MATCH INTRO SLAB */}
           {overlayState.activeViews?.includes("MATCH_INTRO") && (
-            <MatchIntroSlab match={match} />
+            <MatchIntroSlab match={matchForRender} />
           )}
         </div>
 

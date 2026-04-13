@@ -12,6 +12,7 @@ import { db } from "../utils/firebase";
 // ✅ THEME IMPORT
 import { useTheme } from "../context/ThemeContext";
 import { Users, Activity, Target } from "lucide-react";
+import { deriveCanonicalInningsList } from "../utils/liveState";
 
 export default function ScoreSummary({ match }) {
   const { theme, lightMode } = useTheme();
@@ -88,9 +89,13 @@ export default function ScoreSummary({ match }) {
     );
 
   // --- 1. DATA EXTRACTION ---
-  const inningsList = Array.isArray(match.innings)
-    ? match.innings
-    : [match.innings?.[0], match.innings?.[1]].filter(Boolean);
+  const inningsList = useMemo(() => {
+    const canonical = deriveCanonicalInningsList(match);
+    if (canonical.length > 0) return canonical;
+    return Array.isArray(match.innings)
+      ? match.innings
+      : [match.innings?.[0], match.innings?.[1]].filter(Boolean);
+  }, [match]);
 
   const status =
     match.meta?.matchStatus || match.status || match.meta?.status || "upcoming";

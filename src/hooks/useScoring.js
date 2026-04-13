@@ -8,6 +8,7 @@ import {
 import { getManOfTheMatch } from "../utils/statsHelper";
 import { getScoringAdapter } from "../services/scoringAdapters";
 import { supabase } from "../utils/supabase";
+import { recordScoringMetric } from "../utils/scoringTelemetry";
 
 // Helper: Normalize keys
 const norm = (k) =>
@@ -47,6 +48,56 @@ const createSnapshot = (inn) => {
       completed: inn.completed || false,
     }),
   );
+};
+
+const popUndoSnapshotForInnings = (undoStack, inningsIndex) => {
+  if (!Array.isArray(undoStack) || undoStack.length === 0) return null;
+
+  while (undoStack.length > 0) {
+    const snap = undoStack.pop();
+    if (!snap) continue;
+    if (snap._inningsIndex === undefined || snap._inningsIndex === inningsIndex) {
+      const { _inningsIndex, _timelineLength, ...rest } = snap;
+      return rest;
+    }
+  }
+
+  return null;
+};
+
+const undoCurrentInningsState = (s) => {
+  const inningsIndex = s.currentInnings || 0;
+  const inn = s.innings?.[inningsIndex];
+  if (!inn) return s;
+
+  s.undoStack = Array.isArray(s.undoStack) ? s.undoStack : [];
+  const snapshot = popUndoSnapshotForInnings(s.undoStack, inningsIndex);
+
+  if (snapshot) {
+    s.innings[inningsIndex] = { ...inn, ...snapshot };
+  } else if (Array.isArray(inn.timeline) && inn.timeline.length > 0) {
+    inn.timeline.pop();
+  }
+
+  const activeInn = s.innings?.[inningsIndex];
+  if (!activeInn) return s;
+
+  recalculateInningsState(activeInn);
+
+  // ✅ Step-3 hardening: if undo rewinds a completed state, reopen and recompute.
+  activeInn.completed = false;
+  if (s.meta?.matchStatus === "finished") s.meta.matchStatus = "ongoing";
+  if (s.meta?.result) s.meta.result = "";
+
+  checkFinishAndSetResult(s, inningsIndex);
+  recordScoringMetric("UNDO_APPLIED", {
+    inningsIndex,
+    timelineLength: Array.isArray(activeInn.timeline) ? activeInn.timeline.length : 0,
+    usedSnapshot: !!snapshot,
+    score: activeInn.score || 0,
+    wickets: activeInn.wickets || 0,
+  });
+  return s;
 };
 
 /**
@@ -239,7 +290,11 @@ function applyBallLogic(s, code, extraData = {}, physicalRuns = 0) {
     s.meta.teamBSquad = sanitizeSquadImages(s.meta.teamBSquad);
 
   s.undoStack = s.undoStack || [];
-  s.undoStack.push(createSnapshot(inn));
+  s.undoStack.push({
+    ...createSnapshot(inn),
+    _inningsIndex: s.currentInnings || 0,
+    _timelineLength: Array.isArray(inn.timeline) ? inn.timeline.length : 0,
+  });
   if (s.undoStack.length > 50) s.undoStack.shift();
 
   const isWD = code === "WD" || extraData.isWide;
@@ -311,6 +366,11 @@ function applyBallLogic(s, code, extraData = {}, physicalRuns = 0) {
 
   inn.timeline = inn.timeline || [];
   inn.timeline.push(newBall);
+  recordScoringMetric("BALL_APPLIED", {
+    inningsIndex: s.currentInnings || 0,
+    code,
+    timelineLength: inn.timeline.length,
+  });
 
   recalculateInningsState(inn);
   checkFinishAndSetResult(s, s.currentInnings || 0);
@@ -385,58 +445,13 @@ function initializeSecondInnings(s) {
 }
 
 export function useScoring({ tournamentId, matchId, match, setMatch }) {
-  const useSupabaseScoring =
-    import.meta.env.VITE_USE_SUPABASE_SCORING === "true";
+  const scoringPrimary =
+    (import.meta.env.VITE_SCORING_PRIMARY || "firebase").toLowerCase();
+  const useSupabaseScoring = scoringPrimary === "supabase";
   const scoringAdapter = getScoringAdapter({
-    useSupabase: false,
+    useSupabase: useSupabaseScoring,
     supabaseClient: supabase,
   });
-  let supabaseAdapter = null;
-
-  if (useSupabaseScoring && supabase) {
-    supabaseAdapter = getScoringAdapter({
-      useSupabase: true,
-      supabaseClient: supabase,
-    });
-  }
-
-  const buildSupabaseEventPayload = (
-    actionType,
-    payload = {},
-    currentMatch,
-  ) => {
-    const inn =
-      currentMatch?.innings?.[currentMatch?.currentInnings || 0] || {};
-    const lastBall =
-      Array.isArray(inn.timeline) && inn.timeline.length > 0
-        ? inn.timeline[inn.timeline.length - 1]
-        : null;
-
-    const recalculated = {
-      score: inn.score || 0,
-      wickets: inn.wickets || 0,
-      over: inn.over || 0,
-      overBallCount: inn.overBallCount || 0,
-      extras: inn.extras || { wides: 0, noBalls: 0, byes: 0, legByes: 0 },
-      batsmenStats: inn.batsmenStats || {},
-      bowlerStats: inn.bowlerStats || {},
-      fallOfWickets: inn.fallOfWickets || [],
-      awaitingNewBatsman: !!inn.awaitingNewBatsman,
-      awaitingNewBowler: !!inn.awaitingNewBowler,
-    };
-
-    return {
-      eventType: actionType,
-      payload: {
-        ...payload,
-        newBall:
-          actionType === "BALL" || actionType === "EXTRA_BALL_RUNS"
-            ? lastBall
-            : undefined,
-        recalculated,
-      },
-    };
-  };
 
   const performOptimisticUpdate = (actionFn) => {
     if (setMatch && match) {
@@ -450,29 +465,24 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
   };
 
   const runScoringAction = (actionFn, queuePayload = null) => {
-    const optimisticState = performOptimisticUpdate((s) => actionFn(s));
+    const startedAt = Date.now();
+    performOptimisticUpdate((s) => actionFn(s));
 
     try {
       scoringAdapter.ballTransaction(tournamentId, matchId, actionFn);
 
-      if (supabaseAdapter && queuePayload?.actionType && optimisticState) {
-        const supabasePayload = buildSupabaseEventPayload(
-          queuePayload.actionType,
-          queuePayload.payload || {},
-          optimisticState,
-        );
-        supabaseAdapter
-          .ballTransaction(tournamentId, matchId, {
-            actionId: queuePayload.actionId,
-            eventType: supabasePayload.eventType,
-            payload: supabasePayload.payload,
-          })
-          .catch((err) => console.error("Supabase mirror write failed:", err));
-      }
-
       if (queuePayload?.actionId) markActionProcessed(queuePayload.actionId);
+      recordScoringMetric("SCORING_ACTION_SUCCESS", {
+        actionType: queuePayload?.actionType || "UNKNOWN",
+        durationMs: Date.now() - startedAt,
+      });
     } catch (e) {
       console.error("Sync Failed", e);
+      recordScoringMetric("SCORING_ACTION_FAILED", {
+        actionType: queuePayload?.actionType || "UNKNOWN",
+        durationMs: Date.now() - startedAt,
+        message: e?.message || String(e),
+      });
       if (queuePayload && !isActionProcessed(queuePayload.actionId)) {
         addPendingAction(queuePayload);
       }
@@ -548,19 +558,7 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
         return s;
       },
       // 🔥 FIX: Undo is now treated as a total state replacement, rather than calling the buggy undoLast adapter
-      UNDO: (s) => {
-        const inn = s.innings?.[s.currentInnings || 0];
-        if (!inn) return s;
-
-        if (s.undoStack && s.undoStack.length > 0) {
-          const snapshot = s.undoStack.pop();
-          s.innings[s.currentInnings] = { ...inn, ...snapshot };
-        } else if (inn.timeline && inn.timeline.length > 0) {
-          inn.timeline.pop();
-          recalculateInningsState(inn);
-        }
-        return s;
-      },
+      UNDO: (s) => undoCurrentInningsState(s),
     };
 
     const handler = actionMap[actionType];
@@ -573,26 +571,6 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
       action.matchId,
       handler,
     );
-
-    if (supabaseAdapter) {
-      const localDraft = match ? JSON.parse(JSON.stringify(match)) : null;
-      const optimisticState = localDraft ? handler(localDraft) : null;
-      const supabasePayload = buildSupabaseEventPayload(
-        actionType,
-        payload,
-        optimisticState,
-      );
-
-      await supabaseAdapter.ballTransaction(
-        action.tournamentId,
-        action.matchId,
-        {
-          actionId: action.actionId,
-          eventType: supabasePayload.eventType,
-          payload: supabasePayload.payload,
-        },
-      );
-    }
 
     markActionProcessed(action.actionId);
   };
@@ -689,19 +667,7 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
 
     // 🔥 FIX: We now use runScoringAction to push the perfect local state directly to Firebase
     handleUndo: () =>
-      runScoringAction((s) => {
-        const inn = s.innings?.[s.currentInnings || 0];
-        if (!inn) return s;
-
-        if (s.undoStack && s.undoStack.length > 0) {
-          const snapshot = s.undoStack.pop();
-          s.innings[s.currentInnings] = { ...inn, ...snapshot };
-        } else if (inn.timeline && inn.timeline.length > 0) {
-          inn.timeline.pop();
-          recalculateInningsState(inn);
-        }
-        return s;
-      }, createQueuePayload("UNDO")),
+      runScoringAction((s) => undoCurrentInningsState(s), createQueuePayload("UNDO")),
 
     handleFinishMatch: async (r, momWinningTeamOnly = true) => {
       const mom = getManOfTheMatch(match, momWinningTeamOnly);
@@ -712,22 +678,11 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
         r,
         mom,
       );
-      if (supabaseAdapter)
-        await supabaseAdapter.finishMatch(
-          tournamentId,
-          matchId,
-          match.meta?.teamA,
-          r,
-          mom,
-          { actionId: `finish-${Date.now()}` },
-        );
       await syncMatchStatsToGlobalPlayers(tournamentId, matchId, match);
     },
 
     handleDeleteMatch: async () => {
       await scoringAdapter.deleteMatch(tournamentId, matchId);
-      if (supabaseAdapter)
-        await supabaseAdapter.deleteMatch(tournamentId, matchId);
     },
 
     processQueuedAction,

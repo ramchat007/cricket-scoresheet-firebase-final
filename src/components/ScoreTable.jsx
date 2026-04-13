@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { getManOfTheMatch } from "../utils/statsHelper";
 import { useTheme } from "../context/ThemeContext";
 import { ChevronDown, Trophy } from "lucide-react";
+import { deriveCanonicalInningsList } from "../utils/liveState";
 
 const ScoreTable = ({ match }) => {
   const { theme, lightMode } = useTheme();
@@ -21,9 +22,13 @@ const ScoreTable = ({ match }) => {
       </div>
     );
 
-  const inns = Array.isArray(match.innings)
-    ? match.innings
-    : [match.innings?.[0], match.innings?.[1]].filter(Boolean);
+  const inns = useMemo(() => {
+    const canonical = deriveCanonicalInningsList(match);
+    if (canonical.length > 0) return canonical;
+    return Array.isArray(match.innings)
+      ? match.innings
+      : [match.innings?.[0], match.innings?.[1]].filter(Boolean);
+  }, [match]);
 
   const mom = useMemo(() => getManOfTheMatch(match), [match]);
   const isFinished =
