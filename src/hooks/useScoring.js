@@ -8,6 +8,7 @@ import {
 import { getManOfTheMatch } from "../utils/statsHelper";
 import { getScoringAdapter } from "../services/scoringAdapters";
 import { supabase } from "../utils/supabase";
+import { recordScoringMetric } from "../utils/scoringTelemetry";
 
 // Helper: Normalize keys
 const norm = (k) =>
@@ -89,6 +90,13 @@ const undoCurrentInningsState = (s) => {
   if (s.meta?.result) s.meta.result = "";
 
   checkFinishAndSetResult(s, inningsIndex);
+  recordScoringMetric("UNDO_APPLIED", {
+    inningsIndex,
+    timelineLength: Array.isArray(activeInn.timeline) ? activeInn.timeline.length : 0,
+    usedSnapshot: !!snapshot,
+    score: activeInn.score || 0,
+    wickets: activeInn.wickets || 0,
+  });
   return s;
 };
 
@@ -358,6 +366,11 @@ function applyBallLogic(s, code, extraData = {}, physicalRuns = 0) {
 
   inn.timeline = inn.timeline || [];
   inn.timeline.push(newBall);
+  recordScoringMetric("BALL_APPLIED", {
+    inningsIndex: s.currentInnings || 0,
+    code,
+    timelineLength: inn.timeline.length,
+  });
 
   recalculateInningsState(inn);
   checkFinishAndSetResult(s, s.currentInnings || 0);
@@ -497,6 +510,7 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
   };
 
   const runScoringAction = (actionFn, queuePayload = null) => {
+    const startedAt = Date.now();
     const optimisticState = performOptimisticUpdate((s) => actionFn(s));
 
     try {
@@ -518,8 +532,17 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
       }
 
       if (queuePayload?.actionId) markActionProcessed(queuePayload.actionId);
+      recordScoringMetric("SCORING_ACTION_SUCCESS", {
+        actionType: queuePayload?.actionType || "UNKNOWN",
+        durationMs: Date.now() - startedAt,
+      });
     } catch (e) {
       console.error("Sync Failed", e);
+      recordScoringMetric("SCORING_ACTION_FAILED", {
+        actionType: queuePayload?.actionType || "UNKNOWN",
+        durationMs: Date.now() - startedAt,
+        message: e?.message || String(e),
+      });
       if (queuePayload && !isActionProcessed(queuePayload.actionId)) {
         addPendingAction(queuePayload);
       }

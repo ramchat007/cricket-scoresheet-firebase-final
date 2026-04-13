@@ -18,6 +18,7 @@ import {
 import { db } from "../../utils/firebase";
 import { Users, Zap, Activity, AlertTriangle } from "lucide-react";
 import { buildLiveStateSnapshot } from "../../utils/liveState";
+import { recordScoringMetric } from "../../utils/scoringTelemetry";
 
 import ScoreTicker from "./ScoreTicker";
 import BroadcastSummaryCard from "./BroadcastSummaryCard";
@@ -383,6 +384,12 @@ export default function BroadcastLayer() {
       stateVersion: liveState.stateVersion,
       divergence: liveState.divergence,
       checksum: liveState.checksum,
+    });
+    recordScoringMetric("BROADCAST_DIVERGENCE_DETECTED", {
+      eventIndex: liveState.eventIndex,
+      stateVersion: liveState.stateVersion,
+      checksum: liveState.checksum,
+      divergence: liveState.divergence,
     });
   }, [liveState]);
 
