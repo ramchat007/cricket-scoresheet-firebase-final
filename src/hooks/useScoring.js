@@ -49,6 +49,49 @@ const createSnapshot = (inn) => {
   );
 };
 
+const popUndoSnapshotForInnings = (undoStack, inningsIndex) => {
+  if (!Array.isArray(undoStack) || undoStack.length === 0) return null;
+
+  while (undoStack.length > 0) {
+    const snap = undoStack.pop();
+    if (!snap) continue;
+    if (snap._inningsIndex === undefined || snap._inningsIndex === inningsIndex) {
+      const { _inningsIndex, _timelineLength, ...rest } = snap;
+      return rest;
+    }
+  }
+
+  return null;
+};
+
+const undoCurrentInningsState = (s) => {
+  const inningsIndex = s.currentInnings || 0;
+  const inn = s.innings?.[inningsIndex];
+  if (!inn) return s;
+
+  s.undoStack = Array.isArray(s.undoStack) ? s.undoStack : [];
+  const snapshot = popUndoSnapshotForInnings(s.undoStack, inningsIndex);
+
+  if (snapshot) {
+    s.innings[inningsIndex] = { ...inn, ...snapshot };
+  } else if (Array.isArray(inn.timeline) && inn.timeline.length > 0) {
+    inn.timeline.pop();
+  }
+
+  const activeInn = s.innings?.[inningsIndex];
+  if (!activeInn) return s;
+
+  recalculateInningsState(activeInn);
+
+  // ✅ Step-3 hardening: if undo rewinds a completed state, reopen and recompute.
+  activeInn.completed = false;
+  if (s.meta?.matchStatus === "finished") s.meta.matchStatus = "ongoing";
+  if (s.meta?.result) s.meta.result = "";
+
+  checkFinishAndSetResult(s, inningsIndex);
+  return s;
+};
+
 /**
  * 🧠 3. ROBUST RECALCULATION ENGINE
  * Handles Standard Rules + Legal Override + Extras Logic
@@ -239,7 +282,11 @@ function applyBallLogic(s, code, extraData = {}, physicalRuns = 0) {
     s.meta.teamBSquad = sanitizeSquadImages(s.meta.teamBSquad);
 
   s.undoStack = s.undoStack || [];
-  s.undoStack.push(createSnapshot(inn));
+  s.undoStack.push({
+    ...createSnapshot(inn),
+    _inningsIndex: s.currentInnings || 0,
+    _timelineLength: Array.isArray(inn.timeline) ? inn.timeline.length : 0,
+  });
   if (s.undoStack.length > 50) s.undoStack.shift();
 
   const isWD = code === "WD" || extraData.isWide;
@@ -548,19 +595,7 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
         return s;
       },
       // 🔥 FIX: Undo is now treated as a total state replacement, rather than calling the buggy undoLast adapter
-      UNDO: (s) => {
-        const inn = s.innings?.[s.currentInnings || 0];
-        if (!inn) return s;
-
-        if (s.undoStack && s.undoStack.length > 0) {
-          const snapshot = s.undoStack.pop();
-          s.innings[s.currentInnings] = { ...inn, ...snapshot };
-        } else if (inn.timeline && inn.timeline.length > 0) {
-          inn.timeline.pop();
-          recalculateInningsState(inn);
-        }
-        return s;
-      },
+      UNDO: (s) => undoCurrentInningsState(s),
     };
 
     const handler = actionMap[actionType];
@@ -689,19 +724,7 @@ export function useScoring({ tournamentId, matchId, match, setMatch }) {
 
     // 🔥 FIX: We now use runScoringAction to push the perfect local state directly to Firebase
     handleUndo: () =>
-      runScoringAction((s) => {
-        const inn = s.innings?.[s.currentInnings || 0];
-        if (!inn) return s;
-
-        if (s.undoStack && s.undoStack.length > 0) {
-          const snapshot = s.undoStack.pop();
-          s.innings[s.currentInnings] = { ...inn, ...snapshot };
-        } else if (inn.timeline && inn.timeline.length > 0) {
-          inn.timeline.pop();
-          recalculateInningsState(inn);
-        }
-        return s;
-      }, createQueuePayload("UNDO")),
+      runScoringAction((s) => undoCurrentInningsState(s), createQueuePayload("UNDO")),
 
     handleFinishMatch: async (r, momWinningTeamOnly = true) => {
       const mom = getManOfTheMatch(match, momWinningTeamOnly);
