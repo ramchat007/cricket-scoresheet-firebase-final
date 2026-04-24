@@ -52,8 +52,8 @@ export default function ContactPage() {
     {
       icon: Phone,
       title: "Phone",
-      value: "+91 98920 160376",
-      link: "tel:+9198920160376",
+      value: "+91 9820 160376",
+      link: "tel:+919820160376",
     },
     {
       icon: Mail,
@@ -101,16 +101,14 @@ export default function ContactPage() {
       </Helmet>
 
       <div
-        className={`max-w-6xl mx-auto p-4 md:p-8 animate-in fade-in ${theme.text}`}
-      >
+        className={`max-w-6xl mx-auto p-4 md:p-8 animate-in fade-in ${theme.text}`}>
         {/* Header */}
         <div className="text-center mb-12 mt-8">
           <h1 className="text-4xl md:text-5xl font-black uppercase italic tracking-tighter mb-4 text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-indigo-500">
             Get in Touch
           </h1>
           <p
-            className={`text-lg max-w-2xl mx-auto font-medium ${lightMode ? "text-gray-600" : "text-slate-400"}`}
-          >
+            className={`text-lg max-w-2xl mx-auto font-medium ${lightMode ? "text-gray-600" : "text-slate-400"}`}>
             Have a question about onboarding your tournament? <br />
             Need technical support? We are here to help.
           </p>
@@ -120,8 +118,7 @@ export default function ContactPage() {
           {/* --- LEFT: CONTACT DETAILS --- */}
           <div className="lg:col-span-5 space-y-8">
             <div
-              className={`p-8 rounded-[2.5rem] border ${lightMode ? "bg-white border-gray-200 shadow-xl" : "bg-[#1C2128] border-white/5 shadow-2xl"}`}
-            >
+              className={`p-8 rounded-[2.5rem] border ${lightMode ? "bg-white border-gray-200 shadow-xl" : "bg-[#1C2128] border-white/5 shadow-2xl"}`}>
               <h3 className="text-2xl font-black uppercase tracking-widest mb-6 leading-tight">
                 Contact <br />
                 <span className="text-teal-500">Information</span>
@@ -131,21 +128,18 @@ export default function ContactPage() {
                 {contactMethods.map((item, i) => (
                   <div key={i} className="flex items-center gap-4">
                     <div
-                      className={`w-12 h-12 shrink-0 rounded-2xl flex items-center justify-center ${lightMode ? "bg-teal-50 text-teal-600" : "bg-teal-500/10 text-teal-400"}`}
-                    >
+                      className={`w-12 h-12 shrink-0 rounded-2xl flex items-center justify-center ${lightMode ? "bg-teal-50 text-teal-600" : "bg-teal-500/10 text-teal-400"}`}>
                       <item.icon size={20} />
                     </div>
                     <div>
                       <p
-                        className={`text-[10px] font-bold uppercase tracking-widest ${theme.sub}`}
-                      >
+                        className={`text-[10px] font-bold uppercase tracking-widest ${theme.sub}`}>
                         {item.title}
                       </p>
                       {item.link ? (
                         <a
                           href={item.link}
-                          className={`font-bold hover:text-teal-500 transition-colors ${theme.text}`}
-                        >
+                          className={`font-bold hover:text-teal-500 transition-colors ${theme.text}`}>
                           {item.value}
                         </a>
                       ) : (
@@ -160,11 +154,9 @@ export default function ContactPage() {
 
               {/* Social Links */}
               <div
-                className={`mt-8 pt-6 border-t ${lightMode ? "border-gray-200" : "border-white/10"}`}
-              >
+                className={`mt-8 pt-6 border-t ${lightMode ? "border-gray-200" : "border-white/10"}`}>
                 <p
-                  className={`text-[10px] font-bold uppercase tracking-widest mb-4 ${theme.sub}`}
-                >
+                  className={`text-[10px] font-bold uppercase tracking-widest mb-4 ${theme.sub}`}>
                   Follow Us
                 </p>
                 <div className="flex gap-4">
@@ -174,8 +166,7 @@ export default function ContactPage() {
                       href={social.link}
                       target="_blank"
                       rel="noreferrer"
-                      className={`p-3 rounded-xl border transition-all duration-300 flex items-center gap-2 ${lightMode ? "bg-gray-50 border-gray-200 text-gray-600" : "bg-black/20 border-white/10 text-slate-400"} ${social.color}`}
-                    >
+                      className={`p-3 rounded-xl border transition-all duration-300 flex items-center gap-2 ${lightMode ? "bg-gray-50 border-gray-200 text-gray-600" : "bg-black/20 border-white/10 text-slate-400"} ${social.color}`}>
                       <social.icon size={18} />
                       <span className="text-xs font-bold uppercase tracking-wider">
                         {social.name}
@@ -190,22 +181,19 @@ export default function ContactPage() {
           {/* --- RIGHT: SUPABASE FORM --- */}
           <div className="lg:col-span-7">
             <div
-              className={`p-8 md:p-10 rounded-[2.5rem] border relative overflow-hidden h-full ${lightMode ? "bg-gradient-to-br from-teal-50/50 to-white border-teal-100 shadow-xl" : "bg-gradient-to-br from-teal-900/10 to-[#161920] border-white/10 shadow-2xl"}`}
-            >
+              className={`p-8 md:p-10 rounded-[2.5rem] border relative overflow-hidden h-full ${lightMode ? "bg-gradient-to-br from-teal-50/50 to-white border-teal-100 shadow-xl" : "bg-gradient-to-br from-teal-900/10 to-[#161920] border-white/10 shadow-2xl"}`}>
               <h3 className="text-2xl font-black uppercase tracking-widest mb-2">
                 Send a Message
               </h3>
               <p
-                className={`text-sm font-medium mb-8 ${lightMode ? "text-gray-500" : "text-slate-400"}`}
-              >
+                className={`text-sm font-medium mb-8 ${lightMode ? "text-gray-500" : "text-slate-400"}`}>
                 Fill out the form below and our team will get back to you within
                 24 hours.
               </p>
 
               {status === "success" ? (
                 <div
-                  className={`p-8 border rounded-3xl text-center flex flex-col items-center justify-center h-64 ${lightMode ? "bg-teal-50 border-teal-200 text-teal-700" : "bg-teal-500/10 border-teal-500/30 text-teal-400"}`}
-                >
+                  className={`p-8 border rounded-3xl text-center flex flex-col items-center justify-center h-64 ${lightMode ? "bg-teal-50 border-teal-200 text-teal-700" : "bg-teal-500/10 border-teal-500/30 text-teal-400"}`}>
                   <div className="w-16 h-16 bg-teal-500 text-white rounded-full flex items-center justify-center mb-4 shadow-lg shadow-teal-500/30">
                     <Send size={24} className="ml-1" />
                   </div>
@@ -217,21 +205,18 @@ export default function ContactPage() {
                   </p>
                   <button
                     onClick={() => setStatus("idle")}
-                    className="mt-6 text-xs font-bold uppercase tracking-widest underline underline-offset-4"
-                  >
+                    className="mt-6 text-xs font-bold uppercase tracking-widest underline underline-offset-4">
                     Send another message
                   </button>
                 </div>
               ) : (
                 <form
                   onSubmit={handleSubmit}
-                  className="space-y-5 relative z-10"
-                >
+                  className="space-y-5 relative z-10">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div>
                       <label
-                        className={`text-[10px] font-bold uppercase tracking-widest mb-2 block ${theme.sub}`}
-                      >
+                        className={`text-[10px] font-bold uppercase tracking-widest mb-2 block ${theme.sub}`}>
                         Full Name
                       </label>
                       <input
@@ -247,8 +232,7 @@ export default function ContactPage() {
                     </div>
                     <div>
                       <label
-                        className={`text-[10px] font-bold uppercase tracking-widest mb-2 block ${theme.sub}`}
-                      >
+                        className={`text-[10px] font-bold uppercase tracking-widest mb-2 block ${theme.sub}`}>
                         Email Address
                       </label>
                       <input
@@ -266,8 +250,7 @@ export default function ContactPage() {
 
                   <div>
                     <label
-                      className={`text-[10px] font-bold uppercase tracking-widest mb-2 block ${theme.sub}`}
-                    >
+                      className={`text-[10px] font-bold uppercase tracking-widest mb-2 block ${theme.sub}`}>
                       Your Message
                     </label>
                     <textarea
@@ -291,8 +274,7 @@ export default function ContactPage() {
                   <button
                     type="submit"
                     disabled={status === "submitting"}
-                    className="w-full py-4 bg-teal-600 text-white font-black rounded-2xl uppercase tracking-widest hover:bg-teal-500 transition-all active:scale-[0.98] flex justify-center items-center gap-2 shadow-lg shadow-teal-500/20 disabled:opacity-70 disabled:active:scale-100"
-                  >
+                    className="w-full py-4 bg-teal-600 text-white font-black rounded-2xl uppercase tracking-widest hover:bg-teal-500 transition-all active:scale-[0.98] flex justify-center items-center gap-2 shadow-lg shadow-teal-500/20 disabled:opacity-70 disabled:active:scale-100">
                     {status === "submitting" ? (
                       <span className="animate-pulse">Sending...</span>
                     ) : (
